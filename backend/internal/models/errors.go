@@ -19,4 +19,9 @@ var (
 	// Системные ошибки (500, 503)
 	ErrInternal         = errors.New("internal server error") // Непредвиденная ошибка
 	ErrDeadlineExceeded = errors.New("deadline exceeded")     // Таймаут операции
+
+	ErrReservedRole          = errors.New("cannot create or update reserved role")
+	ErrCircularInheritance   = errors.New("circular inheritance detected")
+	ErrCannotInheritFromSelf = errors.New("role cannot inherit from itself")
+	ErrParentRoleNotFound    = errors.New("parent role not found or inactive")
 )

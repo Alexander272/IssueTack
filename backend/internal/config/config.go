@@ -18,6 +18,7 @@ type (
 		Keycloak KeycloakConfig
 		Http     HttpConfig
 		Limiter  LimiterConfig
+		Casbin   CasbinConfig
 	}
 
 	HttpConfig struct {
@@ -72,6 +73,11 @@ type (
 		RPS   int           `yaml:"rps" env:"RPS" env-default:"10"`
 		Burst int           `yaml:"burst" env:"BURST" env-default:"20"`
 		TTL   time.Duration `yaml:"ttl" env:"TTL" env-default:"10m"`
+	}
+
+	CasbinConfig struct {
+		ModelPath     string `yaml:"model_path" env:"CASBIN_MODEL_PATH" env-default:"/configs/privacy.conf"`
+		EnableWatcher bool   `yaml:"enable_watcher" env:"CASBIN_ENABLE_WATCHER" env-default:"false"`
 	}
 )
 

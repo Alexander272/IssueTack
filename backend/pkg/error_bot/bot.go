@@ -52,8 +52,8 @@ func Send(c *gin.Context, e string, request interface{}) {
 
 	message := Message{
 		Service: &Service{
-			Id:   "rings",
-			Name: "Ring Orders",
+			Id:   os.Getenv("SERVICE_ID"),
+			Name: os.Getenv("SERVICE_NAME"),
 		},
 		Data: data,
 	}

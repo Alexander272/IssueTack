@@ -53,22 +53,19 @@ var errorRegistry = map[error]*AppError{
 	// 500 & 504
 	models.ErrInternal:         {http.StatusInternalServerError, "SRV01", "Внутренняя ошибка сервера"},
 	models.ErrDeadlineExceeded: {http.StatusGatewayTimeout, "SRV02", "Время ожидания операции истекло"},
+
+	models.ErrReservedRole:          {http.StatusBadRequest, "RL001", "Нельзя создать или обновить зарезервированную роль"},
+	models.ErrCannotInheritFromSelf: {http.StatusBadRequest, "RL002", "Роль не может наследоваться от самой себя"},
+	models.ErrParentRoleNotFound:    {http.StatusNotFound, "RL003", "Указанная родительская роль не найдена"},
+	models.ErrCircularInheritance:   {Status: http.StatusConflict, Code: "RL004", Message: "Обнаружено циклическое наследование ролей"},
 }
 
 // Централизованный метод для отправки ошибок
-func SendError(c *gin.Context, statusCode int, err error, customMessage ...string) {
+func SendError(c *gin.Context, err error, customMessage ...string) {
 	meta := &AppError{
 		Status:  http.StatusInternalServerError,
 		Code:    "U001",
 		Message: "Внутренняя ошибка сервера",
-	}
-
-	// Ищем ошибку в реестре (раскрываем цепочку ошибок через errors.Is)
-	for domainErr, registeredMeta := range errorRegistry {
-		if errors.Is(err, domainErr) {
-			meta = registeredMeta
-			break
-		}
 	}
 
 	// Ищем ошибку в реестре (раскрываем цепочку ошибок через errors.Is)
