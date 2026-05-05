@@ -11,18 +11,36 @@ import (
 
 type PermissionRepo struct {
 	db *pgxpool.Pool
+	Transaction
 }
 
-func NewPermissionRepo(db *pgxpool.Pool) *PermissionRepo {
+func NewPermissionRepo(db *pgxpool.Pool, tr Transaction) *PermissionRepo {
 	return &PermissionRepo{
-		db: db,
+		db:          db,
+		Transaction: tr,
 	}
 }
 
 type Permissions interface {
+	GetById(ctx context.Context, id uuid.UUID) (*models.Permission, error)
 	GetByRole(ctx context.Context, req *models.GetPermsByRoleDTO) ([]*models.Permission, error)
-	Create(ctx context.Context, dto *models.PermissionDTO) error
-	Delete(ctx context.Context, dto *models.DeletePermissionDTO) error
+	LoadPolicy(ctx context.Context, req *models.GetPoliciesDTO) ([]*models.Permission, error)
+	Create(ctx context.Context, tx Tx, dto *models.PermissionDTO) error
+	Delete(ctx context.Context, tx Tx, dto *models.DeletePermissionDTO) error
+}
+
+func (r *PermissionRepo) GetById(ctx context.Context, id uuid.UUID) (*models.Permission, error) {
+	query := fmt.Sprintf(`SELECT id, d.code, p.object, p.action
+		FROM %s p JOIN %s d ON d.id = p.realm_id
+		WHERE id=$1`,
+		Tables.Realms, Tables.Permissions,
+	)
+	data := &models.Permission{}
+	err := r.db.QueryRow(ctx, query, id).Scan(&data.ID, &data.Realm, &data.Object, &data.Action)
+	if err != nil {
+		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	return data, nil
 }
 
 func (r *PermissionRepo) GetByRole(ctx context.Context, req *models.GetPermsByRoleDTO) ([]*models.Permission, error) {
@@ -56,16 +74,24 @@ func (r *PermissionRepo) GetByRole(ctx context.Context, req *models.GetPermsByRo
 	return data, nil
 }
 
-func (r *PermissionRepo) GetForCasbin(ctx context.Context) ([]*models.Permission, error) {
+func (r *PermissionRepo) LoadPolicy(ctx context.Context, req *models.GetPoliciesDTO) ([]*models.Permission, error) {
+	condition := ""
+	args := make([]any, 0, 1)
+	if req.RealmId != "" {
+		condition = "WHERE d.realm_id = $1"
+		args = append(args, req.RealmId)
+	}
+
 	query := fmt.Sprintf(`SELECT r.slug, d.code, p.object, p.action
 		FROM %s rp
 		JOIN %s r ON r.id = rp.role_id
 		JOIN %s d ON d.id = r.realm_id
-		JOIN %s p ON p.id = rp.permission_id`,
-		Tables.RolePermissions, Tables.Roles, Tables.Realms, Tables.Permissions,
+		JOIN %s p ON p.id = rp.permission_id
+		%s`,
+		Tables.RolePermissions, Tables.Roles, Tables.Realms, Tables.Permissions, condition,
 	)
 
-	rows, err := r.db.Query(ctx, query)
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -86,23 +112,23 @@ func (r *PermissionRepo) GetForCasbin(ctx context.Context) ([]*models.Permission
 	return permissions, nil
 }
 
-func (r *PermissionRepo) Create(ctx context.Context, dto *models.PermissionDTO) error {
+func (r *PermissionRepo) Create(ctx context.Context, tx Tx, dto *models.PermissionDTO) error {
 	query := fmt.Sprintf(`INSERT INTO %s (id, realm_id, object, action) VALUES ($1, $2, $3, $4)`,
 		Tables.Permissions,
 	)
 	dto.ID = uuid.New()
 
-	_, err := r.db.Exec(ctx, query, dto.ID, dto.RealmID, dto.Object, dto.Action)
+	_, err := r.getExec(tx).Exec(ctx, query, dto.ID, dto.RealmID, dto.Object, dto.Action)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
 	return nil
 }
 
-func (r *PermissionRepo) Delete(ctx context.Context, dto *models.DeletePermissionDTO) error {
+func (r *PermissionRepo) Delete(ctx context.Context, tx Tx, dto *models.DeletePermissionDTO) error {
 	query := fmt.Sprintf(`DELETE FROM %s WHERE id=$1`, Tables.Permissions)
 
-	_, err := r.db.Exec(ctx, query, dto.ID)
+	_, err := r.getExec(tx).Exec(ctx, query, dto.ID)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}

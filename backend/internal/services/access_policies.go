@@ -1,28 +1,67 @@
 package services
 
-import "github.com/Alexander272/IssueTrack/backend/internal/enforcer"
+import (
+	"fmt"
+	"log"
 
-type AccessPolicesService struct {
-	enforcer      *enforcer.EnforcerWrapper
-	roles         Roles
-	roleHierarchy RoleHierarchy
-	permissions   Permissions
+	"github.com/Alexander272/IssueTrack/backend/internal/config"
+	"github.com/Alexander272/IssueTrack/backend/internal/events"
+	"github.com/casbin/casbin/v3"
+)
+
+type accessPolicesService struct {
+	enforcer casbin.IEnforcer
+	adapter  Adapter
+	eventBus *events.PolicyEventManager
 }
 
 type PoliciesDeps struct {
-	Enforcer      *enforcer.EnforcerWrapper
-	Roles         Roles
-	RoleHierarchy RoleHierarchy
-	Permissions   Permissions
+	Conf     config.CasbinConfig
+	Adapter  Adapter
+	EventBus *events.PolicyEventManager
 }
 
-func NewAccessPoliciesService(deps *PoliciesDeps) *AccessPolicesService {
-	return &AccessPolicesService{
-		enforcer:      deps.Enforcer,
-		roles:         deps.Roles,
-		roleHierarchy: deps.RoleHierarchy,
-		permissions:   deps.Permissions,
+func NewAccessPoliciesService(deps *PoliciesDeps) *accessPolicesService {
+	enforcer, err := casbin.NewEnforcer(deps.Conf.ModelPath, deps.Adapter)
+	if err != nil {
+		log.Fatalf("failed to initialize permission service. error: %s", err.Error())
 	}
+
+	if err = enforcer.LoadPolicy(); err != nil {
+		log.Fatalf("failed to load policy from DB: %s", err.Error())
+	}
+
+	s := &accessPolicesService{
+		enforcer: enforcer,
+		adapter:  deps.Adapter,
+	}
+
+	go func() {
+		updateChan := deps.EventBus.Subscribe()
+		for range updateChan {
+			log.Println("Received policy update event, reloading...")
+			s.enforcer.LoadPolicy()
+		}
+	}()
+
+	return s
+}
+
+type AccessPolices interface {
+	Enforce(sub, dom, obj, act string) (bool, error)
+	Reload() error
+}
+
+func (s *accessPolicesService) Enforce(sub, dom, obj, act string) (bool, error) {
+	return s.enforcer.Enforce(sub, dom, obj, act)
+}
+
+func (s *accessPolicesService) Reload() error {
+	err := s.enforcer.LoadPolicy()
+	if err != nil {
+		return fmt.Errorf("failed to reload policies: %w", err)
+	}
+	return nil
 }
 
 // init_permissions.go

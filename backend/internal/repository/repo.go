@@ -21,6 +21,9 @@ type RoleHierarchy interface {
 type Permissions interface {
 	postgres.Permissions
 }
+type AuditLogs interface {
+	postgres.AuditLogs
+}
 type Users interface {
 	postgres.Users
 }
@@ -47,6 +50,7 @@ type Repository struct {
 	Roles
 	RoleHierarchy
 	Permissions
+	AuditLogs
 	Users
 	Groups
 	Categories
@@ -63,8 +67,9 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 		Realms:        postgres.NewRealmRepo(pool, transaction),
 		Roles:         postgres.NewRoleRepo(pool, transaction),
 		RoleHierarchy: postgres.NewRoleHierarchyRepo(pool, transaction),
-		Permissions:   postgres.NewPermissionRepo(pool),
-		Users:         postgres.NewUserRepo(pool),
+		Permissions:   postgres.NewPermissionRepo(pool, transaction),
+		AuditLogs:     postgres.NewAuditRepo(pool, transaction),
+		Users:         postgres.NewUserRepo(pool, transaction),
 		Groups:        postgres.NewGroupRepo(pool),
 		Categories:    postgres.NewCategoryRepo(pool),
 		Sites:         postgres.NewSiteRepo(pool),

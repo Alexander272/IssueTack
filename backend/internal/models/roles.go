@@ -26,6 +26,7 @@ type GetRoleDTO struct {
 
 type RoleDTO struct {
 	ID          uuid.UUID `json:"id" db:"id"`
+	ActorID     uuid.UUID `json:"actorId" db:"actor_id"`
 	Slug        string    `json:"slug" db:"slug"`
 	Name        string    `json:"name" db:"name"`
 	RealmID     string    `json:"realmId" db:"realm_id"`
@@ -52,6 +53,7 @@ type RolePermission struct {
 }
 
 type RolePermissionDTO struct {
+	ActorID      uuid.UUID `json:"actorId" db:"actor_id"`
 	RoleID       uuid.UUID `json:"roleId" db:"role_id"`
 	PermissionID uuid.UUID `json:"permissionId" db:"permission_id"`
 }

@@ -28,6 +28,9 @@ func MapError(err error) error {
 			if strings.Contains(pgErr.Message, "ERR_CIRCULAR") {
 				return fmt.Errorf("%w: %v", models.ErrCircularInheritance, pgErr)
 			}
+			if strings.Contains(pgErr.Message, "ERR_REALM_CHANGE") {
+				return fmt.Errorf("%w: %v", models.ErrChangeRealm, pgErr)
+			}
 		}
 
 		switch pgErr.Code {

@@ -46,5 +46,5 @@ type UserRole struct {
 type UserRoleDTO struct {
 	UserID  uuid.UUID `json:"userId" db:"user_id"`
 	RoleID  uuid.UUID `json:"roleId" db:"role_id"`
-	RealmID uuid.UUID `json:"realmId" db:"realm_id"`
+	ActorID uuid.UUID `json:"actorId" db:"actor_id"`
 }

@@ -1,6 +1,6 @@
 -- +goose Up
 -- +goose StatementBegin
-CREATE TABLE IF NOT EXISTS public.policy_audit_log (
+CREATE TABLE IF NOT EXISTS public.policy_audit_logs (
     id UUID PRIMARY KEY,
     changed_by UUID NOT NULL,     -- кто изменил (user_id)
     action TEXT COLLATE pg_catalog."default" NOT NULL,          -- "add_role", "remove_permission", etc.
@@ -13,15 +13,15 @@ CREATE TABLE IF NOT EXISTS public.policy_audit_log (
     old_values JSONB,
     new_values JSONB,
     
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 )
 TABLESPACE pg_default;
 
-ALTER TABLE IF EXISTS public.policy_audit_log
+ALTER TABLE IF EXISTS public.policy_audit_logs
     OWNER to postgres;
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-DROP TABLE IF EXISTS public.policy_audit_log;
+DROP TABLE IF EXISTS public.policy_audit_logs;
 -- +goose StatementEnd

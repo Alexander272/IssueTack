@@ -1,31 +1,76 @@
 package constants
 
-type Resources struct {
-	Code string
-	Name string
-	Desc string
+type Resource struct {
+	Code  string
+	Name  string
+	Group string
+	Desc  string
 }
 
-type ResList struct {
-	Role        Resources
-	Permissions Resources
-	AuditLog    Resources
-	Realms      Resources
-	Groups      Resources
-	Categories  Resources
-	Sites       Resources
-	ActivityLog Resources
-	Tickets     Resources
+const (
+	ResRole     = "role"
+	ResPerm     = "permission"
+	ResAudit    = "audit_log"
+	ResRealm    = "realm"
+	ResGroup    = "group"
+	ResCategory = "category"
+	ResSite     = "site"
+	ResActivity = "activity_log"
+	ResTicket   = "ticket"
+)
+
+type ResRegistry struct {
+	// Поля для быстрого доступа в коде (Check Permission)
+	Role        Resource
+	Permissions Resource
+	AuditLog    Resource
+	Realms      Resource
+	Groups      Resource
+	Categories  Resource
+	Sites       Resource
+	ActivityLog Resource
+	Tickets     Resource
+
+	// Слайс для генерации UI (Menu/Selects)
+	Items []Resource
 }
 
-var ResourcesList = ResList{
-	Role:        Resources{"role", "Роли", ""},
-	Permissions: Resources{"permission", "Разрешения", "Действия которые доступны пользователю"},
-	AuditLog:    Resources{"audit_log", "Журнал изменений", "Журнал в котором отслеживаются изменения разрешений"},
-	Realms:      Resources{"realm", "Область", ""},
-	Groups:      Resources{"group", "Группа", "Группа пользователей которым доступны заявки"},
-	Categories:  Resources{"category", "Категория", "Категория заявок"},
-	Sites:       Resources{"site", "Площадка", ""},
-	ActivityLog: Resources{"activity_log", "Журнал изменений", "Журнал в котором отслеживаются изменения заявок"},
-	Tickets:     Resources{"ticket", "Заявка", ""},
+func NewResourceList() ResRegistry {
+	// Сначала определяем отдельные объекты
+	role := Resource{ResRole, "Роли", "system", ""}
+	perms := Resource{ResPerm, "Разрешения", "system", "Действия которые доступны пользователю"}
+	audit := Resource{ResAudit, "Журнал изменений", "logs", "Журнал в котором отслеживаются изменения разрешений"}
+	realm := Resource{ResRealm, "Область", "system", ""}
+	group := Resource{ResGroup, "Группа", "service", "Группа пользователей которым доступны заявки"}
+	category := Resource{ResCategory, "Категория", "service", "Категория заявок"}
+	site := Resource{ResSite, "Площадка", "service", ""}
+	activity := Resource{ResActivity, "Журнал изменений", "logs", "Журнал в котором отслеживаются изменения заявок"}
+	ticket := Resource{ResTicket, "Заявка", "service", ""}
+
+	return ResRegistry{
+		Role:        role,
+		Permissions: perms,
+		AuditLog:    audit,
+		Realms:      realm,
+		Groups:      group,
+		Categories:  category,
+		Sites:       site,
+		ActivityLog: activity,
+		Tickets:     ticket,
+
+		// Собираем их в список один раз при инициализации
+		Items: []Resource{
+			role,
+			perms,
+			audit,
+			realm,
+			group,
+			category,
+			site,
+			activity,
+			ticket,
+		},
+	}
 }
+
+var Resources = NewResourceList()

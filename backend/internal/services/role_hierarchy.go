@@ -19,7 +19,11 @@ func NewRoleHierarchyService(repo repository.RoleHierarchy) *RoleHierarchyServic
 	}
 }
 
-type RoleHierarchy interface{}
+type RoleHierarchy interface {
+	LoadPolicy(ctx context.Context, req *models.GetPoliciesDTO) ([]*models.SyncRoleInheritance, error)
+	AddInheritance(ctx context.Context, tx postgres.Tx, dto *models.RoleHierarchyDTO) error
+	RemoveInheritance(ctx context.Context, tx postgres.Tx, dto *models.RoleHierarchyDTO) error
+}
 
 func (s *RoleHierarchyService) GetInheritedRoles(ctx context.Context, req *models.GetRoleInheritance) ([]string, error) {
 	data, err := s.repo.GetInheritedRoles(ctx, req)
@@ -29,14 +33,22 @@ func (s *RoleHierarchyService) GetInheritedRoles(ctx context.Context, req *model
 	return data, nil
 }
 
-func (s *RoleHierarchyService) SyncRoleInheritance(ctx context.Context, tx postgres.Tx, req *models.GetRoleInheritance) ([]*models.SyncRoleInheritance, error) {
-	data, err := s.repo.SyncRoleInheritance(ctx, tx, req)
+func (s *RoleHierarchyService) SyncRoleInheritance(ctx context.Context, req *models.GetRoleInheritance) ([]*models.SyncRoleInheritance, error) {
+	data, err := s.repo.SyncRoleInheritance(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sync role inheritance: %w", err)
 	}
 
 	//TODO надо результат передавать в casbin
 
+	return data, nil
+}
+
+func (s *RoleHierarchyService) LoadPolicy(ctx context.Context, req *models.GetPoliciesDTO) ([]*models.SyncRoleInheritance, error) {
+	data, err := s.repo.LoadPolicy(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load policy: %w", err)
+	}
 	return data, nil
 }
 

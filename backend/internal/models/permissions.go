@@ -22,6 +22,7 @@ type GetPermsByRoleDTO struct {
 
 type PermissionDTO struct {
 	ID      uuid.UUID `json:"id" db:"id"`
+	ActorID uuid.UUID `json:"actorId" db:"actor_id"`
 	RoleID  uuid.UUID `json:"roleId" db:"role_id"`
 	RealmID uuid.UUID `json:"realmId" db:"realm_id"`
 	Object  string    `json:"object" db:"object"`
@@ -29,7 +30,8 @@ type PermissionDTO struct {
 }
 
 type DeletePermissionDTO struct {
-	ID uuid.UUID `json:"id" db:"id"`
+	ActorID uuid.UUID `json:"actorId" db:"actor_id"`
+	ID      uuid.UUID `json:"id" db:"id"`
 }
 
 type Grouping struct {

@@ -21,7 +21,10 @@ var (
 	ErrDeadlineExceeded = errors.New("deadline exceeded")     // Таймаут операции
 
 	ErrReservedRole          = errors.New("cannot create or update reserved role")
+	ErrChangeRealm           = errors.New("cannot change realm")
 	ErrCircularInheritance   = errors.New("circular inheritance detected")
 	ErrCannotInheritFromSelf = errors.New("role cannot inherit from itself")
 	ErrParentRoleNotFound    = errors.New("parent role not found or inactive")
+
+	ErrInvalidPermission = errors.New("invalid permission")
 )

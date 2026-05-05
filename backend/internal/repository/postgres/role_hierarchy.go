@@ -22,7 +22,8 @@ func NewRoleHierarchyRepo(db *pgxpool.Pool, tr Transaction) *RoleHierarchyRepo {
 
 type RoleHierarchy interface {
 	GetInheritedRoles(ctx context.Context, req *models.GetRoleInheritance) ([]string, error)
-	SyncRoleInheritance(ctx context.Context, tx Tx, req *models.GetRoleInheritance) ([]*models.SyncRoleInheritance, error)
+	SyncRoleInheritance(ctx context.Context, req *models.GetRoleInheritance) ([]*models.SyncRoleInheritance, error)
+	LoadPolicy(ctx context.Context, req *models.GetPoliciesDTO) ([]*models.SyncRoleInheritance, error)
 	AddInheritance(ctx context.Context, tx Tx, dto *models.RoleHierarchyDTO) error
 	RemoveInheritance(ctx context.Context, tx Tx, dto *models.RoleHierarchyDTO) error
 }
@@ -70,7 +71,7 @@ func (r *RoleHierarchyRepo) GetInheritedRoles(ctx context.Context, req *models.G
 }
 
 // SyncRoleInheritance — используется для синхронизации наследования ролей с Casbin
-func (r *RoleHierarchyRepo) SyncRoleInheritance(ctx context.Context, tx Tx, req *models.GetRoleInheritance) ([]*models.SyncRoleInheritance, error) {
+func (r *RoleHierarchyRepo) SyncRoleInheritance(ctx context.Context, req *models.GetRoleInheritance) ([]*models.SyncRoleInheritance, error) {
 	query := fmt.Sprintf(`SELECT r2.slug 
         FROM %s ri
         JOIN %s r1 ON ri.role_id = r1.id
@@ -79,7 +80,7 @@ func (r *RoleHierarchyRepo) SyncRoleInheritance(ctx context.Context, tx Tx, req 
 		Tables.RoleHierarchy, Tables.Roles, Tables.Roles,
 	)
 
-	rows, err := r.getExec(tx).Query(ctx, query, req.Role, req.Realm)
+	rows, err := r.db.Query(ctx, query, req.Role, req.Realm)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -99,13 +100,50 @@ func (r *RoleHierarchyRepo) SyncRoleInheritance(ctx context.Context, tx Tx, req 
 	return data, nil
 }
 
+func (r *RoleHierarchyRepo) LoadPolicy(ctx context.Context, req *models.GetPoliciesDTO) ([]*models.SyncRoleInheritance, error) {
+	condition := ""
+	args := make([]any, 0, 1)
+	if req.RealmId != "" {
+		condition = "rh.realm_id = $1 AND"
+		args = append(args, req.RealmId)
+	}
+
+	query := fmt.Sprintf(`SELECT r1.slug, r2.slug, rh.realm_id
+        FROM %s rh
+        JOIN %s r1 ON rh.role_id = r1.id
+        JOIN %s r2 ON rh.parent_role_id = r2.id
+        WHERE %s r2.is_active = true`,
+		Tables.RoleHierarchy, Tables.Roles, Tables.Roles, condition,
+	)
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	defer rows.Close()
+	data := make([]*models.SyncRoleInheritance, 0, 5)
+
+	for rows.Next() {
+		item := &models.SyncRoleInheritance{}
+		if err := rows.Scan(&item.Role, &item.ParentRole, &item.Realm); err != nil {
+			return nil, MapError(fmt.Errorf("scan row error: %w", err))
+		}
+		// // g(дочерняя_роль, родительская_роль, домен)
+		// casbin.AddGroupingPolicy(roleCode, parentCode, domain)
+		data = append(data, item)
+	}
+
+	return data, nil
+}
+
 func (r *RoleHierarchyRepo) AddInheritance(ctx context.Context, tx Tx, dto *models.RoleHierarchyDTO) error {
-	query := fmt.Sprintf(`INSERT INTO %s (role_id, parent_role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+	query := fmt.Sprintf(`INSERT INTO %s (role_id, parent_role_id, realm_id) 
+		VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
 		Tables.RoleHierarchy,
 	)
 
 	// Вставка (уникальность обеспечена БД с помощью trigger)
-	_, err := r.getExec(tx).Exec(ctx, query, dto.RoleID, dto.ParentRoleID)
+	_, err := r.getExec(tx).Exec(ctx, query, dto.RoleID, dto.ParentRoleID, dto.RealmID)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}

@@ -67,3 +67,21 @@ func (s *RoleService) Delete(ctx context.Context, dto *models.DeleteRoleDTO) err
 	}
 	return nil
 }
+
+func (s *RoleService) AssignPermission(ctx context.Context, dto *models.RolePermissionDTO) error {
+	//TODO добавить транзакцию
+	err := s.repo.AssignPermission(ctx, nil, dto)
+	if err != nil {
+		return fmt.Errorf("failed to assign permission: %w", err)
+	}
+	return nil
+}
+
+func (s *RoleService) DeletePermission(ctx context.Context, dto *models.RolePermissionDTO) error {
+	//TODO добавить транзакцию
+	err := s.repo.DeletePermission(ctx, nil, dto)
+	if err != nil {
+		return fmt.Errorf("failed to delete permission: %w", err)
+	}
+	return nil
+}

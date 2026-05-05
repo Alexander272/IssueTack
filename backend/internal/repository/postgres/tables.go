@@ -27,6 +27,7 @@ var Tables = struct {
 	Tickets         string
 	Comments        string
 	ActivityLog     string
+	AuditLogs       string
 }{
 	Sites:           "public.sites",
 	Realms:          "public.realms",
@@ -42,4 +43,5 @@ var Tables = struct {
 	Tickets:         "public.tickets",
 	Comments:        "public.comments",
 	ActivityLog:     "public.activity_log",
+	AuditLogs:       "public.audit_logs",
 }

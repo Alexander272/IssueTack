@@ -17,9 +17,13 @@ TABLESPACE pg_default;
 
 ALTER TABLE IF EXISTS public.roles
     OWNER to postgres;
+
+CREATE INDEX idx_roles_realm ON roles(realm_id);
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
+DROP INDEX IF EXISTS idx_roles_realm;
+
 DROP TABLE IF EXISTS public.roles;
 -- +goose StatementEnd
