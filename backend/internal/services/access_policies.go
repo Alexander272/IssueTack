@@ -3,9 +3,12 @@ package services
 import (
 	"fmt"
 	"log"
+	"slices"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/config"
 	"github.com/Alexander272/IssueTrack/backend/internal/events"
+	"github.com/Alexander272/IssueTrack/backend/internal/models"
+	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/casbin/casbin/v3"
 )
 
@@ -39,7 +42,7 @@ func NewAccessPoliciesService(deps *PoliciesDeps) *accessPolicesService {
 	go func() {
 		updateChan := deps.EventBus.Subscribe()
 		for range updateChan {
-			log.Println("Received policy update event, reloading...")
+			logger.Info("Received policy update event, reloading...")
 			s.enforcer.LoadPolicy()
 		}
 	}()
@@ -50,6 +53,7 @@ func NewAccessPoliciesService(deps *PoliciesDeps) *accessPolicesService {
 type AccessPolices interface {
 	Enforce(sub, dom, obj, act string) (bool, error)
 	Reload() error
+	GetPolicies(user, domain string) (*models.Access, error)
 }
 
 func (s *accessPolicesService) Enforce(sub, dom, obj, act string) (bool, error) {
@@ -64,46 +68,54 @@ func (s *accessPolicesService) Reload() error {
 	return nil
 }
 
-// init_permissions.go
-// func SyncAll(pool *pgxpool.Pool, casbin *EnforcerWrapper) error {
-//     ctx := context.Background()
+func (s *accessPolicesService) GetPolicies(user, domain string) (*models.Access, error) {
+	allPermissions, err := s.enforcer.GetImplicitPermissionsForUser(user, domain)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get implicit permissions for user: %w", err)
+	}
 
-//     // 1. Очищаем старые g-политики, связанные с ролями (но не user→role!)
-//     // Опционально: если хотите полный ресинк
-//     // casbin.ClearGPolicy() // осторожно: удалит и user→role связи
+	permsMap := make(map[string]bool)
+	var role string
 
-//     // 2. Загружаем все активные роли
-//     roles, err := GetActiveRoles(ctx, pool)
-//     if err != nil {
-//         return err
-//     }
+	for _, p := range allPermissions {
+		// Сохраняем первую роль (или последнюю - зависит от логики Casbin)
+		if role == "" && len(p) > 0 && p[0] != "" {
+			role = p[0]
+		}
 
-//     for _, role := range roles {
-//         // === Обработка root ===
-//         if role.Code == "root" {
-//             casbin.AddPolicy("root", "*", "*", "*")
-//             continue
-//         }
+		// Пропускаем некорректные правила
+		if len(p) < 4 {
+			continue
+		}
 
-//         // === Прямые права роли (из role_permissions) ===
-//         perms, err := GetRolePermissions(ctx, pool, role.ID)
-//         if err != nil {
-//             continue
-//         }
-//         for _, perm := range perms {
-//             casbin.AddPolicy(role.Code, perm.Domain, perm.CasbinObject, perm.CasbinAction)
-//         }
+		resource, action := p[2], p[3]
 
-//         // === Наследование (роль → родительские роли) ===
-//         inheritance, err := GetRoleInheritance(ctx, pool, role.ID)
-//         if err != nil {
-//             continue
-//         }
-//         for _, inh := range inheritance {
-//             // g(дочерняя, родительская, домен)
-//             casbin.AddGroupingPolicy(role.Code, inh.ParentRoleCode, inh.Domain)
-//         }
-//     }
+		// Формируем правило в нужном формате
+		var rule string
+		if resource == "*" && action == "*" {
+			rule = "*:*"
+		} else if action == "*" {
+			rule = fmt.Sprintf("%s:*", resource)
+		} else if resource == "*" {
+			rule = fmt.Sprintf("*:%s", action)
+		} else {
+			rule = fmt.Sprintf("%s:%s", resource, action)
+		}
 
-//     return nil
-// }
+		permsMap[rule] = true
+	}
+
+	// Конвертируем map в slice
+	perms := make([]string, 0, len(permsMap))
+	for rule := range permsMap {
+		perms = append(perms, rule)
+	}
+
+	slices.Sort(perms)
+
+	return &models.Access{
+		Role:   role,
+		Domain: domain,
+		Perms:  perms,
+	}, nil
+}

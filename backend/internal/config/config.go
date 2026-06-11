@@ -13,12 +13,19 @@ type (
 		LogLevel    string `yaml:"log_level" env-default:"info"`
 		LogSource   bool   `yaml:"log_source" env-default:"false"`
 		// Redis        RedisConfig
-		Postgres PostgresConfig
-		Auth     AuthConfig
-		Keycloak KeycloakConfig
-		Http     HttpConfig
-		Limiter  LimiterConfig
-		Casbin   CasbinConfig
+		Postgres      PostgresConfig   `yaml:"postgres"`
+		Auth          AuthConfig       `yaml:"auth"`
+		Keycloak      KeycloakConfig   `yaml:"keycloak"`
+		Http          HttpConfig       `yaml:"http"`
+		ApiLimiter    LimiterConfig    `yaml:"api_limiter"`
+		StaticLimiter LimiterConfig    `yaml:"static_limiter"`
+		Casbin        CasbinConfig     `yaml:"casbin"`
+		FileServer    FileServerConfig `yaml:"file_server"`
+	}
+
+	FileServerConfig struct {
+		UploadDir string `yaml:"upload_dir" env:"UPLOAD_DIR" env-default:"./uploads"`
+		MaxSize   int64  `yaml:"max_size" env:"UPLOAD_MAX_SIZE" env-default:"10485760"`
 	}
 
 	HttpConfig struct {
@@ -72,7 +79,7 @@ type (
 	LimiterConfig struct {
 		RPS   int           `yaml:"rps" env:"RPS" env-default:"10"`
 		Burst int           `yaml:"burst" env:"BURST" env-default:"20"`
-		TTL   time.Duration `yaml:"ttl" env:"TTL" env-default:"10m"`
+		TTL   time.Duration `yaml:"ttl" env:"TTL" env-default:"5m"`
 	}
 
 	CasbinConfig struct {

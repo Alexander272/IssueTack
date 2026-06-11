@@ -8,6 +8,8 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
+	"github.com/Alexander272/IssueTrack/backend/pkg/error_bot"
+	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 )
 
 type auditLogService struct {
@@ -34,18 +36,23 @@ func (s *auditLogService) StartListening(bus *events.PolicyEventManager) {
 		events := bus.Subscribe()
 		for event := range events {
 			dto := &models.AuditLogDTO{
-				ChangedBy: event.ChangedBy,
-				Action:    event.Action,
-				RoleID:    event.RoleID,
-				RuleID:    event.RuleID,
-				RealmID:   event.RealmID,
-				UserID:    event.UserID,
-				OldValues: event.OldValues,
-				NewValues: event.NewValues,
+				ChangedBy:     event.ChangedBy,
+				ChangedByName: event.ChangedByName,
+				Action:        event.Action,
+				EntityType:    event.EntityType,
+				Entity:        event.Entity,
+				EntityID:      event.EntityID,
+				RealmID:       event.RealmID,
+				RealmName:     event.RealmName,
+				OldValues:     event.OldValues,
+				NewValues:     event.NewValues,
 			}
 
 			// Записываем в базу данных
-			s.Create(context.Background(), nil, dto)
+			if err := s.Create(context.Background(), nil, dto); err != nil {
+				logger.Error("Failed to create audit log", logger.StringAttr("error", err.Error()))
+				error_bot.Send(nil, fmt.Sprintf("Failed to create audit log. error: %v", err), event)
+			}
 		}
 	}()
 }

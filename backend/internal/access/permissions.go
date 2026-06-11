@@ -12,6 +12,18 @@ const (
 	ResourceTicket   ResourceSlug = "ticket"
 )
 
+var OrderOfResources = map[ResourceSlug]int{
+	ResourceTicket:   1,
+	ResourceCategory: 2,
+	ResourceGroup:    3,
+	ResourceSite:     4,
+	ResourceActivity: 10,
+	ResourceRealm:    20,
+	ResourceRole:     21,
+	ResourcePerm:     22,
+	ResourceAudit:    22,
+}
+
 var Reg = NewRegistry(
 	Resource{
 		Slug:           ResourceRole,

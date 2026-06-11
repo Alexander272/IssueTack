@@ -61,6 +61,11 @@ func (r *Registry) List() []Resource {
 	return out
 }
 
+func (r *Registry) GetBySlug(slug ResourceSlug) (Resource, bool) {
+	res, ok := r.resources[slug]
+	return res, ok
+}
+
 func actions(list ...ActionCode) map[ActionCode]struct{} {
 	m := make(map[ActionCode]struct{}, len(list))
 	for _, a := range list {

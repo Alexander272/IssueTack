@@ -45,6 +45,8 @@ var (
 	DebugContext = slog.DebugContext
 	Info         = slog.Info
 	InfoContext  = slog.InfoContext
+	Warn         = slog.Warn
+	WarnContext  = slog.WarnContext
 	Error        = slog.Error
 	ErrorContext = slog.ErrorContext
 )

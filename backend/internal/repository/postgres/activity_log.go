@@ -28,24 +28,49 @@ type ActivityLog interface {
 }
 
 func (r *activityRepository) Get(ctx context.Context, req *models.GetLogsDTO) ([]*models.ActivityLog, error) {
-	query := fmt.Sprintf(`SELECT a.id, ticket_id, user_id, CONCAT_WS(' ', u.last_name, u.first_name) AS user_name, 
-		type, old_value, new_value, a.created_at 
-		FROM %s AS a INNER JOIN %s AS u ON a.user_id = u.id 
-		WHERE ticket_id = $1 ORDER BY a.created_at DESC`,
-		Tables.ActivityLog, Tables.Users,
+	where := ""
+	args := make([]any, 0)
+
+	if req.ParentID != nil {
+		where = "WHERE entity_id = $1 OR parent_id = $1"
+		args = append(args, *req.ParentID)
+	} else if req.EntityID != nil {
+		where = "WHERE entity_id = $1"
+		args = append(args, *req.EntityID)
+		if req.EntityType != nil {
+			where += fmt.Sprintf(" AND entity_type = $%d", len(args)+1)
+			args = append(args, *req.EntityType)
+		}
+	}
+
+	if req.RealmID != nil {
+		if where == "" {
+			where = "WHERE realm_id = $1"
+			args = append(args, *req.RealmID)
+		} else {
+			where += fmt.Sprintf(" AND realm_id = $%d", len(args)+1)
+			args = append(args, *req.RealmID)
+		}
+	}
+
+	query := fmt.Sprintf(`SELECT id, action, changed_by, changed_by_name, entity_type, entity_id, entity, parent_id, realm_id, realm_name, old_value, new_value, created_at 
+		FROM %s %s ORDER BY created_at DESC`,
+		Tables.ActivityLog, where,
 	)
 
-	var data []*models.ActivityLog
-	rows, err := r.db.Query(ctx, query, req.TicketID)
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
 	defer rows.Close()
 
+	var data []*models.ActivityLog
 	for rows.Next() {
 		item := &models.ActivityLog{}
 		if err := rows.Scan(
-			&item.ID, &item.TicketID, &item.UserID, &item.UserName, &item.Type,
+			&item.ID, &item.Action, &item.ChangedBy, &item.ChangedByName,
+			&item.EntityType, &item.EntityID, &item.Entity, &item.ParentID,
+			&item.RealmID, &item.RealmName,
 			&item.OldValue, &item.NewValue, &item.CreatedAt,
 		); err != nil {
 			return nil, MapError(fmt.Errorf("scan row error: %w", err))
@@ -73,15 +98,21 @@ func (r *activityRepository) Create(ctx context.Context, tx Tx, dto []*models.Ac
 
 		rows[i] = []interface{}{
 			v.ID,
-			v.TicketID,
-			v.UserID,
-			v.Type,
+			v.Action,
+			v.ChangedBy,
+			v.ChangedByName,
+			v.EntityType,
+			v.EntityID,
+			v.Entity,
+			v.ParentID,
+			v.RealmID,
+			v.RealmName,
 			v.OldValue,
 			v.NewValue,
 		}
 	}
 
-	columns := []string{"id", "ticket_id", "user_id", "type", "old_value", "new_value"}
+	columns := []string{"id", "action", "changed_by", "changed_by_name", "entity_type", "entity_id", "entity", "parent_id", "realm_id", "realm_name", "old_value", "new_value"}
 	_, err := r.getExec(tx).CopyFrom(
 		ctx,
 		pgx.Identifier{Tables.ActivityLog},
@@ -90,7 +121,7 @@ func (r *activityRepository) Create(ctx context.Context, tx Tx, dto []*models.Ac
 	)
 
 	if err != nil {
-		return fmt.Errorf("failed to execute query. error: %w", err)
+		return MapError(fmt.Errorf("failed to execute query. error: %w", err))
 	}
 	return nil
 }

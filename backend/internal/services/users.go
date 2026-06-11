@@ -22,8 +22,6 @@ func NewUserService(repo repository.Users, tm TransactionManager) *userService {
 
 type Users interface {
 	LoadPolicy(ctx context.Context, req *models.GetPoliciesDTO) ([]*models.UserRole, error)
-	AssignRole(ctx context.Context, dto *models.UserRoleDTO) error
-	DeleteRole(ctx context.Context, dto *models.UserRoleDTO) error
 }
 
 func (s *userService) LoadPolicy(ctx context.Context, req *models.GetPoliciesDTO) ([]*models.UserRole, error) {
@@ -32,20 +30,4 @@ func (s *userService) LoadPolicy(ctx context.Context, req *models.GetPoliciesDTO
 		return nil, fmt.Errorf("failed to load policy: %w", err)
 	}
 	return data, nil
-}
-
-func (s *userService) AssignRole(ctx context.Context, dto *models.UserRoleDTO) error {
-	//TODO возможно транзакция все же нужна
-	// да она нужна для сохранения записи в audit log
-	if err := s.repo.AssignRole(ctx, nil, dto); err != nil {
-		return fmt.Errorf("failed to assign role: %w", err)
-	}
-	return nil
-}
-
-func (s *userService) DeleteRole(ctx context.Context, dto *models.UserRoleDTO) error {
-	if err := s.repo.DeleteRole(ctx, nil, dto); err != nil {
-		return fmt.Errorf("failed to delete role: %w", err)
-	}
-	return nil
 }

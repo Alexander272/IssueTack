@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS public.realms
     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     code TEXT COLLATE pg_catalog."default" NOT NULL UNIQUE,
     name TEXT COLLATE pg_catalog."default" NOT NULL,
+    description TEXT COLLATE pg_catalog."default" DEFAULT ''::text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now()
 )

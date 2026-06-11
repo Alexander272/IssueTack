@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/google/uuid"
@@ -30,7 +31,132 @@ type Tickets interface {
 }
 
 func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, error) {
-	return nil, fmt.Errorf("not implemented")
+	base := fmt.Sprintf(`SELECT 
+			t.id, t.title, t.description, t.status, t.priority, t.due_date, t.closed_at, t.created_at, t.updated_at,
+			u_creator.id, CONCAT_WS(' ', u_creator.last_name, u_creator.first_name) AS creator_name,
+			u_owner.id, CONCAT_WS(' ', u_owner.last_name, u_owner.first_name) AS owner_name,
+			u_assignee.id, CONCAT_WS(' ', u_assignee.last_name, u_assignee.first_name) AS assignee_name,
+			u_manager.id, CONCAT_WS(' ', u_manager.last_name, u_manager.first_name) AS manager_name,
+			g.id, g.name,
+			c.id, c.name,
+			s.id, s.name
+		FROM %s t
+		JOIN %s u_creator ON t.creator_id = u_creator.id
+		JOIN %s u_owner ON t.owner_id = u_owner.id
+		LEFT JOIN %s u_assignee ON t.assignee_id = u_assignee.id
+		LEFT JOIN %s u_manager ON t.manager_id = u_manager.id
+		LEFT JOIN %s g ON t.group_id = g.id
+		JOIN %s c ON t.category_id = c.id
+		JOIN %s s ON t.site_id = s.id`,
+		Tables.Tickets, Tables.Users, Tables.Users, Tables.Users, Tables.Users,
+		Tables.Groups, Tables.Categories, Tables.Sites,
+	)
+
+	where := []string{}
+	args := []interface{}{}
+	argIdx := 1
+
+	if req.SiteID != nil {
+		where = append(where, fmt.Sprintf("t.site_id = $%d", argIdx))
+		args = append(args, *req.SiteID)
+		argIdx++
+	}
+	if req.Status != nil {
+		where = append(where, fmt.Sprintf("t.status = $%d", argIdx))
+		args = append(args, *req.Status)
+		argIdx++
+	}
+	if req.OwnerID != nil {
+		where = append(where, fmt.Sprintf("t.owner_id = $%d", argIdx))
+		args = append(args, *req.OwnerID)
+		argIdx++
+	}
+	if req.AssigneeID != nil {
+		where = append(where, fmt.Sprintf("t.assignee_id = $%d", argIdx))
+		args = append(args, *req.AssigneeID)
+		argIdx++
+	}
+	if req.GroupID != nil {
+		where = append(where, fmt.Sprintf("t.group_id = $%d", argIdx))
+		args = append(args, *req.GroupID)
+		argIdx++
+	}
+
+	query := base
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
+	}
+	query += " ORDER BY t.created_at DESC"
+
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	query += fmt.Sprintf(" LIMIT $%d", argIdx)
+	args = append(args, limit)
+	argIdx++
+
+	offset := req.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	query += fmt.Sprintf(" OFFSET $%d", argIdx)
+	args = append(args, offset)
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	defer rows.Close()
+
+	var data []*models.Ticket
+	for rows.Next() {
+		var (
+			assigneeID   *uuid.UUID
+			assigneeName *string
+			managerID    *uuid.UUID
+			managerName  *string
+			groupID      *uuid.UUID
+			groupName    *string
+		)
+		ticket := &models.Ticket{
+			Site:     &models.SiteShort{},
+			Category: &models.CategoryShort{},
+			Creator:  models.UserShort{},
+			Owner:    &models.UserShort{},
+		}
+		if err := rows.Scan(
+			&ticket.ID, &ticket.Title, &ticket.Description,
+			&ticket.Status, &ticket.Priority,
+			&ticket.DueDate, &ticket.ClosedAt, &ticket.CreatedAt, &ticket.UpdatedAt,
+			&ticket.Creator.ID, &ticket.Creator.FullName,
+			&ticket.Owner.ID, &ticket.Owner.FullName,
+			&assigneeID, &assigneeName,
+			&managerID, &managerName,
+			&groupID, &groupName,
+			&ticket.Category.ID, &ticket.Category.Name,
+			&ticket.Site.ID, &ticket.Site.Name,
+		); err != nil {
+			return nil, MapError(fmt.Errorf("scan row error: %w", err))
+		}
+		if assigneeID != nil {
+			ticket.Assignee = &models.UserShort{ID: *assigneeID, FullName: *assigneeName}
+		}
+		if managerID != nil {
+			ticket.Manager = &models.UserShort{ID: *managerID, FullName: *managerName}
+		}
+		if groupID != nil {
+			ticket.Group = &models.GroupShort{ID: *groupID, Name: *groupName}
+		}
+		data = append(data, ticket)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
+	if data == nil {
+		return []*models.Ticket{}, nil
+	}
+	return data, nil
 }
 
 func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) (*models.Ticket, error) {

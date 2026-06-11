@@ -6,35 +6,23 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
 type Hub struct {
-	// Мапа подписок: "topic_name" -> map[*Client]bool
-	// Пример ключей: "orders", "notifications", "chat_room_123"
 	Subscribers map[string]map[*Client]struct{}
 
 	Register   chan *Subscription
 	Unregister chan *Subscription
 	Broadcast  chan *BroadcastMessage
 	disconnect chan *Client
+	stopped    chan struct{}
 
-	mu sync.RWMutex
+	mu       sync.RWMutex
+	stopOnce sync.Once
 }
 
-// Запрос на подписку/отписку
-type SubscriptionRequest struct {
-	Client *Client
-	Topic  string
-}
-
-// Запрос на отписку (можно использовать тот же, но для ясности разделим или передадим флаг)
-type UnsubscriptionRequest struct {
-	Client *Client
-	Topic  string
-}
-
-// Сообщение для рассылки
 type BroadcastMessage struct {
 	Topic string
 	Data  []byte
@@ -52,6 +40,7 @@ func NewWebsocketHub() *Hub {
 		Unregister:  make(chan *Subscription, 256),
 		Broadcast:   make(chan *BroadcastMessage, 512),
 		disconnect:  make(chan *Client, 256),
+		stopped:     make(chan struct{}),
 	}
 }
 
@@ -59,88 +48,57 @@ func (h *Hub) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			// Завершаем работу: закрываем все соединения
 			h.Stop()
+			return
+		case <-h.stopped:
 			return
 
 		case req := <-h.Register:
+			h.mu.Lock()
 			if _, ok := h.Subscribers[req.Topic]; !ok {
 				h.Subscribers[req.Topic] = make(map[*Client]struct{})
 			}
 			h.Subscribers[req.Topic][req.Client] = struct{}{}
+			req.Client.addTopic(req.Topic)
+			h.mu.Unlock()
 
 		case req := <-h.Unregister:
+			h.mu.Lock()
 			h.removeSpecific(req.Topic, req.Client)
+			h.mu.Unlock()
 
 		case client := <-h.disconnect:
+			h.mu.Lock()
 			h.fullDisconnect(client)
+			h.mu.Unlock()
+			client.Close()
 
 		case msg := <-h.Broadcast:
-			if clients, ok := h.Subscribers[msg.Topic]; ok {
-				for client := range clients {
-					select {
-					case client.Send <- msg.Data:
-					default:
-						// Если буфер клиента забит — отключаем его полностью
-						h.fullDisconnect(client)
-					}
+			h.mu.RLock()
+			clients, ok := h.Subscribers[msg.Topic]
+			if !ok {
+				h.mu.RUnlock()
+				continue
+			}
+			snapshot := make([]*Client, 0, len(clients))
+			for c := range clients {
+				snapshot = append(snapshot, c)
+			}
+			h.mu.RUnlock()
+
+			for _, client := range snapshot {
+				select {
+				case client.Send <- msg.Data:
+				default:
+					go func(c *Client) {
+						h.mu.Lock()
+						h.fullDisconnect(c)
+						h.mu.Unlock()
+						c.Close()
+					}(client)
 				}
 			}
 		}
-
-		// case req := <-h.Register:
-		// 	h.mu.Lock()
-		// 	if _, ok := h.Subscribers[req.Topic]; !ok {
-		// 		h.Subscribers[req.Topic] = make(map[*Client]bool)
-		// 	}
-		// 	h.Subscribers[req.Topic][req.Client] = true
-		// 	h.mu.Unlock()
-
-		// 	// Сообщаем клиенту, что он успешно добавлен в локальный список (опционально)
-		// 	req.Client.AddTopic(req.Topic)
-
-		// case req := <-h.Unregister:
-		// 	h.mu.Lock()
-		// 	if clients, ok := h.Subscribers[req.Topic]; ok {
-		// 		if _, exists := clients[req.Client]; exists {
-		// 			delete(clients, req.Client)
-		// 			// Удаляем тему, если она пуста
-		// 			if len(clients) == 0 {
-		// 				delete(h.Subscribers, req.Topic)
-		// 			}
-		// 		}
-		// 	}
-		// 	h.mu.Unlock()
-
-		// 	// Удаляем тему из списка клиента
-		// 	req.Client.RemoveTopic(req.Topic)
-
-		// case msg := <-h.Broadcast:
-		// 	h.mu.Lock()
-		// 	// Клонируем список клиентов для безопасности, если нужно,
-		// 	// но обычно итерация по мапе под локом допустима, если мы не меняем мапу
-		// 	if clients, ok := h.Subscribers[msg.Topic]; ok {
-		// 		for client := range clients {
-		// 			select {
-		// 			case client.Send <- msg.Data:
-		// 				// Успех
-		// 			default:
-		// 				// БУФЕР ПЕРЕПОЛНЕН! Клиент не успевает обрабатывать сообщения.
-		// 				// Нужно срочно отключить его, чтобы не блокировать весь хаб.
-
-		// 				// ВАЖНО: Мы не можем вызвать Cleanup прямо здесь под локом хаб-а (deadlock риск),
-		// 				// поэтому просто удаляем из мапы, а полную очистку инициируем асинхронно
-		// 				delete(clients, client)
-
-		// 				go func(c *Client) {
-		// 					// Асинхронная полная очистка в отдельной горутине
-		// 					Cleanup(h, c)
-		// 				}(client)
-		// 			}
-		// 		}
-		// 	}
-		// 	h.mu.Unlock()
-		// }
 	}
 }
 
@@ -148,41 +106,42 @@ func (h *Hub) Disconnect(c *Client) {
 	select {
 	case h.disconnect <- c:
 	default:
-		// Если канал переполнен, значит хаб и так занят очисткой или завершением
 	}
 }
 
-func (h *Hub) BroadcastMessage(topic string, data []byte) {
-	msg := &BroadcastMessage{
-		Topic: topic,
-		Data:  data,
-	}
+func (h *Hub) SendToUser(userID uuid.UUID, data []byte) {
+	h.BroadcastMessage("user:"+userID.String(), data)
+}
 
+func (h *Hub) IsUserOnline(userID uuid.UUID) bool {
+	return h.HasSubscribers("user:" + userID.String())
+}
+
+func (h *Hub) BroadcastMessage(topic string, data []byte) {
+	msg := &BroadcastMessage{Topic: topic, Data: data}
 	select {
 	case h.Broadcast <- msg:
-	default:
-		log.Println("Broadcast queue is full")
+	case <-time.After(time.Second):
+		log.Println("broadcast queue is full, message dropped after 1s timeout")
 	}
 }
 
 func (h *Hub) HasSubscribers(topic string) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-
 	clients, ok := h.Subscribers[topic]
 	return ok && len(clients) > 0
 }
 
-// Полезный помощник: ждем подписчика с таймаутом
 func (h *Hub) WaitForFirstSubscriber(ctx context.Context, topic string, timeout time.Duration) bool {
-	stop := time.After(timeout)
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 
+	deadline := time.After(timeout)
 	for {
 		select {
-		case <-stop:
-			return false // Никто не пришел за 5 секунд
+		case <-deadline:
+			return false
 		case <-ctx.Done():
 			return false
 		case <-ticker.C:
@@ -193,30 +152,36 @@ func (h *Hub) WaitForFirstSubscriber(ctx context.Context, topic string, timeout 
 	}
 }
 
-// Вспомогательный метод для очистки при выключении сервера
 func (h *Hub) Stop() {
-	// Собираем всех уникальных клиентов
-	uniqueClients := make(map[*Client]struct{})
-	for _, clients := range h.Subscribers {
-		for c := range clients {
-			uniqueClients[c] = struct{}{}
+	h.stopOnce.Do(func() {
+		close(h.stopped)
+
+		h.mu.RLock()
+		var all []*Client
+		seen := make(map[*Client]struct{})
+		for _, clients := range h.Subscribers {
+			for c := range clients {
+				if _, ok := seen[c]; !ok {
+					seen[c] = struct{}{}
+					all = append(all, c)
+				}
+			}
 		}
-	}
-	// Закрываем каждого
-	for c := range uniqueClients {
-		// Отправляем CloseMessage с кодом 1001 (Going Away)
-		msg := websocket.FormatCloseMessage(websocket.CloseGoingAway, "Server is shutting down")
+		h.mu.RUnlock()
 
-		// Пытаемся отправить напрямую в сокет, так как цикл хаба может быть уже блокирован
-		c.Conn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(time.Second))
-
-		// Вызываем полную очистку через существующий механизм
-		h.fullDisconnect(c)
-	}
-	log.Println("Hub stopped: all connections closed")
+		for _, c := range all {
+			c.Conn.WriteControl(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseGoingAway, "Server is shutting down"),
+				time.Now().Add(time.Second))
+			h.mu.Lock()
+			h.fullDisconnect(c)
+			h.mu.Unlock()
+			c.Close()
+		}
+		log.Println("hub stopped: all connections closed")
+	})
 }
 
-// Вспомогательные неэкспортируемые методы (вызываются только внутри Run)
 func (h *Hub) removeSpecific(topic string, client *Client) {
 	if clients, ok := h.Subscribers[topic]; ok {
 		delete(clients, client)
@@ -224,70 +189,11 @@ func (h *Hub) removeSpecific(topic string, client *Client) {
 			delete(h.Subscribers, topic)
 		}
 	}
+	client.removeTopic(topic)
 }
 
 func (h *Hub) fullDisconnect(client *Client) {
-	// Удаляем клиента из всех тем
-	for topic := range h.Subscribers {
+	for _, topic := range client.Topics() {
 		h.removeSpecific(topic, client)
 	}
-	// Закрываем канал клиента только здесь, когда уверены, что Hub больше не будет туда слать
-	client.Close()
 }
-
-// type Hub struct {
-// 	// Сохраняем клиентов в map для эффективного удаления
-// 	Clients    map[*Client]bool
-// 	Register   chan *Client
-// 	Unregister chan *Client
-// 	broadcast  chan []byte
-// 	mu         sync.Mutex
-// }
-
-// func NewWebsocketHub() *Hub {
-// 	return &Hub{
-// 		Clients:    make(map[*Client]bool),
-// 		Register:   make(chan *Client),
-// 		Unregister: make(chan *Client),
-// 		broadcast:  make(chan []byte),
-// 	}
-// }
-
-// // Реализация интерфейса UseCase.MessageBroadcaster
-// func (h *Hub) Broadcast(data []byte) {
-// 	h.broadcast <- data
-// }
-
-// func (h *Hub) Run() {
-// 	for {
-// 		select {
-// 		case client := <-h.Register:
-// 			h.mu.Lock()
-// 			h.Clients[client] = true
-// 			h.mu.Unlock()
-
-// 		case client := <-h.Unregister:
-// 			h.mu.Lock()
-// 			if _, ok := h.Clients[client]; ok {
-// 				delete(h.Clients, client)
-// 				close(client.Send)
-// 			}
-// 			h.mu.Unlock()
-
-// 		case message := <-h.broadcast:
-// 			h.mu.Lock()
-// 			for client := range h.Clients {
-// 				if client.Mode == ModeOrderListener {
-// 					select {
-// 					case client.Send <- message:
-// 					default:
-// 						// Если буфер клиента переполнен, закрываем соединение
-// 						close(client.Send)
-// 						delete(h.Clients, client)
-// 					}
-// 				}
-// 			}
-// 			h.mu.Unlock()
-// 		}
-// 	}
-// }

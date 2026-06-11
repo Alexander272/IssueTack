@@ -27,6 +27,9 @@ type AuditLogs interface {
 type Users interface {
 	postgres.Users
 }
+type UserRealms interface {
+	postgres.UserRealms
+}
 
 type Groups interface {
 	postgres.Groups
@@ -40,8 +43,20 @@ type Sites interface {
 type Tickets interface {
 	postgres.Tickets
 }
+type Subtasks interface {
+	postgres.Subtasks
+}
+type Attachments interface {
+	postgres.Attachments
+}
+type Checklists interface {
+	postgres.Checklists
+}
 type ActivityLog interface {
 	postgres.ActivityLog
+}
+type Notifications interface {
+	postgres.Notifications
 }
 
 type Repository struct {
@@ -52,11 +67,16 @@ type Repository struct {
 	Permissions
 	AuditLogs
 	Users
+	UserRealms
 	Groups
 	Categories
 	Sites
 	Tickets
+	Subtasks
+	Attachments
+	Checklists
 	ActivityLog
+	Notifications
 }
 
 func NewRepository(pool *pgxpool.Pool) *Repository {
@@ -70,10 +90,15 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 		Permissions:   postgres.NewPermissionRepo(pool, transaction),
 		AuditLogs:     postgres.NewAuditRepo(pool, transaction),
 		Users:         postgres.NewUserRepo(pool, transaction),
+		UserRealms:    postgres.NewUserRealmRepo(pool, transaction),
 		Groups:        postgres.NewGroupRepo(pool),
 		Categories:    postgres.NewCategoryRepo(pool),
 		Sites:         postgres.NewSiteRepo(pool),
 		Tickets:       postgres.NewTicketRepo(pool, transaction),
+		Subtasks:      postgres.NewSubtaskRepo(pool, transaction),
+		Attachments:   postgres.NewAttachmentRepo(pool, transaction),
+		Checklists:    postgres.NewChecklistRepo(pool, transaction),
 		ActivityLog:   postgres.NewActivityRepo(pool, transaction),
+		Notifications: postgres.NewNotificationRepo(pool, transaction),
 	}
 }

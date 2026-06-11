@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS public.users
     last_name text COLLATE pg_catalog."default" DEFAULT ''::text,
     email text COLLATE pg_catalog."default" DEFAULT ''::text,
     site_id uuid REFERENCES sites(id) ON DELETE SET NULL,
-    created_at timestamp with time zone DEFAULT now()
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now()
 )
 TABLESPACE pg_default;
 

@@ -31,6 +31,9 @@ type Ticket struct {
 	ClosedAt  *time.Time `json:"closedAt" db:"closed_at"`
 	CreatedAt time.Time  `json:"createdAt" db:"created_at"`
 	UpdatedAt time.Time  `json:"updatedAt" db:"updated_at"`
+
+	Subtasks    []*Subtask    `json:"subtasks,omitempty"`
+	Attachments []*Attachment `json:"attachments,omitempty"`
 }
 
 type GetTicketByIdDTO struct {
@@ -50,6 +53,7 @@ type TicketFilter struct {
 type TicketDTO struct {
 	ID          uuid.UUID `json:"id" db:"id"`
 	UserID      uuid.UUID `json:"userId" db:"user_id"`
+	UserName    string    `json:"userName"`
 	Title       string    `json:"title" db:"title"`
 	Description string    `json:"description" db:"description"`
 

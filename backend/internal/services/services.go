@@ -19,7 +19,12 @@ type Services struct {
 	Categories
 	Sites
 	Tickets
+	Subtasks
+	Attachments
+	Checklists
+	Notifications
 	ActivityLog
+	UserRealms
 }
 
 type Deps struct {
@@ -35,10 +40,20 @@ func NewServices(deps *Deps) *Services {
 
 	audit := NewAuditLogService(deps.Repo.AuditLogs, transaction)
 	realms := NewRealmService(deps.Repo.Realms, transaction)
-	roles := NewRolesService(deps.Repo.Roles)
-	rolesHierarchy := NewRoleHierarchyService(deps.Repo.RoleHierarchy)
-	users := NewUserService(deps.Repo.Users, transaction)
+
 	perms := NewPermissionService(deps.Repo.Permissions, transaction, updatePolicyEvent)
+	rolesHierarchy := NewRoleHierarchyService(deps.Repo.RoleHierarchy)
+	roles := NewRolesService(&RoleDeps{
+		Repo:        deps.Repo.Roles,
+		Realms:      deps.Repo.Realms,
+		Hierarchy:   rolesHierarchy,
+		Permissions: perms,
+		EventBus:    updatePolicyEvent,
+		TM:          transaction,
+	})
+	users := NewUserService(deps.Repo.Users, transaction)
+	userRealms := NewUserRealmService(deps.Repo.UserRealms, transaction)
+
 	adapter := NewAdapter(&AdapterDeps{
 		Users:         users,
 		RoleHierarchy: rolesHierarchy,
@@ -54,7 +69,11 @@ func NewServices(deps *Deps) *Services {
 	categories := NewCategoryService(deps.Repo.Categories)
 	sites := NewSiteService(deps.Repo.Sites)
 	logs := NewActivityLogService(deps.Repo.ActivityLog, transaction)
-	tickets := NewTicketService(deps.Repo.Tickets, transaction, logs)
+	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs)
+	attachments := NewAttachmentService(deps.Repo.Attachments, &deps.conf.FileServer)
+	checklists := NewChecklistService(deps.Repo.Checklists, subtasks)
+	notifications := NewNotificationService(deps.Hub, deps.Repo.Notifications, deps.Repo.Tickets, transaction)
+	tickets := NewTicketService(deps.Repo.Tickets, transaction, logs, subtasks, attachments, notifications)
 
 	audit.StartListening(updatePolicyEvent)
 
@@ -70,6 +89,11 @@ func NewServices(deps *Deps) *Services {
 		Categories:    categories,
 		Sites:         sites,
 		Tickets:       tickets,
+		Subtasks:      subtasks,
+		Attachments:   attachments,
+		Checklists:    checklists,
+		Notifications: notifications,
 		ActivityLog:   logs,
+		UserRealms:    userRealms,
 	}
 }

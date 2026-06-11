@@ -17,6 +17,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport"
 	"github.com/Alexander272/IssueTrack/backend/pkg/database/postgres"
+	"github.com/Alexander272/IssueTrack/backend/pkg/limiter"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/Alexander272/IssueTrack/backend/pkg/ws_hub"
 	"github.com/subosito/gotenv"
@@ -24,10 +25,8 @@ import (
 
 func main() {
 	//* Init config
-	if os.Getenv("APP_ENV") == "" {
-		if err := gotenv.Load(".env"); err != nil {
-			log.Fatalf("error loading env variables: %s", err.Error())
-		}
+	if err := gotenv.Load(".env"); err != nil {
+		log.Printf("warning: error loading .env file: %s", err.Error())
 	}
 
 	conf, err := config.Init("configs/config.yaml")
@@ -101,18 +100,28 @@ func main() {
 
 	<-quit
 
+	logger.Info("Shutting down server...")
+
 	const timeout = 5 * time.Second
 
-	ctx, shutdown := context.WithTimeout(context.Background(), timeout)
+	shutdownCtx, shutdown := context.WithTimeout(context.Background(), timeout)
 	defer shutdown()
 
 	// if err := services.Scheduler.Stop(); err != nil {
 	// 	logger.Error("failed to stop scheduler.", logger.ErrAttr(err))
 	// }
 
-	if err := srv.Stop(ctx); err != nil {
+	if err := srv.Stop(shutdownCtx); err != nil {
 		logger.Error("failed to stop server:", logger.ErrAttr(err))
 	}
 
+	// Остановка всех rate limiter'ов
+	limiter.StopAll()
+
 	hub.Stop()
+
+	cancel()
+
+	db.Close()
+	logger.Info("Database connection closed")
 }

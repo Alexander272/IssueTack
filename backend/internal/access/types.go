@@ -10,6 +10,8 @@ const (
 	All    ActionCode = "*"
 )
 
+var AllActions = []ActionCode{Read, Write, Delete}
+
 type Permission struct {
 	Resource ResourceSlug `json:"resource"`
 	Action   ActionCode   `json:"action"`
