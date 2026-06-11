@@ -10,7 +10,7 @@ type User struct {
 	ID           uuid.UUID  `json:"id" db:"id"`
 	MattermostID *string    `json:"mattermostId" db:"mattermost_id"`
 	Email        string     `json:"email" db:"email"`
-	FullName     string     `json:"fullName" db:"full_name"`
+	Name         string     `json:"name" db:"name"`
 	SiteID       *uuid.UUID `json:"siteId" db:"site_id"`
 	CreatedAt    time.Time  `json:"createdAt" db:"created_at"`
 	UpdatedAt    time.Time  `json:"updatedAt" db:"updated_at"`
@@ -58,15 +58,23 @@ type UserData struct {
 }
 
 type UserDataDTO struct {
-	ID           string  `json:"id" db:"id"`
-	MattermostID *string `json:"mattermostId" db:"mattermost_id"`
-	Username     string  `json:"username" db:"username"`
-	FirstName    string  `json:"firstName" db:"first_name"`
-	LastName     string  `json:"lastName" db:"last_name"`
-	Email        string  `json:"email" db:"email"`
-	IsActive     bool    `json:"isActive" db:"is_active"`
+	ID           uuid.UUID `json:"id" db:"id"`
+	MattermostID *string   `json:"mattermostId" db:"mattermost_id"`
+	Username     string    `json:"username" db:"username"`
+	FirstName    string    `json:"firstName" db:"first_name"`
+	LastName     string    `json:"lastName" db:"last_name"`
+	Email        string    `json:"email" db:"email"`
+	IsActive     bool      `json:"isActive" db:"is_active"`
+	Actor        *Actor
 
 	Realms []*UserRealmDTO `json:"realms"`
+}
+
+type UpdateAccountDTO struct {
+	ID           uuid.UUID `json:"id"`
+	IsActive     bool      `json:"isActive"`
+	MattermostID *string   `json:"mattermostId"`
+	Actor        *Actor
 }
 
 type UserRole struct {

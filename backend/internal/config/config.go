@@ -9,10 +9,10 @@ import (
 
 type (
 	Config struct {
-		Environment string `yaml:"environment" env:"APP_ENV" env-default:"dev"`
-		LogLevel    string `yaml:"log_level" env-default:"info"`
-		LogSource   bool   `yaml:"log_source" env-default:"false"`
-		// Redis        RedisConfig
+		Environment   string           `yaml:"environment" env:"APP_ENV" env-default:"dev"`
+		LogLevel      string           `yaml:"log_level" env-default:"info"`
+		LogSource     bool             `yaml:"log_source" env-default:"false"`
+		Redis         RedisConfig      `yaml:"redis"`
 		Postgres      PostgresConfig   `yaml:"postgres"`
 		Auth          AuthConfig       `yaml:"auth"`
 		Keycloak      KeycloakConfig   `yaml:"keycloak"`
@@ -41,12 +41,12 @@ type (
 		MaxMessageSize     int64         `yaml:"max_message_size" env-default:"10240"`
 	}
 
-	// RedisConfig struct {
-	// 	Host     string `yaml:"host" env:"REDIS_HOST"`
-	// 	Port     string `yaml:"port" env:"REDIS_PORT"`
-	// 	DB       int    `yaml:"db" env:"REDIS_DB"`
-	// 	Password string `env:"REDIS_PASSWORD"`
-	// }
+	RedisConfig struct {
+		Host     string `yaml:"host" env:"REDIS_HOST"`
+		Port     string `yaml:"port" env:"REDIS_PORT"`
+		DB       int    `yaml:"db" env:"REDIS_DB"`
+		Password string `env:"REDIS_PASSWORD"`
+	}
 
 	PostgresConfig struct {
 		Host     string `yaml:"host" env:"POSTGRES_HOST"`
@@ -74,6 +74,7 @@ type (
 		Realm        string `yaml:"keycloak_realm" env:"KEYCLOAK_REALM"`
 		Root         string `env:"KEYCLOAK_ROOT"`
 		RootPass     string `env:"KEYCLOAK_ROOT_PASS"`
+		GroupName    string `yaml:"group_name" env:"KEYCLOAK_GROUP_NAME"`
 	}
 
 	LimiterConfig struct {

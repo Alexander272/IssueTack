@@ -24,35 +24,28 @@ func NewUserRepo(db *pgxpool.Pool, tr Transaction) *userRepo {
 }
 
 type Users interface {
-	LoadPolicy(ctx context.Context, req *models.GetPoliciesDTO) ([]*models.UserRole, error)
+	LoadPolicy(ctx context.Context) ([]*models.UserRole, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*models.UserData, error)
 	GetByLogin(ctx context.Context, login string) (*models.UserData, error)
 	GetAll(ctx context.Context) ([]*models.UserData, error)
 	CreateSeveral(ctx context.Context, tx Tx, dto []*models.UserDataDTO) error
 	Update(ctx context.Context, tx Tx, dto *models.UserDataDTO) error
 	UpdateSeveral(ctx context.Context, tx Tx, dto []*models.UserDataDTO) error
-	DeleteSeveral(ctx context.Context, tx Tx, ids []string) error
+	UpdateAccount(ctx context.Context, tx Tx, dto *models.UpdateAccountDTO) error
+	DeleteSeveral(ctx context.Context, tx Tx, ids []uuid.UUID) error
 }
 
-func (r *userRepo) LoadPolicy(ctx context.Context, req *models.GetPoliciesDTO) ([]*models.UserRole, error) {
-	condition := ""
-	args := make([]any, 0, 1)
-	if req.RealmId != "" {
-		condition = "AND ur.realm_id = $1"
-		args = append(args, req.RealmId)
-	}
-
+func (r *userRepo) LoadPolicy(ctx context.Context) ([]*models.UserRole, error) {
 	query := fmt.Sprintf(`SELECT u.id, r.slug, rl.code
 		FROM %s u
 		JOIN %s ur ON u.id = ur.user_id
 		JOIN %s r ON ur.role_id = r.id
 		JOIN %s rl ON ur.realm_id = rl.id
-		WHERE u.is_active = true AND rl.is_active = true
-		%s`,
-		Tables.Users, Tables.UserRealms, Tables.Roles, Tables.Realms, condition,
+		WHERE u.is_active = true AND rl.is_active = true`,
+		Tables.Users, Tables.UserRealms, Tables.Roles, Tables.Realms,
 	)
 
-	rows, err := r.db.Query(ctx, query, args...)
+	rows, err := r.db.Query(ctx, query)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -184,7 +177,7 @@ func scanUserRows(rows pgx.Rows) ([]*pq_models.User, error) {
 			&item.UserRealmId, &item.IsActive,
 			&item.RoleId, &item.RoleName, &item.RoleDescription, &item.RoleLevel,
 			&item.RoleIsActive, &item.RoleIsEditable, &item.RoleSlug,
-			&item.RealmId, 		&item.RealmName, &item.RealmDescription, &item.RealmIsActive,
+			&item.RealmId, &item.RealmName, &item.RealmDescription, &item.RealmIsActive,
 			&item.RealmCreatedAt,
 		); err != nil {
 			return nil, MapError(fmt.Errorf("scan row error: %w", err))
@@ -287,7 +280,7 @@ func (r *userRepo) CreateSeveral(ctx context.Context, tx Tx, dto []*models.UserD
 			v.FirstName,
 			v.LastName,
 			v.Email,
-			true,
+			v.IsActive,
 		}
 	}
 
@@ -311,12 +304,7 @@ func (r *userRepo) Update(ctx context.Context, tx Tx, dto *models.UserDataDTO) e
 		Tables.Users,
 	)
 
-	id, err := uuid.Parse(dto.ID)
-	if err != nil {
-		return fmt.Errorf("invalid user id: %w", err)
-	}
-
-	_, err = r.getExec(tx).Exec(ctx, query, dto.Username, dto.Email, dto.FirstName, dto.LastName, dto.IsActive, id)
+	_, err := r.getExec(tx).Exec(ctx, query, dto.Username, dto.Email, dto.FirstName, dto.LastName, dto.IsActive, dto.ID)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -329,17 +317,17 @@ func (r *userRepo) UpdateSeveral(ctx context.Context, tx Tx, dto []*models.UserD
 	}
 
 	n := len(dto)
+	ids := make([]uuid.UUID, n)
 	usernames := make([]string, n)
 	emails := make([]string, n)
-	ssoIds := make([]string, n)
 	firstNames := make([]string, n)
 	lastNames := make([]string, n)
 	isActives := make([]bool, n)
 
 	for i, v := range dto {
+		ids[i] = v.ID
 		usernames[i] = v.Username
 		emails[i] = v.Email
-		ssoIds[i] = v.ID
 		firstNames[i] = v.FirstName
 		lastNames[i] = v.LastName
 		isActives[i] = v.IsActive
@@ -361,24 +349,44 @@ func (r *userRepo) UpdateSeveral(ctx context.Context, tx Tx, dto []*models.UserD
 				$4::text[],
 				$5::bool[],
 				$6::text[]
-			) AS s(username, email, first_name, last_name, is_active, sso_id)
+			) AS s(username, email, first_name, last_name, is_active, id)
 		) AS s
-		WHERE t.sso_id = s.sso_id`,
+		WHERE t.id = s.id`,
 		Tables.Users,
 	)
 
-	_, err := r.getExec(tx).Exec(ctx, query, usernames, emails, firstNames, lastNames, isActives, ssoIds)
+	_, err := r.getExec(tx).Exec(ctx, query, usernames, emails, firstNames, lastNames, isActives, ids)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute bulk update: %w", err))
 	}
 	return nil
 }
 
-func (r *userRepo) DeleteSeveral(ctx context.Context, tx Tx, ids []string) error {
+func (r *userRepo) UpdateAccount(ctx context.Context, tx Tx, dto *models.UpdateAccountDTO) error {
+	// Если mattermostID == nil, то COALESCE($2, mattermost_id) оставит старое значение.
+	// Если mattermostID передан, NULLIF($2, '') превратит пустую строку в NULL.
+	query := fmt.Sprintf(`
+		UPDATE %s
+		SET is_active = $1,
+		    mattermost_id = CASE WHEN $2 IS NULL THEN mattermost_id ELSE NULLIF($2, '') END,
+		    updated_at = now()
+		WHERE id = $3`,
+		Tables.Users,
+	)
+
+	// Передаем указатель напрямую. Драйвер сам преобразует nil в SQL NULL, а *string в text.
+	_, err := r.getExec(tx).Exec(ctx, query, dto.IsActive, dto.MattermostID, dto.ID)
+	if err != nil {
+		return MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	return nil
+}
+
+func (r *userRepo) DeleteSeveral(ctx context.Context, tx Tx, ids []uuid.UUID) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	query := fmt.Sprintf(`DELETE FROM %s WHERE sso_id = ANY($1)`, Tables.Users)
+	query := fmt.Sprintf(`DELETE FROM %s WHERE id = ANY($1)`, Tables.Users)
 
 	if _, err := r.getExec(tx).Exec(ctx, query, ids); err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))

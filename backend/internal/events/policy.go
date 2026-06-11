@@ -27,12 +27,42 @@ type PolicyEvent struct {
 	NewValues     json.RawMessage `json:"newValues" db:"new_values"`
 }
 
+func (e *PolicyEvent) SetOldValues(v any) error {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	e.OldValues = data
+	return nil
+}
+
+func (e *PolicyEvent) SetNewValues(v any) error {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	e.NewValues = data
+	return nil
+}
+
 func (m *PolicyEventManager) Subscribe() PolicyUpdateListener {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	ch := make(PolicyUpdateListener, 1)
 	m.listeners = append(m.listeners, ch)
 	return ch
+}
+
+func (m *PolicyEventManager) Unsubscribe(ch PolicyUpdateListener) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, l := range m.listeners {
+		if l == ch {
+			close(ch)
+			m.listeners = append(m.listeners[:i], m.listeners[i+1:]...)
+			break
+		}
+	}
 }
 
 func (m *PolicyEventManager) Notify(event PolicyEvent) {
@@ -49,5 +79,8 @@ func (m *PolicyEventManager) Notify(event PolicyEvent) {
 func (m *PolicyEventManager) Close() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	for _, ch := range m.listeners {
+		close(ch)
+	}
 	m.listeners = nil
 }

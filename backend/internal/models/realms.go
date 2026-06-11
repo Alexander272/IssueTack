@@ -45,14 +45,14 @@ type UserRealm struct {
 }
 
 type UserRealmDTO struct {
-	ID        string `json:"id" db:"id"`
-	UserID    string `json:"userId" db:"user_id" binding:"required"`
-	RealmID   string `json:"realmId" db:"realm_id" binding:"required"`
-	RoleID    string `json:"roleId" db:"role_id" binding:"required"`
-	IsActive  bool   `json:"isActive" db:"is_active"`
-	CreatedAt string `json:"createdAt" db:"created_at"`
+	ID        uuid.UUID  `json:"id" db:"id"`
+	UserID    uuid.UUID  `json:"userId" db:"user_id" binding:"required"`
+	RealmID   uuid.UUID  `json:"realmId" db:"realm_id" binding:"required"`
+	RoleID    *uuid.UUID `json:"roleId" db:"role_id" binding:"required"`
+	IsActive  bool       `json:"isActive" db:"is_active"`
+	CreatedAt string     `json:"createdAt" db:"created_at"`
 }
 
 type UserRealmsDTO struct {
-	UserID string `json:"userId" db:"user_id" binding:"required"`
+	UserID uuid.UUID `json:"userId" db:"user_id" binding:"required"`
 }

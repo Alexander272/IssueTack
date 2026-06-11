@@ -23,7 +23,7 @@ func NewPermissionRepo(db *pgxpool.Pool, tr Transaction) *PermissionRepo {
 }
 
 type Permissions interface {
-	LoadPolicy(ctx context.Context, req *models.GetPoliciesDTO) ([]*models.Permission, error)
+	LoadPolicy(ctx context.Context) ([]*models.Permission, error)
 	Sync(ctx context.Context, tx Tx, dto []*models.PermissionDTO) error
 	GetById(ctx context.Context, id uuid.UUID) (*models.Permission, error)
 	GetAll(ctx context.Context) ([]*models.Permission, error)
@@ -38,21 +38,13 @@ type Permissions interface {
 	DeleteByKeys(ctx context.Context, tx Tx, dto []*models.PermissionDTO) error
 }
 
-func (r *PermissionRepo) LoadPolicy(ctx context.Context, req *models.GetPoliciesDTO) ([]*models.Permission, error) {
-	condition := ""
-	args := make([]any, 0, 1)
-	if req.RealmId != "" {
-		condition = "WHERE d.realm_id = $1"
-		args = append(args, req.RealmId)
-	}
-
+func (r *PermissionRepo) LoadPolicy(ctx context.Context) ([]*models.Permission, error) {
 	query := fmt.Sprintf(`SELECT r.slug, d.code, p.object, p.action
 		FROM %s rp
 		JOIN %s r ON r.id = rp.role_id
 		JOIN %s d ON d.id = r.realm_id
-		JOIN %s p ON p.id = rp.permission_id
-		%s`,
-		Tables.RolePermissions, Tables.Roles, Tables.Realms, Tables.Permissions, condition,
+		JOIN %s p ON p.id = rp.permission_id`,
+		Tables.RolePermissions, Tables.Roles, Tables.Realms, Tables.Permissions,
 	)
 
 	rows, err := r.db.Query(ctx, query)

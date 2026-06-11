@@ -1,7 +1,10 @@
 package repository
 
 import (
+	"github.com/Alexander272/IssueTrack/backend/internal/config"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
+	redis_repo "github.com/Alexander272/IssueTrack/backend/internal/repository/redis"
+	"github.com/go-redis/redis/v8"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -29,6 +32,10 @@ type Users interface {
 }
 type UserRealms interface {
 	postgres.UserRealms
+}
+
+type SessionCache interface {
+	redis_repo.SessionCache
 }
 
 type Groups interface {
@@ -68,6 +75,7 @@ type Repository struct {
 	AuditLogs
 	Users
 	UserRealms
+	SessionCache
 	Groups
 	Categories
 	Sites
@@ -79,7 +87,7 @@ type Repository struct {
 	Notifications
 }
 
-func NewRepository(pool *pgxpool.Pool) *Repository {
+func NewRepository(pool *pgxpool.Pool, memDB *redis.Client, conf config.AuthConfig) *Repository {
 	transaction := postgres.NewTransactionRepo(pool)
 
 	return &Repository{
@@ -91,6 +99,9 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 		AuditLogs:     postgres.NewAuditRepo(pool, transaction),
 		Users:         postgres.NewUserRepo(pool, transaction),
 		UserRealms:    postgres.NewUserRealmRepo(pool, transaction),
+
+		SessionCache: redis_repo.NewSessionCacheRepo(memDB, conf.AccessTokenTTL),
+
 		Groups:        postgres.NewGroupRepo(pool),
 		Categories:    postgres.NewCategoryRepo(pool),
 		Sites:         postgres.NewSiteRepo(pool),

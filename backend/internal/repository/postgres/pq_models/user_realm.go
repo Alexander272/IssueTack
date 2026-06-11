@@ -1,12 +1,16 @@
 package pq_models
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type UserRealm struct {
-	Id               string    `json:"id" db:"id"`
-	UserId           string    `json:"userId" db:"user_id"`
-	RealmId          string    `json:"realmId" db:"realm_id"`
-	RoleId           string    `json:"roleId" db:"role_id"`
+	ID               uuid.UUID `json:"id" db:"id"`
+	UserID           uuid.UUID `json:"userId" db:"user_id"`
+	RealmID          uuid.UUID `json:"realmId" db:"realm_id"`
+	RoleID           uuid.UUID `json:"roleId" db:"role_id"`
 	IsActive         bool      `json:"isActive" db:"is_active"`
 	RoleSlug         string    `json:"roleSlug" db:"role_slug"`
 	RoleName         string    `json:"roleName" db:"role_name"`

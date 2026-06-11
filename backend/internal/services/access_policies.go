@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"slices"
@@ -22,6 +23,7 @@ type PoliciesDeps struct {
 	Conf     config.CasbinConfig
 	Adapter  Adapter
 	EventBus *events.PolicyEventManager
+	Cache    SessionCacher
 }
 
 func NewAccessPoliciesService(deps *PoliciesDeps) *accessPolicesService {
@@ -37,13 +39,16 @@ func NewAccessPoliciesService(deps *PoliciesDeps) *accessPolicesService {
 	s := &accessPolicesService{
 		enforcer: enforcer,
 		adapter:  deps.Adapter,
+		eventBus: deps.EventBus,
 	}
 
+	updateChan := deps.EventBus.Subscribe()
 	go func() {
-		updateChan := deps.EventBus.Subscribe()
+		defer deps.EventBus.Unsubscribe(updateChan)
 		for range updateChan {
 			logger.Info("Received policy update event, reloading...")
 			s.enforcer.LoadPolicy()
+			deps.Cache.Flush(context.Background())
 		}
 	}()
 

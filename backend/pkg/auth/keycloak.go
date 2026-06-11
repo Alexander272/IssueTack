@@ -12,6 +12,7 @@ type KeycloakClient struct {
 	ClientId     string           // clientId specified in Keycloak
 	ClientSecret string           // client secret specified in Keycloak
 	Realm        string           // realm specified in Keycloak
+	GroupName    string           // group name for user sync
 	adminName    string
 	adminPass    string
 }
@@ -20,6 +21,7 @@ type Deps struct {
 	Url       string
 	ClientId  string
 	Realm     string
+	GroupName string
 	AdminName string
 	AdminPass string
 }
@@ -50,6 +52,7 @@ func NewKeycloakClient(deps *Deps) *KeycloakClient {
 		ClientId:     deps.ClientId,
 		ClientSecret: secret,
 		Realm:        deps.Realm,
+		GroupName:    deps.GroupName,
 		adminName:    deps.AdminName,
 		adminPass:    deps.AdminPass,
 	}

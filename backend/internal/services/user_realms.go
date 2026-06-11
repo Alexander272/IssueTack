@@ -7,6 +7,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
+	"github.com/google/uuid"
 )
 
 type UserRealmService struct {
@@ -23,12 +24,12 @@ func NewUserRealmService(repo repository.UserRealms, txManager TransactionManage
 
 type UserRealms interface {
 	GetAll(ctx context.Context) ([]*models.UserRealm, error)
-	GetByUserId(ctx context.Context, userId string) ([]*models.UserRealm, error)
+	GetByUserID(ctx context.Context, userID uuid.UUID) ([]*models.UserRealm, error)
 	Create(ctx context.Context, tx postgres.Tx, dto *models.UserRealmDTO) error
 	CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserRealmDTO) error
 	Update(ctx context.Context, tx postgres.Tx, dto *models.UserRealmDTO) error
 	UpdateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserRealmDTO) error
-	Delete(ctx context.Context, tx postgres.Tx, userId, realmId string) error
+	Delete(ctx context.Context, tx postgres.Tx, userID, realmID uuid.UUID) error
 	DeleteSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserRealmDTO) error
 }
 
@@ -40,8 +41,8 @@ func (s *UserRealmService) GetAll(ctx context.Context) ([]*models.UserRealm, err
 	return data, nil
 }
 
-func (s *UserRealmService) GetByUserId(ctx context.Context, userId string) ([]*models.UserRealm, error) {
-	data, err := s.repo.GetByUserId(ctx, userId)
+func (s *UserRealmService) GetByUserID(ctx context.Context, userID uuid.UUID) ([]*models.UserRealm, error) {
+	data, err := s.repo.GetByUserID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user realms by user id. error: %w", err)
 	}
@@ -112,16 +113,16 @@ func (s *UserRealmService) UpdateSeveral(ctx context.Context, tx postgres.Tx, dt
 	})
 }
 
-func (s *UserRealmService) Delete(ctx context.Context, tx postgres.Tx, userId, realmId string) error {
+func (s *UserRealmService) Delete(ctx context.Context, tx postgres.Tx, userID, realmID uuid.UUID) error {
 	if tx != nil {
-		if err := s.repo.DeleteByUserAndRealm(ctx, tx, userId, realmId); err != nil {
+		if err := s.repo.DeleteByUserAndRealm(ctx, tx, userID, realmID); err != nil {
 			return fmt.Errorf("failed to delete user realm. error: %w", err)
 		}
 		return nil
 	}
 
 	return s.txManager.WithinTransaction(ctx, func(tx postgres.Tx) error {
-		if err := s.repo.DeleteByUserAndRealm(ctx, tx, userId, realmId); err != nil {
+		if err := s.repo.DeleteByUserAndRealm(ctx, tx, userID, realmID); err != nil {
 			return fmt.Errorf("failed to delete user realm. error: %w", err)
 		}
 		return nil

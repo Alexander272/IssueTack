@@ -1,67 +1,54 @@
 package middleware
 
-// func (m *Middleware) CheckPermissions(required ...access.Permission) gin.HandlerFunc {
-// 	return func(c *gin.Context) {
-// 		realm := c.GetHeader("realm")
+import (
+	"fmt"
 
-// 		u, exists := c.Get(constants.CtxUser)
-// 		if !exists {
-// 			response.NewErrorResponse(c, http.StatusUnauthorized, "empty user", "сессия не найдена")
-// 			c.Abort()
-// 			return
-// 		}
+	"github.com/Alexander272/IssueTrack/backend/internal/access"
+	"github.com/Alexander272/IssueTrack/backend/internal/constants"
+	"github.com/Alexander272/IssueTrack/backend/internal/models"
+	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
+	"github.com/gin-gonic/gin"
+)
 
-// 		user := u.(models.User)
+func (m *Middleware) CheckPermissions(required ...access.Permission) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		u, exists := c.Get(constants.CtxUser)
+		if !exists {
+			response.SendError(c, models.ErrSessionEmpty)
+			return
+		}
+		user := u.(models.User)
 
-// 		for _, r := range required {
-// 	if _, ok := userPerms["*"]; ok {
-// 	c.Next()
-// 	return
-// }
+		var accessAllowed bool
+		var lastErr error
 
-// 			ok, err := m.services.Permission.Enforce(
-// 				user.ID,
-// 				realm,
-// 				string(r.Resource),
-// 				string(r.Action),
-// 			)
+		realmId := c.GetHeader("realm")
+		if realmId == "" {
+			realmId = c.Query("realm")
+		}
 
-// 			if err != nil || !ok {
-// 				c.AbortWithStatus(http.StatusForbidden)
-// 				return
-// 			}
-// 		}
+		for _, r := range required {
+			ok, err := m.services.AccessPolices.Enforce(user.ID.String(), realmId, string(r.Resource), string(r.Action))
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			if ok {
+				accessAllowed = true
+				break
+			}
+		}
 
-// 		// 🔥 ВАЖНО: теперь используем Key()
-// 		accessAllowed, err := m.services.Permission.Enforce(
-// 			user.ID,
-// 			realm,
-// 			string(required.Resource), // было menuItem
-// 			string(required.Action),   // было method
-// 		)
+		if lastErr != nil && !accessAllowed {
+			response.SendError(c, fmt.Errorf("%w: %v", models.ErrPolicyCheck, lastErr))
+			return
+		}
 
-// 		if err != nil {
-// 			response.NewErrorResponse(
-// 				c,
-// 				http.StatusInternalServerError,
-// 				err.Error(),
-// 				"Произошла ошибка: "+err.Error(),
-// 			)
-// 			c.Abort()
-// 			return
-// 		}
+		if !accessAllowed {
+			response.SendError(c, models.ErrPermissionDenied)
+			return
+		}
 
-// 		if !accessAllowed {
-// 			response.NewErrorResponse(
-// 				c,
-// 				http.StatusForbidden,
-// 				"forbidden",
-// 				"недостаточно прав",
-// 			)
-// 			c.Abort()
-// 			return
-// 		}
-
-// 		c.Next()
-// 	}
-// }
+		c.Next()
+	}
+}

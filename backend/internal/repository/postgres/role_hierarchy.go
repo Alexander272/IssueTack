@@ -23,15 +23,42 @@ func NewRoleHierarchyRepo(db *pgxpool.Pool, tr Transaction) *RoleHierarchyRepo {
 }
 
 type RoleHierarchy interface {
+	LoadPolicy(ctx context.Context) ([]*models.SyncRoleInheritance, error)
 	GetInheritedRoles(ctx context.Context, req *models.GetRolesInheritance) (map[string][]string, error)
 	GetRoleDescendants(ctx context.Context, req *models.GetRolesInheritance) (map[string][]string, error)
 	GetDirectChildren(ctx context.Context, req *models.GetRolesInheritance) (map[string][]string, error)
 	SyncRoleInheritance(ctx context.Context, req *models.GetRoleInheritance) ([]*models.SyncRoleInheritance, error)
-	LoadPolicy(ctx context.Context, req *models.GetPoliciesDTO) ([]*models.SyncRoleInheritance, error)
 	AddInheritance(ctx context.Context, tx Tx, dto *models.RoleHierarchyDTO) error
 	AddInheritances(ctx context.Context, tx Tx, realmID uuid.UUID, roleID uuid.UUID, parentRoleIDs []uuid.UUID) error
 	RemoveInheritance(ctx context.Context, tx Tx, dto *models.RoleHierarchyDTO) error
 	RemoveInheritances(ctx context.Context, tx Tx, roleID uuid.UUID, parentRoleIDs []uuid.UUID) error
+}
+
+func (r *RoleHierarchyRepo) LoadPolicy(ctx context.Context) ([]*models.SyncRoleInheritance, error) {
+	query := fmt.Sprintf(`SELECT r1.slug, r2.slug, rh.realm_id
+        FROM %s rh
+        JOIN %s r1 ON rh.role_id = r1.id
+        JOIN %s r2 ON rh.parent_role_id = r2.id
+        WHERE r2.is_active = true`,
+		Tables.RoleHierarchy, Tables.Roles, Tables.Roles,
+	)
+
+	rows, err := r.db.Query(ctx, query)
+	if err != nil {
+		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	defer rows.Close()
+	data := make([]*models.SyncRoleInheritance, 0, 5)
+
+	for rows.Next() {
+		item := &models.SyncRoleInheritance{}
+		if err := rows.Scan(&item.Role, &item.ParentRole, &item.Realm); err != nil {
+			return nil, MapError(fmt.Errorf("scan row error: %w", err))
+		}
+		data = append(data, item)
+	}
+
+	return data, nil
 }
 
 func (r *RoleHierarchyRepo) GetInheritedRoles(ctx context.Context, req *models.GetRolesInheritance) (map[string][]string, error) {
@@ -207,42 +234,6 @@ func (r *RoleHierarchyRepo) GetDirectChildren(ctx context.Context, req *models.G
 	}
 
 	return result, nil
-}
-
-func (r *RoleHierarchyRepo) LoadPolicy(ctx context.Context, req *models.GetPoliciesDTO) ([]*models.SyncRoleInheritance, error) {
-	condition := ""
-	args := make([]any, 0, 1)
-	if req.RealmId != "" {
-		condition = "rh.realm_id = $1 AND"
-		args = append(args, req.RealmId)
-	}
-
-	query := fmt.Sprintf(`SELECT r1.slug, r2.slug, rh.realm_id
-        FROM %s rh
-        JOIN %s r1 ON rh.role_id = r1.id
-        JOIN %s r2 ON rh.parent_role_id = r2.id
-        WHERE %s r2.is_active = true`,
-		Tables.RoleHierarchy, Tables.Roles, Tables.Roles, condition,
-	)
-
-	rows, err := r.db.Query(ctx, query, args...)
-	if err != nil {
-		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
-	}
-	defer rows.Close()
-	data := make([]*models.SyncRoleInheritance, 0, 5)
-
-	for rows.Next() {
-		item := &models.SyncRoleInheritance{}
-		if err := rows.Scan(&item.Role, &item.ParentRole, &item.Realm); err != nil {
-			return nil, MapError(fmt.Errorf("scan row error: %w", err))
-		}
-		// // g(дочерняя_роль, родительская_роль, домен)
-		// casbin.AddGroupingPolicy(roleCode, parentCode, domain)
-		data = append(data, item)
-	}
-
-	return data, nil
 }
 
 func (r *RoleHierarchyRepo) AddInheritance(ctx context.Context, tx Tx, dto *models.RoleHierarchyDTO) error {

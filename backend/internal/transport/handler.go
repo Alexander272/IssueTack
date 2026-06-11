@@ -8,14 +8,15 @@ import (
 	"net/http"
 	"path"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/config"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/ws"
+	"github.com/Alexander272/IssueTrack/backend/pkg/acceptencoding"
 	"github.com/Alexander272/IssueTrack/backend/pkg/auth"
 	"github.com/Alexander272/IssueTrack/backend/pkg/limiter"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
@@ -96,7 +97,7 @@ func (h *Handler) ErrorHandler(c *gin.Context, origErr any) {
 }
 
 func (h *Handler) initAPI(router *gin.Engine, conf *config.Config) {
-	// middleware := middleware.NewMiddleware(h.services, conf.Auth, h.keycloak)
+	mw := middleware.NewMiddleware(h.services, &conf.Auth, h.keycloak)
 	// handler := handlers.NewHandler(&handlers.Deps{Services: h.services, Conf: conf, Middleware: middleware})
 	// handler := handlers.NewHandler(&handlers.Deps{Services: h.services, Conf: conf, Hub: h.hub})
 	wsHandler := ws.NewWsHandler(h.hub, h.services, conf.Http.AllowedOrigins)
@@ -109,7 +110,7 @@ func (h *Handler) initAPI(router *gin.Engine, conf *config.Config) {
 		c.String(http.StatusOK, "pong")
 	})
 
-	api.GET("/ws", func(c *gin.Context) {
+	api.GET("/ws", mw.VerifyToken, func(c *gin.Context) {
 		wsHandler.HandleWS(c)
 	})
 }
@@ -155,7 +156,7 @@ func (h *Handler) initStatic(router *gin.Engine, conf *config.Config) {
 		var f fs.File
 		var err error
 		openPath := frontendRoot + "/" + filePath
-		encoding := negotiateEncoding(c.Request.Header.Get("Accept-Encoding"))
+		encoding := acceptencoding.Negotiate(c.Request.Header.Get("Accept-Encoding"))
 
 		if encoding == "br" {
 			f, err = web.Frontend.Open(openPath + ".br")
@@ -200,91 +201,4 @@ func (h *Handler) initStatic(router *gin.Engine, conf *config.Config) {
 			io.Copy(c.Writer, f)
 		}
 	})
-}
-
-// negotiateEncoding parses Accept-Encoding and returns the best compression
-// we can offer: "br", "gzip", or "" (no compression).
-func negotiateEncoding(header string) string {
-	if header == "" {
-		return ""
-	}
-
-	type item struct {
-		name    string
-		quality float64
-	}
-	var preferred []item
-	excluded := map[string]bool{}
-
-	for _, field := range strings.Split(header, ",") {
-		enc, q := parseEncodingField(field)
-		if enc == "" {
-			continue
-		}
-		if q == 0 {
-			if enc == "identity" || enc == "*" {
-				return ""
-			}
-			excluded[enc] = true
-			continue
-		}
-		if enc == "br" || enc == "gzip" || enc == "*" {
-			preferred = append(preferred, item{enc, q})
-		}
-	}
-
-	bestQ := 0.0
-	best := ""
-	for _, it := range preferred {
-		enc := resolveEncoding(it.name, excluded)
-		if enc == "" {
-			continue
-		}
-		if it.quality > bestQ || (it.quality == bestQ && enc == "br" && best != "br") {
-			best, bestQ = enc, it.quality
-		}
-	}
-	return best
-}
-
-func parseEncodingField(field string) (name string, quality float64) {
-	field = strings.TrimSpace(field)
-	if field == "" {
-		return "", 0
-	}
-	quality = 1.0
-
-	idx := strings.IndexByte(field, ';')
-	if idx == -1 {
-		return field, quality
-	}
-
-	name = strings.TrimSpace(field[:idx])
-	rest := field[idx+1:]
-	if qi := strings.Index(rest, "q="); qi != -1 {
-		qStr := strings.TrimSpace(rest[qi+2:])
-		if end := strings.IndexByte(qStr, ';'); end != -1 {
-			qStr = strings.TrimSpace(qStr[:end])
-		}
-		if parsed, err := strconv.ParseFloat(qStr, 64); err == nil {
-			quality = parsed
-		}
-	}
-	return name, quality
-}
-
-func resolveEncoding(name string, excluded map[string]bool) string {
-	if name == "*" {
-		if !excluded["gzip"] {
-			return "gzip"
-		}
-		if !excluded["br"] {
-			return "br"
-		}
-		return ""
-	}
-	if excluded[name] {
-		return ""
-	}
-	return name
 }

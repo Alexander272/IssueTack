@@ -21,14 +21,22 @@ func NewRoleHierarchyService(repo repository.RoleHierarchy) *RoleHierarchyServic
 }
 
 type RoleHierarchy interface {
+	LoadPolicy(ctx context.Context) ([]*models.SyncRoleInheritance, error)
 	GetInheritedRoles(ctx context.Context, req *models.GetRolesInheritance) (map[string][]string, error)
 	GetRoleDescendants(ctx context.Context, req *models.GetRolesInheritance) (map[string][]string, error)
 	GetDirectChildren(ctx context.Context, req *models.GetRolesInheritance) (map[string][]string, error)
-	LoadPolicy(ctx context.Context, req *models.GetPoliciesDTO) ([]*models.SyncRoleInheritance, error)
 	AddInheritance(ctx context.Context, tx postgres.Tx, dto *models.RoleHierarchyDTO) error
 	AddInheritances(ctx context.Context, tx postgres.Tx, realmID uuid.UUID, roleID uuid.UUID, parentRoleIDs []uuid.UUID) error
 	RemoveInheritance(ctx context.Context, tx postgres.Tx, dto *models.RoleHierarchyDTO) error
 	RemoveInheritances(ctx context.Context, tx postgres.Tx, roleID uuid.UUID, parentRoleIDs []uuid.UUID) error
+}
+
+func (s *RoleHierarchyService) LoadPolicy(ctx context.Context) ([]*models.SyncRoleInheritance, error) {
+	data, err := s.repo.LoadPolicy(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load policy: %w", err)
+	}
+	return data, nil
 }
 
 func (s *RoleHierarchyService) GetDirectChildren(ctx context.Context, req *models.GetRolesInheritance) (map[string][]string, error) {
@@ -59,14 +67,6 @@ func (s *RoleHierarchyService) SyncRoleInheritance(ctx context.Context, req *mod
 	data, err := s.repo.SyncRoleInheritance(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sync role inheritance: %w", err)
-	}
-	return data, nil
-}
-
-func (s *RoleHierarchyService) LoadPolicy(ctx context.Context, req *models.GetPoliciesDTO) ([]*models.SyncRoleInheritance, error) {
-	data, err := s.repo.LoadPolicy(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load policy: %w", err)
 	}
 	return data, nil
 }

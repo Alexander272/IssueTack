@@ -5,16 +5,17 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Alexander272/IssueTrack/backend/internal/constants"
+	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
 	"github.com/Alexander272/IssueTrack/backend/pkg/ws_hub"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
 type WsHandler struct {
-	hub           *ws_hub.Hub
-	services      *services.Services
+	hub            *ws_hub.Hub
+	services       *services.Services
 	allowedOrigins map[string]struct{}
 }
 
@@ -49,15 +50,14 @@ func (h *WsHandler) upgrader() *websocket.Upgrader {
 }
 
 func (h *WsHandler) HandleWS(c *gin.Context) {
-	userIDStr := c.Query("token")
-	if userIDStr == "" {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing token"})
+	u, exists := c.Get(constants.CtxUser)
+	if !exists {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
-
-	userID, err := uuid.Parse(userIDStr)
-	if err != nil {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+	user, ok := u.(models.User)
+	if !ok {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid user context"})
 		return
 	}
 
@@ -68,8 +68,8 @@ func (h *WsHandler) HandleWS(c *gin.Context) {
 	}
 
 	client := ws_hub.NewClient(conn, h.hub)
-	client.UserID = userID
-	client.Subscribe("user:" + userID.String())
+	client.UserID = user.ID
+	client.Subscribe("user:" + user.ID.String())
 
 	if err := h.services.Notifications.SendUnread(c.Request.Context(), client); err != nil {
 		log.Printf("failed to send unread notifications: %v", err)

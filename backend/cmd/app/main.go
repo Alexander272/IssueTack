@@ -16,7 +16,9 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/server"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport"
+	"github.com/Alexander272/IssueTrack/backend/pkg/auth"
 	"github.com/Alexander272/IssueTrack/backend/pkg/database/postgres"
+	"github.com/Alexander272/IssueTrack/backend/pkg/database/redis"
 	"github.com/Alexander272/IssueTrack/backend/pkg/limiter"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/Alexander272/IssueTrack/backend/pkg/ws_hub"
@@ -51,6 +53,25 @@ func main() {
 		log.Fatalf("failed to migrate: %s", err.Error())
 	}
 
+	memDb, err := redis.NewRedisClient(&redis.Config{
+		Host:     conf.Redis.Host,
+		Port:     conf.Redis.Port,
+		Password: conf.Redis.Password,
+		DB:       conf.Redis.DB,
+	})
+	if err != nil {
+		log.Fatalf("failed to initialize redis: %s", err.Error())
+	}
+
+	keycloak := auth.NewKeycloakClient(&auth.Deps{
+		Url:       conf.Keycloak.Url,
+		ClientId:  conf.Keycloak.ClientId,
+		Realm:     conf.Keycloak.Realm,
+		GroupName: conf.Keycloak.GroupName,
+		AdminName: conf.Keycloak.Root,
+		AdminPass: conf.Keycloak.RootPass,
+	})
+
 	// Контекст для управления всеми фоновыми процессами
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -59,15 +80,13 @@ func main() {
 	go hub.Run(ctx)
 
 	//* Services, Repos & API Handlers
-	repo := repository.NewRepository(db)
+	repo := repository.NewRepository(db, memDb, conf.Auth)
 	service := services.NewServices(&services.Deps{
-		Repo: repo,
-		Hub:  hub,
-		// Keycloak:      keycloak,
-		// MostClient:    mostClient,
-		// CheckUsedConf: conf.Notification.CheckUsed,
-		// Adapter:       adapter,
-		// BotUrl:   conf.Bot.Url,
+		Ctx:      ctx,
+		Conf:     conf,
+		Repo:     repo,
+		Hub:      hub,
+		Keycloak: keycloak,
 	})
 
 	handlers := transport.NewHandler(nil, service, hub)

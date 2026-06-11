@@ -35,7 +35,7 @@ func NewPermissionService(repo repository.Permissions, tm TransactionManager, ev
 }
 
 type Permissions interface {
-	LoadPolicy(ctx context.Context, req *models.GetPoliciesDTO) ([]*models.Permission, error)
+	LoadPolicy(ctx context.Context) ([]*models.Permission, error)
 	GetResources(ctx context.Context) []access.Resource
 	GetAll(ctx context.Context) ([]*models.Permission, error)
 	GetGrouped(ctx context.Context) ([]*models.GroupedPermission, error)
@@ -49,8 +49,8 @@ type Permissions interface {
 	Delete(ctx context.Context, tx postgres.Tx, dto *models.DeletePermissionDTO) error
 }
 
-func (s *PermissionService) LoadPolicy(ctx context.Context, req *models.GetPoliciesDTO) ([]*models.Permission, error) {
-	data, err := s.repo.LoadPolicy(ctx, req)
+func (s *PermissionService) LoadPolicy(ctx context.Context) ([]*models.Permission, error) {
+	data, err := s.repo.LoadPolicy(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load policy: %w", err)
 	}
