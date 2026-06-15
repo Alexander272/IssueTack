@@ -71,7 +71,7 @@ func (r *activityRepository) Get(ctx context.Context, req *models.GetLogsDTO) ([
 			&item.ID, &item.Action, &item.ChangedBy, &item.ChangedByName,
 			&item.EntityType, &item.EntityID, &item.Entity, &item.ParentID,
 			&item.RealmID, &item.RealmName,
-			&item.OldValue, &item.NewValue, &item.CreatedAt,
+			&item.OldValues, &item.NewValues, &item.CreatedAt,
 		); err != nil {
 			return nil, MapError(fmt.Errorf("scan row error: %w", err))
 		}
@@ -107,8 +107,8 @@ func (r *activityRepository) Create(ctx context.Context, tx Tx, dto []*models.Ac
 			v.ParentID,
 			v.RealmID,
 			v.RealmName,
-			v.OldValue,
-			v.NewValue,
+			v.OldValues,
+			v.NewValues,
 		}
 	}
 

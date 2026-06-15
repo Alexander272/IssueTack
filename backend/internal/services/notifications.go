@@ -30,20 +30,20 @@ func NewNotificationService(hub *ws_hub.Hub, repo repository.Notifications, tick
 }
 
 type Notifications interface {
-	TicketCreated(ctx context.Context, ticket *models.Ticket) error
+	TicketCreated(ctx context.Context, dto *models.TicketDTO) error
 	TicketUpdated(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID, changes []*models.FieldChange) error
-	TicketDeleted(ctx context.Context, ticketID uuid.UUID) error
+	TicketDeleted(ctx context.Context, ticket *models.Ticket) error
 	SendUnread(ctx context.Context, client *ws_hub.Client) error
 }
 
-func (s *NotificationService) TicketCreated(ctx context.Context, ticket *models.Ticket) error {
+func (s *NotificationService) TicketCreated(ctx context.Context, dto *models.TicketDTO) error {
 	recipients := make(map[uuid.UUID]struct{})
 
-	if ticket.Manager != nil {
-		recipients[ticket.Manager.ID] = struct{}{}
+	if dto.ManagerID != nil {
+		recipients[*dto.ManagerID] = struct{}{}
 	}
 
-	responsible, err := s.repo.GetResponsibleByCategory(ctx, ticket.Category.ID)
+	responsible, err := s.repo.GetResponsibleByCategory(ctx, dto.CategoryID)
 	if err != nil {
 		return fmt.Errorf("failed to get responsible by category: %w", err)
 	}
@@ -52,20 +52,20 @@ func (s *NotificationService) TicketCreated(ctx context.Context, ticket *models.
 	}
 
 	data, _ := json.Marshal(map[string]interface{}{
-		"ticket_id": ticket.ID.String(),
-		"title":     ticket.Title,
+		"ticket_id": dto.ID.String(),
+		"title":     dto.Title,
 	})
 
 	for userID := range recipients {
-		dto := &models.CreateNotificationDTO{
+		n := &models.CreateNotificationDTO{
 			UserID: userID,
 			Type:   "ticket.created",
 			Title:  "Новая задача",
-			Body:   ticket.Title,
+			Body:   dto.Title,
 			Data:   data,
 		}
 
-		if err := s.send(ctx, userID, dto); err != nil {
+		if err := s.send(ctx, userID, n); err != nil {
 			log.Printf("failed to send notification to user %s: %v", userID, err)
 		}
 	}
@@ -131,7 +131,40 @@ func (s *NotificationService) TicketUpdated(ctx context.Context, ticketID uuid.U
 	return nil
 }
 
-func (s *NotificationService) TicketDeleted(ctx context.Context, ticketID uuid.UUID) error {
+func (s *NotificationService) TicketDeleted(ctx context.Context, ticket *models.Ticket) error {
+	recipients := make(map[uuid.UUID]struct{})
+
+	if ticket.Manager != nil {
+		recipients[ticket.Manager.ID] = struct{}{}
+	}
+
+	responsible, err := s.repo.GetResponsibleByCategory(ctx, ticket.Category.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get responsible by category: %w", err)
+	}
+	for _, id := range responsible {
+		recipients[id] = struct{}{}
+	}
+
+	data, _ := json.Marshal(map[string]interface{}{
+		"ticket_id": ticket.ID.String(),
+		"title":     ticket.Title,
+	})
+
+	for userID := range recipients {
+		dto := &models.CreateNotificationDTO{
+			UserID: userID,
+			Type:   "ticket.deleted",
+			Title:  "Задача удалена",
+			Body:   ticket.Title,
+			Data:   data,
+		}
+
+		if err := s.send(ctx, userID, dto); err != nil {
+			log.Printf("failed to send notification to user %s: %v", userID, err)
+		}
+	}
+
 	return nil
 }
 

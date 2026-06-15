@@ -112,8 +112,14 @@ func (s *SessionService) DecodeAccessToken(ctx context.Context, token string) (*
 
 	c := *claims
 
-	username, _ := c["preferred_username"].(string)
-	userIDStr, _ := c["sub"].(string)
+	username, ok := c["preferred_username"].(string)
+	if !ok || username == "" {
+		return nil, fmt.Errorf("missing or invalid preferred_username in token")
+	}
+	userIDStr, ok := c["sub"].(string)
+	if !ok || userIDStr == "" {
+		return nil, fmt.Errorf("missing or invalid sub in token")
+	}
 
 	userID, err := uuid.Parse(userIDStr)
 	if err != nil {

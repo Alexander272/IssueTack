@@ -60,6 +60,9 @@ func (s *SubtaskService) Create(ctx context.Context, tx postgres.Tx, dto *models
 		EntityID:      dto.ID,
 		Entity:        dto.Title,
 	}
+	if err := log.SetNewValues(map[string]string{"title": dto.Title}); err != nil {
+		return fmt.Errorf("set new values: %w", err)
+	}
 	if err := s.logs.Create(ctx, tx, []*models.ActivityLogDTO{log}); err != nil {
 		return fmt.Errorf("store log: %w", err)
 	}
@@ -80,34 +83,35 @@ func (s *SubtaskService) Update(ctx context.Context, tx postgres.Tx, dto *models
 		return fmt.Errorf("failed to get subtask: %w", err)
 	}
 
+	changes := dto.GetChanges(old)
+
 	if err := s.repo.Update(ctx, tx, dto); err != nil {
 		return fmt.Errorf("failed to update subtask: %w", err)
 	}
 
-	var logs []*models.ActivityLogDTO
-	if dto.Title != old.Title {
-		logs = append(logs, &models.ActivityLogDTO{
-			Action: "title_changed", ChangedBy: actor.ID, ChangedByName: actor.Name,
-			EntityType: "subtask", EntityID: dto.ID, Entity: dto.Title,
-			OldValue: &old.Title, NewValue: &dto.Title,
-		})
-	}
-	if dto.Status != old.Status {
-		logs = append(logs, &models.ActivityLogDTO{
-			Action: "status_changed", ChangedBy: actor.ID, ChangedByName: actor.Name,
-			EntityType: "subtask", EntityID: dto.ID, Entity: dto.Title,
-			OldValue: strPtr(string(old.Status)), NewValue: strPtr(string(dto.Status)),
-		})
-	}
-	if dto.AssigneeID != nil && (old.Assignee == nil || *dto.AssigneeID != old.Assignee.ID) {
-		logs = append(logs, &models.ActivityLogDTO{
-			Action: "assigned", ChangedBy: actor.ID, ChangedByName: actor.Name,
-			EntityType: "subtask", EntityID: dto.ID, Entity: dto.Title,
-		})
-	}
+	if len(changes) > 0 {
+		oldMap := make(map[string]string, len(changes))
+		newMap := make(map[string]string, len(changes))
+		for _, c := range changes {
+			oldMap[string(c.Tag)] = c.OldVal
+			newMap[string(c.Tag)] = c.NewVal
+		}
 
-	if len(logs) > 0 {
-		if err := s.logs.Create(ctx, tx, logs); err != nil {
+		log := &models.ActivityLogDTO{
+			Action:        "updated",
+			ChangedBy:     actor.ID,
+			ChangedByName: actor.Name,
+			EntityType:    "subtask",
+			EntityID:      dto.ID,
+			Entity:        dto.Title,
+		}
+		if err := log.SetOldValues(oldMap); err != nil {
+			return fmt.Errorf("set old values: %w", err)
+		}
+		if err := log.SetNewValues(newMap); err != nil {
+			return fmt.Errorf("set new values: %w", err)
+		}
+		if err := s.logs.Create(ctx, tx, []*models.ActivityLogDTO{log}); err != nil {
 			return fmt.Errorf("store log: %w", err)
 		}
 	}
@@ -116,16 +120,30 @@ func (s *SubtaskService) Update(ctx context.Context, tx postgres.Tx, dto *models
 }
 
 func (s *SubtaskService) Delete(ctx context.Context, tx postgres.Tx, dto *models.DelSubtaskDTO) error {
+	old, err := s.repo.GetByID(ctx, &models.GetSubtaskDTO{ID: dto.ID})
+	if err != nil {
+		return fmt.Errorf("failed to get subtask: %w", err)
+	}
+
 	if err := s.repo.Delete(ctx, tx, dto); err != nil {
 		return fmt.Errorf("failed to delete subtask: %w", err)
 	}
 
+	snapshot := map[string]interface{}{
+		"title":    old.Title,
+		"status":   old.Status,
+		"priority": old.Priority,
+	}
 	log := &models.ActivityLogDTO{
 		Action:        "deleted",
 		ChangedBy:     dto.Actor.ID,
 		ChangedByName: dto.Actor.Name,
 		EntityType:    "subtask",
 		EntityID:      dto.ID,
+		Entity:        old.Title,
+	}
+	if err := log.SetOldValues(snapshot); err != nil {
+		return fmt.Errorf("set old values: %w", err)
 	}
 	if err := s.logs.Create(ctx, tx, []*models.ActivityLogDTO{log}); err != nil {
 		return fmt.Errorf("store log: %w", err)
@@ -133,5 +151,3 @@ func (s *SubtaskService) Delete(ctx context.Context, tx postgres.Tx, dto *models
 
 	return nil
 }
-
-func strPtr(s string) *string { return &s }

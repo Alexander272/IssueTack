@@ -491,13 +491,18 @@ func (s *RoleService) Delete(ctx context.Context, dto *models.DeleteRoleDTO) err
 		return fmt.Errorf("failed to marshal old values: %w", err)
 	}
 
-	err = s.repo.Delete(ctx, nil, dto)
+	err = s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+		return s.repo.Delete(ctx, tx, dto)
+	})
 	if err != nil {
 		return fmt.Errorf("failed to delete role: %w", err)
 	}
 
 	entity := role.Name
-	realmID, _ := uuid.Parse(role.Realm)
+	realmID, err := uuid.Parse(role.Realm)
+	if err != nil {
+		return fmt.Errorf("failed to parse realm id: %w", err)
+	}
 	s.eventBus.Notify(events.PolicyEvent{
 		ChangedBy:     dto.Actor.ID,
 		ChangedByName: dto.Actor.Name,

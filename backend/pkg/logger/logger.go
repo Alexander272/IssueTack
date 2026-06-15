@@ -71,14 +71,6 @@ func ErrAttr(err error) Attr {
 	return slog.String("error", err.Error())
 }
 
-// func ArrAttr(key string, val []interface{}) Attr {
-// 	array := make([]string, len(val))
-// 	for i := range val {
-// 		array = append(array, slog.Any(fmt.Sprintf("%s[%d]", key, i), val[i]).String())
-// 	}
-// 	return slog.String("array", strings.Join(array, ", "))
-// }
-
 const (
 	defaultLevel      = LevelInfo
 	defaultAddSource  = true

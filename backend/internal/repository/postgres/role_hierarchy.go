@@ -306,13 +306,4 @@ func (r *RoleHierarchyRepo) RemoveInheritance(ctx context.Context, tx Tx, dto *m
 	return nil
 }
 
-// func (s *RBACService) AddRoleInheritance(ctx context.Context, child, parent, location string) error {
-//     // 1. Сохраняем в бизнес-таблицу (для отображения в админке)
-//     query := `INSERT INTO role_hierarchy (child_role, parent_role, location_code) VALUES ($1, $2, $3)`
-//     _, err := s.pool.Exec(ctx, query, child, parent, location)
-//     if err != nil {
-//         return err
-//     }
 
-//     return err
-// }

@@ -20,7 +20,7 @@ type PermissionService struct {
 	eventBus *events.PolicyEventManager
 }
 
-func NewPermissionService(repo repository.Permissions, tm TransactionManager, eventBus *events.PolicyEventManager) *PermissionService {
+func NewPermissionService(repo repository.Permissions, tm TransactionManager, eventBus *events.PolicyEventManager) (*PermissionService, error) {
 	s := &PermissionService{
 		repo:     repo,
 		tm:       tm,
@@ -28,15 +28,14 @@ func NewPermissionService(repo repository.Permissions, tm TransactionManager, ev
 	}
 
 	if err := s.Sync(context.Background()); err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed to sync permissions: %w", err)
 	}
 
-	return s
+	return s, nil
 }
 
 type Permissions interface {
 	LoadPolicy(ctx context.Context) ([]*models.Permission, error)
-	GetResources(ctx context.Context) []access.Resource
 	GetAll(ctx context.Context) ([]*models.Permission, error)
 	GetGrouped(ctx context.Context) ([]*models.GroupedPermission, error)
 	GetRolePermissions(ctx context.Context, tx postgres.Tx, roleID uuid.UUID) (map[uuid.UUID]bool, error)
@@ -104,33 +103,6 @@ func (s *PermissionService) GetByID(ctx context.Context, id uuid.UUID) (*models.
 		return nil, fmt.Errorf("failed to get permission by id: %w", err)
 	}
 	return data, nil
-}
-
-// ! Deprecated
-func (s *PermissionService) GetResources(ctx context.Context) []access.Resource {
-	accesses := access.Reg.List()
-
-	for i, res := range accesses {
-		// Собираем список действий для текущего ресурса
-		var actionsToSync []access.ActionCode
-
-		if _, ok := res.AllowedActions[access.All]; ok {
-			actionsToSync = access.AllActions
-		} else {
-			for action := range res.AllowedActions {
-				actionsToSync = append(actionsToSync, action)
-			}
-		}
-
-		actions := map[access.ActionCode]struct{}{}
-		for _, act := range actionsToSync {
-			actions[act] = struct{}{}
-		}
-
-		accesses[i].AllowedActions = actions
-	}
-
-	return accesses
 }
 
 func (s *PermissionService) GetByRole(ctx context.Context, req *models.GetPermsByRoleDTO) ([]*models.Permission, error) {

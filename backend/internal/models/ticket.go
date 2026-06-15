@@ -37,7 +37,8 @@ type Ticket struct {
 }
 
 type GetTicketByIdDTO struct {
-	ID uuid.UUID `json:"id" db:"id"`
+	ID    uuid.UUID `json:"id" db:"id"`
+	Actor `json:"actor"`
 }
 
 type TicketFilter struct {
@@ -51,9 +52,8 @@ type TicketFilter struct {
 }
 
 type TicketDTO struct {
-	ID          uuid.UUID `json:"id" db:"id"`
-	UserID      uuid.UUID `json:"userId" db:"user_id"`
-	UserName    string    `json:"userName"`
+	ID    uuid.UUID `json:"id" db:"id"`
+	Actor `json:"actor"`
 	Title       string    `json:"title" db:"title"`
 	Description string    `json:"description" db:"description"`
 
@@ -77,7 +77,8 @@ type TicketDTO struct {
 }
 
 type DeleteTicketDTO struct {
-	ID uuid.UUID `json:"id" db:"id"`
+	ID    uuid.UUID `json:"id" db:"id"`
+	Actor `json:"actor"`
 }
 
 type FieldChange struct {

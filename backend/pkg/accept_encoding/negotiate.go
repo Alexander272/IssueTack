@@ -1,6 +1,6 @@
 // Package acceptencoding парсит заголовок Accept-Encoding (RFC 7231, Section 5.3.4)
 // и возвращает предпочтительный encoding из поддерживаемых сервером (br, gzip).
-package acceptencoding
+package accept_encoding
 
 import (
 	"strconv"

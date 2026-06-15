@@ -33,7 +33,7 @@ func (s *RealmService) GetByID(ctx context.Context, req *models.GetRealmByIdDTO)
 
 func (s *RealmService) Create(ctx context.Context, dto *models.RealmDTO) error {
 	return s.txManager.WithinTransaction(ctx, func(tx postgres.Tx) error {
-		if err := s.repo.Create(ctx, nil, dto); err != nil {
+		if err := s.repo.Create(ctx, tx, dto); err != nil {
 			return fmt.Errorf("failed to create realm. error: %w", err)
 		}
 

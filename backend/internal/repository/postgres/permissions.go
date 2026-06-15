@@ -108,7 +108,7 @@ func (r *PermissionRepo) GetById(ctx context.Context, id uuid.UUID) (*models.Per
 }
 
 func (r *PermissionRepo) GetByRole(ctx context.Context, req *models.GetPermsByRoleDTO) ([]*models.Permission, error) {
-	query := fmt.Sprintf(`SELECT r.slug, d.code, p.object, p.action
+	query := fmt.Sprintf(`SELECT p.id, r.slug, d.code, p.object, p.action
 		FROM %s rp
 		JOIN %s r ON r.id = rp.role_id
 		JOIN %s d ON d.id = r.realm_id
@@ -118,7 +118,7 @@ func (r *PermissionRepo) GetByRole(ctx context.Context, req *models.GetPermsByRo
 	)
 
 	data := make([]*models.Permission, 0, 50)
-	rows, err := r.db.Query(ctx, query)
+	rows, err := r.db.Query(ctx, query, req.Role)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}

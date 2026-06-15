@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"log"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/config"
 	"github.com/Alexander272/IssueTrack/backend/internal/events"
@@ -48,7 +49,10 @@ func NewServices(deps *Deps) *Services {
 	audit := NewAuditLogService(deps.Repo.AuditLogs, transaction)
 	realms := NewRealmService(deps.Repo.Realms, transaction)
 
-	perms := NewPermissionService(deps.Repo.Permissions, transaction, updatePolicyEvent)
+	perms, err := NewPermissionService(deps.Repo.Permissions, transaction, updatePolicyEvent)
+	if err != nil {
+		log.Fatalf("failed to initialize permission service: %s", err.Error())
+	}
 	rolesHierarchy := NewRoleHierarchyService(deps.Repo.RoleHierarchy)
 	roles := NewRolesService(&RoleDeps{
 		Repo:        deps.Repo.Roles,
@@ -88,9 +92,9 @@ func NewServices(deps *Deps) *Services {
 	attachments := NewAttachmentService(deps.Repo.Attachments, &deps.Conf.FileServer)
 	checklists := NewChecklistService(deps.Repo.Checklists, subtasks)
 	notifications := NewNotificationService(deps.Hub, deps.Repo.Notifications, deps.Repo.Tickets, transaction)
-	tickets := NewTicketService(deps.Repo.Tickets, transaction, logs, subtasks, attachments, notifications)
+	tickets := NewTicketService(deps.Repo.Tickets, transaction, logs, subtasks, attachments, notifications, groups, policies)
 
-	audit.StartListening(updatePolicyEvent)
+	audit.StartListening(deps.Ctx, updatePolicyEvent)
 
 	return &Services{
 		Realms:        realms,

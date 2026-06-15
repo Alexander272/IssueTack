@@ -6,21 +6,18 @@ import (
 	"github.com/google/uuid"
 )
 
-// type Group struct {
-//     ID          uint     `json:"id"`
-//     Name        string   `json:"name"`
-//     Description string   `json:"description"`
-//     Members     []User   `json:"members"`
-//     CreatedAt   time.Time
-// }
-
 type Group struct {
-	ID          uuid.UUID `json:"id" db:"id"`
-	Name        string    `json:"name" db:"name"`
-	Description string    `json:"description" db:"description"`
-	CreatedAt   time.Time `json:"createdAt" db:"created_at"`
-	UpdatedAt   time.Time `json:"updatedAt" db:"updated_at"`
-	Members     []*User   `json:"members,omitempty"`
+	ID          uuid.UUID  `json:"id" db:"id"`
+	Name        string     `json:"name" db:"name"`
+	Description string     `json:"description" db:"description"`
+	CreatedAt   time.Time  `json:"createdAt" db:"created_at"`
+	UpdatedAt   time.Time  `json:"updatedAt" db:"updated_at"`
+	Members     []*User    `json:"members,omitempty"`
+
+	DefaultAssigneeID *uuid.UUID `json:"defaultAssigneeId" db:"default_assignee_id"`
+	ManagerID         *uuid.UUID `json:"managerId" db:"manager_id"`
+	DefaultAssignee   *UserShort `json:"defaultAssignee,omitempty"`
+	Manager           *UserShort `json:"manager,omitempty"`
 }
 
 type GroupShort struct {
@@ -35,9 +32,15 @@ type GetGroupDTO struct {
 type GetGroupsDTO struct{}
 
 type GroupDTO struct {
-	ID          uuid.UUID `json:"id" db:"id"`
-	Name        string    `json:"name" db:"name"`
-	Description string    `json:"description" db:"description"`
+	ID          uuid.UUID  `json:"id" db:"id"`
+	Name        string     `json:"name" db:"name"`
+	Description string     `json:"description" db:"description"`
+}
+
+type GroupManagerReq struct {
+	GroupID           uuid.UUID  `json:"groupId"`
+	ManagerID         *uuid.UUID `json:"managerId"`
+	DefaultAssigneeID *uuid.UUID `json:"defaultAssigneeId"`
 }
 
 type DelGroupDTO struct {

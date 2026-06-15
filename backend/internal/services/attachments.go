@@ -56,11 +56,13 @@ func (s *AttachmentService) Upload(ctx context.Context, tx postgres.Tx, entityTy
 	if err != nil {
 		return nil, fmt.Errorf("failed to create file: %w", err)
 	}
-	defer dst.Close()
 
 	if _, err := io.Copy(dst, file); err != nil {
+		dst.Close()
+		os.Remove(absPath)
 		return nil, fmt.Errorf("failed to write file: %w", err)
 	}
+	dst.Close()
 
 	att := &models.Attachment{
 		EntityType: entityType,
@@ -71,6 +73,7 @@ func (s *AttachmentService) Upload(ctx context.Context, tx postgres.Tx, entityTy
 	}
 
 	if err := s.repo.Create(ctx, tx, att); err != nil {
+		os.Remove(absPath)
 		return nil, fmt.Errorf("failed to save attachment: %w", err)
 	}
 

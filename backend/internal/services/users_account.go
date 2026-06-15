@@ -68,8 +68,14 @@ func (s *userService) UpdateRole(ctx context.Context, dto *models.UserDataDTO) e
 		Entity:        &dto.Username,
 		EntityID:      &dto.ID,
 	}
-	event.SetOldValues(oldValue)
-	event.SetNewValues(dto.Realms)
+	err = event.SetOldValues(oldValue)
+	if err != nil {
+		return fmt.Errorf("failed to set old values: %w", err)
+	}
+	err = event.SetNewValues(dto.Realms)
+	if err != nil {
+		return fmt.Errorf("failed to set new values: %w", err)
+	}
 
 	s.eventBus.Notify(event)
 

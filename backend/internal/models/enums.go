@@ -21,15 +21,6 @@ const (
 	PriorityUrgent Priority = "urgent"
 )
 
-// type Role string
-
-// const (
-// 	RoleAdmin   Role = "admin"
-// 	RoleManager Role = "manager"
-// 	RoleAgent   Role = "agent"
-// 	RoleClient  Role = "client"
-// )
-
 type ActivityType string
 
 const (

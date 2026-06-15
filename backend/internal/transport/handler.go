@@ -14,9 +14,10 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/config"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/ws"
-	"github.com/Alexander272/IssueTrack/backend/pkg/acceptencoding"
+	"github.com/Alexander272/IssueTrack/backend/pkg/accept_encoding"
 	"github.com/Alexander272/IssueTrack/backend/pkg/auth"
 	"github.com/Alexander272/IssueTrack/backend/pkg/limiter"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
@@ -98,13 +99,12 @@ func (h *Handler) ErrorHandler(c *gin.Context, origErr any) {
 
 func (h *Handler) initAPI(router *gin.Engine, conf *config.Config) {
 	mw := middleware.NewMiddleware(h.services, &conf.Auth, h.keycloak)
-	// handler := handlers.NewHandler(&handlers.Deps{Services: h.services, Conf: conf, Middleware: middleware})
-	// handler := handlers.NewHandler(&handlers.Deps{Services: h.services, Conf: conf, Hub: h.hub})
+	handler := handlers.NewHandler(&handlers.Deps{Services: h.services, Conf: conf, Middleware: mw})
 	wsHandler := ws.NewWsHandler(h.hub, h.services, conf.Http.AllowedOrigins)
 
 	api := router.Group("/api")
 	api.Use(limiter.Limit(conf.ApiLimiter.RPS, conf.ApiLimiter.Burst, conf.ApiLimiter.TTL))
-	// handler.Init(api)
+	handler.Init(api)
 
 	api.GET("/ping", func(c *gin.Context) {
 		c.String(http.StatusOK, "pong")
@@ -156,7 +156,7 @@ func (h *Handler) initStatic(router *gin.Engine, conf *config.Config) {
 		var f fs.File
 		var err error
 		openPath := frontendRoot + "/" + filePath
-		encoding := acceptencoding.Negotiate(c.Request.Header.Get("Accept-Encoding"))
+		encoding := accept_encoding.Negotiate(c.Request.Header.Get("Accept-Encoding"))
 
 		if encoding == "br" {
 			f, err = web.Frontend.Open(openPath + ".br")

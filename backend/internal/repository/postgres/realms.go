@@ -42,24 +42,11 @@ func (d *RealmRepo) GetByID(ctx context.Context, req *models.GetRealmByIdDTO) (*
 	return data, nil
 }
 
-// func (d *RealmRepo) GetList(ctx context.Context, req *models.GetRealmDTO) ([]*models.Realm, error) {
-// 	query := fmt.Sprintf(`SELECT * FROM %s WHERE code LIKE $1 ORDER BY name`, Tables.Realms)
-
-// 	var Realms []Realm
-// 	err := d.getExec(nil).Query(
-// 		ctx, &Realms, query, fmt.Sprintf("%%%s%%", req.Code),
-// 	).Scan(&Realms)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	return Realms, nil
-// }
-
 func (d *RealmRepo) Create(ctx context.Context, tx Tx, dto *models.RealmDTO) error {
 	query := fmt.Sprintf(`INSERT INTO %s (id, code, name) VALUES ($1, $2, $3)`, Tables.Realms)
 	dto.ID = uuid.New()
 
-	_, err := d.getExec(tx).Exec(ctx, query, dto.Code, dto.Name)
+	_, err := d.getExec(tx).Exec(ctx, query, dto.ID, dto.Code, dto.Name)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}

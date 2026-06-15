@@ -235,10 +235,10 @@ func (r *UserRealmRepo) UpdateSeveral(ctx context.Context, tx Tx, dto []*models.
 		SET role_id = s.role_id::uuid, is_active = s.is_active
 		FROM (
 			SELECT * FROM UNNEST(
-				$1::text[],
-				$2::text[],
-				$3::text[],
-				$4::text[],
+				$1::uuid[],
+				$2::uuid[],
+				$3::uuid[],
+				$4::uuid[],
 				$5::bool[]
 			) AS s(id, user_id, realm_id, role_id, is_active)
 		) AS s

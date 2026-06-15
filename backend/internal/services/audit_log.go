@@ -25,33 +25,41 @@ func NewAuditLogService(repo repository.AuditLogs, tm TransactionManager) *audit
 }
 
 type AuditLogs interface {
-	StartListening(bus *events.PolicyEventManager)
+	StartListening(ctx context.Context, bus *events.PolicyEventManager)
 	Get(ctx context.Context, req *models.GetAuditLogsDTO) ([]*models.AuditLog, error)
 	GetByRealm(ctx context.Context, req *models.GetAuditLogsByRealmDTO) ([]*models.AuditLog, error)
 	Create(ctx context.Context, tx postgres.Tx, dto *models.AuditLogDTO) error
 }
 
-func (s *auditLogService) StartListening(bus *events.PolicyEventManager) {
+func (s *auditLogService) StartListening(ctx context.Context, bus *events.PolicyEventManager) {
+	eventsCh := bus.Subscribe()
 	go func() {
-		events := bus.Subscribe()
-		for event := range events {
-			dto := &models.AuditLogDTO{
-				ChangedBy:     event.ChangedBy,
-				ChangedByName: event.ChangedByName,
-				Action:        event.Action,
-				EntityType:    event.EntityType,
-				Entity:        event.Entity,
-				EntityID:      event.EntityID,
-				RealmID:       event.RealmID,
-				RealmName:     event.RealmName,
-				OldValues:     event.OldValues,
-				NewValues:     event.NewValues,
-			}
+		defer bus.Unsubscribe(eventsCh)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case event, ok := <-eventsCh:
+				if !ok {
+					return
+				}
+				dto := &models.AuditLogDTO{
+					ChangedBy:     event.ChangedBy,
+					ChangedByName: event.ChangedByName,
+					Action:        event.Action,
+					EntityType:    event.EntityType,
+					Entity:        event.Entity,
+					EntityID:      event.EntityID,
+					RealmID:       event.RealmID,
+					RealmName:     event.RealmName,
+					OldValues:     event.OldValues,
+					NewValues:     event.NewValues,
+				}
 
-			// Записываем в базу данных
-			if err := s.Create(context.Background(), nil, dto); err != nil {
-				logger.Error("Failed to create audit log", logger.StringAttr("error", err.Error()))
-				error_bot.Send(nil, fmt.Sprintf("Failed to create audit log. error: %v", err), event)
+				if err := s.Create(ctx, nil, dto); err != nil {
+					logger.Error("Failed to create audit log", logger.ErrAttr(err))
+					error_bot.Send(nil, fmt.Sprintf("Failed to create audit log. error: %v", err), event)
+				}
 			}
 		}
 	}()

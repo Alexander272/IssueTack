@@ -90,12 +90,7 @@ func (h *Hub) Run(ctx context.Context) {
 				select {
 				case client.Send <- msg.Data:
 				default:
-					go func(c *Client) {
-						h.mu.Lock()
-						h.fullDisconnect(c)
-						h.mu.Unlock()
-						c.Close()
-					}(client)
+					h.Disconnect(client)
 				}
 			}
 		}

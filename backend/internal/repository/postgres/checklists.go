@@ -92,7 +92,7 @@ func (r *ChecklistRepo) GetItems(ctx context.Context, templateID uuid.UUID) ([]*
 	var data []*models.ChecklistTemplateItem
 	for rows.Next() {
 		item := &models.ChecklistTemplateItem{}
-		if err := rows.Scan(&item.ID, &item.TemplateID, &item.Title, &item.SortOrder); err != nil {
+		if err := rows.Scan(&item.ID, &item.TemplateID, &item.Title, &item.Description, &item.SortOrder); err != nil {
 			return nil, MapError(fmt.Errorf("scan row error: %w", err))
 		}
 		data = append(data, item)
