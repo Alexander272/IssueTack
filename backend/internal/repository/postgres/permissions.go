@@ -231,6 +231,9 @@ func (r *PermissionRepo) CountForAll(ctx context.Context, roleToDescendants map[
 			}
 			descendantPerms[slug] = models.Perm{Items: perms, Count: len(perms)}
 		}
+		if err := rows.Err(); err != nil {
+			return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+		}
 	}
 
 	// Для каждой роли суммируем permissions всех её descendants

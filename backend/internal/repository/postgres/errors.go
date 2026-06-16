@@ -36,7 +36,7 @@ func MapError(err error) error {
 		switch pgErr.Code {
 		case "23505": // unique_violation
 			return fmt.Errorf("%w: %v", models.ErrAlreadyExists, pgErr)
-		case "23p01": // exclusion_violation
+		case "23P01": // exclusion_violation
 			return fmt.Errorf("%w: %v", models.ErrAlreadyExists, pgErr)
 		case "23503": // foreign_key_violation
 			return fmt.Errorf("%w: %v", models.ErrRelatedRecordNotFound, pgErr) // если ссылаемся на несуществующий ID

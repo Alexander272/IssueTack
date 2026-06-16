@@ -32,9 +32,11 @@ type GetGroupDTO struct {
 type GetGroupsDTO struct{}
 
 type GroupDTO struct {
-	ID          uuid.UUID  `json:"id" db:"id"`
-	Name        string     `json:"name" db:"name"`
-	Description string     `json:"description" db:"description"`
+	ID                uuid.UUID  `json:"id" db:"id"`
+	Name              string     `json:"name" db:"name"`
+	Description       string     `json:"description" db:"description"`
+	DefaultAssigneeID *uuid.UUID `json:"defaultAssigneeId" db:"default_assignee_id"`
+	ManagerID         *uuid.UUID `json:"managerId" db:"manager_id"`
 }
 
 type GroupManagerReq struct {

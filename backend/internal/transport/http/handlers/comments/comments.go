@@ -1,6 +1,7 @@
 package comments
 
 import (
+	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
 	"github.com/gin-gonic/gin"
@@ -18,6 +19,7 @@ func NewHandler(services *services.Services) *Handler {
 
 func Register(api *gin.RouterGroup, services *services.Services) {
 	h := NewHandler(services)
+	//TODO реализовать
 
 	comments := api.Group("/tickets/:ticketId/comments")
 	{
@@ -28,13 +30,13 @@ func Register(api *gin.RouterGroup, services *services.Services) {
 }
 
 func (h *Handler) getByTicket(c *gin.Context) {
-	response.SendError(c, nil)
+	response.SendError(c, models.ErrNotImplemented)
 }
 
 func (h *Handler) create(c *gin.Context) {
-	response.SendError(c, nil)
+	response.SendError(c, models.ErrNotImplemented)
 }
 
 func (h *Handler) delete(c *gin.Context) {
-	response.SendError(c, nil)
+	response.SendError(c, models.ErrNotImplemented)
 }

@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
+	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/Alexander272/IssueTrack/backend/pkg/ws_hub"
 	"github.com/google/uuid"
 )
@@ -51,10 +51,13 @@ func (s *NotificationService) TicketCreated(ctx context.Context, dto *models.Tic
 		recipients[id] = struct{}{}
 	}
 
-	data, _ := json.Marshal(map[string]interface{}{
+	data, err := json.Marshal(map[string]interface{}{
 		"ticket_id": dto.ID.String(),
 		"title":     dto.Title,
 	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal notification data: %w", err)
+	}
 
 	for userID := range recipients {
 		n := &models.CreateNotificationDTO{
@@ -66,7 +69,7 @@ func (s *NotificationService) TicketCreated(ctx context.Context, dto *models.Tic
 		}
 
 		if err := s.send(ctx, userID, n); err != nil {
-			log.Printf("failed to send notification to user %s: %v", userID, err)
+			logger.Warn("failed to send notification", logger.StringAttr("user_id", userID.String()), logger.ErrAttr(err))
 		}
 	}
 
@@ -88,7 +91,10 @@ func (s *NotificationService) TicketUpdated(ctx context.Context, ticketID uuid.U
 	for _, change := range changes {
 		switch change.Tag {
 		case models.ActionAssigned:
-			newAssigneeID, _ := uuid.Parse(change.NewVal)
+			newAssigneeID, err := uuid.Parse(change.NewVal)
+			if err != nil {
+				continue
+			}
 			if newAssigneeID == actorID {
 				responsible, err := s.repo.GetResponsibleByCategory(ctx, ticket.Category.ID)
 				if err != nil {
@@ -102,17 +108,29 @@ func (s *NotificationService) TicketUpdated(ctx context.Context, ticketID uuid.U
 			}
 
 		case models.ActionAssignChanged:
-			newAssigneeID, _ := uuid.Parse(change.NewVal)
+			if change.NewVal == "" || change.NewVal == "none" {
+				continue
+			}
+			newAssigneeID, err := uuid.Parse(change.NewVal)
+			if err != nil {
+				continue
+			}
 			recipients[newAssigneeID] = struct{}{}
 		}
 	}
 
-	changesData, _ := json.Marshal(changes)
-	data, _ := json.Marshal(map[string]interface{}{
+	changesData, err := json.Marshal(changes)
+	if err != nil {
+		return fmt.Errorf("failed to marshal changes: %w", err)
+	}
+	data, err := json.Marshal(map[string]interface{}{
 		"ticket_id": ticket.ID.String(),
 		"title":     ticket.Title,
 		"changes":   changesData,
 	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal notification data: %w", err)
+	}
 
 	for userID := range recipients {
 		dto := &models.CreateNotificationDTO{
@@ -124,7 +142,7 @@ func (s *NotificationService) TicketUpdated(ctx context.Context, ticketID uuid.U
 		}
 
 		if err := s.send(ctx, userID, dto); err != nil {
-			log.Printf("failed to send notification to user %s: %v", userID, err)
+			logger.Warn("failed to send notification", logger.StringAttr("user_id", userID.String()), logger.ErrAttr(err))
 		}
 	}
 
@@ -146,10 +164,13 @@ func (s *NotificationService) TicketDeleted(ctx context.Context, ticket *models.
 		recipients[id] = struct{}{}
 	}
 
-	data, _ := json.Marshal(map[string]interface{}{
+	data, err := json.Marshal(map[string]interface{}{
 		"ticket_id": ticket.ID.String(),
 		"title":     ticket.Title,
 	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal notification data: %w", err)
+	}
 
 	for userID := range recipients {
 		dto := &models.CreateNotificationDTO{
@@ -161,7 +182,7 @@ func (s *NotificationService) TicketDeleted(ctx context.Context, ticket *models.
 		}
 
 		if err := s.send(ctx, userID, dto); err != nil {
-			log.Printf("failed to send notification to user %s: %v", userID, err)
+			logger.Warn("failed to send notification", logger.StringAttr("user_id", userID.String()), logger.ErrAttr(err))
 		}
 	}
 
@@ -176,13 +197,13 @@ func (s *NotificationService) SendUnread(ctx context.Context, client *ws_hub.Cli
 
 	for _, n := range notifications {
 		if err := client.SendJSON("notification", n); err != nil {
-			log.Printf("failed to send unread notification to user %s: %v", client.UserID, err)
+			logger.Warn("failed to send unread notification", logger.StringAttr("user_id", client.UserID.String()), logger.ErrAttr(err))
 		}
 	}
 
 	if len(notifications) > 0 {
 		if err := s.repo.MarkAllRead(ctx, nil, client.UserID); err != nil {
-			log.Printf("failed to mark notifications as read for user %s: %v", client.UserID, err)
+			logger.Warn("failed to mark notifications as read", logger.StringAttr("user_id", client.UserID.String()), logger.ErrAttr(err))
 		}
 	}
 
@@ -206,13 +227,17 @@ func (s *NotificationService) send(ctx context.Context, userID uuid.UUID, dto *m
 		}
 
 		if prefs["push"] {
-			eventData, _ := json.Marshal(map[string]interface{}{
+			eventData, err := json.Marshal(map[string]interface{}{
 				"type":   dto.Type,
 				"title":  dto.Title,
 				"body":   dto.Body,
 				"data":   dto.Data,
 			})
-			s.hub.SendToUser(userID, eventData)
+			if err != nil {
+				logger.Warn("failed to marshal push event data", logger.ErrAttr(err))
+			} else {
+				s.hub.SendToUser(userID, eventData)
+			}
 		}
 
 		return nil

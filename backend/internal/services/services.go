@@ -88,11 +88,14 @@ func NewServices(deps *Deps) *Services {
 	categories := NewCategoryService(deps.Repo.Categories)
 	sites := NewSiteService(deps.Repo.Sites)
 	logs := NewActivityLogService(deps.Repo.ActivityLog, transaction)
-	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs)
-	attachments := NewAttachmentService(deps.Repo.Attachments, &deps.Conf.FileServer)
+	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs, nil)
+	attachments := NewAttachmentService(deps.Repo.Attachments, &deps.Conf.FileServer, nil, deps.Repo.Subtasks)
 	checklists := NewChecklistService(deps.Repo.Checklists, subtasks)
 	notifications := NewNotificationService(deps.Hub, deps.Repo.Notifications, deps.Repo.Tickets, transaction)
 	tickets := NewTicketService(deps.Repo.Tickets, transaction, logs, subtasks, attachments, notifications, groups, policies)
+
+	subtasks.SetTicketAccess(tickets)
+	attachments.SetTicketAccess(tickets)
 
 	audit.StartListening(deps.Ctx, updatePolicyEvent)
 

@@ -42,7 +42,7 @@ type GetRoleDTO struct {
 
 type RoleDTO struct {
 	ID          uuid.UUID `json:"id" db:"id"`
-	Actor       Actor
+	Actor       *Actor
 	RealmID     uuid.UUID `json:"realmId" db:"realm_id"`
 	Slug        string    `json:"slug" db:"slug"`
 	Name        string    `json:"name" db:"name"`
@@ -58,7 +58,7 @@ type RoleDTO struct {
 
 type DeleteRoleDTO struct {
 	ID    uuid.UUID `json:"id" db:"id"`
-	Actor Actor
+	Actor *Actor
 }
 
 type RoleInheritance struct {

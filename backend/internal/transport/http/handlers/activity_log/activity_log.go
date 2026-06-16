@@ -1,6 +1,8 @@
 package activity_log
 
 import (
+	"fmt"
+
 	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
@@ -34,24 +36,30 @@ func (h *Handler) getAll(c *gin.Context) {
 
 	if entityID := c.Query("entityId"); entityID != "" {
 		id, err := uuid.Parse(entityID)
-		if err == nil {
-			dto.EntityID = &id
+		if err != nil {
+			response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+			return
 		}
+		dto.EntityID = &id
 	}
 	if entityType := c.Query("entityType"); entityType != "" {
 		dto.EntityType = &entityType
 	}
 	if parentID := c.Query("parentId"); parentID != "" {
 		id, err := uuid.Parse(parentID)
-		if err == nil {
-			dto.ParentID = &id
+		if err != nil {
+			response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+			return
 		}
+		dto.ParentID = &id
 	}
 	if realmID := c.Query("realmId"); realmID != "" {
 		id, err := uuid.Parse(realmID)
-		if err == nil {
-			dto.RealmID = &id
+		if err != nil {
+			response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+			return
 		}
+		dto.RealmID = &id
 	}
 
 	data, err := h.service.Get(c, dto)

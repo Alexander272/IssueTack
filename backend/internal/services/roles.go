@@ -132,7 +132,7 @@ func (s *RoleService) GetWithStats(ctx context.Context) ([]*models.RoleWithStats
 		descendants map[string][]string
 	)
 
-	g, asyncCtx := errgroup.WithContext(context.Background())
+	g, asyncCtx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
 		var err error
@@ -230,7 +230,8 @@ func (s *RoleService) IsExists(ctx context.Context, realmID uuid.UUID, roleName 
 func (s *RoleService) realmName(ctx context.Context, id uuid.UUID) string {
 	realm, err := s.realms.GetByID(ctx, &models.GetRealmByIdDTO{ID: id})
 	if err != nil {
-		return ""
+		logger.Warn("failed to get realm name for audit", logger.StringAttr("realm_id", id.String()), logger.ErrAttr(err))
+		return id.String()
 	}
 	return realm.Name
 }
@@ -369,9 +370,11 @@ func (s *RoleService) Update(ctx context.Context, dto *models.RoleDTO) error {
 				}
 				inheritIDs := make([]uuid.UUID, 0, len(toAdd))
 				for _, s := range toAdd {
-					if id, ok := addIDs[s]; ok {
-						inheritIDs = append(inheritIDs, id)
+					id, ok := addIDs[s]
+					if !ok {
+						return fmt.Errorf("parent role not found: %s", s)
 					}
+					inheritIDs = append(inheritIDs, id)
 				}
 
 				logger.Debug("inheritances",
@@ -391,9 +394,11 @@ func (s *RoleService) Update(ctx context.Context, dto *models.RoleDTO) error {
 				}
 				parentIDs := make([]uuid.UUID, 0, len(toRemove))
 				for _, s := range toRemove {
-					if id, ok := removeIDs[s]; ok {
-						parentIDs = append(parentIDs, id)
+					id, ok := removeIDs[s]
+					if !ok {
+						return fmt.Errorf("parent role not found for removal: %s", s)
 					}
+					parentIDs = append(parentIDs, id)
 				}
 				if err := s.hierarchy.RemoveInheritances(ctx, tx, dto.ID, parentIDs); err != nil {
 					return err
@@ -401,7 +406,7 @@ func (s *RoleService) Update(ctx context.Context, dto *models.RoleDTO) error {
 			}
 		}
 
-		if dto.Permissions != nil {
+		if dto.Permissions != nil { // nil = не менять, пустой слайс = очистить
 			permChange = true
 
 			assigned, err = s.perms.GetRolePermissions(ctx, tx, dto.ID)

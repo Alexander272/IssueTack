@@ -5,10 +5,10 @@ import (
 	"net/http"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/access"
-	"github.com/Alexander272/IssueTrack/backend/internal/constants"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -66,16 +66,9 @@ func (h *Handler) getByID(c *gin.Context) {
 }
 
 func (h *Handler) sync(c *gin.Context) {
-	u, exists := c.Get(constants.CtxUser)
-	if !exists {
-		response.SendError(c, models.ErrSessionEmpty)
+	actor := utils.GetActor(c)
+	if actor == nil {
 		return
-	}
-	user := u.(models.User)
-
-	actor := &models.Actor{
-		ID:   user.ID,
-		Name: user.Name,
 	}
 
 	if err := h.service.Sync(c, actor); err != nil {
@@ -104,17 +97,11 @@ func (h *Handler) updateAccount(c *gin.Context) {
 	}
 	dto.ID = id
 
-	u, exists := c.Get(constants.CtxUser)
-	if !exists {
-		response.SendError(c, models.ErrSessionEmpty)
+	actor := utils.GetActor(c)
+	if actor == nil {
 		return
 	}
-	user := u.(models.User)
-
-	dto.Actor = &models.Actor{
-		ID:   user.ID,
-		Name: user.Name,
-	}
+	dto.Actor = actor
 
 	if err := h.service.UpdateAccount(c, dto); err != nil {
 		response.SendError(c, err, dto)
@@ -122,5 +109,3 @@ func (h *Handler) updateAccount(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, response.IdResponse{Message: "Пользователь обновлен"})
 }
-
-

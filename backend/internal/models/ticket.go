@@ -38,22 +38,24 @@ type Ticket struct {
 
 type GetTicketByIdDTO struct {
 	ID    uuid.UUID `json:"id" db:"id"`
-	Actor `json:"actor"`
+	Actor *Actor    `json:"actor"`
 }
 
 type TicketFilter struct {
-	SiteID     *uuid.UUID    `json:"siteId" db:"site_id"`
-	Status     *TicketStatus `json:"status" db:"status"`
-	OwnerID    *uuid.UUID    `json:"ownerId" db:"owner_id"`
-	AssigneeID *uuid.UUID    `json:"assigneeId" db:"assignee_id"`
-	GroupID    *uuid.UUID    `json:"groupId" db:"group_id"`
+	Actor      *Actor        `json:"actor"`
+	SiteID     *uuid.UUID    `form:"siteId" json:"siteId" db:"site_id"`
+	Status     *TicketStatus `form:"status" json:"status" db:"status" binding:"omitempty,enum"`
+	OwnerID    *uuid.UUID    `form:"ownerId" json:"ownerId" db:"owner_id"`
+	AssigneeID *uuid.UUID    `form:"assigneeId" json:"assigneeId" db:"assignee_id"`
+	GroupID    *uuid.UUID    `form:"groupId" json:"groupId" db:"group_id"`
+	GroupIDs   []uuid.UUID   `json:"-"`
 	Limit      int           `json:"limit" db:"limit"`
 	Offset     int           `json:"offset" db:"offset"`
 }
 
 type TicketDTO struct {
-	ID    uuid.UUID `json:"id" db:"id"`
-	Actor `json:"actor"`
+	ID          uuid.UUID `json:"id" db:"id"`
+	Actor       *Actor    `json:"actor"`
 	Title       string    `json:"title" db:"title"`
 	Description string    `json:"description" db:"description"`
 
@@ -78,7 +80,7 @@ type TicketDTO struct {
 
 type DeleteTicketDTO struct {
 	ID    uuid.UUID `json:"id" db:"id"`
-	Actor `json:"actor"`
+	Actor *Actor    `json:"actor"`
 }
 
 type FieldChange struct {
@@ -111,18 +113,26 @@ func (dto *TicketDTO) GetChanges(old *Ticket) []*FieldChange {
 		changes = append(changes, &FieldChange{ActionPriorityChanged, toStr(old.Priority), toStr(dto.Priority)})
 	}
 
-	if dto.DueDate != nil && (old.DueDate == nil || *dto.DueDate != *old.DueDate) {
+	if dto.DueDate != nil && (old.DueDate == nil || !dto.DueDate.Equal(*old.DueDate)) {
 		changes = append(changes, &FieldChange{ActionDueDateChanged, toStr(old.DueDate), toStr(dto.DueDate)})
+	} else if dto.DueDate == nil && old.DueDate != nil {
+		changes = append(changes, &FieldChange{ActionDueDateChanged, toStr(old.DueDate), "none"})
 	}
-	if dto.ClosedAt != nil && (old.ClosedAt == nil || *dto.ClosedAt != *old.ClosedAt) {
+	if dto.ClosedAt != nil && (old.ClosedAt == nil || !dto.ClosedAt.Equal(*old.ClosedAt)) {
 		changes = append(changes, &FieldChange{ActionClosed, toStr(old.ClosedAt), toStr(dto.ClosedAt)})
+	} else if dto.ClosedAt == nil && old.ClosedAt != nil {
+		changes = append(changes, &FieldChange{ActionClosed, toStr(old.ClosedAt), "none"})
 	}
 
-	if dto.SiteID != old.Site.ID {
+	if old.Site != nil && dto.SiteID != old.Site.ID {
 		changes = append(changes, &FieldChange{ActionSiteChanged, old.Site.ID.String(), dto.SiteID.String()})
+	} else if old.Site == nil {
+		changes = append(changes, &FieldChange{ActionSiteChanged, "none", dto.SiteID.String()})
 	}
-	if dto.CategoryID != old.Category.ID {
+	if old.Category != nil && dto.CategoryID != old.Category.ID {
 		changes = append(changes, &FieldChange{ActionCategoryChanged, old.Category.ID.String(), dto.CategoryID.String()})
+	} else if old.Category == nil {
+		changes = append(changes, &FieldChange{ActionCategoryChanged, "none", dto.CategoryID.String()})
 	}
 
 	if dto.GroupID != nil && (old.Group == nil || *dto.GroupID != old.Group.ID) {
@@ -133,6 +143,8 @@ func (dto *TicketDTO) GetChanges(old *Ticket) []*FieldChange {
 		} else {
 			changes = append(changes, &FieldChange{ActionGroupAssigned, oldVal, dto.GroupID.String()})
 		}
+	} else if dto.GroupID == nil && old.Group != nil {
+		changes = append(changes, &FieldChange{ActionGroupChanged, old.Group.ID.String(), "none"})
 	}
 
 	if dto.AssigneeID != nil && (old.Assignee == nil || *dto.AssigneeID != old.Assignee.ID) {
@@ -143,6 +155,8 @@ func (dto *TicketDTO) GetChanges(old *Ticket) []*FieldChange {
 		} else {
 			changes = append(changes, &FieldChange{ActionAssigned, oldVal, dto.AssigneeID.String()})
 		}
+	} else if dto.AssigneeID == nil && old.Assignee != nil {
+		changes = append(changes, &FieldChange{ActionAssignChanged, old.Assignee.ID.String(), "none"})
 	}
 	if dto.OwnerID != nil && (old.Owner == nil || *dto.OwnerID != old.Owner.ID) {
 		oldVal := "none"
@@ -150,6 +164,8 @@ func (dto *TicketDTO) GetChanges(old *Ticket) []*FieldChange {
 			oldVal = old.Owner.ID.String()
 		}
 		changes = append(changes, &FieldChange{ActionOwnerChanged, oldVal, dto.OwnerID.String()})
+	} else if dto.OwnerID == nil && old.Owner != nil {
+		changes = append(changes, &FieldChange{ActionOwnerChanged, old.Owner.ID.String(), "none"})
 	}
 
 	return changes

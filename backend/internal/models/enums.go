@@ -12,6 +12,14 @@ const (
 	StatusCancelled  TicketStatus = "cancelled"
 )
 
+func (s TicketStatus) IsValid() bool {
+	switch s {
+	case StatusOpen, StatusInProgress, StatusPending, StatusOnHold, StatusResolved, StatusClosed, StatusCancelled:
+		return true
+	}
+	return false
+}
+
 type Priority string
 
 const (
@@ -40,3 +48,13 @@ const (
 	ActionCategoryChanged    ActivityType = "category_changed" // Изменена категория
 	ActionCommentAdded       ActivityType = "comment_added"
 )
+
+func (a ActivityType) IsValid() bool {
+	switch a {
+	case ActionCreated, ActionClosed, ActionTitleChanged, ActionDescriptionChanged, ActionStatusChanged,
+		ActionPriorityChanged, ActionAssigned, ActionAssignChanged, ActionOwnerChanged, ActionGroupChanged,
+		ActionGroupAssigned, ActionDueDateChanged, ActionSiteChanged, ActionCategoryChanged, ActionCommentAdded:
+		return true
+	}
+	return false
+}

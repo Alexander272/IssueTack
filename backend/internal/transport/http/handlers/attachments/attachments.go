@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/Alexander272/IssueTrack/backend/internal/constants"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -24,6 +24,8 @@ func NewHandler(service services.Attachments) *Handler {
 
 func Register(api *gin.RouterGroup, service services.Attachments) {
 	handlers := NewHandler(service)
+
+	//TODO сделать разграничение доступа
 
 	attachments := api.Group("/attachments")
 	{
@@ -43,7 +45,12 @@ func (h *Handler) getByEntity(c *gin.Context) {
 		return
 	}
 
-	data, err := h.service.GetByEntity(c, entityType, id)
+	user := utils.GetUser(c)
+	if user == nil {
+		return
+	}
+
+	data, err := h.service.GetByEntity(c, entityType, id, user.ID)
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -61,12 +68,10 @@ func (h *Handler) upload(c *gin.Context) {
 		return
 	}
 
-	u, exists := c.Get(constants.CtxUser)
-	if !exists {
-		response.SendError(c, models.ErrSessionEmpty)
+	user := utils.GetUser(c)
+	if user == nil {
 		return
 	}
-	user := u.(models.User)
 
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
@@ -91,7 +96,12 @@ func (h *Handler) delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.Delete(c, nil, id); err != nil {
+	user := utils.GetUser(c)
+	if user == nil {
+		return
+	}
+
+	if err := h.service.Delete(c, nil, id, user.ID); err != nil {
 		response.SendError(c, err)
 		return
 	}

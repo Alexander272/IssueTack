@@ -20,6 +20,7 @@ func NewHandler(service services.Notifications) *Handler {
 
 func Register(api *gin.RouterGroup, service services.Notifications) {
 	h := NewHandler(service)
+	//TODO реализовать
 
 	notifications := api.Group("/notifications")
 	{

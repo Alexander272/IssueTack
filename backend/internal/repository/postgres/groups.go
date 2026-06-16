@@ -29,6 +29,8 @@ type Groups interface {
 	GetMembers(ctx context.Context, req *models.GetGroupDTO) ([]*models.User, error)
 	GetMemberCount(ctx context.Context, groupID uuid.UUID) (int, error)
 	GetManagedGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
+	GetMemberGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
+	IsMember(ctx context.Context, groupID, userID uuid.UUID) (bool, error)
 	AddMember(ctx context.Context, dto *models.GroupMemberDTO) error
 	RemoveMember(ctx context.Context, dto *models.GroupMemberDTO) error
 }
@@ -137,9 +139,9 @@ func (r *groupRepo) Create(ctx context.Context, dto *models.GroupDTO) error {
 }
 
 func (r *groupRepo) Update(ctx context.Context, dto *models.GroupDTO) error {
-	query := fmt.Sprintf(`UPDATE %s SET name=$2, description=$3 WHERE id=$1`, Tables.Groups)
+	query := fmt.Sprintf(`UPDATE %s SET name=$2, description=$3, default_assignee_id=$4, manager_id=$5 WHERE id=$1`, Tables.Groups)
 
-	_, err := r.db.Exec(ctx, query, dto.ID, dto.Name, dto.Description)
+	_, err := r.db.Exec(ctx, query, dto.ID, dto.Name, dto.Description, dto.DefaultAssigneeID, dto.ManagerID)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -236,4 +238,38 @@ func (r *groupRepo) GetManagedGroups(ctx context.Context, userID uuid.UUID) ([]u
 		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
 	}
 	return data, nil
+}
+
+func (r *groupRepo) GetMemberGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+	query := fmt.Sprintf(`SELECT group_id FROM %s WHERE user_id = $1`, Tables.GroupMembers)
+
+	rows, err := r.db.Query(ctx, query, userID)
+	if err != nil {
+		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	defer rows.Close()
+
+	var data []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, MapError(fmt.Errorf("scan row error: %w", err))
+		}
+		data = append(data, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
+	return data, nil
+}
+
+func (r *groupRepo) IsMember(ctx context.Context, groupID, userID uuid.UUID) (bool, error) {
+	query := fmt.Sprintf(`SELECT EXISTS(SELECT 1 FROM %s WHERE group_id = $1 AND user_id = $2)`, Tables.GroupMembers)
+
+	var exists bool
+	err := r.db.QueryRow(ctx, query, groupID, userID).Scan(&exists)
+	if err != nil {
+		return false, MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	return exists, nil
 }

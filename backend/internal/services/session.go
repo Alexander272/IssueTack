@@ -138,13 +138,13 @@ func (s *SessionService) DecodeAccessToken(ctx context.Context, token string) (*
 
 	userRealms, err := s.userRealm.GetByUserID(ctx, user.ID)
 	if err != nil {
-		return user, nil
+		return nil, fmt.Errorf("failed to get user realms: %w", err)
 	}
 	user.Permissions = map[string][]string{}
 	for _, r := range userRealms {
 		access, err := s.policies.GetPolicies(userIDStr, r.RealmID.String())
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("failed to get policies: %w", err)
 		}
 		user.Permissions[r.RealmID.String()] = access.Perms
 	}

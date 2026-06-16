@@ -72,6 +72,9 @@ var (
 	ErrCircularInheritance   = NewDomainError(errors.New("circular inheritance detected"), http.StatusConflict, "RL004", "Обнаружено циклическое наследование ролей")
 	ErrRoleNotEditable       = NewDomainError(errors.New("role is not editable"), http.StatusBadRequest, "RL005", "Роль не редактируема")
 
+	// 501 Not Implemented
+	ErrNotImplemented = NewDomainError(errors.New("not implemented"), http.StatusNotImplemented, "NI001", "Метод не реализован")
+
 	// Дополнительные ошибки (преобразованы в DomainError)
 	ErrChangeRealm         = NewDomainError(errors.New("cannot change realm"), http.StatusForbidden, "CH001", "Невозможно изменить область")
 	ErrConstraintViolation = NewDomainError(errors.New("constraint violation"), http.StatusBadRequest, "CV001", "Нарушение ограничения целостности")

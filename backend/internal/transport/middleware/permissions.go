@@ -10,14 +10,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func (m *Middleware) CheckPermissions(required ...access.Permission) gin.HandlerFunc {
+func (m *Middleware) CheckPermissions(perms ...access.Permission) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		u, exists := c.Get(constants.CtxUser)
 		if !exists {
 			response.SendError(c, models.ErrSessionEmpty)
 			return
 		}
-		user := u.(models.User)
+		user, ok := u.(models.User)
+		if !ok {
+			response.SendError(c, fmt.Errorf("invalid user type in context"))
+			return
+		}
 
 		var accessAllowed bool
 		var lastErr error
@@ -27,7 +31,7 @@ func (m *Middleware) CheckPermissions(required ...access.Permission) gin.Handler
 			realmId = c.Query("realm")
 		}
 
-		for _, r := range required {
+		for _, r := range perms {
 			ok, err := m.services.AccessPolices.Enforce(user.ID.String(), realmId, string(r.Resource), string(r.Action))
 			if err != nil {
 				lastErr = err

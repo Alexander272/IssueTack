@@ -154,6 +154,9 @@ func (r *RoleRepo) GetUserCount(ctx context.Context, roleIDs []string) (map[stri
 		}
 		counts[roleID] = count
 	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
 
 	return counts, nil
 }
@@ -181,6 +184,9 @@ func (r *RoleRepo) GetIDsBySlugs(ctx context.Context, realmID uuid.UUID, slugs [
 			return nil, MapError(fmt.Errorf("failed to scan row: %w", err))
 		}
 		result[slug] = id
+	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
 	}
 
 	return result, nil

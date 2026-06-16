@@ -55,6 +55,22 @@ func (s *GroupService) GetManagedGroups(ctx context.Context, userID uuid.UUID) (
 	return ids, nil
 }
 
+func (s *GroupService) GetMemberGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+	ids, err := s.repo.GetMemberGroups(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get member groups. error: %w", err)
+	}
+	return ids, nil
+}
+
+func (s *GroupService) IsMember(ctx context.Context, groupID, userID uuid.UUID) (bool, error) {
+	ok, err := s.repo.IsMember(ctx, groupID, userID)
+	if err != nil {
+		return false, fmt.Errorf("failed to check membership. error: %w", err)
+	}
+	return ok, nil
+}
+
 type Groups interface {
 	Get(ctx context.Context, req *models.GetGroupsDTO) ([]*models.Group, error)
 	GetByID(ctx context.Context, req *models.GetGroupDTO) (*models.Group, error)
@@ -67,6 +83,8 @@ type Groups interface {
 	GetMembers(ctx context.Context, req *models.GetGroupDTO) ([]*models.User, error)
 	GetMemberCount(ctx context.Context, groupID uuid.UUID) (int, error)
 	GetManagedGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
+	GetMemberGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
+	IsMember(ctx context.Context, groupID, userID uuid.UUID) (bool, error)
 }
 
 func (s *GroupService) Get(ctx context.Context, req *models.GetGroupsDTO) ([]*models.Group, error) {

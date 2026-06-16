@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/Alexander272/IssueTrack/backend/internal/constants"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -37,35 +37,16 @@ func Register(api *gin.RouterGroup, service services.Tickets) {
 
 func (h *Handler) getAll(c *gin.Context) {
 	filter := &models.TicketFilter{}
+	if err := c.ShouldBindQuery(&filter); err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
 
-	if siteID := c.Query("siteId"); siteID != "" {
-		id, err := uuid.Parse(siteID)
-		if err == nil {
-			filter.SiteID = &id
-		}
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
 	}
-	if status := c.Query("status"); status != "" {
-		s := models.TicketStatus(status)
-		filter.Status = &s
-	}
-	if ownerID := c.Query("ownerId"); ownerID != "" {
-		id, err := uuid.Parse(ownerID)
-		if err == nil {
-			filter.OwnerID = &id
-		}
-	}
-	if assigneeID := c.Query("assigneeId"); assigneeID != "" {
-		id, err := uuid.Parse(assigneeID)
-		if err == nil {
-			filter.AssigneeID = &id
-		}
-	}
-	if groupID := c.Query("groupId"); groupID != "" {
-		id, err := uuid.Parse(groupID)
-		if err == nil {
-			filter.GroupID = &id
-		}
-	}
+	filter.Actor = actor
 
 	data, err := h.service.Get(c, filter)
 	if err != nil {
@@ -83,13 +64,12 @@ func (h *Handler) getByID(c *gin.Context) {
 		return
 	}
 
-	u, exists := c.Get(constants.CtxUser)
-	if !exists {
-		response.SendError(c, models.ErrSessionEmpty)
+	actor := utils.GetActor(c)
+	if actor == nil {
 		return
 	}
-	user := u.(models.User)
-	data, err := h.service.GetByID(c, &models.GetTicketByIdDTO{ID: id, Actor: models.Actor{ID: user.ID, Name: user.Name}})
+
+	data, err := h.service.GetByID(c, &models.GetTicketByIdDTO{ID: id, Actor: actor})
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -104,13 +84,11 @@ func (h *Handler) create(c *gin.Context) {
 		return
 	}
 
-	u, exists := c.Get(constants.CtxUser)
-	if !exists {
-		response.SendError(c, models.ErrSessionEmpty)
+	actor := utils.GetActor(c)
+	if actor == nil {
 		return
 	}
-	user := u.(models.User)
-	dto.Actor = models.Actor{ID: user.ID, Name: user.Name}
+	dto.Actor = actor
 
 	if err := h.service.Create(c, dto); err != nil {
 		response.SendError(c, err, dto)
@@ -138,13 +116,11 @@ func (h *Handler) update(c *gin.Context) {
 	}
 	dto.ID = id
 
-	u, exists := c.Get(constants.CtxUser)
-	if !exists {
-		response.SendError(c, models.ErrSessionEmpty)
+	actor := utils.GetActor(c)
+	if actor == nil {
 		return
 	}
-	user := u.(models.User)
-	dto.Actor = models.Actor{ID: user.ID, Name: user.Name}
+	dto.Actor = actor
 
 	if err := h.service.Update(c, dto); err != nil {
 		response.SendError(c, err, dto)
@@ -161,14 +137,12 @@ func (h *Handler) delete(c *gin.Context) {
 		return
 	}
 
-	u, exists := c.Get(constants.CtxUser)
-	if !exists {
-		response.SendError(c, models.ErrSessionEmpty)
+	actor := utils.GetActor(c)
+	if actor == nil {
 		return
 	}
-	user := u.(models.User)
 
-	if err := h.service.Delete(c, &models.DeleteTicketDTO{ID: id, Actor: models.Actor{ID: user.ID, Name: user.Name}}); err != nil {
+	if err := h.service.Delete(c, &models.DeleteTicketDTO{ID: id, Actor: actor}); err != nil {
 		response.SendError(c, err)
 		return
 	}

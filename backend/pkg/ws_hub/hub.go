@@ -89,6 +89,8 @@ func (h *Hub) Run(ctx context.Context) {
 			for _, client := range snapshot {
 				select {
 				case client.Send <- msg.Data:
+				case <-h.stopped:
+					return
 				default:
 					h.Disconnect(client)
 				}
@@ -100,7 +102,7 @@ func (h *Hub) Run(ctx context.Context) {
 func (h *Hub) Disconnect(c *Client) {
 	select {
 	case h.disconnect <- c:
-	default:
+	case <-h.stopped:
 	}
 }
 

@@ -1,5 +1,7 @@
 package constants
 
+type ctxKey string
+
 const (
-	CtxUser string = "user_context"
+	CtxUser ctxKey = "user_context"
 )

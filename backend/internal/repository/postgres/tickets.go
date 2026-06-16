@@ -42,7 +42,7 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 			s.id, s.name
 		FROM %s t
 		JOIN %s u_creator ON t.creator_id = u_creator.id
-		JOIN %s u_owner ON t.owner_id = u_owner.id
+		LEFT JOIN %s u_owner ON t.owner_id = u_owner.id
 		LEFT JOIN %s u_assignee ON t.assignee_id = u_assignee.id
 		LEFT JOIN %s u_manager ON t.manager_id = u_manager.id
 		LEFT JOIN %s g ON t.group_id = g.id
@@ -80,6 +80,15 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 		where = append(where, fmt.Sprintf("t.group_id = $%d", argIdx))
 		args = append(args, *req.GroupID)
 		argIdx++
+	}
+	if len(req.GroupIDs) > 0 {
+		ids := make([]string, len(req.GroupIDs))
+		for i, gid := range req.GroupIDs {
+			ids[i] = fmt.Sprintf("$%d", argIdx)
+			args = append(args, gid)
+			argIdx++
+		}
+		where = append(where, "t.group_id IN ("+strings.Join(ids, ",")+")")
 	}
 
 	query := base
@@ -161,7 +170,7 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 
 func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) (*models.Ticket, error) {
 	query := fmt.Sprintf(`SELECT 
-			t.id, t.title, t.description, t.status, t.priority, t.due_date, t.created_at,
+			t.id, t.title, t.description, t.status, t.priority, t.due_date, t.closed_at, t.created_at, t.updated_at,
 			-- Данные владельца
 			u_owner.id, CONCAT_WS(' ', u_owner.last_name, u_owner.first_name) AS owner_full_name,
 			-- Данные создателя
@@ -177,7 +186,7 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 			-- Данные площадки
 			s.id, s.name
 		FROM %s t
-		JOIN %s u_owner ON t.owner_id = u_owner.id
+		LEFT JOIN %s u_owner ON t.owner_id = u_owner.id
 		JOIN %s u_creator ON t.creator_id = u_creator.id
 		LEFT JOIN %s u_assignee ON t.assignee_id = u_assignee.id
 		LEFT JOIN %s u_manager ON t.manager_id = u_manager.id
@@ -189,27 +198,42 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 		Tables.Groups, Tables.Categories, Tables.Sites,
 	)
 
-	//TODO это может не заработать. потому что могут вернуться null
 	ticket := &models.Ticket{
 		Site:     &models.SiteShort{},
 		Category: &models.CategoryShort{},
 		Creator:  models.UserShort{},
-		Owner:    &models.UserShort{},
-		Assignee: &models.UserShort{},
-		Manager:  &models.UserShort{},
-		Group:    &models.GroupShort{},
 	}
+
+	var ownerID, assigneeID, managerID *uuid.UUID
+	var ownerName, assigneeName, managerName *string
+	var groupID *uuid.UUID
+	var groupName *string
+
 	if err := r.db.QueryRow(ctx, query, req.ID).Scan(
-		&ticket.ID, &ticket.Title, &ticket.Description, &ticket.Status, &ticket.Priority, &ticket.DueDate, &ticket.CreatedAt,
-		&ticket.Owner.ID, &ticket.Owner.FullName,
+		&ticket.ID, &ticket.Title, &ticket.Description, &ticket.Status, &ticket.Priority,
+		&ticket.DueDate, &ticket.ClosedAt, &ticket.CreatedAt, &ticket.UpdatedAt,
+		&ownerID, &ownerName,
 		&ticket.Creator.ID, &ticket.Creator.FullName,
-		&ticket.Assignee.ID, &ticket.Assignee.FullName,
-		&ticket.Manager.ID, &ticket.Manager.FullName,
-		&ticket.Group.ID, &ticket.Group.Name,
+		&assigneeID, &assigneeName,
+		&managerID, &managerName,
+		&groupID, &groupName,
 		&ticket.Category.ID, &ticket.Category.Name,
 		&ticket.Site.ID, &ticket.Site.Name,
 	); err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+
+	if ownerID != nil {
+		ticket.Owner = &models.UserShort{ID: *ownerID, FullName: *ownerName}
+	}
+	if assigneeID != nil {
+		ticket.Assignee = &models.UserShort{ID: *assigneeID, FullName: *assigneeName}
+	}
+	if managerID != nil {
+		ticket.Manager = &models.UserShort{ID: *managerID, FullName: *managerName}
+	}
+	if groupID != nil {
+		ticket.Group = &models.GroupShort{ID: *groupID, Name: *groupName}
 	}
 
 	return ticket, nil

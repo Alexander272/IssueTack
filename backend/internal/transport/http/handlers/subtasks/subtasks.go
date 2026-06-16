@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/Alexander272/IssueTrack/backend/internal/constants"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -42,7 +42,12 @@ func (h *Handler) getByTicket(c *gin.Context) {
 		return
 	}
 
-	data, err := h.service.GetByTicketID(c, id)
+	user := utils.GetUser(c)
+	if user == nil {
+		return
+	}
+
+	data, err := h.service.GetByTicketID(c, id, user.ID)
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -65,16 +70,13 @@ func (h *Handler) create(c *gin.Context) {
 	}
 	dto.TicketID = id
 
-	u, exists := c.Get(constants.CtxUser)
-	if !exists {
-		response.SendError(c, models.ErrSessionEmpty)
+	actor := utils.GetActor(c)
+	if actor == nil {
 		return
 	}
-	user := u.(models.User)
+	dto.Actor = actor
 
-	actor := models.Actor{ID: user.ID, Name: user.Name}
-
-	if err := h.service.Create(c, nil, dto, actor); err != nil {
+	if err := h.service.Create(c, nil, dto); err != nil {
 		response.SendError(c, err, dto)
 		return
 	}
@@ -100,16 +102,13 @@ func (h *Handler) update(c *gin.Context) {
 	}
 	dto.ID = id
 
-	u, exists := c.Get(constants.CtxUser)
-	if !exists {
-		response.SendError(c, models.ErrSessionEmpty)
+	actor := utils.GetActor(c)
+	if actor == nil {
 		return
 	}
-	user := u.(models.User)
+	dto.Actor = actor
 
-	actor := models.Actor{ID: user.ID, Name: user.Name}
-
-	if err := h.service.Update(c, nil, dto, actor); err != nil {
+	if err := h.service.Update(c, nil, dto); err != nil {
 		response.SendError(c, err, dto)
 		return
 	}
@@ -124,20 +123,11 @@ func (h *Handler) delete(c *gin.Context) {
 		return
 	}
 
-	u, exists := c.Get(constants.CtxUser)
-	if !exists {
-		response.SendError(c, models.ErrSessionEmpty)
+	actor := utils.GetActor(c)
+	if actor == nil {
 		return
 	}
-	user := u.(models.User)
-
-	dto := &models.DelSubtaskDTO{
-		ID: id,
-		Actor: models.Actor{
-			ID:   user.ID,
-			Name: user.Name,
-		},
-	}
+	dto := &models.DelSubtaskDTO{ID: id, Actor: actor}
 
 	if err := h.service.Delete(c, nil, dto); err != nil {
 		response.SendError(c, err)

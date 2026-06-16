@@ -23,6 +23,7 @@ func NewAttachmentRepo(db *pgxpool.Pool, tr Transaction) *AttachmentRepo {
 
 type Attachments interface {
 	GetByEntity(ctx context.Context, entityType string, entityID uuid.UUID) ([]*models.Attachment, error)
+	GetByID(ctx context.Context, id uuid.UUID) (*models.Attachment, error)
 	Create(ctx context.Context, tx Tx, dto *models.Attachment) error
 	Delete(ctx context.Context, tx Tx, id uuid.UUID) error
 }
@@ -58,6 +59,23 @@ func (r *AttachmentRepo) GetByEntity(ctx context.Context, entityType string, ent
 		return []*models.Attachment{}, nil
 	}
 	return data, nil
+}
+
+func (r *AttachmentRepo) GetByID(ctx context.Context, id uuid.UUID) (*models.Attachment, error) {
+	query := fmt.Sprintf(`SELECT id, entity_type, entity_id, file_name, file_path, file_size, mime_type, uploaded_by, created_at
+		FROM %s WHERE id = $1`,
+		Tables.Attachments,
+	)
+
+	item := &models.Attachment{}
+	if err := r.db.QueryRow(ctx, query, id).Scan(
+		&item.ID, &item.EntityType, &item.EntityID,
+		&item.FileName, &item.FilePath, &item.FileSize, &item.MimeType,
+		&item.UploadedBy, &item.CreatedAt,
+	); err != nil {
+		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	return item, nil
 }
 
 func (r *AttachmentRepo) Create(ctx context.Context, tx Tx, dto *models.Attachment) error {

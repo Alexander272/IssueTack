@@ -17,6 +17,7 @@ type accessPolicesService struct {
 	enforcer casbin.IEnforcer
 	adapter  Adapter
 	eventBus *events.PolicyEventManager
+	quit     chan struct{}
 }
 
 type PoliciesDeps struct {
@@ -40,15 +41,26 @@ func NewAccessPoliciesService(deps *PoliciesDeps) *accessPolicesService {
 		enforcer: enforcer,
 		adapter:  deps.Adapter,
 		eventBus: deps.EventBus,
+		quit:     make(chan struct{}),
 	}
 
 	updateChan := deps.EventBus.Subscribe()
 	go func() {
 		defer deps.EventBus.Unsubscribe(updateChan)
-		for range updateChan {
-			logger.Info("Received policy update event, reloading...")
-			s.enforcer.LoadPolicy()
-			deps.Cache.Flush(context.Background())
+		for {
+			select {
+			case <-s.quit:
+				return
+			case _, ok := <-updateChan:
+				if !ok {
+					return
+				}
+				logger.Info("Received policy update event, reloading...")
+				deps.Cache.Flush(context.Background())
+				if err := s.enforcer.LoadPolicy(); err != nil {
+					logger.Warn("failed to reload policy after event", "error", err.Error())
+				}
+			}
 		}
 	}()
 
@@ -71,6 +83,10 @@ func (s *accessPolicesService) Reload() error {
 		return fmt.Errorf("failed to reload policies: %w", err)
 	}
 	return nil
+}
+
+func (s *accessPolicesService) Close() {
+	close(s.quit)
 }
 
 func (s *accessPolicesService) GetPolicies(user, domain string) (*models.Access, error) {

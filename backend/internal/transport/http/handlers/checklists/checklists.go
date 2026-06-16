@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -21,19 +24,27 @@ func NewHandler(service services.Checklists) *Handler {
 	}
 }
 
-func Register(api *gin.RouterGroup, service services.Checklists) {
+func Register(api *gin.RouterGroup, service services.Checklists, middleware *middleware.Middleware) {
 	handlers := NewHandler(service)
 
-	checklists := api.Group("/checklists")
+	checklists := api.Group("/checklists", middleware.CheckPermissions(access.Reg.R(access.ResourceChecklist).Read()))
 	{
 		checklists.GET("", handlers.getAll)
 		checklists.GET("/:id", handlers.getByID)
 		checklists.GET("/:id/items", handlers.getItems)
-		checklists.POST("", handlers.create)
-		checklists.PUT("/:id", handlers.update)
-		checklists.PUT("/:id/items", handlers.setItems)
-		checklists.POST("/:id/apply/:ticketId", handlers.apply)
-		checklists.DELETE("/:id", handlers.delete)
+
+		write := checklists.Group("", middleware.CheckPermissions(access.Reg.R(access.ResourceChecklist).Write()))
+		{
+			write.POST("", handlers.create)
+			write.PUT("/:id", handlers.update)
+			write.PUT("/:id/items", handlers.setItems)
+			write.POST("/:id/apply/:ticketId", handlers.apply)
+		}
+
+		delete := checklists.Group("", middleware.CheckPermissions(access.Reg.R(access.ResourceChecklist).Delete()))
+		{
+			delete.DELETE("/:id", handlers.delete)
+		}
 	}
 }
 
@@ -42,9 +53,11 @@ func (h *Handler) getAll(c *gin.Context) {
 
 	if realmID := c.Query("realmId"); realmID != "" {
 		id, err := uuid.Parse(realmID)
-		if err == nil {
-			dto.RealmID = id
+		if err != nil {
+			response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+			return
 		}
+		dto.RealmID = id
 	}
 
 	data, err := h.service.Get(c, dto)
@@ -161,7 +174,12 @@ func (h *Handler) apply(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.ApplyTemplate(c, nil, ticketID, templateID); err != nil {
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+
+	if err := h.service.ApplyTemplate(c, nil, ticketID, templateID, actor); err != nil {
 		response.SendError(c, err)
 		return
 	}

@@ -239,10 +239,14 @@ func mapUsersData(rows []*pq_models.User) []*models.UserData {
 			ID:        uuid.MustParse(u.UserRealmId.String),
 			IsActive:  u.IsActive.Bool,
 			CreatedAt: u.RealmCreatedAt.Time,
-			RealmID:   uuid.MustParse(u.RealmId.String),
-			RoleID:    uuid.MustParse(u.RoleId.String),
 			Realm:     realm,
 			Role:      role,
+		}
+		if u.RealmId.Valid {
+			userRealm.RealmID = uuid.MustParse(u.RealmId.String)
+		}
+		if u.RoleId.Valid {
+			userRealm.RoleID = uuid.MustParse(u.RoleId.String)
 		}
 
 		if idx, ok := userIndex[u.Id]; ok {

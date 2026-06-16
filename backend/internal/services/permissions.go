@@ -130,7 +130,10 @@ func (s *PermissionService) GetGrouped(ctx context.Context) ([]*models.GroupedPe
 	res := make([]*models.GroupedPermission, 0, len(data))
 	for i := 0; i < len(data); i++ {
 		if i == 0 || data[i].Object != data[i-1].Object {
-			resource, _ := access.Reg.GetBySlug(access.ResourceSlug(data[i].Object))
+			resource, ok := access.Reg.GetBySlug(access.ResourceSlug(data[i].Object))
+			if !ok {
+				resource = access.Resource{Name: string(data[i].Object)}
+			}
 			res = append(res, &models.GroupedPermission{
 				Group: data[i].Object,
 				Title: resource.Name,

@@ -89,6 +89,11 @@ func (s *userService) Sync(ctx context.Context, actor *models.Actor) error {
 			}
 			delete(kcDataMap, dbU.ID)
 		} else {
+			logger.Debug("user not found in Keycloak, will be deleted",
+				"user_id", dbU.ID,
+				"username", dbU.Username,
+				"email", dbU.Email,
+			)
 			toDelete = append(toDelete, dbU.ID)
 		}
 	}

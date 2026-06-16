@@ -50,14 +50,19 @@ func (r *SubtaskRepo) GetByTicketID(ctx context.Context, ticketID uuid.UUID) ([]
 
 	var data []*models.Subtask
 	for rows.Next() {
-		item := &models.Subtask{Assignee: &models.UserShort{}}
+		item := &models.Subtask{}
+		var assigneeID *uuid.UUID
+		var assigneeName *string
 		if err := rows.Scan(
 			&item.ID, &item.TicketID, &item.Title, &item.Description,
 			&item.Status, &item.Priority, &item.DueDate, &item.ClosedAt,
 			&item.SortOrder, &item.CreatedAt, &item.UpdatedAt,
-			&item.Assignee.ID, &item.Assignee.FullName,
+			&assigneeID, &assigneeName,
 		); err != nil {
 			return nil, MapError(fmt.Errorf("scan row error: %w", err))
+		}
+		if assigneeID != nil {
+			item.Assignee = &models.UserShort{ID: *assigneeID, FullName: *assigneeName}
 		}
 		data = append(data, item)
 	}
@@ -81,14 +86,19 @@ func (r *SubtaskRepo) GetByID(ctx context.Context, req *models.GetSubtaskDTO) (*
 		Tables.Subtasks, Tables.Users,
 	)
 
-	item := &models.Subtask{Assignee: &models.UserShort{}}
+	item := &models.Subtask{}
+	var assigneeID *uuid.UUID
+	var assigneeName *string
 	if err := r.db.QueryRow(ctx, query, req.ID).Scan(
 		&item.ID, &item.TicketID, &item.Title, &item.Description,
 		&item.Status, &item.Priority, &item.DueDate, &item.ClosedAt,
 		&item.SortOrder, &item.CreatedAt, &item.UpdatedAt,
-		&item.Assignee.ID, &item.Assignee.FullName,
+		&assigneeID, &assigneeName,
 	); err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	if assigneeID != nil {
+		item.Assignee = &models.UserShort{ID: *assigneeID, FullName: *assigneeName}
 	}
 	return item, nil
 }

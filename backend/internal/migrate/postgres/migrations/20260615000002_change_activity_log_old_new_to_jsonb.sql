@@ -3,11 +3,11 @@
 
 ALTER TABLE IF EXISTS public.activity_logs
     ALTER COLUMN old_value TYPE JSONB
-    USING CASE WHEN old_value IS NULL THEN NULL ELSE to_jsonb(old_value) END;
+    USING old_value::jsonb;
 
 ALTER TABLE IF EXISTS public.activity_logs
     ALTER COLUMN new_value TYPE JSONB
-    USING CASE WHEN new_value IS NULL THEN NULL ELSE to_jsonb(new_value) END;
+    USING new_value::jsonb;
 
 -- +goose StatementEnd
 

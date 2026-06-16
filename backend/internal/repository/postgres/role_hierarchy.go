@@ -57,6 +57,9 @@ func (r *RoleHierarchyRepo) LoadPolicy(ctx context.Context) ([]*models.SyncRoleI
 		}
 		data = append(data, item)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
 
 	return data, nil
 }
@@ -110,6 +113,9 @@ func (r *RoleHierarchyRepo) GetInheritedRoles(ctx context.Context, req *models.G
 		}
 		result[root] = append(result[root], parent)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
 
 	return result, nil
 }
@@ -139,6 +145,9 @@ func (r *RoleHierarchyRepo) SyncRoleInheritance(ctx context.Context, req *models
 		// // g(дочерняя_роль, родительская_роль, домен)
 		// casbin.AddGroupingPolicy(roleCode, parentCode, domain)
 		data = append(data, &models.SyncRoleInheritance{Role: req.Role, ParentRole: parentCode, Realm: req.Realm})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
 	}
 
 	return data, nil
@@ -197,6 +206,9 @@ func (r *RoleHierarchyRepo) GetRoleDescendants(ctx context.Context, req *models.
 		}
 		result[root] = append(result[root], child)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
 
 	return result, nil
 }
@@ -231,6 +243,9 @@ func (r *RoleHierarchyRepo) GetDirectChildren(ctx context.Context, req *models.G
 			return nil, MapError(fmt.Errorf("scan row error: %w", err))
 		}
 		result[parent] = append(result[parent], child)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
 	}
 
 	return result, nil

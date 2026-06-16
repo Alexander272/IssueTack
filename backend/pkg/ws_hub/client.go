@@ -92,13 +92,13 @@ func (c *Client) ReadPump(timeout time.Duration) {
 	}()
 
 	c.Conn.SetReadLimit(4096)
-	c.Conn.SetReadDeadline(time.Now().Add(timeout))
 	c.Conn.SetPongHandler(func(string) error {
 		c.Conn.SetReadDeadline(time.Now().Add(timeout))
 		return nil
 	})
 
 	for {
+		c.Conn.SetReadDeadline(time.Now().Add(timeout))
 		_, _, err := c.Conn.ReadMessage()
 		if err != nil {
 			break

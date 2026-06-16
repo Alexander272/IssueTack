@@ -6,6 +6,7 @@ import (
 
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
+	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 )
 
 type TransactionManagerService struct {
@@ -28,10 +29,14 @@ func (tm *TransactionManagerService) WithinTransaction(ctx context.Context, fn f
 
 	defer func() {
 		if p := recover(); p != nil {
-			tx.Rollback(ctx)
+			if rbErr := tx.Rollback(ctx); rbErr != nil {
+				logger.Warn("transaction rollback failed on panic", logger.ErrAttr(rbErr))
+			}
 			panic(p)
 		} else if err != nil {
-			tx.Rollback(ctx)
+			if rbErr := tx.Rollback(ctx); rbErr != nil {
+				logger.Warn("transaction rollback failed on error", logger.ErrAttr(rbErr))
+			}
 		}
 	}()
 
@@ -40,6 +45,9 @@ func (tm *TransactionManagerService) WithinTransaction(ctx context.Context, fn f
 	}
 
 	if err := tx.Commit(ctx); err != nil {
+		if rbErr := tx.Rollback(ctx); rbErr != nil {
+			logger.Warn("transaction rollback failed after commit error", logger.ErrAttr(rbErr))
+		}
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 	return nil

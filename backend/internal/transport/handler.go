@@ -78,7 +78,7 @@ func securityHeaders() gin.HandlerFunc {
 		c.Header("X-XSS-Protection", "1; mode=block")
 		c.Header("Referrer-Policy", "no-referrer-when-downgrade")
 		c.Header("Content-Security-Policy",
-			"default-src 'self' http: https: data: blob: 'unsafe-inline'")
+			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' ws:;")
 		c.Header("Strict-Transport-Security",
 			"max-age=31536000; includeSubDomains")
 		c.Next()

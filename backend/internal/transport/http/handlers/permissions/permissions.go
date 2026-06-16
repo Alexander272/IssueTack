@@ -24,7 +24,6 @@ func Register(api *gin.RouterGroup, service services.Permissions, middleware *mi
 	permissions := api.Group("/permissions", middleware.CheckPermissions(access.Reg.R(access.ResourcePerm).Read()))
 	{
 		permissions.GET("", handler.getAll)
-		permissions.GET("/resources", handler.getResources)
 	}
 }
 
@@ -34,10 +33,5 @@ func (h *Handler) getAll(c *gin.Context) {
 		response.SendError(c, err)
 		return
 	}
-	response.SendData(c, data, len(data))
-}
-
-func (h *Handler) getResources(c *gin.Context) {
-	data := access.Reg.List()
 	response.SendData(c, data, len(data))
 }
