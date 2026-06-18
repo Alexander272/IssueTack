@@ -12,7 +12,7 @@ export default function PrivateRoute() {
 	const location = useLocation()
 
 	if (!token) return <Navigate to={AppRoutes.Auth} state={{ from: location }} />
-	if (!permissions || !permissions.length) return <Forbidden />
+	// if (!permissions || !permissions.length) return <Forbidden />
 
 	return <Outlet />
 }

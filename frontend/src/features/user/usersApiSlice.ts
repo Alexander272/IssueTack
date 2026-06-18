@@ -8,7 +8,7 @@ import { apiSlice } from '@/app/apiSlice'
 export const usersApiSlice = apiSlice.injectEndpoints({
 	overrideExisting: false,
 	endpoints: builder => ({
-		getAllUsers: builder.query<{ data: IUserData[] }, null>({
+		getAllUsers: builder.query<{ data: IUserData[] }, void>({
 			query: () => ({
 				url: API.users.base,
 				method: 'GET',
@@ -23,7 +23,7 @@ export const usersApiSlice = apiSlice.injectEndpoints({
 				}
 			},
 		}),
-		getUserByAccess: builder.query<{ data: IUserData[] }, null>({
+		getUserByAccess: builder.query<{ data: IUserData[] }, void>({
 			query: () => ({
 				url: `${API.users.access}`,
 				method: 'GET',
@@ -49,7 +49,7 @@ export const usersApiSlice = apiSlice.injectEndpoints({
 			}),
 		}),
 
-		syncUsers: builder.mutation<null, null>({
+		syncUsers: builder.mutation<null, void>({
 			query: () => ({
 				url: API.users.sync,
 				method: 'POST',

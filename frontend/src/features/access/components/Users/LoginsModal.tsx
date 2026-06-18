@@ -13,16 +13,6 @@ import {
 	TableRow,
 	Box,
 } from '@mui/material'
-import {
-	Computer,
-	PhoneAndroid,
-	TabletAndroid,
-	SmartToy,
-	CheckCircle,
-	Cancel,
-	Public,
-	SettingsApplications,
-} from '@mui/icons-material'
 
 import type { IUserData } from '@/features/user/types/user'
 import { getSmartDate } from '@/utils/date'
@@ -41,6 +31,13 @@ import { IphoneIcon } from '@/components/Icons/Systems/IphoneIcon'
 import { AndroidIcon } from '@/components/Icons/Systems/AndroidIcon'
 import { LinuxIcon } from '@/components/Icons/Systems/LinuxIcon'
 import { UbuntuIcon } from '@/components/Icons/Systems/UbuntuIcon'
+import { ComputerIcon } from '@/components/Icons/Devices/ComputerIcon'
+import { PhoneIcon } from '@/components/Icons/Devices/PhoneIcon'
+import { TabletIcon } from '@/components/Icons/Devices/TabletIcon'
+import { RobotIcon } from '@/components/Icons/Devices/RobotIcon'
+import { CheckIcon } from '@/components/Icons/CheckIcon'
+import { CloseRoundIcon } from '@/components/Icons/CloseRoundIcon'
+import { SettingIcon } from '@/components/Icons/SettingIcon'
 
 type Props = {
 	user: IUserData | null
@@ -50,13 +47,13 @@ type Props = {
 const getDeviceIcon = (device: string): ReactElement => {
 	switch (device) {
 		case 'desktop':
-			return <Computer sx={{ fontSize: 14 }} />
+			return <ComputerIcon sx={{ fontSize: 14, fill: '#475569' }} />
 		case 'mobile':
-			return <PhoneAndroid sx={{ fontSize: 14 }} />
+			return <PhoneIcon sx={{ fontSize: 14, fill: '#475569' }} />
 		case 'tablet':
-			return <TabletAndroid sx={{ fontSize: 14 }} />
+			return <TabletIcon sx={{ fontSize: 14, fill: '#475569' }} />
 		default:
-			return <SmartToy sx={{ fontSize: 14 }} />
+			return <RobotIcon sx={{ fontSize: 14, fill: '#475569' }} />
 	}
 }
 
@@ -125,7 +122,7 @@ const getOsConfig = (os: string) => {
 	const config = osConfig[os]
 	if (config) return config
 	return {
-		icon: <SettingsApplications sx={{ fontSize: 14 }} />,
+		icon: <SettingIcon sx={{ fontSize: 14, fill: '#475569' }} />,
 		colors: { bg: '#f8fafc', color: '#475569' },
 	}
 }
@@ -175,7 +172,7 @@ const Chip = ({
 }
 
 export const LoginsModal: FC<Props> = ({ user, onClose }) => {
-	const { data, isFetching } = useGetUserLoginsQuery(user?.ssoId || '', { skip: !user })
+	const { data, isFetching } = useGetUserLoginsQuery(user?.id || '', { skip: !user })
 
 	return (
 		<Dialog
@@ -246,7 +243,7 @@ export const LoginsModal: FC<Props> = ({ user, onClose }) => {
 												<Chip
 													variant='info'
 													label={login.ipAddress || '-'}
-													icon={<Public sx={{ fontSize: 14 }} />}
+													icon={<GlobeIcon sx={{ fontSize: 14 }} />}
 												/>
 											</TableCell>
 											<TableCell align='center'>
@@ -283,7 +280,7 @@ export const LoginsModal: FC<Props> = ({ user, onClose }) => {
 													<Chip
 														variant={isBot ? 'error' : 'success'}
 														label={isBot ? 'Да' : 'Нет'}
-														icon={<SmartToy sx={{ fontSize: 14 }} />}
+														icon={<RobotIcon sx={{ fontSize: 14 }} />}
 													/>
 												) : (
 													<Typography sx={{ color: 'text.disabled' }}>-</Typography>
@@ -296,9 +293,9 @@ export const LoginsModal: FC<Props> = ({ user, onClose }) => {
 														label={success ? 'Да' : 'Нет'}
 														icon={
 															success ? (
-																<CheckCircle sx={{ fontSize: 14 }} />
+																<CheckIcon sx={{ fontSize: 14 }} />
 															) : (
-																<Cancel sx={{ fontSize: 14 }} />
+																<CloseRoundIcon sx={{ fontSize: 14 }} />
 															)
 														}
 													/>

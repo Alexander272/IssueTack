@@ -36,7 +36,7 @@ type Props = {
 export const CreateRole: FC<Props> = ({ onCancel, onSuccess }) => {
 	const { palette } = useTheme()
 
-	const { data, isFetching } = useGetPermissionsQuery(null)
+	const { data, isFetching } = useGetPermissionsQuery()
 	const [create, { isLoading }] = useCreateRoleMutation()
 
 	const methods = useForm<IForm>({ defaultValues })
@@ -96,11 +96,11 @@ export const CreateRole: FC<Props> = ({ onCancel, onSuccess }) => {
 					gap: 2,
 				}}
 			>
-				<Box width={'100%'}>
-					<Typography variant='h5' textAlign={'center'} sx={{ fontWeight: 'bold' }}>
+				<Box sx={{ width: '100%' }}>
+					<Typography variant='h5' align={'center'} sx={{ fontWeight: 'bold' }}>
 						Создать роль: <span>Новая роль</span>
 					</Typography>
-					<Typography variant='body2' textAlign={'center'} color='text.secondary'>
+					<Typography variant='body2' align={'center'} color='text.secondary'>
 						Управление доступом, наследованием и сортировкой
 					</Typography>
 				</Box>

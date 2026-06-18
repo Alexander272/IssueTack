@@ -2,12 +2,14 @@ import { combineReducers, configureStore } from '@reduxjs/toolkit'
 import { setupListeners } from '@reduxjs/toolkit/query'
 
 import { userPath, userReducer } from '@/features/user/userSlice'
+import { realmPath, realmReducer } from '@/features/realms/realmSlice'
 import { resetStoreListener } from './middlewares/resetStore'
 import { apiSlice } from './apiSlice'
 
 const rootReducer = combineReducers({
 	[apiSlice.reducerPath]: apiSlice.reducer,
 	[userPath]: userReducer,
+	[realmPath]: realmReducer,
 })
 
 export const store = configureStore({

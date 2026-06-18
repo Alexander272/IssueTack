@@ -19,7 +19,7 @@ type Props = {
 export const InheritanceCard: FC<Props> = ({ roleId }) => {
 	const { control, setValue } = useFormContext<IForm>()
 
-	const { data: rolesData } = useGetRolesWithStatsQuery(null)
+	const { data: rolesData } = useGetRolesWithStatsQuery()
 	const selectedSlugs = useWatch({ control, name: 'inherits' })
 	const currentPerms = useWatch({ control, name: 'perms' })
 	const [searchTerm, setSearchTerm] = useState('')
@@ -102,7 +102,7 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 		const inheritedPermIds = new Set<string>()
 		rolesData.data.forEach(role => {
 			if (allRelatedSlugs.has(role.slug)) {
-				role.perms.own.items.forEach(id => inheritedPermIds.add(id))
+				role.perms.own.items?.forEach(id => inheritedPermIds.add(id))
 			}
 		})
 
@@ -179,12 +179,14 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 							? `${selectedSlugs.length} рол${selectedSlugs.length > 1 ? 'и' : 'ь'} выбран${selectedSlugs.length == 1 ? 'а' : 'ы'}`
 							: 'Выберите роли для наследования...'}
 					</Typography>
-					<Box display={'flex'} alignItems={'center'} justifyContent={'center'}>
+					<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
 						<LeftArrowIcon
-							fontSize={16}
-							fill={'#9ca3af'}
-							transition={'transform 0.2s ease'}
-							transform={isOpen ? 'rotate(90deg)' : 'rotate(270deg)'}
+							sx={{
+								fontSize: 16,
+								fill: '#9ca3af',
+								transition: 'transform 0.2s ease',
+								transform: isOpen ? 'rotate(90deg)' : 'rotate(270deg)',
+							}}
 						/>
 					</Box>
 				</Box>

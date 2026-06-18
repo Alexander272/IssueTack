@@ -115,7 +115,7 @@ export const RoleInfoCard = () => {
 									slotProps={{
 										htmlInput: {
 											min: 0,
-											max: 10,
+											max: 10000,
 										},
 									}}
 								/>

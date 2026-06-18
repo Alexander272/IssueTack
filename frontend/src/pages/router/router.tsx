@@ -4,6 +4,13 @@ import { AppRoutes } from './routes'
 import { Layout } from '@/components/Layout/Layout'
 import { NotFound } from '@/pages/notFound/NotFoundLazy'
 import { Auth } from '@/pages/auth/AuthLazy'
+import { Home } from '@/pages/home/HomeLazy'
+// import { Accesses } from '@/pages/accesses/AccessesLazy'
+import { Dashboard } from '@/pages/accesses/dashboard/DashboardLazy'
+import { Realms } from '@/pages/accesses/realms/RealmsLazy'
+import { Users } from '@/pages/accesses/users/UsersLazy'
+import { Role } from '@/pages/accesses/role/RoleLazy'
+import { Permissions } from '@/pages/accesses/permissions/PermsLazy'
 import PrivateRoute from './PrivateRoute'
 
 const config: RouteObject[] = [
@@ -21,7 +28,33 @@ const config: RouteObject[] = [
 				children: [
 					{
 						index: true,
-						// element: <Home />,
+						element: <Home />,
+					},
+
+					{
+						path: AppRoutes.Accesses,
+						children: [
+							{
+								index: true,
+								element: <Dashboard />,
+							},
+							{
+								path: AppRoutes.Realms,
+								element: <Realms />,
+							},
+							{
+								path: AppRoutes.UserAccess,
+								element: <Users />,
+							},
+							{
+								path: AppRoutes.RoleAccess,
+								element: <Role />,
+							},
+							{
+								path: AppRoutes.Permissions,
+								element: <Permissions />,
+							},
+						],
 					},
 				],
 			},

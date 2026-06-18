@@ -1,9 +1,9 @@
 import { type FC } from 'react'
-import { SvgIcon, type SxProps, type Theme } from '@mui/material'
+import { SvgIcon, type SvgIconProps } from '@mui/material'
 
-export const DoubleRightIcon: FC<SxProps<Theme>> = style => {
+export const DoubleRightIcon: FC<SvgIconProps> = props => {
 	return (
-		<SvgIcon sx={style}>
+		<SvgIcon {...props}>
 			<svg
 				x='0px'
 				y='0px'

@@ -1,14 +1,17 @@
+import type { IRealm } from '@/features/realms/types/realm'
+import type { IRole } from './role'
+
 export interface IUser {
 	id: string
 	name: string
 	role: string
-	permissions: string[]
+	permissions: Record<string, string[]>
 	token: string
+	realms: IUserRealm[]
 }
 
 export interface IUserShort {
 	id: string
-	ssoId: string
 	firstName: string
 	lastName: string
 	email: string
@@ -16,27 +19,36 @@ export interface IUserShort {
 
 export interface IUserData {
 	id: string
-	ssoId: string
 	username: string
 	firstName: string
 	lastName: string
 	email: string
-	roleId: string
-	role: string
 	isActive: boolean
 	createdAt: string
-	lastVisit: string
+
+	realms: IUserRealm[]
+}
+
+export interface IUserRealm {
+	id: string
+	userId: string
+	realmId: string
+	roleId: string
+	realm?: IRealm
+	role?: IRole
+	isActive: boolean
+	createdAt: string
 }
 
 export interface IUserDataDTO {
 	id: string
-	ssoId: string
-	roleId: string
 	username: string
 	firstName: string
 	lastName: string
 	email: string
 	isActive: boolean
+
+	realms: IUserRealm[]
 }
 
 export interface IUserLogin {

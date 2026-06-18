@@ -63,18 +63,21 @@ export const SignInForm = () => {
 			<Typography
 				variant='h2'
 				align='center'
-				fontSize={'1.5rem'}
-				color={palette.primary.main}
-				paddingBottom={1.25}
-				mb={1.25}
-				fontWeight={'bold'}
-				lineHeight={'inherit'}
-				sx={{ borderBottom: '1px solid #e5e4e9', letterSpacing: '1.2px' }}
+				sx={{
+					fontSize: '1.5rem',
+					color: palette.primary.main,
+					paddingBottom: 1.25,
+					mb: 1.25,
+					fontWeight: 'bold',
+					lineHeight: 'inherit',
+					borderBottom: '1px solid #e5e4e9',
+					letterSpacing: '1.2px',
+				}}
 			>
 				Вход
 			</Typography>
 
-			<Stack spacing={2} marginTop={2}>
+			<Stack spacing={2} sx={{ mt: 2 }}>
 				<Controller
 					control={control}
 					name='username'
@@ -126,7 +129,7 @@ export const SignInForm = () => {
 				/>
 			</Stack>
 
-			<Stack direction={'row'} spacing={1} alignItems={'center'} mt={1} mb={1}>
+			<Stack direction={'row'} spacing={1} sx={{ alignItems: 'center', mt: 1, mb: 1 }}>
 				<Controller
 					control={control}
 					name='remember'

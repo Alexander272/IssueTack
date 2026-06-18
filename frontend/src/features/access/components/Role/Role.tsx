@@ -27,7 +27,7 @@ export const Role = () => {
 	const { palette } = useTheme()
 	const [role, setRole] = useState<string | null>(null)
 
-	const { data, isFetching } = useGetRolesWithStatsQuery(null)
+	const { data, isFetching } = useGetRolesWithStatsQuery()
 
 	const createHandler = () => {
 		setRole('')

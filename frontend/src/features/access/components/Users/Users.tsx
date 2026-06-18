@@ -1,4 +1,4 @@
-import { useMemo, useState, type FC } from 'react'
+import { useMemo, useState } from 'react'
 import {
 	Box,
 	Typography,
@@ -6,37 +6,24 @@ import {
 	TextField,
 	MenuItem,
 	Select,
-	Table,
-	TableBody,
-	TableCell,
-	TableContainer,
-	TableHead,
-	TableRow,
-	Paper,
 	InputAdornment,
 	type SelectChangeEvent,
 	useTheme,
-	Avatar,
-	Chip,
-	Tooltip,
 	CircularProgress,
+	Stack,
 } from '@mui/material'
-import dayjs from 'dayjs'
+import { toast } from 'react-toastify'
 
+import type { IFetchError } from '@/app/types/error'
 import type { IUserData } from '@/features/user/types/user'
-import { getAvatarColor, getInitials } from './utils'
-import { stringToHSLA } from '@/utils/colors'
-import { getSmartDate } from '@/utils/date'
 import { useDebounce } from '@/hooks/useDebounce'
 import { useGetAllUsersQuery, useSyncUsersMutation } from '@/features/user/usersApiSlice'
 import { useGetRolesQuery } from '@/features/user/roleApiSlice'
+import { UpdateModal } from '@/features/user/components/Update'
 import { BoxFallback } from '@/components/Fallback/BoxFallback'
 import { SearchIcon } from '@/components/Icons/SearchIcon'
 import { SyncIcon } from '@/components/Icons/SyncIcon'
-import { ModifyIcon } from '@/components/Icons/ModifyIcon'
-import { StatusBadge } from '../StatusBadge'
-import { UpdateModal } from '../../../user/components/Update'
-import { LoginsModal } from './LoginsModal'
+import { UserCard } from './UserCard'
 
 export const Users = () => {
 	const { palette } = useTheme()
@@ -49,58 +36,57 @@ export const Users = () => {
 
 	const debouncedSearch = useDebounce(search, 300)
 
-	const { data, isFetching } = useGetAllUsersQuery(null)
-	const { data: roles, isFetching: isFetchingRoles } = useGetRolesQuery(null)
+	const { data, isFetching } = useGetAllUsersQuery()
+	const { data: roles, isFetching: isFetchingRoles } = useGetRolesQuery()
 	const [sync, { isLoading }] = useSyncUsersMutation()
 
 	const filteredUsers = useMemo(() => {
-		if (!data) return []
+		if (!data?.data) return []
 
 		const lowSearch = (debouncedSearch as string).toLowerCase().trim()
 
-		return data?.data.filter(user => {
-			// 1. Поиск (по имени или почте)
+		return data.data.filter(user => {
 			const matchesSearch =
 				!lowSearch ||
 				[user.lastName, user.firstName, user.email].some(field => field?.toLowerCase().includes(lowSearch))
 
-			// 2. Фильтр по ролям (проверяем, есть ли роль пользователя в массиве выбранных)
-			// Если массив пустой, обычно показывают всех (или никого, зависит от вашей логики)
-			const matchesRole = !roleFilter.includes('') ? roleFilter.includes(user.role) : true
+			const matchesRole =
+				roleFilter.length === 0 || roleFilter.includes('')
+					? true
+					: user.realms?.some(realm => roleFilter.includes(realm.role?.name || ''))
 
-			// 3. Фильтр по статусу
 			const matchesStatus =
-				statusFilter && statusFilter !== ''
-					? statusFilter === 'active'
-						? user.isActive
-						: !user.isActive
-					: true
+				!statusFilter || statusFilter === ''
+					? true
+					: statusFilter === 'active'
+						? user.realms?.some(realm => realm.isActive)
+						: user.realms?.every(realm => !realm.isActive)
 
 			return matchesSearch && matchesRole && matchesStatus
 		})
 	}, [data, debouncedSearch, roleFilter, statusFilter])
 
 	const syncHandler = async () => {
-		await sync(null)
+		try {
+			await sync().unwrap()
+			toast.success('Пользователи синхронизированы')
+		} catch (error) {
+			const err = error as IFetchError
+			toast.error(err.data.message, { autoClose: false })
+		}
 	}
 
 	const roleHandler = (event: SelectChangeEvent<string[]>) => {
 		const value = event.target.value
 		let newValue = typeof value === 'string' ? value.split(',') : value
 
-		// 1. Если список стал пустым — возвращаем ''
 		if (newValue.length === 0) {
 			newValue = ['']
-		}
-		// 2. Если в списке больше одного элемента
-		else if (newValue.length > 1) {
-			// Если только что добавили что-то к '', то убираем ''
+		} else if (newValue.length > 1) {
 			if (newValue.includes('')) {
 				newValue = newValue.filter(v => v !== '')
 			}
 
-			// 3. Если выбраны все доступные опции (кроме ''),
-			// тут можно добавить условие сравнения с длиной исходного массива ролей
 			if (newValue.length === roles?.data.length) {
 				newValue = ['']
 			}
@@ -193,168 +179,19 @@ export const Users = () => {
 			</Box>
 
 			<UpdateModal user={modalType == 'edit' ? user : null} onClose={() => setUser(null)} />
-			<LoginsModal user={modalType == 'logins' ? user : null} onClose={() => setUser(null)} />
+			{/* <LoginsModal user={modalType == 'logins' ? user : null} onClose={() => setUser(null)} /> */}
 
-			{/* Table Container */}
-			<TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #eee', borderRadius: 2 }}>
-				<Table>
-					<TableHead>
-						<TableRow sx={{ borderBottom: '1px solid #f3f4f6' }}>
-							<TableCell sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>Пользователь</TableCell>
-							<TableCell
-								align='center'
-								sx={{ color: 'text.secondary', fontSize: '0.875rem', width: 250 }}
-							>
-								Роль
-							</TableCell>
-							<TableCell
-								align='center'
-								sx={{ color: 'text.secondary', fontSize: '0.875rem', width: 200 }}
-							>
-								Статус
-							</TableCell>
-							<TableCell
-								align='center'
-								sx={{ color: 'text.secondary', fontSize: '0.875rem', width: 250 }}
-							>
-								Создан
-							</TableCell>
-							<TableCell
-								align='center'
-								sx={{ color: 'text.secondary', fontSize: '0.875rem', width: 250 }}
-							>
-								Последний вход
-							</TableCell>
-							<TableCell sx={{ color: 'text.secondary', fontSize: '0.875rem', width: 100 }}>
-								Действия
-							</TableCell>
-						</TableRow>
-					</TableHead>
-					<TableBody>
-						{filteredUsers.map(user => (
-							<UserRow key={user.id} u={user} setUser={userHandler} />
-						))}
-						{!data?.data.length && !isFetching ? (
-							<TableRow>
-								<TableCell colSpan={6} align='center' sx={{ py: 3, color: 'text.secondary' }}>
-									Пользователи не найдены.
-								</TableCell>
-							</TableRow>
-						) : null}
-					</TableBody>
-				</Table>
-			</TableContainer>
+			{/* Cards */}
+			<Stack spacing={2}>
+				{filteredUsers.map(u => (
+					<UserCard key={u.id} user={u} onClick={userHandler} />
+				))}
+				{!data?.data.length && !isFetching ? (
+					<Typography align='center' sx={{ py: 3, color: 'text.secondary' }}>
+						Пользователи не найдены.
+					</Typography>
+				) : null}
+			</Stack>
 		</Box>
-	)
-}
-
-type RowProps = {
-	u: IUserData
-	setUser: (user: IUserData | null, type: 'edit' | 'logins') => void
-}
-
-const UserRow: FC<RowProps> = ({ u, setUser }) => {
-	const { palette } = useTheme()
-	const colors = useMemo(() => stringToHSLA(u.role), [u.role])
-
-	const editHandler = (e: React.MouseEvent) => {
-		e.stopPropagation()
-		e.preventDefault()
-
-		setUser(u, 'edit')
-	}
-
-	const openLoginsHandler = (e: React.MouseEvent) => {
-		e.stopPropagation()
-		e.preventDefault()
-
-		setUser(u, 'logins')
-	}
-
-	return (
-		<TableRow key={u.id} hover>
-			{/* Пользователь */}
-			<TableCell>
-				<Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-					<Avatar
-						sx={{
-							bgcolor: getAvatarColor(u.id), // ваша функция
-							fontSize: '14px',
-							width: 36,
-							height: 36,
-						}}
-					>
-						{getInitials(u)} {/* ваша функция */}
-					</Avatar>
-					<Box>
-						<Typography variant='body2' sx={{ fontWeight: 500 }}>
-							{u.firstName} {u.lastName}
-						</Typography>
-						<Typography variant='caption' color='text.secondary' sx={{ display: 'block' }}>
-							{u.email}
-						</Typography>
-					</Box>
-				</Box>
-			</TableCell>
-
-			{/* Роль */}
-			<TableCell align='center'>
-				<Chip
-					label={u.role}
-					size={'small'}
-					style={{
-						backgroundColor: colors.bg,
-						color: colors.text,
-						border: `1px solid ${colors.border}`,
-						fontWeight: 500,
-						fontSize: '0.75rem',
-						height: '20px',
-						borderRadius: '6px',
-					}}
-				/>
-			</TableCell>
-
-			{/* Статус */}
-			<TableCell align='center'>
-				<StatusBadge active={u.isActive} label={u.isActive ? 'Активный' : 'Неактивный'} />
-			</TableCell>
-
-			{/* Создан */}
-			<TableCell align='center' sx={{ color: 'text.secondary', fontSize: '13px' }}>
-				{dayjs(u.createdAt).format('dddd, DD MMM YYYY HH:mm')}
-			</TableCell>
-
-			{/* Последний вход */}
-			<TableCell
-				onClick={openLoginsHandler}
-				align='center'
-				sx={{
-					color: 'text.secondary',
-					fontSize: '13px',
-					cursor: 'pointer',
-					transition: 'all 0.3s ease-in-out',
-					':hover': { color: palette.secondary.main },
-				}}
-			>
-				{getSmartDate(u.lastVisit)}
-			</TableCell>
-
-			{/* Действия */}
-			<TableCell align='center' sx={{ p: 0 }}>
-				<Tooltip title='Редактировать пользователя'>
-					<Button
-						onClick={editHandler}
-						sx={{
-							minWidth: 60,
-							minHeight: 60,
-							borderRadius: '6px',
-							':hover': { svg: { fill: palette.secondary.main } },
-						}}
-					>
-						<ModifyIcon sx={{ fontSize: 18 }} />
-					</Button>
-				</Tooltip>
-			</TableCell>
-		</TableRow>
 	)
 }

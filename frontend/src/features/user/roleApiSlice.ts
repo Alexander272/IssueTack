@@ -8,7 +8,7 @@ import { apiSlice } from '@/app/apiSlice'
 export const rolesApiSlice = apiSlice.injectEndpoints({
 	overrideExisting: false,
 	endpoints: builder => ({
-		getRoles: builder.query<{ data: IRole[] }, null>({
+		getRoles: builder.query<{ data: IRole[] }, void>({
 			query: () => ({
 				url: API.roles.base,
 				method: 'GET',
@@ -38,7 +38,7 @@ export const rolesApiSlice = apiSlice.injectEndpoints({
 				}
 			},
 		}),
-		getRolesWithStats: builder.query<{ data: IRoleWithStats[] }, null>({
+		getRolesWithStats: builder.query<{ data: IRoleWithStats[] }, void>({
 			query: () => ({
 				url: API.roles.stats,
 				method: 'GET',

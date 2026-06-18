@@ -7,19 +7,17 @@ import { PermRules } from '@/features/access/constants/permissions'
 import { useCheckPermission } from '@/features/user/hooks/check'
 import { useAppSelector } from '@/hooks/redux'
 import { useSignOutMutation } from '@/features/auth/authApiSlice'
-import { getToken } from '@/features/user/userSlice'
-import { AddFileIcon } from '../Icons/AddFileIcon'
-import { SearchIcon } from '../Icons/SearchIcon'
+import { getToken, getUserRealms } from '@/features/user/userSlice'
 import { LogoutIcon } from '../Icons/LogoutIcon'
 import { ShieldIcon } from '../Icons/ShieldIcon'
-import { ReportsIcon } from '../Icons/ReportsIcon'
-import { LedgerIcon } from '../Icons/LedgerIcon'
 import { NavBox } from './NavBox'
+import { ActiveRealm } from '@/features/realms/components/ActiveRealm'
 
 export const LayoutHeader = () => {
 	const { palette } = useTheme()
 
 	const token = useAppSelector(getToken)
+	const realms = useAppSelector(getUserRealms)
 
 	const [signOut] = useSignOutMutation()
 
@@ -27,8 +25,7 @@ export const LayoutHeader = () => {
 		void signOut(null)
 	}
 
-	// const canSeePrice = useCheckPermission(PermRules.Prices.Read)
-	// const canEditSettings = useCheckPermission(PermRules.Users.Write)
+	const canEditSettings = useCheckPermission(PermRules.Users.Write)
 	// const canSeeStats = useCheckPermission([
 	// 	PermRules.SearchLog.Read,
 	// 	PermRules.ActivityLog.Read,
@@ -36,7 +33,10 @@ export const LayoutHeader = () => {
 	// ])
 
 	return (
-		<AppBar position='relative' sx={{ borderRadius: 0, alignItems: 'center' }}>
+		<AppBar
+			position='relative'
+			sx={{ borderRadius: 0, alignItems: 'center', zIndex: theme => theme.zIndex.drawer + 1 }}
+		>
 			<Toolbar sx={{ justifyContent: 'space-between', width: '100%', maxWidth: 'xl' }}>
 				<Link to='/' aria-label='home page'>
 					<Stack
@@ -59,8 +59,14 @@ export const LayoutHeader = () => {
 						divider={<Divider orientation='vertical' flexItem variant='middle' />}
 						sx={{ alignItems: 'center', ml: 'auto' }}
 					>
+						{(realms?.length || 0) > 1 && (
+							<NavBox>
+								<ActiveRealm />
+							</NavBox>
+						)}
+
 						<Stack direction={'row'} spacing={0.5}>
-							{/* {canEditSettings ? (
+							{canEditSettings ? (
 								<Link to={AppRoutes.Accesses}>
 									<Tooltip title='Настройка доступа' disableInteractive>
 										<NavBox sx={{ ':hover': { svg: { stroke: palette.primary.main } } }}>
@@ -68,7 +74,7 @@ export const LayoutHeader = () => {
 										</NavBox>
 									</Tooltip>
 								</Link>
-							) : null} */}
+							) : null}
 
 							{/* {canSeeStats ? (
 								<Link to={AppRoutes.Statistics}>
@@ -79,24 +85,6 @@ export const LayoutHeader = () => {
 									</Tooltip>
 								</Link>
 							) : null} */}
-
-							{/* <Link to={AppRoutes.CreateOrder}>
-								<Tooltip title='Добавить заказ' disableInteractive>
-									<NavBox sx={{ ':hover': { svg: { fill: palette.primary.main } } }}>
-										<AddFileIcon fill={'#000'} fontSize={26} transition={'0.3s all ease-in-out'} />
-									</NavBox>
-								</Tooltip>
-							</Link>
-
-							<Link to={AppRoutes.Search}>
-								<Tooltip title='Поиск' disableInteractive>
-									<NavBox sx={{ ':hover': { svg: { fill: palette.primary.main } } }}>
-										<SearchIcon
-											sx={{ fontSize: 24, transition: '0.3s all ease-in-out', fill: '#000' }}
-										/>
-									</NavBox>
-								</Tooltip>
-							</Link> */}
 						</Stack>
 
 						<NavBox onClick={logoutHandler} sx={{ ':hover': { svg: { fill: palette.primary.main } } }}>

@@ -35,7 +35,7 @@ const actions = [
 ]
 
 export const PermissionsCard: FC<Props> = ({ role }) => {
-	const { data, isFetching } = useGetPermissionsQuery(null)
+	const { data, isFetching } = useGetPermissionsQuery()
 
 	const { control, setValue } = useFormContext<IForm>()
 	const selected = useWatch({ control, name: 'perms' })
@@ -150,18 +150,18 @@ export const PermissionsCard: FC<Props> = ({ role }) => {
 	return (
 		<Card sx={{ mb: 1.5, borderRadius: '16px', border: '1px solid #f3f4f6' }} elevation={0}>
 			<CardContent>
-				<Stack direction='row' alignItems='center' sx={{ flexWrap: 'wrap', gap: 1, px: 2, mb: 1 }}>
+				<Stack direction='row' sx={{ flexWrap: 'wrap', gap: 1, px: 2, mb: 1, alignItems: 'center' }}>
 					<Typography variant='h6' sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
 						🔐 Права доступа
 					</Typography>
 
 					<Box
-						display={'flex'}
-						alignItems={'center'}
-						px={2}
-						py={1}
 						onClick={() => toggleAllPermissionsHandler(true)}
 						sx={{
+							display: 'flex',
+							alignItems: 'center',
+							px: 2,
+							py: 1,
 							ml: 'auto',
 							cursor: 'pointer',
 							borderRadius: '8px',
@@ -182,15 +182,15 @@ export const PermissionsCard: FC<Props> = ({ role }) => {
 							rowName='all'
 							sx={{ width: 24, height: 24, borderRadius: '6px' }}
 						/>
-						<Typography ml={1}>Выбрать все</Typography>
+						<Typography sx={{ ml: 1 }}>Выбрать все</Typography>
 					</Box>
 					<Box
-						display={'flex'}
-						alignItems={'center'}
-						px={2}
-						py={1}
 						onClick={() => toggleAllPermissionsHandler(false)}
 						sx={{
+							display: 'flex',
+							alignItems: 'center',
+							px: 2,
+							py: 1,
 							cursor: 'pointer',
 							borderRadius: '8px',
 							border: '1px solid #ffd1d9',
@@ -210,7 +210,7 @@ export const PermissionsCard: FC<Props> = ({ role }) => {
 							rowName='all'
 							sx={{ width: 24, height: 24, borderRadius: '6px' }}
 						/>
-						<Typography ml={1}>Сбросить все</Typography>
+						<Typography sx={{ ml: 1 }}>Сбросить все</Typography>
 					</Box>
 				</Stack>
 
