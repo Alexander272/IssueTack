@@ -1,29 +1,29 @@
 package access
 
 const (
-	ResourceRole     ResourceSlug = "role"
-	ResourcePerm     ResourceSlug = "permission"
-	ResourceAudit    ResourceSlug = "audit_log"
-	ResourceRealm    ResourceSlug = "realm"
-	ResourceGroup    ResourceSlug = "group"
-	ResourceCategory ResourceSlug = "category"
-	ResourceSite     ResourceSlug = "site"
-	ResourceActivity ResourceSlug = "activity_log"
-	ResourceTicket   ResourceSlug = "ticket"
+	ResourceRole      ResourceSlug = "role"
+	ResourcePerm      ResourceSlug = "permission"
+	ResourceAudit     ResourceSlug = "audit_log"
+	ResourceRealm     ResourceSlug = "realm"
+	ResourceGroup     ResourceSlug = "group"
+	ResourceCategory  ResourceSlug = "category"
+	ResourceSite      ResourceSlug = "site"
+	ResourceActivity  ResourceSlug = "activity_log"
+	ResourceTicket    ResourceSlug = "ticket"
 	ResourceChecklist ResourceSlug = "checklist"
 )
 
 var OrderOfResources = map[ResourceSlug]int{
-	ResourceTicket:     1,
-	ResourceCategory:   2,
-	ResourceGroup:      3,
-	ResourceSite:       4,
-	ResourceActivity:   10,
-	ResourceRealm:      20,
-	ResourceRole:       21,
-	ResourcePerm:       22,
-	ResourceAudit:      22,
-	ResourceChecklist:  30,
+	ResourceTicket:    1,
+	ResourceCategory:  2,
+	ResourceGroup:     3,
+	ResourceSite:      4,
+	ResourceChecklist: 5,
+	ResourceActivity:  10,
+	ResourceAudit:     11,
+	ResourceRealm:     20,
+	ResourceRole:      21,
+	ResourcePerm:      22,
 }
 
 var Reg = NewRegistry(

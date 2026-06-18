@@ -36,7 +36,7 @@ type Users interface {
 }
 
 func (r *userRepo) LoadPolicy(ctx context.Context) ([]*models.UserRole, error) {
-	query := fmt.Sprintf(`SELECT u.id, r.slug, rl.code
+	query := fmt.Sprintf(`SELECT u.id, r.slug, rl.id
 		FROM %s u
 		JOIN %s ur ON u.id = ur.user_id
 		JOIN %s r ON ur.role_id = r.id
@@ -69,6 +69,7 @@ func (r *userRepo) LoadPolicy(ctx context.Context) ([]*models.UserRole, error) {
 func (r *userRepo) GetByID(ctx context.Context, id uuid.UUID) (*models.UserData, error) {
 	query := fmt.Sprintf(`SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.created_at,
 			u.is_active AS user_is_active,
+			u.is_system AS user_is_system,
 			ur.id AS ur_id, ur.is_active,
 			r.id AS role_id, r.name AS role_name, r.description AS role_description, r.level AS role_level,
 			r.is_active AS role_is_active, r.is_editable AS role_is_editable, r.slug AS role_slug,
@@ -104,6 +105,7 @@ func (r *userRepo) GetByID(ctx context.Context, id uuid.UUID) (*models.UserData,
 func (r *userRepo) GetByLogin(ctx context.Context, login string) (*models.UserData, error) {
 	query := fmt.Sprintf(`SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.created_at,
 			u.is_active AS user_is_active,
+			u.is_system AS user_is_system,
 			ur.id AS ur_id, ur.is_active,
 			r.id AS role_id, r.name AS role_name, r.description AS role_description, r.level AS role_level,
 			r.is_active AS role_is_active, r.is_editable AS role_is_editable, r.slug AS role_slug,
@@ -139,6 +141,7 @@ func (r *userRepo) GetByLogin(ctx context.Context, login string) (*models.UserDa
 func (r *userRepo) GetAll(ctx context.Context) ([]*models.UserData, error) {
 	query := fmt.Sprintf(`SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.created_at,
 			u.is_active AS user_is_active,
+			u.is_system AS user_is_system,
 			ur.id AS ur_id, ur.is_active,
 			r.id AS role_id, r.name AS role_name, r.description AS role_description, r.level AS role_level,
 			r.is_active AS role_is_active, r.is_editable AS role_is_editable, r.slug AS role_slug,
@@ -173,7 +176,7 @@ func scanUserRows(rows pgx.Rows) ([]*pq_models.User, error) {
 		item := &pq_models.User{}
 		if err := rows.Scan(
 			&item.Id, &item.Username, &item.Email, &item.FirstName, &item.LastName, &item.CreatedAt,
-			&item.UserIsActive,
+			&item.UserIsActive, &item.UserIsSystem,
 			&item.UserRealmId, &item.IsActive,
 			&item.RoleId, &item.RoleName, &item.RoleDescription, &item.RoleLevel,
 			&item.RoleIsActive, &item.RoleIsEditable, &item.RoleSlug,
@@ -204,6 +207,7 @@ func mapUsersData(rows []*pq_models.User) []*models.UserData {
 					FirstName: u.FirstName,
 					LastName:  u.LastName,
 					IsActive:  u.UserIsActive.Bool,
+					IsSystem:  u.UserIsSystem.Bool,
 					CreatedAt: u.CreatedAt,
 					Realms:    []*models.UserRealm{},
 				})
@@ -259,6 +263,7 @@ func mapUsersData(rows []*pq_models.User) []*models.UserData {
 				FirstName: u.FirstName,
 				LastName:  u.LastName,
 				IsActive:  u.UserIsActive.Bool,
+				IsSystem:  u.UserIsSystem.Bool,
 				CreatedAt: u.CreatedAt,
 				Realms:    []*models.UserRealm{userRealm},
 			})
@@ -278,17 +283,17 @@ func (r *userRepo) CreateSeveral(ctx context.Context, tx Tx, dto []*models.UserD
 
 	for i, v := range dto {
 		rows[i] = []interface{}{
-			uuid.New(),
 			v.ID,
 			v.Username,
 			v.FirstName,
 			v.LastName,
 			v.Email,
 			v.IsActive,
+			v.IsSystem,
 		}
 	}
 
-	columns := []string{"id", "sso_id", "username", "first_name", "last_name", "email", "is_active"}
+	columns := []string{"id", "username", "first_name", "last_name", "email", "is_active", "is_system"}
 	_, err := r.getExec(tx).CopyFrom(
 		ctx,
 		pgx.Identifier{Tables.Users},

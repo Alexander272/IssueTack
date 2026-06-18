@@ -43,7 +43,12 @@ func NewKeycloakClient(deps *Deps) *KeycloakClient {
 	if err != nil {
 		log.Fatalf("failed to get clients to keycloak. error: %s", err.Error())
 	}
-	//logger.Debug(clients)
+	if len(clients) == 0 {
+		log.Fatalf("client '%s' not found in keycloak", deps.ClientId)
+	}
+	if clients[0].Secret == nil {
+		log.Fatalf("client '%s' has no secret", deps.ClientId)
+	}
 
 	secret := *clients[0].Secret
 

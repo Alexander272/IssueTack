@@ -75,6 +75,9 @@ func (s *userService) Sync(ctx context.Context, actor *models.Actor) error {
 	toDelete := make([]uuid.UUID, 0)
 
 	for _, dbU := range dbUsers {
+		if dbU.IsSystem {
+			continue
+		}
 		if kcData, exists := kcDataMap[dbU.ID]; exists {
 			existUser := &models.UserDataDTO{
 				ID:        dbU.ID,

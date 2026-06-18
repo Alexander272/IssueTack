@@ -1,7 +1,6 @@
 package realms
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 
@@ -14,50 +13,40 @@ import (
 	"github.com/google/uuid"
 )
 
-type realmService interface {
-	GetByID(ctx context.Context, req *models.GetRealmByIdDTO) (*models.Realm, error)
-	Create(ctx context.Context, dto *models.RealmDTO) error
-	Update(ctx context.Context, dto *models.RealmDTO) error
-	Delete(ctx context.Context, dto *models.DeleteRealmDTO) error
-}
-
 type Handler struct {
-	service realmService
+	service services.Realms
 }
 
-func NewHandler(service realmService) *Handler {
+func NewHandler(service services.Realms) *Handler {
 	return &Handler{
 		service: service,
 	}
 }
 
-func Register(api *gin.RouterGroup, svc *services.Services, middleware *middleware.Middleware) {
-	rs, ok := svc.Realms.(*services.RealmService)
-	if !ok {
-		return
-	}
-	handlers := NewHandler(rs)
+func Register(api *gin.RouterGroup, svc services.Realms, middleware *middleware.Middleware) {
+	handlers := NewHandler(svc)
 
 	realms := api.Group("/realms", middleware.CheckPermissions(access.Reg.R(access.ResourceRealm).Read()))
 	{
 		realms.GET("", handlers.getAll)
 		realms.GET("/:id", handlers.getByID)
 
-		write := realms.Group("", middleware.CheckPermissions(access.Reg.R(access.ResourceRealm).Write()))
-		{
-			write.POST("", handlers.create)
-			write.PUT("/:id", handlers.update)
-		}
+		realms.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceRealm).Write()))
+		realms.POST("", handlers.create)
+		realms.PUT("/:id", handlers.update)
 
-		delete := realms.Group("", middleware.CheckPermissions(access.Reg.R(access.ResourceRealm).Delete()))
-		{
-			delete.DELETE("/:id", handlers.delete)
-		}
+		realms.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceRealm).Delete()))
+		realms.DELETE("/:id", handlers.delete)
 	}
 }
 
 func (h *Handler) getAll(c *gin.Context) {
-	response.SendError(c, models.ErrNotFound)
+	data, err := h.service.GetAll(c)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	response.SendData(c, data, len(data))
 }
 
 func (h *Handler) getByID(c *gin.Context) {

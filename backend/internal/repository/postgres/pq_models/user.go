@@ -13,6 +13,7 @@ type User struct {
 	LastName         string         `db:"last_name"`
 	CreatedAt        time.Time      `db:"created_at"`
 	UserIsActive     sql.NullBool   `db:"user_is_active"`
+	UserIsSystem     sql.NullBool   `db:"user_is_system"`
 	UserRealmId      sql.NullString `db:"ur_id"`
 	IsActive         sql.NullBool   `db:"is_active"`
 	RoleId           sql.NullString `db:"role_id"`

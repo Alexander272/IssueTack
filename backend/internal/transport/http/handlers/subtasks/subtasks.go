@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -22,20 +24,24 @@ func NewHandler(service services.Subtasks) *Handler {
 	}
 }
 
-func Register(api *gin.RouterGroup, service services.Subtasks) {
+func Register(api *gin.RouterGroup, service services.Subtasks, middleware *middleware.Middleware) {
 	handlers := NewHandler(service)
 
-	subtasks := api.Group("/tickets/:ticketId/subtasks")
+	subtasks := api.Group("/tickets/:id/subtasks", middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Read()))
 	{
 		subtasks.GET("", handlers.getByTicket)
+
+		subtasks.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Write()))
 		subtasks.POST("", handlers.create)
 		subtasks.PUT("/:id", handlers.update)
+
+		subtasks.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Delete()))
 		subtasks.DELETE("/:id", handlers.delete)
 	}
 }
 
 func (h *Handler) getByTicket(c *gin.Context) {
-	ticketId := c.Param("ticketId")
+	ticketId := c.Param("id")
 	id, err := uuid.Parse(ticketId)
 	if err != nil {
 		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
@@ -62,7 +68,7 @@ func (h *Handler) create(c *gin.Context) {
 		return
 	}
 
-	ticketId := c.Param("ticketId")
+	ticketId := c.Param("id")
 	id, err := uuid.Parse(ticketId)
 	if err != nil {
 		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))

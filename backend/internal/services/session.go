@@ -45,9 +45,9 @@ func (s *SessionService) SignIn(ctx context.Context, u models.SignIn) (*models.U
 		return nil, err
 	}
 
-	// if err := s.loadUserPermissions(ctx, user); err != nil {
-	// 	return nil, err
-	// }
+	if err := s.loadUserRealms(ctx, user); err != nil {
+		return nil, err
+	}
 
 	user.AccessToken = res.AccessToken
 	user.RefreshToken = res.RefreshToken
@@ -74,9 +74,9 @@ func (s *SessionService) Refresh(ctx context.Context, refreshToken string) (*mod
 		return nil, err
 	}
 
-	// if err := s.loadUserPermissions(ctx, user); err != nil {
-	// 	return nil, err
-	// }
+	if err := s.loadUserRealms(ctx, user); err != nil {
+		return nil, err
+	}
 
 	user.AccessToken = res.AccessToken
 	user.RefreshToken = res.RefreshToken
@@ -84,25 +84,25 @@ func (s *SessionService) Refresh(ctx context.Context, refreshToken string) (*mod
 	return user, nil
 }
 
-// func (s *SessionService) loadUserPermissions(ctx context.Context, user *models.User) error {
-// 	userRealms, err := s.userRealm.GetByUserID(ctx, user.ID)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	user.Realms = userRealms
+func (s *SessionService) loadUserRealms(ctx context.Context, user *models.User) error {
+	userRealms, err := s.userRealm.GetByUserID(ctx, user.ID)
+	if err != nil {
+		return err
+	}
+	user.Realms = userRealms
 
-// 	user.Permissions = map[string][]string{}
-// 	for _, r := range userRealms {
-// 		access, err := s.policies.GetPolicies(user.ID.String(), r.RealmID.String())
-// 		if err != nil {
-// 			return err
-// 		}
-// 		user.Permissions[r.RealmID.String()] = access.Perms
-// 	}
+	// 	user.Permissions = map[string][]string{}
+	// 	for _, r := range userRealms {
+	// 		access, err := s.policies.GetPolicies(user.ID.String(), r.RealmID.String())
+	// 		if err != nil {
+	// 			return err
+	// 		}
+	// 		user.Permissions[r.RealmID.String()] = access.Perms
+	// 	}
 
-// 	s.cache.Set(ctx, user.ID.String(), user.Permissions)
-// 	return nil
-// }
+	// 	s.cache.Set(ctx, user.ID.String(), user.Permissions)
+	return nil
+}
 
 func (s *SessionService) DecodeAccessToken(ctx context.Context, token string) (*models.User, error) {
 	_, claims, err := s.keycloak.Client.DecodeAccessToken(ctx, token, s.keycloak.Realm)

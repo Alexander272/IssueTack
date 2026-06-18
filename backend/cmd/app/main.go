@@ -89,7 +89,7 @@ func main() {
 		Keycloak: keycloak,
 	})
 
-	handlers := transport.NewHandler(nil, service, hub)
+	handlers := transport.NewHandler(keycloak, service, hub)
 
 	//* HTTP Server
 	// if err := services.Scheduler.Start(&conf.Scheduler); err != nil {

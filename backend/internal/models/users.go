@@ -52,6 +52,7 @@ type UserData struct {
 	// RoleId       string  `json:"roleId" db:"role_id"`
 	SiteID    *string   `json:"siteId" db:"site_id"`
 	IsActive  bool      `json:"isActive" db:"is_active"`
+	IsSystem  bool      `json:"isSystem" db:"is_system"`
 	CreatedAt time.Time `json:"createdAt" db:"created_at"`
 
 	Realms []*UserRealm `json:"realms,omitempty"`
@@ -65,6 +66,7 @@ type UserDataDTO struct {
 	LastName     string    `json:"lastName" db:"last_name"`
 	Email        string    `json:"email" db:"email"`
 	IsActive     bool      `json:"isActive" db:"is_active"`
+	IsSystem     bool      `json:"isSystem" db:"is_system"`
 	Actor        *Actor
 
 	Realms []*UserRealmDTO `json:"realms"`

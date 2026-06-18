@@ -62,11 +62,14 @@ func NewServices(deps *Deps) *Services {
 		EventBus:    updatePolicyEvent,
 		TM:          transaction,
 	})
+	userRealms := NewUserRealmService(deps.Repo.UserRealms, transaction)
 	users := NewUserService(&UsersDeps{
 		Repo:      deps.Repo.Users,
 		TxManager: transaction,
+		UserRealm: userRealms,
+		Keycloak:  deps.Keycloak,
+		EventBus:  updatePolicyEvent,
 	})
-	userRealms := NewUserRealmService(deps.Repo.UserRealms, transaction)
 
 	cacheSvc := NewSessionCacheService(deps.Repo.SessionCache)
 	adapter := NewAdapter(&AdapterDeps{

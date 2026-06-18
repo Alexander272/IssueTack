@@ -78,9 +78,13 @@ func securityHeaders() gin.HandlerFunc {
 		c.Header("X-XSS-Protection", "1; mode=block")
 		c.Header("Referrer-Policy", "no-referrer-when-downgrade")
 		c.Header("Content-Security-Policy",
-			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' ws:;")
-		c.Header("Strict-Transport-Security",
-			"max-age=31536000; includeSubDomains")
+			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "+
+				"img-src 'self' data: blob:; font-src 'self'; connect-src 'self' ws: wss:; "+
+				"frame-ancestors 'none'; base-uri 'self'; form-action 'self';")
+		c.Header("Permissions-Policy",
+			"camera=(), microphone=(), geolocation=(), gyroscope=(), "+
+				"accelerometer=(), magnetometer=(), usb=(), payment=(), "+
+				"display-capture=(), document-domain=()")
 		c.Next()
 	}
 }

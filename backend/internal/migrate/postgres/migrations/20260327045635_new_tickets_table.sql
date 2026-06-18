@@ -1,6 +1,11 @@
 -- +goose Up
 -- +goose StatementBegin
-CREATE TYPE IF NOT EXISTS ticket_status AS ENUM ('open', 'in_progress', 'pending', 'on_hold', 'resolved', 'closed', 'cancelled');
+DO $$ 
+BEGIN 
+    CREATE TYPE ticket_status AS ENUM ('open', 'in_progress', 'pending', 'on_hold', 'resolved', 'closed', 'cancelled');
+EXCEPTION 
+    WHEN duplicate_object THEN NULL; 
+END $$;
 
 CREATE TABLE IF NOT EXISTS public.tickets
 (

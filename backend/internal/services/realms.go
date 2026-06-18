@@ -21,7 +21,21 @@ func NewRealmService(repo repository.Realms, txManager TransactionManager) *Real
 	}
 }
 
-type Realms interface{}
+type Realms interface {
+	GetAll(ctx context.Context) ([]*models.Realm, error)
+	GetByID(ctx context.Context, req *models.GetRealmByIdDTO) (*models.Realm, error)
+	Create(ctx context.Context, dto *models.RealmDTO) error
+	Update(ctx context.Context, dto *models.RealmDTO) error
+	Delete(ctx context.Context, dto *models.DeleteRealmDTO) error
+}
+
+func (s *RealmService) GetAll(ctx context.Context) ([]*models.Realm, error) {
+	data, err := s.repo.GetAll(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get realms. error: %w", err)
+	}
+	return data, nil
+}
 
 func (s *RealmService) GetByID(ctx context.Context, req *models.GetRealmByIdDTO) (*models.Realm, error) {
 	data, err := s.repo.GetByID(ctx, req)

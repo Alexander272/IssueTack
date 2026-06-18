@@ -7,11 +7,14 @@ CREATE TABLE IF NOT EXISTS public.roles (
     realm_id   uuid NOT NULL REFERENCES realms(id) ON DELETE CASCADE,
     description TEXT COLLATE pg_catalog."default" DEFAULT ''::text,
     level       INT DEFAULT 1,
+    is_active   BOOLEAN DEFAULT true,
     is_system   BOOLEAN DEFAULT false,
+    is_editable BOOLEAN DEFAULT true,
     created_at  TIMESTAMP with time zone DEFAULT now(),
     updated_at  TIMESTAMP with time zone DEFAULT now(),
 
-    UNIQUE(slug, realm_id)
+    UNIQUE(slug, realm_id),
+    UNIQUE (id, realm_id)
 )
 TABLESPACE pg_default;
 

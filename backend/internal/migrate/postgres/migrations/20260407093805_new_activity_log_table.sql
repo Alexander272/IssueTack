@@ -14,8 +14,8 @@ CREATE TABLE IF NOT EXISTS public.activity_logs (
     realm_id UUID,
     realm_name TEXT,                    -- название realm на момент события (денормализация)
 
-    old_value TEXT,
-    new_value TEXT,
+    old_value JSONB,
+    new_value JSONB,
 
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );

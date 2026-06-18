@@ -23,7 +23,7 @@ func NewHandler(service services.AuditLogs) *Handler {
 func Register(api *gin.RouterGroup, service services.AuditLogs, middleware *middleware.Middleware) {
 	handler := NewHandler(service)
 
-	logs := api.Group("/audit-log", middleware.CheckPermissions(access.Reg.R(access.ResourceAudit).Read()))
+	logs := api.Group("/audit", middleware.CheckPermissions(access.Reg.R(access.ResourceAudit).Read()))
 	{
 		logs.GET("", handler.getAll)
 		logs.GET("/by-realm/:realmId", handler.getByRealm)

@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -22,15 +24,19 @@ func NewHandler(service services.Tickets) *Handler {
 	}
 }
 
-func Register(api *gin.RouterGroup, service services.Tickets) {
+func Register(api *gin.RouterGroup, service services.Tickets, middleware *middleware.Middleware) {
 	handlers := NewHandler(service)
 
-	tickets := api.Group("/tickets")
+	tickets := api.Group("/tickets", middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Read()))
 	{
 		tickets.GET("", handlers.getAll)
 		tickets.GET("/:id", handlers.getByID)
+
+		tickets.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Write()))
 		tickets.POST("", handlers.create)
 		tickets.PUT("/:id", handlers.update)
+
+		tickets.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Delete()))
 		tickets.DELETE("/:id", handlers.delete)
 	}
 }

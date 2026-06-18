@@ -2,7 +2,6 @@
 -- +goose StatementBegin
 CREATE TABLE IF NOT EXISTS public.permissions (
     id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    realm_id    UUID NOT NULL REFERENCES realms(id) ON DELETE CASCADE,
     object      TEXT COLLATE pg_catalog."default" NOT NULL, -- task, user, document
     action      TEXT COLLATE pg_catalog."default" NOT NULL, -- read, write, delete
     description TEXT COLLATE pg_catalog."default" DEFAULT ''::text,

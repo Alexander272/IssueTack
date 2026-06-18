@@ -1,6 +1,11 @@
 -- +goose Up
 -- +goose StatementBegin
-CREATE TYPE IF NOT EXISTS ticket_priority AS ENUM ('low', 'medium', 'high', 'urgent');
+DO $$ 
+BEGIN 
+    CREATE TYPE ticket_priority AS ENUM ('low', 'medium', 'high', 'urgent');
+EXCEPTION 
+    WHEN duplicate_object THEN NULL; 
+END $$;
 
 CREATE TABLE IF NOT EXISTS public.categories (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),

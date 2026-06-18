@@ -33,18 +33,14 @@ func Register(api *gin.RouterGroup, service services.Checklists, middleware *mid
 		checklists.GET("/:id", handlers.getByID)
 		checklists.GET("/:id/items", handlers.getItems)
 
-		write := checklists.Group("", middleware.CheckPermissions(access.Reg.R(access.ResourceChecklist).Write()))
-		{
-			write.POST("", handlers.create)
-			write.PUT("/:id", handlers.update)
-			write.PUT("/:id/items", handlers.setItems)
-			write.POST("/:id/apply/:ticketId", handlers.apply)
-		}
+		checklists.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceChecklist).Write()))
+		checklists.POST("", handlers.create)
+		checklists.PUT("/:id", handlers.update)
+		checklists.PUT("/:id/items", handlers.setItems)
+		checklists.POST("/:id/apply/:ticketId", handlers.apply)
 
-		delete := checklists.Group("", middleware.CheckPermissions(access.Reg.R(access.ResourceChecklist).Delete()))
-		{
-			delete.DELETE("/:id", handlers.delete)
-		}
+		checklists.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceChecklist).Delete()))
+		checklists.DELETE("/:id", handlers.delete)
 	}
 }
 

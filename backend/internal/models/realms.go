@@ -8,7 +8,7 @@ import (
 
 type Realm struct {
 	ID          uuid.UUID `json:"id" db:"id"`
-	Code        string    `json:"code" db:"code"`
+	Code        string    `json:"slug" db:"code"`
 	Name        string    `json:"name" db:"name"`
 	Description string    `json:"description" db:"description"`
 	IsActive    bool      `json:"isActive" db:"is_active"`
@@ -24,9 +24,11 @@ type GetRealmByIdDTO struct {
 }
 
 type RealmDTO struct {
-	ID   uuid.UUID `json:"id" db:"id"`
-	Code string    `json:"code" db:"code"`
-	Name string    `json:"name" db:"name"`
+	ID          uuid.UUID `json:"id" db:"id"`
+	Code        string    `json:"slug" db:"code"`
+	Name        string    `json:"name" db:"name"`
+	Description string    `json:"description" db:"description"`
+	IsActive    bool      `json:"isActive" db:"is_active"`
 }
 
 type DeleteRealmDTO struct {

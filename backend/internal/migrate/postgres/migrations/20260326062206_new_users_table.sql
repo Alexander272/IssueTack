@@ -3,7 +3,6 @@
 CREATE TABLE IF NOT EXISTS public.users
 (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    sso_id text COLLATE pg_catalog."default" NOT NULL,
     mattermost_id text COLLATE pg_catalog."default" DEFAULT ''::text,
     username text COLLATE pg_catalog."default" DEFAULT ''::text,
     first_name text COLLATE pg_catalog."default" DEFAULT ''::text,

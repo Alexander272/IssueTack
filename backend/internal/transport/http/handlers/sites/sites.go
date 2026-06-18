@@ -31,16 +31,12 @@ func Register(api *gin.RouterGroup, service services.Sites, middleware *middlewa
 		sites.GET("", handlers.getAll)
 		sites.GET("/:id", handlers.getByID)
 
-		write := sites.Group("", middleware.CheckPermissions(access.Reg.R(access.ResourceSite).Write()))
-		{
-			write.POST("", handlers.create)
-			write.PUT("/:id", handlers.update)
-		}
+		sites.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceSite).Write()))
+		sites.POST("", handlers.create)
+		sites.PUT("/:id", handlers.update)
 
-		delete := sites.Group("", middleware.CheckPermissions(access.Reg.R(access.ResourceSite).Delete()))
-		{
-			delete.DELETE("/:id", handlers.delete)
-		}
+		sites.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceSite).Delete()))
+		sites.DELETE("/:id", handlers.delete)
 	}
 }
 

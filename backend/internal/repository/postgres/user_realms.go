@@ -39,7 +39,7 @@ type UserRealms interface {
 func (r *UserRealmRepo) GetAll(ctx context.Context) ([]*models.UserRealm, error) {
 	query := fmt.Sprintf(`SELECT ur.id, ur.user_id, ur.realm_id, ur.role_id, ur.is_active, ur.created_at,
 		    r.slug as role_slug, r.name as role_name, r.level as role_level,
-		    rl.name as realm_name, rl.description as realm_description, rl.created_at as realm_created_at
+		    rl.name as realm_name, rl.description as realm_description
 		FROM %s ur
 		LEFT JOIN %s r ON ur.role_id = r.id
 		LEFT JOIN %s rl ON ur.realm_id = rl.id`,
@@ -74,7 +74,7 @@ func (r *UserRealmRepo) GetAll(ctx context.Context) ([]*models.UserRealm, error)
 func (r *UserRealmRepo) GetByUserID(ctx context.Context, userID uuid.UUID) ([]*models.UserRealm, error) {
 	query := fmt.Sprintf(`SELECT ur.id, ur.user_id, ur.realm_id, ur.role_id, ur.is_active, ur.created_at,
 		    r.slug as role_slug, r.name as role_name, r.level as role_level,
-		    rl.name as realm_name, rl.description as realm_description, rl.created_at as realm_created_at
+		    rl.name as realm_name, rl.description as realm_description
 		FROM %s ur
 		LEFT JOIN %s r ON ur.role_id = r.id
 		LEFT JOIN %s rl ON ur.realm_id = rl.id
@@ -110,7 +110,7 @@ func (r *UserRealmRepo) GetByUserID(ctx context.Context, userID uuid.UUID) ([]*m
 func (r *UserRealmRepo) GetByUserAndRealm(ctx context.Context, userID, realmID uuid.UUID) (*models.UserRealm, error) {
 	query := fmt.Sprintf(`SELECT ur.id, ur.user_id, ur.realm_id, ur.role_id, ur.is_active, ur.created_at,
 		    r.slug as role_slug, r.name as role_name, r.level as role_level,
-		    rl.name as realm_name, rl.description as realm_description, rl.created_at as realm_created_at
+		    rl.name as realm_name, rl.description as realm_description
 		FROM %s ur
 		LEFT JOIN %s r ON ur.role_id = r.id
 		LEFT JOIN %s rl ON ur.realm_id = rl.id

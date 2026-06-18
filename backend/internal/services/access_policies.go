@@ -33,9 +33,9 @@ func NewAccessPoliciesService(deps *PoliciesDeps) *accessPolicesService {
 		log.Fatalf("failed to initialize permission service. error: %s", err.Error())
 	}
 
-	if err = enforcer.LoadPolicy(); err != nil {
-		log.Fatalf("failed to load policy from DB: %s", err.Error())
-	}
+	// if err = enforcer.LoadPolicy(); err != nil {
+	// 	log.Fatalf("failed to load policy from DB: %s", err.Error())
+	// }
 
 	s := &accessPolicesService{
 		enforcer: enforcer,

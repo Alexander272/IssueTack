@@ -10,7 +10,6 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/auth"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/categories"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/checklists"
-	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/comments"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/groups"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/notifications"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/permissions"
@@ -60,11 +59,11 @@ func (h *Handler) Init(group *gin.RouterGroup) {
 	auth.Register(v1, auth.Deps{Service: h.services.Session, Middleware: h.middleware, Auth: h.conf.Auth})
 	secure := v1.Group("", h.middleware.VerifyToken)
 
-	tickets.Register(secure, h.services.Tickets)
-	subtasks.Register(secure, h.services.Subtasks)
-	attachments.Register(secure, h.services.Attachments)
+	tickets.Register(secure, h.services.Tickets, h.middleware)
+	subtasks.Register(secure, h.services.Subtasks, h.middleware)
+	attachments.Register(secure, h.services.Attachments, h.middleware)
 	checklists.Register(secure, h.services.Checklists, h.middleware)
-	comments.Register(secure, h.services)
+	// comments.Register(secure, h.services.Comments, h.middleware)
 
 	groups.Register(secure, h.services.Groups, h.middleware)
 	categories.Register(secure, h.services.Categories, h.middleware)
@@ -72,8 +71,8 @@ func (h *Handler) Init(group *gin.RouterGroup) {
 
 	permissions.Register(secure, h.services.Permissions, h.middleware)
 	roles.Register(secure, h.services.Roles, h.middleware)
-	realms.Register(secure, h.services, h.middleware)
-	users.Register(secure, h.services, h.middleware)
+	realms.Register(secure, h.services.Realms, h.middleware)
+	users.Register(secure, h.services.Users, h.middleware)
 
 	notifications.Register(secure, h.services.Notifications)
 	activity_log.Register(secure, h.services.ActivityLog, h.middleware)

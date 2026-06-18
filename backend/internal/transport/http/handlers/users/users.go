@@ -24,19 +24,17 @@ func NewHandler(service services.Users) *Handler {
 	}
 }
 
-func Register(api *gin.RouterGroup, services *services.Services, middleware *middleware.Middleware) {
-	handler := NewHandler(services.Users)
+func Register(api *gin.RouterGroup, services services.Users, middleware *middleware.Middleware) {
+	handler := NewHandler(services)
 
 	users := api.Group("/users", middleware.CheckPermissions(access.Reg.R(access.ResourceGroup).Read()))
 	{
 		users.GET("", handler.getAll)
 		users.GET("/:id", handler.getByID)
 
-		write := users.Group("", middleware.CheckPermissions(access.Reg.R(access.ResourceGroup).Write()))
-		{
-			write.POST("/sync", handler.sync)
-			write.PUT("/:id", handler.updateAccount)
-		}
+		users.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceGroup).Write()))
+		users.POST("/sync", handler.sync)
+		users.PUT("/:id", handler.updateAccount)
 	}
 }
 

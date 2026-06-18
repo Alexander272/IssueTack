@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -22,15 +24,17 @@ func NewHandler(service services.Attachments) *Handler {
 	}
 }
 
-func Register(api *gin.RouterGroup, service services.Attachments) {
+func Register(api *gin.RouterGroup, service services.Attachments, middleware *middleware.Middleware) {
 	handlers := NewHandler(service)
 
-	//TODO сделать разграничение доступа
-
-	attachments := api.Group("/attachments")
+	attachments := api.Group("/attachments", middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Read()))
 	{
 		attachments.GET("/:entityType/:entityId", handlers.getByEntity)
+
+		attachments.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Write()))
 		attachments.POST("/:entityType/:entityId", handlers.upload)
+
+		attachments.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Delete()))
 		attachments.DELETE("/:id", handlers.delete)
 	}
 }

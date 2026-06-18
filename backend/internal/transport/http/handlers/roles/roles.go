@@ -34,17 +34,13 @@ func Register(api *gin.RouterGroup, service services.Roles, middleware *middlewa
 		roles.GET("/:id", handlers.get)
 		roles.GET("/:id/permissions", handlers.getWithPermissions)
 
-		write := roles.Group("", middleware.CheckPermissions(access.Reg.R(access.ResourceRole).Write()))
-		{
-			write.POST("", handlers.create)
-			write.PUT("/:id", handlers.update)
-			write.PUT("/:id/permissions", handlers.setPermissions)
-		}
+		roles.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceRole).Write()))
+		roles.POST("", handlers.create)
+		roles.PUT("/:id", handlers.update)
+		roles.PUT("/:id/permissions", handlers.setPermissions)
 
-		delete := roles.Group("", middleware.CheckPermissions(access.Reg.R(access.ResourceRole).Delete()))
-		{
-			delete.DELETE("/:id", handlers.delete)
-		}
+		roles.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceRole).Delete()))
+		roles.DELETE("/:id", handlers.delete)
 	}
 }
 

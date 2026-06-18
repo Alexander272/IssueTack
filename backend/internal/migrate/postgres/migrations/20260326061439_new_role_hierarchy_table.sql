@@ -52,7 +52,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER IF NOT EXISTS trg_role_hierarchy_cycle
+-- Удаляем старый триггер (если он был), чтобы не было конфликта
+DROP TRIGGER IF EXISTS trg_role_hierarchy_cycle ON public.role_hierarchy;
+-- Создаем триггер
+CREATE TRIGGER trg_role_hierarchy_cycle
     BEFORE INSERT OR UPDATE ON role_hierarchy
     FOR EACH ROW EXECUTE FUNCTION check_role_hierarchy_cycle();
 -- +goose StatementEnd

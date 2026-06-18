@@ -39,7 +39,7 @@ type Permissions interface {
 }
 
 func (r *PermissionRepo) LoadPolicy(ctx context.Context) ([]*models.Permission, error) {
-	query := fmt.Sprintf(`SELECT r.slug, d.code, p.object, p.action
+	query := fmt.Sprintf(`SELECT r.slug, d.id, p.object, p.action
 		FROM %s rp
 		JOIN %s r ON r.id = rp.role_id
 		JOIN %s d ON d.id = r.realm_id

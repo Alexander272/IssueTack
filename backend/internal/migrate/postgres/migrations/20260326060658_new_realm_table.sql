@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS public.realms
     code TEXT COLLATE pg_catalog."default" NOT NULL UNIQUE,
     name TEXT COLLATE pg_catalog."default" NOT NULL,
     description TEXT COLLATE pg_catalog."default" DEFAULT ''::text,
+    is_active bool DEFAULT true,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now()
 )

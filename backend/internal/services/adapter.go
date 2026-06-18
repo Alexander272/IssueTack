@@ -48,6 +48,7 @@ func (s *adapterService) LoadPolicy(model model.Model) error {
 	if err := persist.LoadPolicyLine(rootPolicy, model); err != nil {
 		return fmt.Errorf("failed to load root policy: %w", err)
 	}
+	logger.Debug("permissions", logger.StringAttr("root", rootPolicy))
 
 	permissions, err := s.perms.LoadPolicy(s.ctx)
 	if err != nil {
