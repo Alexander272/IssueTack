@@ -41,7 +41,7 @@ type Users interface {
 	LoadPolicy(ctx context.Context) ([]*models.UserRole, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*models.UserData, error)
 	GetByLogin(ctx context.Context, login string) (*models.UserData, error)
-	GetAll(ctx context.Context) ([]*models.UserData, error)
+	GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.UserData, error)
 	Sync(ctx context.Context, actor *models.Actor) error
 	UpdateAccount(ctx context.Context, dto *models.UpdateAccountDTO) error
 }
@@ -70,8 +70,8 @@ func (s *userService) GetByLogin(ctx context.Context, login string) (*models.Use
 	return data, nil
 }
 
-func (s *userService) GetAll(ctx context.Context) ([]*models.UserData, error) {
-	data, err := s.repo.GetAll(ctx)
+func (s *userService) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.UserData, error) {
+	data, err := s.repo.GetAll(ctx, realmID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get all users. error: %w", err)
 	}

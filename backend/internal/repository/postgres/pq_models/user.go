@@ -28,4 +28,5 @@ type User struct {
 	RealmDescription sql.NullString `db:"realm_description"`
 	RealmIsActive    sql.NullBool   `db:"realm_is_active"`
 	RealmCreatedAt   sql.NullTime   `db:"realm_created_at"`
+	InternalNumber   sql.NullString `db:"internal_number"`
 }

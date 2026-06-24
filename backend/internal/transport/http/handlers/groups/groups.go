@@ -8,6 +8,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -68,11 +69,17 @@ func (h *Handler) getByID(c *gin.Context) {
 }
 
 func (h *Handler) create(c *gin.Context) {
+	realmId, ok := utils.GetRealmUUID(c)
+	if !ok {
+		return
+	}
+
 	dto := &models.GroupDTO{}
 	if err := c.BindJSON(dto); err != nil {
 		response.SendError(c, err)
 		return
 	}
+	dto.RealmID = realmId
 
 	if err := h.service.Create(c, dto); err != nil {
 		response.SendError(c, err, dto)

@@ -17,6 +17,22 @@ func NewGroupService(repo repository.Groups) *GroupService {
 	return &GroupService{repo: repo}
 }
 
+type Groups interface {
+	Get(ctx context.Context, req *models.GetGroupsDTO) ([]*models.Group, error)
+	GetByID(ctx context.Context, req *models.GetGroupDTO) (*models.Group, error)
+	Create(ctx context.Context, dto *models.GroupDTO) error
+	Update(ctx context.Context, dto *models.GroupDTO) error
+	Delete(ctx context.Context, dto *models.DelGroupDTO) error
+
+	AddMember(ctx context.Context, dto *models.GroupMemberDTO) error
+	RemoveMember(ctx context.Context, dto *models.GroupMemberDTO) error
+	GetMembers(ctx context.Context, req *models.GetGroupDTO) ([]*models.User, error)
+	GetMemberCount(ctx context.Context, groupID uuid.UUID) (int, error)
+	GetManagedGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
+	GetMemberGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
+	IsMember(ctx context.Context, groupID, userID uuid.UUID) (bool, error)
+}
+
 func (s *GroupService) AddMember(ctx context.Context, dto *models.GroupMemberDTO) error {
 	if err := s.repo.AddMember(ctx, dto); err != nil {
 		return fmt.Errorf("failed to add member. error: %w", err)
@@ -71,27 +87,14 @@ func (s *GroupService) IsMember(ctx context.Context, groupID, userID uuid.UUID) 
 	return ok, nil
 }
 
-type Groups interface {
-	Get(ctx context.Context, req *models.GetGroupsDTO) ([]*models.Group, error)
-	GetByID(ctx context.Context, req *models.GetGroupDTO) (*models.Group, error)
-	Create(ctx context.Context, dto *models.GroupDTO) error
-	Update(ctx context.Context, dto *models.GroupDTO) error
-	Delete(ctx context.Context, dto *models.DelGroupDTO) error
-
-	AddMember(ctx context.Context, dto *models.GroupMemberDTO) error
-	RemoveMember(ctx context.Context, dto *models.GroupMemberDTO) error
-	GetMembers(ctx context.Context, req *models.GetGroupDTO) ([]*models.User, error)
-	GetMemberCount(ctx context.Context, groupID uuid.UUID) (int, error)
-	GetManagedGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
-	GetMemberGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
-	IsMember(ctx context.Context, groupID, userID uuid.UUID) (bool, error)
-}
-
 func (s *GroupService) Get(ctx context.Context, req *models.GetGroupsDTO) ([]*models.Group, error) {
 	data, err := s.repo.Get(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get groups. error: %w", err)
 	}
+
+	//TODO участников группы я тут не получаю
+
 	return data, nil
 }
 

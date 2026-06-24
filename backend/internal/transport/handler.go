@@ -74,9 +74,8 @@ func (h *Handler) Init(conf *config.Config) *gin.Engine {
 func securityHeaders() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("X-Content-Type-Options", "nosniff")
-		c.Header("X-Frame-Options", "SAMEORIGIN")
-		c.Header("X-XSS-Protection", "1; mode=block")
-		c.Header("Referrer-Policy", "no-referrer-when-downgrade")
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 		c.Header("Content-Security-Policy",
 			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "+
 				"img-src 'self' data: blob:; font-src 'self'; connect-src 'self' ws: wss:; "+

@@ -48,6 +48,11 @@ func (h *Handler) getAll(c *gin.Context) {
 		return
 	}
 
+	realmID, ok := utils.GetRealmUUID(c)
+	if ok {
+		filter.RealmID = &realmID
+	}
+
 	actor := utils.GetActor(c)
 	if actor == nil {
 		return
@@ -75,7 +80,9 @@ func (h *Handler) getByID(c *gin.Context) {
 		return
 	}
 
-	data, err := h.service.GetByID(c, &models.GetTicketByIdDTO{ID: id, Actor: actor})
+	realmIdStr := c.GetHeader("realm")
+
+	data, err := h.service.GetByID(c, &models.GetTicketByIdDTO{ID: id, Actor: actor, RealmID: realmIdStr})
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -89,6 +96,12 @@ func (h *Handler) create(c *gin.Context) {
 		response.SendError(c, err)
 		return
 	}
+
+	realmID, ok := utils.GetRealmUUID(c)
+	if !ok {
+		return
+	}
+	dto.RealmID = realmID
 
 	actor := utils.GetActor(c)
 	if actor == nil {
@@ -122,6 +135,11 @@ func (h *Handler) update(c *gin.Context) {
 	}
 	dto.ID = id
 
+	realmID, ok := utils.GetRealmUUID(c)
+	if ok {
+		dto.RealmID = realmID
+	}
+
 	actor := utils.GetActor(c)
 	if actor == nil {
 		return
@@ -148,7 +166,9 @@ func (h *Handler) delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.Delete(c, &models.DeleteTicketDTO{ID: id, Actor: actor}); err != nil {
+	realmIdStr := c.GetHeader("realm")
+
+	if err := h.service.Delete(c, &models.DeleteTicketDTO{ID: id, Actor: actor, RealmID: realmIdStr}); err != nil {
 		response.SendError(c, err)
 		return
 	}

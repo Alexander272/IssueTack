@@ -1,6 +1,7 @@
 package response
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -13,21 +14,21 @@ import (
 
 // validatorMessages сопоставляет теги валидатора с русскоязычными сообщениями
 var validatorMessages = map[string]string{
-	"required":    "обязательное поле",
-	"email":       "некорректный email адрес",
-	"min":         "значение меньше допустимого минимума",
-	"max":         "значение превышает допустимый максимум",
-	"len":         "неверная длина",
-	"oneof":       "значение должно быть одним из допустимых",
-	"url":         "некорректный URL",
-	"numeric":     "значение должно быть числом",
-	"alphanum":    "допустимы только буквы и цифры",
-	"datetime":    "некорректный формат даты/времени",
-	"uuid":        "некорректный UUID",
-	"gte":         "значение должно быть не меньше",
-	"lte":         "значение должно быть не больше",
-	"gt":          "значение должно быть больше",
-	"lt":          "значение должно быть меньше",
+	"required": "обязательное поле",
+	"email":    "некорректный email адрес",
+	"min":      "значение меньше допустимого минимума",
+	"max":      "значение превышает допустимый максимум",
+	"len":      "неверная длина",
+	"oneof":    "значение должно быть одним из допустимых",
+	"url":      "некорректный URL",
+	"numeric":  "значение должно быть числом",
+	"alphanum": "допустимы только буквы и цифры",
+	"datetime": "некорректный формат даты/времени",
+	"uuid":     "некорректный UUID",
+	"gte":      "значение должно быть не меньше",
+	"lte":      "значение должно быть не больше",
+	"gt":       "значение должно быть больше",
+	"lt":       "значение должно быть меньше",
 }
 
 // translateTag переводит тег валидатора на русский язык
@@ -61,14 +62,14 @@ type IdResponse struct {
 }
 
 type ErrorResponse struct {
-	Message string      `json:"message"`
-	Code    string      `json:"code,omitempty"`
+	Message string       `json:"message"`
+	Code    string       `json:"code,omitempty"`
 	Fields  []FieldError `json:"fields,omitempty"`
 }
 
 // FieldError describes a specific field validation error
 type FieldError struct {
-	Field   string `json:"field"`
+	Field   string `json:"field,omitempty"`
 	Message string `json:"message"`
 	Tag     string `json:"tag,omitempty"`
 }
@@ -77,22 +78,45 @@ type StatusResponse struct {
 	Status string `json:"status"`
 }
 
+// InputFieldError represents an error from a custom JSON unmarshaler (e.g. uuid.UUID)
+// with the field name that caused the error.
+type InputFieldError struct {
+	Field string
+	Err   error
+}
+
+func (e *InputFieldError) Error() string {
+	return fmt.Sprintf("%s: %v", e.Field, e.Err)
+}
+
+func (e *InputFieldError) Unwrap() error {
+	return e.Err
+}
+
 // SendError is the centralized method for sending error responses.
 // It automatically detects:
 // 1. Gin/Validator validation errors (returns 400 with field details)
-// 2. Custom HTTPError implementations (uses their metadata)
-// 3. Unknown errors (returns 500)
+// 2. JSON binding errors (syntax, type mismatch, custom unmarshalers — returns 400)
+// 3. Custom HTTPError implementations (uses their metadata)
+// 4. Unknown errors (returns 500)
 // For server errors (5xx), it logs as Error and notifies the error_bot.
 // For client errors (4xx), it logs as Info.
 func SendError(c *gin.Context, err error, request ...any) {
-	var status int
-	var code string
-	var message string
-	var fields []FieldError
+	var (
+		status  int
+		code    string
+		message string
+		fields  []FieldError
 
-	// 1. First, check for Gin's validator errors (from c.BindJSON)
-	var validationErrors validator.ValidationErrors
-	if errors.As(err, &validationErrors) {
+		validationErrors validator.ValidationErrors
+		syntaxError      *json.SyntaxError
+		unmarshalErr     *json.UnmarshalTypeError
+		httpErr          HTTPError
+		inputFieldErr    *InputFieldError
+	)
+
+	switch {
+	case errors.As(err, &validationErrors):
 		status = http.StatusBadRequest
 		code = "BR001"
 		message = "Отправлены некорректные данные"
@@ -104,19 +128,45 @@ func SendError(c *gin.Context, err error, request ...any) {
 				Tag:     tag,
 			})
 		}
-	} else {
-		// 2. Check for custom HTTPError
-		var httpErr HTTPError
-		if errors.As(err, &httpErr) {
-			status = httpErr.Status()
-			code = httpErr.Code()
-			message = httpErr.Message()
-		} else {
-			// 3. Unknown error
-			status = http.StatusInternalServerError
-			code = "U001"
-			message = "Внутренняя ошибка сервера"
-		}
+
+	case errors.As(err, &syntaxError):
+		status = http.StatusBadRequest
+		code = "BR002"
+		message = "Некорректный формат JSON"
+		fields = append(fields, FieldError{
+			Message: syntaxError.Error(),
+			Tag:     "syntax",
+		})
+
+	case errors.As(err, &unmarshalErr):
+		status = http.StatusBadRequest
+		code = "BR003"
+		message = "Некорректный тип данных"
+		fields = append(fields, FieldError{
+			Field:   unmarshalErr.Field,
+			Message: fmt.Sprintf("ожидался тип %s, получено %s", unmarshalErr.Type, unmarshalErr.Value),
+			Tag:     "type",
+		})
+
+	case errors.As(err, &httpErr):
+		status = httpErr.Status()
+		code = httpErr.Code()
+		message = httpErr.Message()
+
+	case errors.As(err, &inputFieldErr):
+		status = http.StatusBadRequest
+		code = "BR004"
+		message = "Некорректное значение поля"
+		fields = append(fields, FieldError{
+			Field:   inputFieldErr.Field,
+			Message: inputFieldErr.Err.Error(),
+			Tag:     "invalid",
+		})
+
+	default:
+		status = http.StatusInternalServerError
+		code = "U001"
+		message = "Внутренняя ошибка сервера"
 	}
 
 	loggerValues := []any{

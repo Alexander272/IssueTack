@@ -35,6 +35,7 @@ var Tables = struct {
 	AuditLogs              string
 	Notifications          string
 	NotificationSettings   string
+	TicketCounters         string
 }{
 	Sites:                  "sites",
 	Realms:                 "realms",
@@ -58,4 +59,5 @@ var Tables = struct {
 	AuditLogs:              "policy_audit_logs",
 	Notifications:          "notifications",
 	NotificationSettings:   "user_notification_settings",
+	TicketCounters:         "ticket_counters",
 }

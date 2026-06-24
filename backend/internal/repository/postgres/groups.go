@@ -39,8 +39,8 @@ func (r *groupRepo) GetByID(ctx context.Context, req *models.GetGroupDTO) (*mode
 	query := fmt.Sprintf(`
 		SELECT g.id, g.name, g.description, g.created_at, g.updated_at,
 			g.default_assignee_id, g.manager_id,
-			da.id AS da_id, da.name AS da_name,
-			m.id AS m_id, m.name AS m_name
+			da.id AS da_id, da.username AS da_username, da.first_name AS da_first_name, da.last_name AS da_last_name, da.internal_number AS da_internal_number,
+			m.id AS m_id, m.username AS m_username, m.first_name AS m_first_name, m.last_name AS m_last_name, m.internal_number AS m_internal_number
 		FROM %s g
 		LEFT JOIN %s da ON da.id = g.default_assignee_id
 		LEFT JOIN %s m ON m.id = g.manager_id
@@ -49,7 +49,9 @@ func (r *groupRepo) GetByID(ctx context.Context, req *models.GetGroupDTO) (*mode
 
 	group := &models.Group{}
 	var daID, mID *uuid.UUID
-	var daName, mName *string
+	var daUsername, daFirstName, daLastName *string
+	var mUsername, mFirstName, mLastName *string
+	var daInternalNumber, mInternalNumber *string
 	err := r.db.QueryRow(ctx, query, req.ID).Scan(
 		&group.ID,
 		&group.Name,
@@ -59,18 +61,24 @@ func (r *groupRepo) GetByID(ctx context.Context, req *models.GetGroupDTO) (*mode
 		&group.DefaultAssigneeID,
 		&group.ManagerID,
 		&daID,
-		&daName,
+		&daUsername,
+		&daFirstName,
+		&daLastName,
+		&daInternalNumber,
 		&mID,
-		&mName,
+		&mUsername,
+		&mFirstName,
+		&mLastName,
+		&mInternalNumber,
 	)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
 	if daID != nil {
-		group.DefaultAssignee = &models.UserShort{ID: *daID, FullName: *daName}
+		group.DefaultAssignee = &models.UserShort{ID: *daID, Username: *daUsername, FirstName: *daFirstName, LastName: *daLastName, InternalNumber: *daInternalNumber}
 	}
 	if mID != nil {
-		group.Manager = &models.UserShort{ID: *mID, FullName: *mName}
+		group.Manager = &models.UserShort{ID: *mID, Username: *mUsername, FirstName: *mFirstName, LastName: *mLastName, InternalNumber: *mInternalNumber}
 	}
 	return group, nil
 }
@@ -79,14 +87,16 @@ func (r *groupRepo) Get(ctx context.Context, req *models.GetGroupsDTO) ([]*model
 	query := fmt.Sprintf(`
 		SELECT g.id, g.name, g.description, g.created_at, g.updated_at,
 			g.default_assignee_id, g.manager_id,
-			da.id AS da_id, da.name AS da_name,
-			m.id AS m_id, m.name AS m_name
+			da.id AS da_id, da.username AS da_username, da.first_name AS da_first_name, da.last_name AS da_last_name, 
+			da.internal_number AS da_internal_number, da.email AS da_email,
+			m.id AS m_id, m.username AS m_username, m.first_name AS m_first_name, m.last_name AS m_last_name, 
+			m.internal_number AS m_internal_number, m.email AS m_email
 		FROM %s g
 		LEFT JOIN %s da ON da.id = g.default_assignee_id
 		LEFT JOIN %s m ON m.id = g.manager_id
 	`, Tables.Groups, Tables.Users, Tables.Users)
 
-	var data []*models.Group
+	data := []*models.Group{}
 	rows, err := r.db.Query(ctx, query)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
@@ -96,7 +106,9 @@ func (r *groupRepo) Get(ctx context.Context, req *models.GetGroupsDTO) ([]*model
 	for rows.Next() {
 		item := &models.Group{}
 		var daID, mID *uuid.UUID
-		var daName, mName *string
+		var daUsername, daFirstName, daLastName, daEmail *string
+		var mUsername, mFirstName, mLastName, mEmail *string
+		var daInternalNumber, mInternalNumber *string
 		if err := rows.Scan(
 			&item.ID,
 			&item.Name,
@@ -106,17 +118,31 @@ func (r *groupRepo) Get(ctx context.Context, req *models.GetGroupsDTO) ([]*model
 			&item.DefaultAssigneeID,
 			&item.ManagerID,
 			&daID,
-			&daName,
+			&daUsername,
+			&daFirstName,
+			&daLastName,
+			&daInternalNumber,
+			&daEmail,
 			&mID,
-			&mName,
+			&mUsername,
+			&mFirstName,
+			&mLastName,
+			&mInternalNumber,
+			&mEmail,
 		); err != nil {
 			return nil, MapError(fmt.Errorf("scan row error: %w", err))
 		}
 		if daID != nil {
-			item.DefaultAssignee = &models.UserShort{ID: *daID, FullName: *daName}
+			item.DefaultAssignee = &models.UserShort{
+				ID: *daID, Username: *daUsername, FirstName: *daFirstName, LastName: *daLastName,
+				InternalNumber: *daInternalNumber, Email: *daEmail,
+			}
 		}
 		if mID != nil {
-			item.Manager = &models.UserShort{ID: *mID, FullName: *mName}
+			item.Manager = &models.UserShort{
+				ID: *mID, Username: *mUsername, FirstName: *mFirstName, LastName: *mLastName,
+				InternalNumber: *mInternalNumber, Email: *mEmail,
+			}
 		}
 		data = append(data, item)
 	}
@@ -128,10 +154,13 @@ func (r *groupRepo) Get(ctx context.Context, req *models.GetGroupsDTO) ([]*model
 }
 
 func (r *groupRepo) Create(ctx context.Context, dto *models.GroupDTO) error {
-	query := fmt.Sprintf(`INSERT INTO %s (id, name, description) VALUES ($1, $2, $3)`, Tables.Groups)
+	query := fmt.Sprintf(`INSERT INTO %s (id, realm_id, name, description, manager_id, default_assignee_id) 
+		VALUES ($1, $2, $3, $4, $5, $6)`,
+		Tables.Groups,
+	)
 	dto.ID = uuid.New()
 
-	_, err := r.db.Exec(ctx, query, dto.ID, dto.Name, dto.Description)
+	_, err := r.db.Exec(ctx, query, dto.ID, dto.RealmID, dto.Name, dto.Description, dto.ManagerID, dto.DefaultAssigneeID)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -180,7 +209,7 @@ func (r *groupRepo) RemoveMember(ctx context.Context, dto *models.GroupMemberDTO
 
 func (r *groupRepo) GetMembers(ctx context.Context, req *models.GetGroupDTO) ([]*models.User, error) {
 	query := fmt.Sprintf(`
-		SELECT u.id, u.email, u.name, u.created_at, u.updated_at
+		SELECT u.id, u.email, TRIM(CONCAT(u.last_name, ' ', u.first_name)) AS name, u.created_at, u.updated_at
 		FROM %s gm
 		JOIN %s u ON u.id = gm.user_id
 		WHERE gm.group_id = $1
@@ -192,7 +221,7 @@ func (r *groupRepo) GetMembers(ctx context.Context, req *models.GetGroupDTO) ([]
 	}
 	defer rows.Close()
 
-	var data []*models.User
+	data := []*models.User{}
 	for rows.Next() {
 		item := &models.User{}
 		if err := rows.Scan(&item.ID, &item.Email, &item.Name, &item.CreatedAt, &item.UpdatedAt); err != nil {

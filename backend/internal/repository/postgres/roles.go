@@ -53,7 +53,7 @@ func (r *RoleRepo) GetOne(ctx context.Context, req *models.GetRoleDTO) (*models.
 		return nil, MapError(models.ErrInvalidInput)
 	}
 
-	query := fmt.Sprintf(`SELECT id, slug, name, description, level, is_active, is_system, is_editable, created_at, updated_at FROM %s %s`,
+	query := fmt.Sprintf(`SELECT id, slug, realm_id, name, description, level, is_active, is_system, is_editable, created_at, updated_at FROM %s %s`,
 		Tables.Roles, condition,
 	)
 	data := &models.Role{}
@@ -61,6 +61,7 @@ func (r *RoleRepo) GetOne(ctx context.Context, req *models.GetRoleDTO) (*models.
 	err := r.db.QueryRow(ctx, query, params...).Scan(
 		&data.ID,
 		&data.Slug,
+		&data.Realm,
 		&data.Name,
 		&data.Description,
 		&data.Level,

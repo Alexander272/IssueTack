@@ -28,12 +28,12 @@ type Categories interface {
 }
 
 func (r *CategoryRepo) Get(ctx context.Context, req *models.GetCategoriesDTO) ([]*models.Category, error) {
-	query := fmt.Sprintf(`SELECT id, name, description, group_id, priority, is_active, created_at, updated_at FROM %s`,
+	query := fmt.Sprintf(`SELECT id, name, description, group_id, def_priority, is_active, realm_id, created_at, updated_at FROM %s WHERE realm_id = $1`,
 		Tables.Categories,
 	)
 
-	var data []*models.Category
-	rows, err := r.db.Query(ctx, query)
+	data := []*models.Category{}
+	rows, err := r.db.Query(ctx, query, req.RealmID)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -43,7 +43,7 @@ func (r *CategoryRepo) Get(ctx context.Context, req *models.GetCategoriesDTO) ([
 		item := &models.Category{}
 		if err := rows.Scan(
 			&item.ID, &item.Name, &item.Description, &item.GroupID, &item.Priority, &item.IsActive,
-			&item.CreatedAt, &item.UpdatedAt,
+			&item.RealmID, &item.CreatedAt, &item.UpdatedAt,
 		); err != nil {
 			return nil, MapError(fmt.Errorf("scan row error: %w", err))
 		}
@@ -57,18 +57,19 @@ func (r *CategoryRepo) Get(ctx context.Context, req *models.GetCategoriesDTO) ([
 }
 
 func (r *CategoryRepo) GetByID(ctx context.Context, req *models.GetCategoryByIdDTO) (*models.Category, error) {
-	query := fmt.Sprintf(`SELECT id, name, description, group_id, priority, is_active, created_at, updated_at FROM %s WHERE id = $1`,
+	query := fmt.Sprintf(`SELECT id, name, description, group_id, def_priority, is_active, realm_id, created_at, updated_at FROM %s WHERE id = $1 AND realm_id = $2`,
 		Tables.Categories,
 	)
 
 	category := &models.Category{}
-	err := r.db.QueryRow(ctx, query, req.ID).Scan(
+	err := r.db.QueryRow(ctx, query, req.ID, req.RealmID).Scan(
 		&category.ID,
 		&category.Name,
 		&category.Description,
 		&category.GroupID,
 		&category.Priority,
 		&category.IsActive,
+		&category.RealmID,
 		&category.CreatedAt,
 		&category.UpdatedAt,
 	)
@@ -79,12 +80,13 @@ func (r *CategoryRepo) GetByID(ctx context.Context, req *models.GetCategoryByIdD
 }
 
 func (r *CategoryRepo) Create(ctx context.Context, dto *models.CategoryDTO) error {
-	query := fmt.Sprintf(`INSERT INTO %s (id, name, description, group_id, priority, is_active) VALUES ($1, $2, $3, $4, $5, $6)`,
+	query := fmt.Sprintf(`INSERT INTO %s (id, name, description, group_id, def_priority, is_active, realm_id) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		Tables.Categories,
 	)
-	dto.ID = uuid.New()
+	id := uuid.New()
+	dto.ID = &id
 
-	_, err := r.db.Exec(ctx, query, dto.ID, dto.Name, dto.Description, dto.GroupID, dto.Priority, dto.IsActive)
+	_, err := r.db.Exec(ctx, query, id, dto.Name, dto.Description, dto.GroupID, dto.Priority, dto.IsActive, dto.RealmID)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -92,11 +94,11 @@ func (r *CategoryRepo) Create(ctx context.Context, dto *models.CategoryDTO) erro
 }
 
 func (r *CategoryRepo) Update(ctx context.Context, dto *models.CategoryDTO) error {
-	query := fmt.Sprintf(`UPDATE %s SET name=$2, description=$3, group_id=$4, priority=$5, is_active=$6 WHERE id=$1`,
+	query := fmt.Sprintf(`UPDATE %s SET name=$2, description=$3, group_id=$4, def_priority=$5, is_active=$6, realm_id=$7 WHERE id=$1`,
 		Tables.Categories,
 	)
 
-	_, err := r.db.Exec(ctx, query, dto.ID, dto.Name, dto.Description, dto.GroupID, dto.Priority, dto.IsActive)
+	_, err := r.db.Exec(ctx, query, dto.ID, dto.Name, dto.Description, dto.GroupID, dto.Priority, dto.IsActive, dto.RealmID)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -104,9 +106,9 @@ func (r *CategoryRepo) Update(ctx context.Context, dto *models.CategoryDTO) erro
 }
 
 func (r *CategoryRepo) Delete(ctx context.Context, dto *models.DelCategoryDTO) error {
-	query := fmt.Sprintf(`DELETE FROM %s WHERE id = $1`, Tables.Categories)
+	query := fmt.Sprintf(`DELETE FROM %s WHERE id = $1 AND realm_id = $2`, Tables.Categories)
 
-	_, err := r.db.Exec(ctx, query, dto.ID)
+	_, err := r.db.Exec(ctx, query, dto.ID, dto.RealmID)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}

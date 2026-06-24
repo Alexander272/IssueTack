@@ -216,7 +216,7 @@ func (r *UserRealmRepo) UpdateSeveral(ctx context.Context, tx Tx, dto []*models.
 		return nil
 	}
 
-	ids := make([]uuid.UUID, len(dto))
+	ids := make([]*uuid.UUID, len(dto))
 	userIds := make([]uuid.UUID, len(dto))
 	realmIds := make([]uuid.UUID, len(dto))
 	roleIds := make([]*uuid.UUID, len(dto))
@@ -276,7 +276,7 @@ func (r *UserRealmRepo) DeleteSeveral(ctx context.Context, tx Tx, dto []*models.
 		return nil
 	}
 
-	ids := make([]uuid.UUID, len(dto))
+	ids := make([]*uuid.UUID, len(dto))
 	for i, v := range dto {
 		ids[i] = v.ID
 	}

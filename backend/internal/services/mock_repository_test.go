@@ -478,7 +478,7 @@ type MockTicketAccessChecker struct {
 	mock.Mock
 }
 
-func (m *MockTicketAccessChecker) CheckAccess(ctx context.Context, ticketID, userID uuid.UUID, action string) error {
+func (m *MockTicketAccessChecker) CheckAccess(ctx context.Context, ticketID, userID uuid.UUID, action string, realm ...string) error {
 	args := m.Called(ctx, ticketID, userID, action)
 	return args.Error(0)
 }

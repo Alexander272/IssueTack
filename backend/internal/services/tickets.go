@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
@@ -43,16 +44,21 @@ type Tickets interface {
 }
 
 type TicketAccessChecker interface {
-	CheckAccess(ctx context.Context, ticketID, userID uuid.UUID, action string) error
+	CheckAccess(ctx context.Context, ticketID, userID uuid.UUID, action string, realm ...string) error
 }
 
 func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, error) {
-	elevated, err := s.policies.Enforce(req.Actor.ID.String(), "", "ticket", "write")
+	realmStr := ""
+	if req.RealmID != nil {
+		realmStr = req.RealmID.String()
+	}
+
+	elevated, err := s.policies.Enforce(req.Actor.ID.String(), realmStr, string(access.ResourceTicket), string(access.Write))
 	if err != nil {
 		return nil, fmt.Errorf("policy check failed: %w", err)
 	}
 	if !elevated {
-		elevated, err = s.policies.Enforce(req.Actor.ID.String(), "", "ticket", "delete")
+		elevated, err = s.policies.Enforce(req.Actor.ID.String(), realmStr, string(access.ResourceTicket), string(access.Delete))
 		if err != nil {
 			return nil, fmt.Errorf("policy check failed: %w", err)
 		}
@@ -122,8 +128,13 @@ func (s *TicketService) autoAssign(ctx context.Context, dto *models.TicketDTO) e
 	return nil
 }
 
-func (s *TicketService) CheckAccess(ctx context.Context, ticketID, userID uuid.UUID, action string) error {
-	ok, err := s.policies.Enforce(userID.String(), "", "ticket", action)
+func (s *TicketService) CheckAccess(ctx context.Context, ticketID, userID uuid.UUID, action string, realm ...string) error {
+	realmStr := ""
+	if len(realm) > 0 {
+		realmStr = realm[0]
+	}
+
+	ok, err := s.policies.Enforce(userID.String(), realmStr, string(access.ResourceTicket), action)
 	if err != nil {
 		return fmt.Errorf("policy check failed: %w", err)
 	}
@@ -140,7 +151,7 @@ func (s *TicketService) CheckAccess(ctx context.Context, ticketID, userID uuid.U
 	}
 
 	switch action {
-	case "read":
+	case string(access.Read):
 		isMember, err := s.groups.IsMember(ctx, ticket.Group.ID, userID)
 		if err != nil {
 			return fmt.Errorf("failed to check membership: %w", err)
@@ -157,7 +168,7 @@ func (s *TicketService) CheckAccess(ctx context.Context, ticketID, userID uuid.U
 				return nil
 			}
 		}
-	case "write", "delete":
+	case string(access.Write), string(access.Delete):
 		managed, err := s.groups.GetManagedGroups(ctx, userID)
 		if err != nil {
 			return fmt.Errorf("failed to check managed groups: %w", err)
@@ -172,7 +183,7 @@ func (s *TicketService) CheckAccess(ctx context.Context, ticketID, userID uuid.U
 }
 
 func (s *TicketService) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) (*models.Ticket, error) {
-	if err := s.CheckAccess(ctx, req.ID, req.Actor.ID, "read"); err != nil {
+	if err := s.CheckAccess(ctx, req.ID, req.Actor.ID, string(access.Read), req.RealmID); err != nil {
 		return nil, err
 	}
 
@@ -187,7 +198,7 @@ func (s *TicketService) GetByID(ctx context.Context, req *models.GetTicketByIdDT
 	}
 	data.Subtasks = subtasks
 
-	attachments, err := s.attachments.GetByEntity(ctx, "ticket", data.ID, req.Actor.ID)
+	attachments, err := s.attachments.GetByEntity(ctx, string(access.ResourceTicket), data.ID, req.Actor.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get attachments: %w", err)
 	}
@@ -197,7 +208,12 @@ func (s *TicketService) GetByID(ctx context.Context, req *models.GetTicketByIdDT
 }
 
 func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error {
-	ok, err := s.policies.Enforce(dto.Actor.ID.String(), "", "ticket", "write")
+	realmStr := ""
+	if dto.RealmID != uuid.Nil {
+		realmStr = dto.RealmID.String()
+	}
+
+	ok, err := s.policies.Enforce(dto.Actor.ID.String(), realmStr, string(access.ResourceTicket), string(access.Write))
 	if err != nil {
 		return fmt.Errorf("policy check failed: %w", err)
 	}
@@ -247,7 +263,7 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 			Action:        "created",
 			ChangedBy:     dto.Actor.ID,
 			ChangedByName: dto.Actor.Name,
-			EntityType:    "ticket",
+			EntityType:    string(access.ResourceTicket),
 			EntityID:      dto.ID,
 			Entity:        dto.Title,
 		}
@@ -271,7 +287,12 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 }
 
 func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error {
-	if err := s.CheckAccess(ctx, dto.ID, dto.Actor.ID, "write"); err != nil {
+	realmStr := ""
+	if dto.RealmID != uuid.Nil {
+		realmStr = dto.RealmID.String()
+	}
+
+	if err := s.CheckAccess(ctx, dto.ID, dto.Actor.ID, string(access.Write), realmStr); err != nil {
 		return err
 	}
 
@@ -300,7 +321,7 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 				Action:        "updated",
 				ChangedBy:     dto.Actor.ID,
 				ChangedByName: dto.Actor.Name,
-				EntityType:    "ticket",
+				EntityType:    string(access.ResourceTicket),
 				EntityID:      dto.ID,
 				Entity:        oldTicket.Title,
 			}
@@ -330,7 +351,7 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 }
 
 func (s *TicketService) Delete(ctx context.Context, dto *models.DeleteTicketDTO) error {
-	if err := s.CheckAccess(ctx, dto.ID, dto.Actor.ID, "write"); err != nil {
+	if err := s.CheckAccess(ctx, dto.ID, dto.Actor.ID, string(access.Write), dto.RealmID); err != nil {
 		return err
 	}
 
@@ -354,7 +375,7 @@ func (s *TicketService) Delete(ctx context.Context, dto *models.DeleteTicketDTO)
 			Action:        "deleted",
 			ChangedBy:     dto.Actor.ID,
 			ChangedByName: dto.Actor.Name,
-			EntityType:    "ticket",
+			EntityType:    string(access.ResourceTicket),
 			EntityID:      dto.ID,
 			Entity:        ticket.Title,
 		}

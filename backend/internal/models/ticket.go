@@ -16,6 +16,9 @@ type Ticket struct {
 	Status   TicketStatus `json:"status" db:"status"`
 	Priority Priority     `json:"priority" db:"priority"`
 
+	TicketNumber *int      `json:"ticketNumber,omitempty"`
+	RealmID      *uuid.UUID `json:"realmId,omitempty"`
+
 	Site     *SiteShort     `json:"site"`     // Площадка выполнения
 	Category *CategoryShort `json:"category"` // Категория
 
@@ -37,12 +40,15 @@ type Ticket struct {
 }
 
 type GetTicketByIdDTO struct {
-	ID    uuid.UUID `json:"id" db:"id"`
-	Actor *Actor    `json:"actor"`
+	ID      uuid.UUID `json:"id" db:"id"`
+	Actor   *Actor    `json:"actor"`
+	RealmID string    `json:"realmId"`
 }
 
 type TicketFilter struct {
 	Actor      *Actor        `json:"actor"`
+	Number     *int          `form:"number" json:"number"`
+	RealmID    *uuid.UUID    `form:"realmId" json:"realmId"`
 	SiteID     *uuid.UUID    `form:"siteId" json:"siteId" db:"site_id"`
 	Status     *TicketStatus `form:"status" json:"status" db:"status" binding:"omitempty,enum"`
 	OwnerID    *uuid.UUID    `form:"ownerId" json:"ownerId" db:"owner_id"`
@@ -63,6 +69,7 @@ type TicketDTO struct {
 	Status   TicketStatus `json:"status" db:"status"`
 	Priority Priority     `json:"priority" db:"priority"`
 
+	RealmID    uuid.UUID `json:"realmId"`
 	SiteID     uuid.UUID `json:"siteId"`     // Площадка выполнения
 	CategoryID uuid.UUID `json:"categoryId"` // Категория
 
@@ -79,8 +86,9 @@ type TicketDTO struct {
 }
 
 type DeleteTicketDTO struct {
-	ID    uuid.UUID `json:"id" db:"id"`
-	Actor *Actor    `json:"actor"`
+	ID      uuid.UUID `json:"id" db:"id"`
+	Actor   *Actor    `json:"actor"`
+	RealmID string    `json:"realmId"`
 }
 
 type FieldChange struct {

@@ -7,12 +7,12 @@ import (
 )
 
 type Group struct {
-	ID          uuid.UUID  `json:"id" db:"id"`
-	Name        string     `json:"name" db:"name"`
-	Description string     `json:"description" db:"description"`
-	CreatedAt   time.Time  `json:"createdAt" db:"created_at"`
-	UpdatedAt   time.Time  `json:"updatedAt" db:"updated_at"`
-	Members     []*User    `json:"members,omitempty"`
+	ID          uuid.UUID `json:"id" db:"id"`
+	Name        string    `json:"name" db:"name"`
+	Description string    `json:"description" db:"description"`
+	CreatedAt   time.Time `json:"createdAt" db:"created_at"`
+	UpdatedAt   time.Time `json:"updatedAt" db:"updated_at"`
+	Members     []*User   `json:"members,omitempty"`
 
 	DefaultAssigneeID *uuid.UUID `json:"defaultAssigneeId" db:"default_assignee_id"`
 	ManagerID         *uuid.UUID `json:"managerId" db:"manager_id"`
@@ -33,6 +33,7 @@ type GetGroupsDTO struct{}
 
 type GroupDTO struct {
 	ID                uuid.UUID  `json:"id" db:"id"`
+	RealmID           uuid.UUID  `json:"realmId" db:"realm_id"`
 	Name              string     `json:"name" db:"name"`
 	Description       string     `json:"description" db:"description"`
 	DefaultAssigneeID *uuid.UUID `json:"defaultAssigneeId" db:"default_assignee_id"`

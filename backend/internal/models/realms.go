@@ -47,10 +47,10 @@ type UserRealm struct {
 }
 
 type UserRealmDTO struct {
-	ID        uuid.UUID  `json:"id" db:"id"`
+	ID        *uuid.UUID `json:"id" db:"id"`
 	UserID    uuid.UUID  `json:"userId" db:"user_id" binding:"required"`
 	RealmID   uuid.UUID  `json:"realmId" db:"realm_id" binding:"required"`
-	RoleID    *uuid.UUID `json:"roleId" db:"role_id" binding:"required"`
+	RoleID    *uuid.UUID `json:"roleId" db:"role_id"`
 	IsActive  bool       `json:"isActive" db:"is_active"`
 	CreatedAt string     `json:"createdAt" db:"created_at"`
 }

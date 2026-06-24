@@ -32,11 +32,11 @@ type Tickets interface {
 
 func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, error) {
 	base := fmt.Sprintf(`SELECT 
-			t.id, t.title, t.description, t.status, t.priority, t.due_date, t.closed_at, t.created_at, t.updated_at,
-			u_creator.id, CONCAT_WS(' ', u_creator.last_name, u_creator.first_name) AS creator_name,
-			u_owner.id, CONCAT_WS(' ', u_owner.last_name, u_owner.first_name) AS owner_name,
-			u_assignee.id, CONCAT_WS(' ', u_assignee.last_name, u_assignee.first_name) AS assignee_name,
-			u_manager.id, CONCAT_WS(' ', u_manager.last_name, u_manager.first_name) AS manager_name,
+			t.id, t.title, t.description, t.status, t.priority, t.ticket_number, t.realm_id, t.due_date, t.closed_at, t.created_at, t.updated_at,
+			u_creator.id, u_creator.username AS creator_username, u_creator.first_name AS creator_first_name, u_creator.last_name AS creator_last_name, u_creator.internal_number AS creator_internal_number,
+			u_owner.id, u_owner.username AS owner_username, u_owner.first_name AS owner_first_name, u_owner.last_name AS owner_last_name, u_owner.internal_number AS owner_internal_number,
+			u_assignee.id, u_assignee.username AS assignee_username, u_assignee.first_name AS assignee_first_name, u_assignee.last_name AS assignee_last_name, u_assignee.internal_number AS assignee_internal_number,
+			u_manager.id, u_manager.username AS manager_username, u_manager.first_name AS manager_first_name, u_manager.last_name AS manager_last_name, u_manager.internal_number AS manager_internal_number,
 			g.id, g.name,
 			c.id, c.name,
 			s.id, s.name
@@ -81,6 +81,16 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 		args = append(args, *req.GroupID)
 		argIdx++
 	}
+	if req.Number != nil {
+		where = append(where, fmt.Sprintf("t.ticket_number = $%d", argIdx))
+		args = append(args, *req.Number)
+		argIdx++
+	}
+	if req.RealmID != nil {
+		where = append(where, fmt.Sprintf("t.realm_id = $%d", argIdx))
+		args = append(args, *req.RealmID)
+		argIdx++
+	}
 	if len(req.GroupIDs) > 0 {
 		ids := make([]string, len(req.GroupIDs))
 		for i, gid := range req.GroupIDs {
@@ -121,12 +131,18 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 	var data []*models.Ticket
 	for rows.Next() {
 		var (
-			assigneeID   *uuid.UUID
-			assigneeName *string
-			managerID    *uuid.UUID
-			managerName  *string
-			groupID      *uuid.UUID
-			groupName    *string
+			assigneeID            *uuid.UUID
+			assigneeUsername      *string
+			assigneeFirstName     *string
+			assigneeLastName      *string
+			assigneeInternalNumber *string
+			managerID              *uuid.UUID
+			managerUsername        *string
+			managerFirstName       *string
+			managerLastName        *string
+			managerInternalNumber  *string
+			groupID                *uuid.UUID
+			groupName              *string
 		)
 		ticket := &models.Ticket{
 			Site:     &models.SiteShort{},
@@ -137,11 +153,12 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 		if err := rows.Scan(
 			&ticket.ID, &ticket.Title, &ticket.Description,
 			&ticket.Status, &ticket.Priority,
+			&ticket.TicketNumber, &ticket.RealmID,
 			&ticket.DueDate, &ticket.ClosedAt, &ticket.CreatedAt, &ticket.UpdatedAt,
-			&ticket.Creator.ID, &ticket.Creator.FullName,
-			&ticket.Owner.ID, &ticket.Owner.FullName,
-			&assigneeID, &assigneeName,
-			&managerID, &managerName,
+			&ticket.Creator.ID, &ticket.Creator.Username, &ticket.Creator.FirstName, &ticket.Creator.LastName, &ticket.Creator.InternalNumber,
+			&ticket.Owner.ID, &ticket.Owner.Username, &ticket.Owner.FirstName, &ticket.Owner.LastName, &ticket.Owner.InternalNumber,
+			&assigneeID, &assigneeUsername, &assigneeFirstName, &assigneeLastName, &assigneeInternalNumber,
+			&managerID, &managerUsername, &managerFirstName, &managerLastName, &managerInternalNumber,
 			&groupID, &groupName,
 			&ticket.Category.ID, &ticket.Category.Name,
 			&ticket.Site.ID, &ticket.Site.Name,
@@ -149,10 +166,10 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 			return nil, MapError(fmt.Errorf("scan row error: %w", err))
 		}
 		if assigneeID != nil {
-			ticket.Assignee = &models.UserShort{ID: *assigneeID, FullName: *assigneeName}
+			ticket.Assignee = &models.UserShort{ID: *assigneeID, Username: *assigneeUsername, FirstName: *assigneeFirstName, LastName: *assigneeLastName, InternalNumber: *assigneeInternalNumber}
 		}
 		if managerID != nil {
-			ticket.Manager = &models.UserShort{ID: *managerID, FullName: *managerName}
+			ticket.Manager = &models.UserShort{ID: *managerID, Username: *managerUsername, FirstName: *managerFirstName, LastName: *managerLastName, InternalNumber: *managerInternalNumber}
 		}
 		if groupID != nil {
 			ticket.Group = &models.GroupShort{ID: *groupID, Name: *groupName}
@@ -170,15 +187,15 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 
 func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) (*models.Ticket, error) {
 	query := fmt.Sprintf(`SELECT 
-			t.id, t.title, t.description, t.status, t.priority, t.due_date, t.closed_at, t.created_at, t.updated_at,
+			t.id, t.title, t.description, t.status, t.priority, t.ticket_number, t.realm_id, t.due_date, t.closed_at, t.created_at, t.updated_at,
 			-- Данные владельца
-			u_owner.id, CONCAT_WS(' ', u_owner.last_name, u_owner.first_name) AS owner_full_name,
+			u_owner.id, u_owner.username AS owner_username, u_owner.first_name AS owner_first_name, u_owner.last_name AS owner_last_name, u_owner.internal_number AS owner_internal_number,
 			-- Данные создателя
-			u_creator.id, CONCAT_WS(' ', u_creator.last_name, u_creator.first_name) AS creator_full_name,
+			u_creator.id, u_creator.username AS creator_username, u_creator.first_name AS creator_first_name, u_creator.last_name AS creator_last_name, u_creator.internal_number AS creator_internal_number,
 			-- Данные исполнителя (может быть null)
-			u_assignee.id, CONCAT_WS(' ', u_assignee.last_name, u_assignee.first_name) AS assignee_full_name,
+			u_assignee.id, u_assignee.username AS assignee_username, u_assignee.first_name AS assignee_first_name, u_assignee.last_name AS assignee_last_name, u_assignee.internal_number AS assignee_internal_number,
 			-- Данные менеджера (может быть null)
-			u_manager.id, CONCAT_WS(' ', u_manager.last_name, u_manager.first_name) AS manager_full_name,
+			u_manager.id, u_manager.username AS manager_username, u_manager.first_name AS manager_first_name, u_manager.last_name AS manager_last_name, u_manager.internal_number AS manager_internal_number,
 			-- Данные группы
 			g.id, g.name,
 			-- Данные категории
@@ -205,17 +222,21 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 	}
 
 	var ownerID, assigneeID, managerID *uuid.UUID
-	var ownerName, assigneeName, managerName *string
+	var ownerUsername, ownerFirstName, ownerLastName *string
+	var assigneeUsername, assigneeFirstName, assigneeLastName *string
+	var managerUsername, managerFirstName, managerLastName *string
+	var ownerInternalNumber, assigneeInternalNumber, managerInternalNumber *string
 	var groupID *uuid.UUID
 	var groupName *string
 
 	if err := r.db.QueryRow(ctx, query, req.ID).Scan(
 		&ticket.ID, &ticket.Title, &ticket.Description, &ticket.Status, &ticket.Priority,
+		&ticket.TicketNumber, &ticket.RealmID,
 		&ticket.DueDate, &ticket.ClosedAt, &ticket.CreatedAt, &ticket.UpdatedAt,
-		&ownerID, &ownerName,
-		&ticket.Creator.ID, &ticket.Creator.FullName,
-		&assigneeID, &assigneeName,
-		&managerID, &managerName,
+		&ownerID, &ownerUsername, &ownerFirstName, &ownerLastName, &ownerInternalNumber,
+		&ticket.Creator.ID, &ticket.Creator.Username, &ticket.Creator.FirstName, &ticket.Creator.LastName, &ticket.Creator.InternalNumber,
+		&assigneeID, &assigneeUsername, &assigneeFirstName, &assigneeLastName, &assigneeInternalNumber,
+		&managerID, &managerUsername, &managerFirstName, &managerLastName, &managerInternalNumber,
 		&groupID, &groupName,
 		&ticket.Category.ID, &ticket.Category.Name,
 		&ticket.Site.ID, &ticket.Site.Name,
@@ -224,13 +245,13 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 	}
 
 	if ownerID != nil {
-		ticket.Owner = &models.UserShort{ID: *ownerID, FullName: *ownerName}
+		ticket.Owner = &models.UserShort{ID: *ownerID, Username: *ownerUsername, FirstName: *ownerFirstName, LastName: *ownerLastName, InternalNumber: *ownerInternalNumber}
 	}
 	if assigneeID != nil {
-		ticket.Assignee = &models.UserShort{ID: *assigneeID, FullName: *assigneeName}
+		ticket.Assignee = &models.UserShort{ID: *assigneeID, Username: *assigneeUsername, FirstName: *assigneeFirstName, LastName: *assigneeLastName, InternalNumber: *assigneeInternalNumber}
 	}
 	if managerID != nil {
-		ticket.Manager = &models.UserShort{ID: *managerID, FullName: *managerName}
+		ticket.Manager = &models.UserShort{ID: *managerID, Username: *managerUsername, FirstName: *managerFirstName, LastName: *managerLastName, InternalNumber: *managerInternalNumber}
 	}
 	if groupID != nil {
 		ticket.Group = &models.GroupShort{ID: *groupID, Name: *groupName}
@@ -240,18 +261,30 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 }
 
 func (r *TicketRepo) Create(ctx context.Context, tx Tx, dto *models.TicketDTO) error {
-	query := fmt.Sprintf(`INSERT INTO %s (id, title, description, status, priority, site_id, category_id,
-		creator_id, owner_id, group_id, assignee_id, manager_id, due_date) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-		Tables.Tickets,
-	)
 	if dto.ID == uuid.Nil {
 		dto.ID = uuid.New()
 	}
 
+	numberQuery := fmt.Sprintf(`INSERT INTO %s (realm_id, last_number) VALUES ($1, 1)
+		ON CONFLICT (realm_id) DO UPDATE SET last_number = %s.last_number + 1
+		RETURNING last_number`,
+		Tables.TicketCounters, Tables.TicketCounters,
+	)
+
+	var ticketNumber int
+	if err := r.getExec(tx).QueryRow(ctx, numberQuery, dto.RealmID).Scan(&ticketNumber); err != nil {
+		return MapError(fmt.Errorf("failed to get next ticket number: %w", err))
+	}
+
+	query := fmt.Sprintf(`INSERT INTO %s (id, title, description, status, priority, site_id, category_id,
+		creator_id, owner_id, group_id, assignee_id, manager_id, due_date, ticket_number, realm_id) 
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+		Tables.Tickets,
+	)
+
 	_, err := r.getExec(tx).Exec(
 		ctx, query, dto.ID, dto.Title, dto.Description, dto.Status, dto.Priority, dto.SiteID, dto.CategoryID,
-		dto.CreatorID, dto.OwnerID, dto.GroupID, dto.AssigneeID, dto.ManagerID, dto.DueDate,
+		dto.CreatorID, dto.OwnerID, dto.GroupID, dto.AssigneeID, dto.ManagerID, dto.DueDate, ticketNumber, dto.RealmID,
 	)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))

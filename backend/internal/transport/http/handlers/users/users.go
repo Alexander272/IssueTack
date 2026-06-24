@@ -29,17 +29,32 @@ func Register(api *gin.RouterGroup, services services.Users, middleware *middlew
 
 	users := api.Group("/users", middleware.CheckPermissions(access.Reg.R(access.ResourceGroup).Read()))
 	{
-		users.GET("", handler.getAll)
+		users.GET("/by-realm", handler.getByRealm)
 		users.GET("/:id", handler.getByID)
 
 		users.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceGroup).Write()))
+		users.GET("", handler.getAll)
 		users.POST("/sync", handler.sync)
 		users.PUT("/:id", handler.updateAccount)
 	}
 }
 
 func (h *Handler) getAll(c *gin.Context) {
-	data, err := h.service.GetAll(c)
+	data, err := h.service.GetAll(c, nil)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	response.SendData(c, data, len(data))
+}
+
+func (h *Handler) getByRealm(c *gin.Context) {
+	var realmID *uuid.UUID
+	if id, ok := utils.GetRealmUUID(c); ok {
+		realmID = &id
+	}
+
+	data, err := h.service.GetAll(c, realmID)
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -78,7 +93,7 @@ func (h *Handler) sync(c *gin.Context) {
 
 func (h *Handler) updateAccount(c *gin.Context) {
 	dto := &models.UpdateAccountDTO{}
-	if err := c.BindJSON(dto); err != nil {
+	if err := c.ShouldBindJSON(dto); err != nil {
 		response.SendError(c, err)
 		return
 	}

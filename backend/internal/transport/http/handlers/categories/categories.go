@@ -8,6 +8,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -41,7 +42,12 @@ func Register(api *gin.RouterGroup, service services.Categories, middleware *mid
 }
 
 func (h *Handler) getAll(c *gin.Context) {
-	data, err := h.service.Get(c, &models.GetCategoriesDTO{})
+	realmID, ok := utils.GetRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	data, err := h.service.Get(c, &models.GetCategoriesDTO{RealmID: realmID})
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -57,7 +63,12 @@ func (h *Handler) getByID(c *gin.Context) {
 		return
 	}
 
-	data, err := h.service.GetByID(c, &models.GetCategoryByIdDTO{ID: id})
+	realmID, ok := utils.GetRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	data, err := h.service.GetByID(c, &models.GetCategoryByIdDTO{ID: id, RealmID: realmID})
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -66,11 +77,17 @@ func (h *Handler) getByID(c *gin.Context) {
 }
 
 func (h *Handler) create(c *gin.Context) {
+	realmID, ok := utils.GetRealmUUID(c)
+	if !ok {
+		return
+	}
+
 	dto := &models.CategoryDTO{}
 	if err := c.BindJSON(dto); err != nil {
 		response.SendError(c, err)
 		return
 	}
+	dto.RealmID = realmID
 
 	if err := h.service.Create(c, dto); err != nil {
 		response.SendError(c, err, dto)
@@ -87,16 +104,22 @@ func (h *Handler) update(c *gin.Context) {
 		return
 	}
 
+	realmID, ok := utils.GetRealmUUID(c)
+	if !ok {
+		return
+	}
+
 	dto := &models.CategoryDTO{}
 	if err := c.BindJSON(dto); err != nil {
 		response.SendError(c, err)
 		return
 	}
-	if id != dto.ID {
+	if id != *dto.ID {
 		response.SendError(c, fmt.Errorf("%w: %s", models.ErrInvalidInput, "id is not equal to dto.ID"))
 		return
 	}
-	dto.ID = id
+	dto.ID = &id
+	dto.RealmID = realmID
 
 	if err := h.service.Update(c, dto); err != nil {
 		response.SendError(c, err, dto)
@@ -113,7 +136,12 @@ func (h *Handler) delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.Delete(c, &models.DelCategoryDTO{ID: id}); err != nil {
+	realmID, ok := utils.GetRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	if err := h.service.Delete(c, &models.DelCategoryDTO{ID: id, RealmID: realmID}); err != nil {
 		response.SendError(c, err)
 		return
 	}

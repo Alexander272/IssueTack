@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -33,7 +34,7 @@ func TestTicketService_Get_Elevated(t *testing.T) {
 		Limit: 20, Offset: 0,
 	}
 
-	mockPolicies.On("Enforce", actorID.String(), "", "ticket", "write").Return(true, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(true, nil)
 
 	expected := []*models.Ticket{
 		{ID: uuid.New(), Title: "Ticket 1"},
@@ -56,8 +57,8 @@ func TestTicketService_Get_GroupFilter(t *testing.T) {
 		Limit: 20, Offset: 0,
 	}
 
-	mockPolicies.On("Enforce", actorID.String(), "", "ticket", "write").Return(false, nil)
-	mockPolicies.On("Enforce", actorID.String(), "", "ticket", "delete").Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Delete)).Return(false, nil)
 	mockGroups.On("GetManagedGroups", mock.Anything, actorID).Return([]uuid.UUID{groupID}, nil)
 	mockGroups.On("GetMemberGroups", mock.Anything, actorID).Return([]uuid.UUID{}, nil)
 
@@ -83,8 +84,8 @@ func TestTicketService_Get_NoGroups_ReturnsError(t *testing.T) {
 		Limit: 20, Offset: 0,
 	}
 
-	mockPolicies.On("Enforce", actorID.String(), "", "ticket", "write").Return(false, nil)
-	mockPolicies.On("Enforce", actorID.String(), "", "ticket", "delete").Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Delete)).Return(false, nil)
 	mockGroups.On("GetManagedGroups", mock.Anything, actorID).Return([]uuid.UUID{}, nil)
 	mockGroups.On("GetMemberGroups", mock.Anything, actorID).Return([]uuid.UUID{}, nil)
 
@@ -102,9 +103,9 @@ func TestTicketService_GetByID_Success(t *testing.T) {
 
 	ticket := &models.Ticket{ID: ticketID, Title: "Test Ticket"}
 	mockRepo.On("GetByID", mock.Anything, req).Return(ticket, nil)
-	mockPolicies.On("Enforce", actorID.String(), "", "ticket", "read").Return(true, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Read)).Return(true, nil)
 	mockSubtasks.On("GetByTicketID", mock.Anything, ticketID, actorID).Return([]*models.Subtask{}, nil)
-	mockAttachments.On("GetByEntity", mock.Anything, "ticket", ticketID, actorID).Return([]*models.Attachment{}, nil)
+	mockAttachments.On("GetByEntity", mock.Anything, string(access.ResourceTicket), ticketID, actorID).Return([]*models.Attachment{}, nil)
 
 	got, err := svc.GetByID(context.Background(), req)
 	assert.NoError(t, err)
@@ -122,7 +123,7 @@ func TestTicketService_Create_WithPolicy(t *testing.T) {
 		GroupID: nil,
 	}
 
-	mockPolicies.On("Enforce", actorID.String(), "", "ticket", "write").Return(true, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(true, nil)
 	mockRepo.On("Create", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 	mockNotifications.On("TicketCreated", mock.Anything, dto).Return(nil)
@@ -143,7 +144,7 @@ func TestTicketService_Create_ManagedGroup(t *testing.T) {
 		GroupID: &groupID,
 	}
 
-	mockPolicies.On("Enforce", actorID.String(), "", "ticket", "write").Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
 	mockGroups.On("GetManagedGroups", mock.Anything, actorID).Return([]uuid.UUID{groupID}, nil)
 	mockGroups.On("GetByID", mock.Anything, &models.GetGroupDTO{ID: groupID}).Return(&models.Group{ID: groupID, Name: "Test Group"}, nil)
 	mockGroups.On("GetMemberCount", mock.Anything, groupID).Return(2, nil)
@@ -169,7 +170,7 @@ func TestTicketService_Create_NotManager(t *testing.T) {
 		GroupID: &groupID,
 	}
 
-	mockPolicies.On("Enforce", actorID.String(), "", "ticket", "write").Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
 	mockGroups.On("GetManagedGroups", mock.Anything, actorID).Return([]uuid.UUID{uuid.New()}, nil)
 
 	err := svc.Create(context.Background(), dto)
@@ -193,7 +194,7 @@ func TestTicketService_Update_Success(t *testing.T) {
 		Title: "Original Ticket",
 	}
 
-	mockPolicies.On("Enforce", actorID.String(), "", "ticket", "write").Return(true, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(true, nil)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
@@ -215,7 +216,7 @@ func TestTicketService_Delete_Success(t *testing.T) {
 
 	ticket := &models.Ticket{ID: ticketID, Title: "Test Ticket"}
 
-	mockPolicies.On("Enforce", actorID.String(), "", "ticket", "write").Return(true, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(true, nil)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(ticket, nil)
 	mockRepo.On("Delete", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
@@ -229,9 +230,9 @@ func TestTicketService_CheckAccess_PolicyGranted(t *testing.T) {
 	_, _, _, _, _, _, mockPolicies, svc := ticketServiceFixtures()
 
 	actorID := uuid.New()
-	mockPolicies.On("Enforce", actorID.String(), "", "ticket", "read").Return(true, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Read)).Return(true, nil)
 
-	err := svc.CheckAccess(context.Background(), uuid.New(), actorID, "read")
+	err := svc.CheckAccess(context.Background(), uuid.New(), actorID, string(access.Read))
 	assert.NoError(t, err)
 }
 
@@ -242,14 +243,14 @@ func TestTicketService_CheckAccess_GroupMember(t *testing.T) {
 	ticketID := uuid.New()
 	groupID := uuid.New()
 
-	mockPolicies.On("Enforce", actorID.String(), "", "ticket", "read").Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Read)).Return(false, nil)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(&models.Ticket{
 		ID:    ticketID,
 		Group: &models.GroupShort{ID: groupID, Name: "Test Group"},
 	}, nil)
 	mockGroups.On("IsMember", mock.Anything, groupID, actorID).Return(true, nil)
 
-	err := svc.CheckAccess(context.Background(), ticketID, actorID, "read")
+	err := svc.CheckAccess(context.Background(), ticketID, actorID, string(access.Read))
 	assert.NoError(t, err)
 }
 
@@ -260,7 +261,7 @@ func TestTicketService_CheckAccess_Denied(t *testing.T) {
 	ticketID := uuid.New()
 	groupID := uuid.New()
 
-	mockPolicies.On("Enforce", actorID.String(), "", "ticket", "read").Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Read)).Return(false, nil)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(&models.Ticket{
 		ID:    ticketID,
 		Group: &models.GroupShort{ID: groupID, Name: "Test Group"},
@@ -268,7 +269,7 @@ func TestTicketService_CheckAccess_Denied(t *testing.T) {
 	mockGroups.On("IsMember", mock.Anything, groupID, actorID).Return(false, nil)
 	mockGroups.On("GetManagedGroups", mock.Anything, actorID).Return([]uuid.UUID{}, nil)
 
-	err := svc.CheckAccess(context.Background(), ticketID, actorID, "read")
+	err := svc.CheckAccess(context.Background(), ticketID, actorID, string(access.Read))
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 }

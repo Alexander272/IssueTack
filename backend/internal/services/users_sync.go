@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"regexp"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/events"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
@@ -11,6 +12,8 @@ import (
 	"github.com/Nerzal/gocloak/v13"
 	"github.com/google/uuid"
 )
+
+var internalNumberRe = regexp.MustCompile(`^(.*?)\s*\((\d*)\)$`)
 
 func (s *userService) Sync(ctx context.Context, actor *models.Actor) error {
 	logger.Info("Sync users started")
@@ -65,7 +68,7 @@ func (s *userService) Sync(ctx context.Context, actor *models.Actor) error {
 		kcDataMap[userData.ID] = userData
 	}
 
-	dbUsers, err := s.GetAll(ctx)
+	dbUsers, err := s.GetAll(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to fetch DB users: %w", err)
 	}
@@ -80,12 +83,13 @@ func (s *userService) Sync(ctx context.Context, actor *models.Actor) error {
 		}
 		if kcData, exists := kcDataMap[dbU.ID]; exists {
 			existUser := &models.UserDataDTO{
-				ID:        dbU.ID,
-				Username:  dbU.Username,
-				FirstName: dbU.FirstName,
-				LastName:  dbU.LastName,
-				Email:     dbU.Email,
-				IsActive:  dbU.IsActive,
+				ID:             dbU.ID,
+				Username:       dbU.Username,
+				FirstName:      dbU.FirstName,
+				LastName:       dbU.LastName,
+				Email:          dbU.Email,
+				IsActive:       dbU.IsActive,
+				InternalNumber: dbU.InternalNumber,
 			}
 			if s.isChanged(existUser, kcData) {
 				toUpdate = append(toUpdate, kcData)
@@ -188,19 +192,30 @@ func (s *userService) collectNestedIDs(subGroups *[]gocloak.Group, ids *[]string
 	}
 }
 
+func extractInternalNumber(lastName string) (string, string) {
+	m := internalNumberRe.FindStringSubmatch(lastName)
+	if m == nil {
+		return lastName, ""
+	}
+	return m[1], m[2]
+}
+
 func (s *userService) mapToUserData(u *gocloak.User) *models.UserDataDTO {
 	id, err := uuid.Parse(s.nonNil(u.ID))
 	if err != nil {
 		return nil
 	}
 
+	lastName, internalNumber := extractInternalNumber(s.nonNil(u.LastName))
+
 	return &models.UserDataDTO{
-		ID:        id,
-		Username:  s.nonNil(u.Username),
-		Email:     s.nonNil(u.Email),
-		FirstName: s.nonNil(u.FirstName),
-		LastName:  s.nonNil(u.LastName),
-		IsActive:  u.Enabled != nil && *u.Enabled,
+		ID:             id,
+		Username:       s.nonNil(u.Username),
+		Email:          s.nonNil(u.Email),
+		FirstName:      s.nonNil(u.FirstName),
+		LastName:       lastName,
+		IsActive:       u.Enabled != nil && *u.Enabled,
+		InternalNumber: internalNumber,
 	}
 }
 
@@ -216,5 +231,6 @@ func (s *userService) isChanged(old, new *models.UserDataDTO) bool {
 		old.Email != new.Email ||
 		old.FirstName != new.FirstName ||
 		old.LastName != new.LastName ||
-		old.IsActive != new.IsActive
+		old.IsActive != new.IsActive ||
+		old.InternalNumber != new.InternalNumber
 }

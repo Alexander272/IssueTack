@@ -38,8 +38,12 @@ type Actor struct {
 }
 
 type UserShort struct {
-	ID       uuid.UUID `json:"id"`
-	FullName string    `json:"fullName"`
+	ID             uuid.UUID `json:"id"`
+	Username       string    `json:"username" db:"username"`
+	FirstName      string    `json:"firstName" db:"first_name"`
+	LastName       string    `json:"lastName" db:"last_name"`
+	Email          string    `json:"email" db:"email"`
+	InternalNumber string    `json:"internalNumber,omitempty"`
 }
 
 type UserData struct {
@@ -50,33 +54,36 @@ type UserData struct {
 	LastName     string    `json:"lastName" db:"last_name"`
 	Email        string    `json:"email" db:"email"`
 	// RoleId       string  `json:"roleId" db:"role_id"`
-	SiteID    *string   `json:"siteId" db:"site_id"`
-	IsActive  bool      `json:"isActive" db:"is_active"`
-	IsSystem  bool      `json:"isSystem" db:"is_system"`
-	CreatedAt time.Time `json:"createdAt" db:"created_at"`
+	SiteID         *string   `json:"siteId" db:"site_id"`
+	IsActive       bool      `json:"isActive" db:"is_active"`
+	IsSystem       bool      `json:"isSystem" db:"is_system"`
+	InternalNumber string    `json:"internalNumber" db:"internal_number"`
+	CreatedAt      time.Time `json:"createdAt" db:"created_at"`
 
 	Realms []*UserRealm `json:"realms,omitempty"`
 }
 
 type UserDataDTO struct {
-	ID           uuid.UUID `json:"id" db:"id"`
-	MattermostID *string   `json:"mattermostId" db:"mattermost_id"`
-	Username     string    `json:"username" db:"username"`
-	FirstName    string    `json:"firstName" db:"first_name"`
-	LastName     string    `json:"lastName" db:"last_name"`
-	Email        string    `json:"email" db:"email"`
-	IsActive     bool      `json:"isActive" db:"is_active"`
-	IsSystem     bool      `json:"isSystem" db:"is_system"`
-	Actor        *Actor
-
-	Realms []*UserRealmDTO `json:"realms"`
+	ID             uuid.UUID `json:"id" db:"id"`
+	MattermostID   *string   `json:"mattermostId" db:"mattermost_id"`
+	Username       string    `json:"username" db:"username"`
+	FirstName      string    `json:"firstName" db:"first_name"`
+	LastName       string    `json:"lastName" db:"last_name"`
+	Email          string    `json:"email" db:"email"`
+	IsActive       bool      `json:"isActive" db:"is_active"`
+	IsSystem       bool      `json:"isSystem" db:"is_system"`
+	InternalNumber string    `json:"internalNumber" db:"internal_number"`
+	Actor          *Actor
+	Realms         []*UserRealmDTO `json:"realms"`
 }
 
 type UpdateAccountDTO struct {
-	ID           uuid.UUID `json:"id"`
-	IsActive     bool      `json:"isActive"`
-	MattermostID *string   `json:"mattermostId"`
-	Actor        *Actor
+	ID             uuid.UUID `json:"id"`
+	IsActive       bool      `json:"isActive"`
+	MattermostID   *string   `json:"mattermostId"`
+	InternalNumber string    `json:"internalNumber"`
+	Actor          *Actor
+	Realms         []*UserRealmDTO `json:"realms,omitempty"`
 }
 
 type UserRole struct {

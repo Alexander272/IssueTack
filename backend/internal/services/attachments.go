@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/config"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
@@ -63,7 +64,7 @@ type Attachments interface {
 }
 
 func (s *AttachmentService) GetByEntity(ctx context.Context, entityType string, entityID uuid.UUID, actorID uuid.UUID) ([]*models.Attachment, error) {
-	if err := s.checkEntityAccess(ctx, entityType, entityID, actorID, "read"); err != nil {
+	if err := s.checkEntityAccess(ctx, entityType, entityID, actorID, string(access.Read)); err != nil {
 		return nil, err
 	}
 	data, err := s.repo.GetByEntity(ctx, entityType, entityID)
@@ -78,7 +79,7 @@ func (s *AttachmentService) Upload(ctx context.Context, tx postgres.Tx, entityTy
 		return nil, fmt.Errorf("invalid entity type: %s", entityType)
 	}
 
-	if err := s.checkEntityAccess(ctx, entityType, entityID, uploadedBy, "write"); err != nil {
+	if err := s.checkEntityAccess(ctx, entityType, entityID, uploadedBy, string(access.Write)); err != nil {
 		return nil, err
 	}
 
@@ -127,7 +128,7 @@ func (s *AttachmentService) Delete(ctx context.Context, tx postgres.Tx, id uuid.
 		return fmt.Errorf("failed to load attachment: %w", err)
 	}
 
-	if err := s.checkEntityAccess(ctx, att.EntityType, att.EntityID, actorID, "write"); err != nil {
+	if err := s.checkEntityAccess(ctx, att.EntityType, att.EntityID, actorID, string(access.Write)); err != nil {
 		return fmt.Errorf("access check failed: %w", err)
 	}
 
