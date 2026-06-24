@@ -15,6 +15,7 @@ export const API = {
 		sync: '/users/sync' as const,
 		access: '/users/access' as const,
 		logins: '/users/logins' as const,
+		available: '/users/by-realm' as const,
 	},
 	roles: {
 		base: '/roles' as const,
@@ -32,5 +33,23 @@ export const API = {
 		priceSearch: '/prices/statistics/search/' as const,
 		activity: '/statistics/activity' as const,
 		logins: '/statistics/logins' as const,
+	},
+
+	categories: {
+		base: '/categories' as const,
+		byId: (id: string) => `/categories/${id}` as const,
+	},
+	groups: {
+		base: '/groups' as const,
+		byId: (id: string) => `/groups/${id}` as const,
+	},
+	tickets: {
+		base: '/tickets' as const,
+		byId: (id: string) => `/tickets/${id}` as const,
+	},
+	subtasks: {
+		byTicket: (ticketId: string) => `/tickets/${ticketId}/subtasks` as const,
+		byId: (ticketId: string, subtaskId: string) =>
+			`/tickets/${ticketId}/subtasks/${subtaskId}` as const,
 	},
 }

@@ -1,26 +1,11 @@
 import { Box } from '@mui/material'
 
-import { PageBox } from '@/components/PageBox/PageBox'
+import { TaskList } from '@/features/tasks/pages/TaskList'
 
 export default function Home() {
 	return (
-		<PageBox>
-			<Box
-				sx={{
-					borderRadius: 3,
-					paddingX: 2,
-					paddingY: 1,
-					width: '100%',
-					border: '1px solid rgba(0, 0, 0, 0.12)',
-					height: 'fit-content',
-					minHeight: 600,
-					display: 'flex',
-					flexDirection: 'column',
-					backgroundColor: '#fff',
-				}}
-			>
-				Home
-			</Box>
-		</PageBox>
+		<Box sx={{ flexGrow: 1, overflow: 'auto' }}>
+			<TaskList />
+		</Box>
 	)
 }

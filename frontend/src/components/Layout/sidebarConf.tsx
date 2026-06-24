@@ -8,6 +8,8 @@ import { AccessHandleIcon } from '../Icons/AccessHandleIcon'
 import { LocalNetworkIcon } from '../Icons/LocalNetworkIcon'
 import { DoubleRightIcon } from '../Icons/DoubleRightIcon'
 import { InboxIcon } from '../Icons/InboxIcon'
+import { StackIcon } from '../Icons/StackIcon'
+import { GroupsIcon } from '../Icons/GroupsIcon'
 
 export interface SidebarItem {
 	path: string
@@ -24,7 +26,11 @@ export interface SidebarRule {
 	config: SidebarConfig
 }
 
-const homeItems: SidebarItem[] = [{ path: AppRoutes.Home, label: 'Задачи', icon: <InboxIcon sx={{ fontSize: 18 }} /> }]
+const homeItems: SidebarItem[] = [
+	{ path: AppRoutes.Home, label: 'Задачи', icon: <InboxIcon sx={{ fontSize: 18 }} /> },
+	{ path: AppRoutes.Groups, label: 'Группы', icon: <GroupsIcon sx={{ fontSize: 18 }} /> },
+	{ path: AppRoutes.Categories, label: 'Категории', icon: <StackIcon sx={{ fontSize: 18 }} /> },
+]
 
 const accessesItems: SidebarItem[] = [
 	{
@@ -49,7 +55,8 @@ const accessesItems: SidebarItem[] = [
 
 export const sidebarRules: SidebarRule[] = [
 	{
-		match: path => [AppRoutes.Home, '/tasks', '/categories', '/history', '/favorites'].includes(path),
+		match: path =>
+			[AppRoutes.Home, AppRoutes.Groups, AppRoutes.Categories, '/history', '/favorites'].includes(path),
 		config: { items: homeItems },
 	},
 	{

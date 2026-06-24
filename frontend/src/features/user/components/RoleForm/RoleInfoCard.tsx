@@ -1,8 +1,19 @@
 import { Controller, useFormContext, useFormState, useWatch } from 'react-hook-form'
-import { Box, Card, CardContent, IconButton, InputAdornment, Stack, TextField, Typography } from '@mui/material'
+import {
+	Box,
+	Card,
+	CardContent,
+	IconButton,
+	InputAdornment,
+	MenuItem,
+	Stack,
+	TextField,
+	Typography,
+} from '@mui/material'
 
 import type { IForm } from './UpdateRole'
 import { generateSlug } from './utils'
+import { useGetAllRealmsQuery } from '@/features/realms/realmsApiSlice'
 import { RefreshIcon } from '@/components/Icons/RefreshIcon'
 
 export const RoleInfoCard = () => {
@@ -86,6 +97,15 @@ export const RoleInfoCard = () => {
 					</Box>
 
 					<Controller
+						name='realmId'
+						control={control}
+						rules={{ required: 'Область обязательна' }}
+						render={({ field: { onChange, value }, fieldState: { error } }) => (
+							<RealmSelect value={value} onChange={onChange} error={error?.message} />
+						)}
+					/>
+
+					<Controller
 						name='description'
 						control={control}
 						render={({ field: { onChange, value } }) => (
@@ -128,5 +148,41 @@ export const RoleInfoCard = () => {
 				</Stack>
 			</CardContent>
 		</Card>
+	)
+}
+
+type RealmSelectProps = {
+	value: string
+	onChange: (value: string) => void
+	error?: string
+}
+
+const RealmSelect = ({ value, onChange, error }: RealmSelectProps) => {
+	const { data, isFetching } = useGetAllRealmsQuery()
+
+	return (
+		<TextField
+			select
+			label='Область'
+			value={value}
+			onChange={e => onChange(e.target.value)}
+			fullWidth
+			required
+			error={!!error}
+			helperText={error}
+			slotProps={{ inputLabel: { shrink: true } }}
+		>
+			{isFetching ? (
+				<MenuItem disabled value=''>
+					Загрузка...
+				</MenuItem>
+			) : (
+				data?.data.map(realm => (
+					<MenuItem key={realm.id} value={realm.id}>
+						{realm.name} ({realm.slug})
+					</MenuItem>
+				))
+			)}
+		</TextField>
 	)
 }

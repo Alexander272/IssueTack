@@ -18,6 +18,7 @@ const defaultValues = {
 	name: '',
 	slug: '',
 	level: 3,
+	realmId: '',
 	description: '',
 	inherits: [],
 	permissions: [],
@@ -46,7 +47,11 @@ export const UpdateRole: FC<Props> = ({ roleId, onCancel, onSuccess }) => {
 	const { handleSubmit, reset } = methods
 
 	useEffect(() => {
-		reset(role?.data || defaultValues)
+		if (!role?.data) {
+			reset(defaultValues)
+			return
+		}
+		reset({ ...role.data, realmId: role.data.realm })
 	}, [role, reset])
 
 	const onSubmit = handleSubmit(async form => {

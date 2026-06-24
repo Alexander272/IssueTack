@@ -18,6 +18,7 @@ const defaultValues = {
 	name: '',
 	slug: '',
 	level: 3,
+	realmId: '',
 	description: '',
 	inherits: [],
 	permissions: [],

@@ -14,7 +14,7 @@ import {
 	Box,
 } from '@mui/material'
 
-import type { IUserData } from '@/features/user/types/user'
+import type { IUserData, IUserLogin } from '@/features/user/types/user'
 import { getSmartDate } from '@/utils/date'
 import { useGetUserLoginsQuery } from '@/features/user/usersApiSlice'
 import { TimesIcon } from '@/components/Icons/TimesIcon'
@@ -171,6 +171,84 @@ const Chip = ({
 	)
 }
 
+const LoginRow: FC<{ login: IUserLogin }> = ({ login }) => {
+	const metadata = login.metadata
+	const browser = metadata?.browser
+	const device = metadata?.device
+	const os = metadata?.os
+	const isBot = metadata?.isBot
+	const success = metadata?.success
+
+	const botChip = isBot !== undefined
+		? { variant: isBot ? 'error' as const : 'success' as const, label: isBot ? 'Да' : 'Нет' }
+		: null
+
+	const successChip = success !== undefined
+		? {
+				variant: success ? 'success' as const : 'error' as const,
+				label: success ? 'Да' : 'Нет',
+				icon: success ? <CheckIcon sx={{ fontSize: 14 }} /> : <CloseRoundIcon sx={{ fontSize: 14 }} />,
+			}
+		: null
+
+	return (
+		<TableRow hover>
+			<TableCell>
+				<Typography sx={{ color: 'text.secondary' }}>{getSmartDate(login.loginAt)}</Typography>
+			</TableCell>
+			<TableCell align='center'>
+				<Typography sx={{ color: 'text.secondary' }}>{getSmartDate(login.lastActivityAt)}</Typography>
+			</TableCell>
+			<TableCell align='center'>
+				<Chip variant='info' label={login.ipAddress || '-'} icon={<GlobeIcon sx={{ fontSize: 14 }} />} />
+			</TableCell>
+			<TableCell align='center'>
+				{browser || device ? (
+					<Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
+						{browser && (
+							<Chip
+								colors={getBrowserConfig(browser).colors}
+								label={browser}
+								icon={getBrowserConfig(browser).icon}
+							/>
+						)}
+						{device && (
+							<Chip
+								colors={{ bg: '#f8fafc', color: '#475569' }}
+								label={getDeviceLabel(device)}
+								icon={getDeviceIcon(device)}
+							/>
+						)}
+						{os && (
+							<Chip
+								colors={getOsConfig(os).colors}
+								label={os}
+								icon={getOsConfig(os).icon}
+							/>
+						)}
+					</Box>
+				) : (
+					<Typography sx={{ color: 'text.disabled' }}>-</Typography>
+				)}
+			</TableCell>
+			<TableCell align='center'>
+				{botChip ? (
+					<Chip variant={botChip.variant} label={botChip.label} icon={<RobotIcon sx={{ fontSize: 14 }} />} />
+				) : (
+					<Typography sx={{ color: 'text.disabled' }}>-</Typography>
+				)}
+			</TableCell>
+			<TableCell align='center'>
+				{successChip ? (
+					<Chip variant={successChip.variant} label={successChip.label} icon={successChip.icon} />
+				) : (
+					<Typography sx={{ color: 'text.disabled' }}>-</Typography>
+				)}
+			</TableCell>
+		</TableRow>
+	)
+}
+
 export const LoginsModal: FC<Props> = ({ user, onClose }) => {
 	const { data, isFetching } = useGetUserLoginsQuery(user?.id || '', { skip: !user })
 
@@ -211,7 +289,6 @@ export const LoginsModal: FC<Props> = ({ user, onClose }) => {
 									<TableCell sx={{ fontWeight: 700, textAlign: 'center' }}>
 										Последняя активность
 									</TableCell>
-									{/* //TODO добавить event */}
 									<TableCell sx={{ fontWeight: 700, textAlign: 'center' }}>IP адрес</TableCell>
 									<TableCell sx={{ fontWeight: 700, textAlign: 'center' }}>Устройство</TableCell>
 									<TableCell sx={{ fontWeight: 700, textAlign: 'center' }}>Бот</TableCell>
@@ -219,93 +296,9 @@ export const LoginsModal: FC<Props> = ({ user, onClose }) => {
 								</TableRow>
 							</TableHead>
 							<TableBody>
-								{data.data.map(login => {
-									const metadata = login.metadata
-									const browser = metadata?.browser
-									const device = metadata?.device
-									const os = metadata?.os
-									const isBot = metadata?.isBot
-									const success = metadata?.success
-
-									return (
-										<TableRow key={login.id} hover>
-											<TableCell>
-												<Typography sx={{ color: 'text.secondary' }}>
-													{getSmartDate(login.loginAt)}
-												</Typography>
-											</TableCell>
-											<TableCell align='center'>
-												<Typography sx={{ color: 'text.secondary' }}>
-													{getSmartDate(login.lastActivityAt)}
-												</Typography>
-											</TableCell>
-											<TableCell align='center'>
-												<Chip
-													variant='info'
-													label={login.ipAddress || '-'}
-													icon={<GlobeIcon sx={{ fontSize: 14 }} />}
-												/>
-											</TableCell>
-											<TableCell align='center'>
-												{browser || device ? (
-													<Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
-														{browser && (
-															<Chip
-																colors={getBrowserConfig(browser).colors}
-																label={browser}
-																icon={getBrowserConfig(browser).icon}
-															/>
-														)}
-														{device && (
-															<Chip
-																colors={{ bg: '#f8fafc', color: '#475569' }}
-																label={getDeviceLabel(device)}
-																icon={getDeviceIcon(device)}
-															/>
-														)}
-														{os && (
-															<Chip
-																colors={getOsConfig(os).colors}
-																label={os}
-																icon={getOsConfig(os).icon}
-															/>
-														)}
-													</Box>
-												) : (
-													<Typography sx={{ color: 'text.disabled' }}>-</Typography>
-												)}
-											</TableCell>
-											<TableCell align='center'>
-												{isBot !== undefined ? (
-													<Chip
-														variant={isBot ? 'error' : 'success'}
-														label={isBot ? 'Да' : 'Нет'}
-														icon={<RobotIcon sx={{ fontSize: 14 }} />}
-													/>
-												) : (
-													<Typography sx={{ color: 'text.disabled' }}>-</Typography>
-												)}
-											</TableCell>
-											<TableCell align='center'>
-												{success !== undefined ? (
-													<Chip
-														variant={success ? 'success' : 'error'}
-														label={success ? 'Да' : 'Нет'}
-														icon={
-															success ? (
-																<CheckIcon sx={{ fontSize: 14 }} />
-															) : (
-																<CloseRoundIcon sx={{ fontSize: 14 }} />
-															)
-														}
-													/>
-												) : (
-													<Typography sx={{ color: 'text.disabled' }}>-</Typography>
-												)}
-											</TableCell>
-										</TableRow>
-									)
-								})}
+								{data.data.map(login => (
+									<LoginRow key={login.id} login={login} />
+								))}
 							</TableBody>
 						</Table>
 					</TableContainer>

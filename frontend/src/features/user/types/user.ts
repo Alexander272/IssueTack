@@ -15,6 +15,7 @@ export interface IUserShort {
 	firstName: string
 	lastName: string
 	email: string
+	internalNumber?: string
 }
 
 export interface IUserData {
@@ -23,6 +24,7 @@ export interface IUserData {
 	firstName: string
 	lastName: string
 	email: string
+	mattermostId: string
 	isActive: boolean
 	createdAt: string
 
@@ -30,7 +32,7 @@ export interface IUserData {
 }
 
 export interface IUserRealm {
-	id: string
+	id: string | null
 	userId: string
 	realmId: string
 	roleId: string
@@ -46,6 +48,7 @@ export interface IUserDataDTO {
 	firstName: string
 	lastName: string
 	email: string
+	mattermostId: string
 	isActive: boolean
 
 	realms: IUserRealm[]

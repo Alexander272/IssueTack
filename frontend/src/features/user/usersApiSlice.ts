@@ -23,7 +23,7 @@ export const usersApiSlice = apiSlice.injectEndpoints({
 				}
 			},
 		}),
-		getUserByAccess: builder.query<{ data: IUserData[] }, void>({
+			getUserByAccess: builder.query<{ data: IUserData[] }, void>({
 			query: () => ({
 				url: `${API.users.access}`,
 				method: 'GET',
@@ -40,6 +40,14 @@ export const usersApiSlice = apiSlice.injectEndpoints({
 					toast.error(fetchError.data.message, { autoClose: false })
 				}
 			},
+		}),
+
+		getAvailableUsers: builder.query<{ data: IUserData[] }, void>({
+			query: () => ({
+				url: API.users.available,
+				method: 'GET',
+			}),
+			providesTags: [{ type: 'Users', id: 'available' }],
 		}),
 
 		getUserLogins: builder.query<{ data: IUserLogin[] }, string>({
@@ -72,6 +80,7 @@ export const {
 	useGetAllUsersQuery,
 	useGetUserByAccessQuery,
 	useGetUserLoginsQuery,
+	useGetAvailableUsersQuery,
 	useSyncUsersMutation,
 	useUpdateUserMutation,
 } = usersApiSlice

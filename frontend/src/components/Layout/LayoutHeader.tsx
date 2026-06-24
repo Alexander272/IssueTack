@@ -1,4 +1,4 @@
-import { AppBar, Divider, Stack, Toolbar, Tooltip, useTheme } from '@mui/material'
+import { AppBar, Divider, IconButton, Stack, Toolbar, Tooltip, useTheme } from '@mui/material'
 import { Link } from 'react-router'
 import Logo from '@/assets/logo.webp'
 
@@ -13,7 +13,11 @@ import { ShieldIcon } from '../Icons/ShieldIcon'
 import { NavBox } from './NavBox'
 import { ActiveRealm } from '@/features/realms/components/ActiveRealm'
 
-export const LayoutHeader = () => {
+interface LayoutHeaderProps {
+	onMenuClick?: () => void
+}
+
+export const LayoutHeader = ({ onMenuClick }: LayoutHeaderProps) => {
 	const { palette } = useTheme()
 
 	const token = useAppSelector(getToken)
@@ -38,19 +42,30 @@ export const LayoutHeader = () => {
 			sx={{ borderRadius: 0, alignItems: 'center', zIndex: theme => theme.zIndex.drawer + 1 }}
 		>
 			<Toolbar sx={{ justifyContent: 'space-between', width: '100%', maxWidth: 'xl' }}>
-				<Link to='/' aria-label='home page'>
-					<Stack
-						sx={{
-							height: 50,
-							overflow: 'hidden',
-							alignItems: 'center',
-							justifyContent: 'center',
-							img: { height: '100%', width: 'auto' },
-						}}
-					>
-						<img src={Logo} alt='logo' />
-					</Stack>
-				</Link>
+				<IconButton
+					onClick={onMenuClick}
+					sx={{ display: { md: 'none' }, mr: 1, color: 'text.primary', fontSize: '1.5rem' }}
+				>
+					☰
+				</IconButton>
+
+				<Stack
+					component={Link}
+					to='/'
+					aria-label='home page'
+					sx={{
+						height: 50,
+						overflow: 'hidden',
+						alignItems: 'center',
+						justifyContent: 'center',
+						img: { height: '100%', width: 'auto' },
+						position: { xs: 'absolute', md: 'static' },
+						left: '50%',
+						transform: { xs: 'translateX(-50%)', md: 'none' },
+					}}
+				>
+					<img src={Logo} alt='logo' />
+				</Stack>
 
 				{token ? (
 					<Stack
@@ -87,7 +102,7 @@ export const LayoutHeader = () => {
 							) : null} */}
 						</Stack>
 
-						<NavBox onClick={logoutHandler} sx={{ ':hover': { svg: { fill: palette.primary.main } } }}>
+						<NavBox onClick={logoutHandler} sx={{ display: { xs: 'none', md: 'flex' }, ':hover': { svg: { fill: palette.primary.main } } }}>
 							<LogoutIcon fill={'#000'} fontSize={24} transition={'0.3s all ease-in-out'} />
 						</NavBox>
 					</Stack>

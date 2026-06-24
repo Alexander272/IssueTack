@@ -22,12 +22,13 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 	const { data: rolesData } = useGetRolesWithStatsQuery()
 	const selectedSlugs = useWatch({ control, name: 'inherits' })
 	const currentPerms = useWatch({ control, name: 'perms' })
+	const selectedCount = selectedSlugs?.length ?? 0
 	const [searchTerm, setSearchTerm] = useState('')
 	const [isOpen, setIsOpen] = useState(false)
 
 	const selectedRoles = useMemo(() => {
 		if (!rolesData?.data) return []
-		return selectedSlugs
+		return (selectedSlugs ?? [])
 			.map((slug: string) => rolesData.data.find(r => r.slug === slug))
 			.filter(Boolean) as IRoleWithStats[]
 	}, [selectedSlugs, rolesData])
@@ -73,7 +74,7 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 		const check = canSelectRole(role)
 		if (!check.can) return
 
-		let newSlugs = [...selectedSlugs]
+		let newSlugs = [...(selectedSlugs ?? [])]
 		if (check.willRemove) {
 			newSlugs = newSlugs.filter((s: string) => s !== check.willRemove!.slug)
 		}
@@ -122,7 +123,7 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 	}
 
 	const removeRole = (slug: string) => {
-		const newSlugs = selectedSlugs.filter((s: string) => s !== slug)
+		const newSlugs = (selectedSlugs ?? []).filter((s: string) => s !== slug)
 		foundInherits(newSlugs)
 		setValue('inherits', newSlugs)
 	}
@@ -174,11 +175,11 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 						'&:hover': { borderColor: '#6366f1' },
 					}}
 				>
-					<Typography sx={{ color: selectedSlugs.length ? '#1f2937' : '#9ca3af', fontSize: '0.875rem' }}>
-						{selectedSlugs.length
-							? `${selectedSlugs.length} рол${selectedSlugs.length > 1 ? 'и' : 'ь'} выбран${selectedSlugs.length == 1 ? 'а' : 'ы'}`
-							: 'Выберите роли для наследования...'}
-					</Typography>
+					<Typography sx={{ color: selectedCount ? '#1f2937' : '#9ca3af', fontSize: '0.875rem' }}>
+					{selectedCount
+						? `${selectedCount} рол${selectedCount > 1 ? 'и' : 'ь'} выбран${selectedCount == 1 ? 'а' : 'ы'}`
+									: 'Выберите роли для наследования...'}
+									</Typography>
 					<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
 						<LeftArrowIcon
 							sx={{
@@ -228,7 +229,7 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 
 							<Box sx={{ maxHeight: 280, overflow: 'auto', py: 1 }}>
 								{filteredRoles.map(role => {
-									const isSelected = selectedSlugs.includes(role.slug)
+									const isSelected = (selectedSlugs ?? []).includes(role.slug)
 									const check = canSelectRole(role)
 									const chainText = role.children.length
 										? `Наследуется от: ${role.children.map(s => rolesData?.data.find(r => r.slug === s)?.name || s).join(' → ')}`

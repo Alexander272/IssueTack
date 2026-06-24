@@ -5,6 +5,8 @@ import { Layout } from '@/components/Layout/Layout'
 import { NotFound } from '@/pages/notFound/NotFoundLazy'
 import { Auth } from '@/pages/auth/AuthLazy'
 import { Home } from '@/pages/home/HomeLazy'
+import { Groups } from '@/pages/groups/GroupsLazy'
+import { Categories } from '@/pages/categories/CategoriesLazy'
 // import { Accesses } from '@/pages/accesses/AccessesLazy'
 import { Dashboard } from '@/pages/accesses/dashboard/DashboardLazy'
 import { Realms } from '@/pages/accesses/realms/RealmsLazy'
@@ -29,6 +31,14 @@ const config: RouteObject[] = [
 					{
 						index: true,
 						element: <Home />,
+					},
+					{
+						path: AppRoutes.Groups,
+						element: <Groups />,
+					},
+					{
+						path: AppRoutes.Categories,
+						element: <Categories />,
 					},
 
 					{

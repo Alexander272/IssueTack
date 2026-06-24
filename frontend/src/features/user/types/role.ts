@@ -2,6 +2,7 @@ export interface IRole {
 	id: string
 	slug: string
 	name: string
+	realm: string
 	description: string
 	level: number
 	isActive: boolean
@@ -15,6 +16,7 @@ export interface IRoleDTO {
 	id: string
 	slug: string
 	name: string
+	realmId: string
 	description: string
 	level: number
 }

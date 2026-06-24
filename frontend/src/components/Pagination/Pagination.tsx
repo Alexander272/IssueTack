@@ -102,7 +102,9 @@ export const Pagination: FC<Props> = ({ page, totalPages, onClick, sx }) => {
 			</Box>
 
 			<Button onClick={selectHandler(page - 1)}>
-				<LeftArrowIcon fontSize={12} fill={page == 1 ? palette.action.disabled : palette.primary.main} />
+				<LeftArrowIcon
+					sx={{ fontSize: 12, fill: page == 1 ? palette.action.disabled : palette.primary.main }}
+				/>
 			</Button>
 
 			{itemList.map((item, i) => (
@@ -113,9 +115,11 @@ export const Pagination: FC<Props> = ({ page, totalPages, onClick, sx }) => {
 
 			<Button onClick={selectHandler(page + 1)}>
 				<LeftArrowIcon
-					fontSize={12}
-					transform='rotate(180deg)'
-					fill={page == totalPages ? palette.action.disabled : palette.primary.main}
+					sx={{
+						fontSize: 12,
+						transform: 'rotate(180deg)',
+						fill: page == totalPages ? palette.action.disabled : palette.primary.main,
+					}}
 				/>
 			</Button>
 		</Stack>
