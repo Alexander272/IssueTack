@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react'
-import { Box, Typography, Button } from '@mui/material'
+import { Box, Typography } from '@mui/material'
 
 import { Pagination } from '@/components/Pagination/Pagination'
 
@@ -149,21 +149,13 @@ export const TaskList = () => {
 
 	return (
 		<Box sx={{ p: 3 }}>
-			<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-				<Box>
-					<Typography variant='h5' sx={{ fontWeight: 700, color: '#1f2937' }}>
-						Мое рабочее место
-					</Typography>
-					<Typography variant='body2' sx={{ color: '#6b7280' }}>
-						Задачи, назначенные лично или группам
-					</Typography>
-				</Box>
-				<Button
-					variant='contained'
-					sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 500, gap: 1 }}
-				>
-					+ Создать задачу
-				</Button>
+			<Box sx={{ mb: 3 }}>
+				<Typography variant='h5' sx={{ fontWeight: 700, color: '#1f2937' }}>
+					Мое рабочее место
+				</Typography>
+				<Typography variant='body2' sx={{ color: '#6b7280' }}>
+					Задачи, назначенные лично или группам
+				</Typography>
 			</Box>
 
 			<TaskFilters filters={filters} onChange={handleFilterChange} onReset={handleReset} />

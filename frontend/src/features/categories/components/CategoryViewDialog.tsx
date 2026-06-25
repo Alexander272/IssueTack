@@ -13,9 +13,18 @@ import {
 
 import type { ICategory, ICategoryDTO } from '../types/category'
 import { getSmartDate } from '@/utils/date'
-import { PRIORITY_MAP } from '@/features/tasks/constants/taskMaps'
+import { TaskPriorityBadge } from '@/features/tasks/components/TaskPriorityBadge'
 import { StatusBadge } from '@/features/access/components/StatusBadge'
 import { TimesIcon } from '@/components/Icons/TimesIcon'
+import { GroupsIcon } from '@/components/Icons/GroupsIcon'
+
+const getInitials = (name: string) => {
+	const words = name.trim().split(/\s+/)
+	if (words.length >= 2) {
+		return (words[0][0] + words[1][0]).toUpperCase()
+	}
+	return name.slice(0, 2).toUpperCase()
+}
 
 type Props = {
 	category: ICategory | null
@@ -37,7 +46,15 @@ export const CategoryViewDialog: FC<Props> = ({ category, groupsMap, onClose, on
 				},
 			}}
 		>
-			<DialogTitle sx={{ m: 0, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+			<DialogTitle
+				sx={{
+					m: 0,
+					p: { xs: 1.5, sm: 2 },
+					display: 'flex',
+					justifyContent: 'space-between',
+					alignItems: 'center',
+				}}
+			>
 				<Typography variant='h6' component='div' sx={{ fontWeight: 'bold' }}>
 					Просмотр категории
 				</Typography>
@@ -47,13 +64,32 @@ export const CategoryViewDialog: FC<Props> = ({ category, groupsMap, onClose, on
 			</DialogTitle>
 			{category && (
 				<>
-					<DialogContent dividers sx={{ borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', py: 3 }}>
+					<DialogContent
+						dividers
+						sx={{ borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', py: { xs: 2, sm: 3 } }}
+					>
 						<Stack spacing={3}>
-							<Box>
+							<Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+								<Box
+									sx={{
+										width: 48,
+										height: 48,
+										borderRadius: '10px',
+										bgcolor: '#f3e8ff',
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'center',
+										flexShrink: 0,
+									}}
+								>
+									<Typography sx={{ fontWeight: 700, fontSize: 18, color: '#9333ea' }}>
+										{getInitials(category.name)}
+									</Typography>
+								</Box>
 								<Typography variant='h5' sx={{ fontWeight: 'bold' }}>
 									{category.name}
 								</Typography>
-								<Box sx={{ mt: 1 }}>
+								<Box sx={{ mt: 1, ml: { xs: 0, sm: '30%' } }}>
 									<StatusBadge
 										active={category.isActive}
 										label={category.isActive ? 'Активна' : 'Неактивна'}
@@ -62,45 +98,89 @@ export const CategoryViewDialog: FC<Props> = ({ category, groupsMap, onClose, on
 							</Box>
 
 							<Box>
-								<Typography variant='caption' sx={{ fontWeight: 600, display: 'block', color: 'text.secondary', mb: 0.5 }}>
+								<Typography
+									variant='caption'
+									sx={{ fontWeight: 600, display: 'block', color: 'text.secondary', mb: 0.5 }}
+								>
 									Описание
 								</Typography>
-								<Typography color='text.primary'>
-									{category.description || '—'}
-								</Typography>
+								<Typography color='text.primary'>{category.description || '—'}</Typography>
 							</Box>
 
-							<Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 3 }}>
+							<Box
+								sx={{
+									display: 'grid',
+									gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+									gap: { xs: 2, sm: 3 },
+								}}
+							>
 								<Box>
-									<Typography variant='caption' sx={{ fontWeight: 600, display: 'block', color: 'text.secondary', mb: 0.5 }}>
+									<Typography
+										variant='caption'
+										sx={{ fontWeight: 600, display: 'block', color: 'text.secondary', mb: 0.5 }}
+									>
 										Группа-владелец
 									</Typography>
-									<Typography color='text.primary'>
+									<Typography
+										sx={{
+											display: 'inline-flex',
+											alignItems: 'center',
+											gap: 0.75,
+											px: 1.5,
+											py: 0.5,
+											borderRadius: '6px',
+											fontSize: '0.75rem',
+											fontWeight: 500,
+											bgcolor: '#eff6ff',
+											color: '#1d4ed8',
+											border: '1px solid #bfdbfe',
+										}}
+									>
+										<GroupsIcon sx={{ fontSize: 16, mr: 0.5, fill: '#1d4ed8' }} />
 										{groupsMap.get(category.groupId) || 'Неизвестная группа'}
 									</Typography>
 								</Box>
 								<Box>
-									<Typography variant='caption' sx={{ fontWeight: 600, display: 'block', color: 'text.secondary', mb: 0.5 }}>
+									<Typography
+										variant='caption'
+										sx={{ fontWeight: 600, display: 'block', color: 'text.secondary', mb: 0.5 }}
+									>
 										Приоритет по умолчанию
 									</Typography>
-									<Typography color='text.primary'>
-										{PRIORITY_MAP[category.priority]?.label || category.priority}
-									</Typography>
+									<TaskPriorityBadge priority={category.priority} />
 								</Box>
 								<Box>
-									<Typography variant='caption' sx={{ fontWeight: 600, display: 'block', color: 'text.secondary', mb: 0.5 }}>
+									<Typography
+										variant='caption'
+										sx={{ fontWeight: 600, display: 'block', color: 'text.secondary', mb: 0.5 }}
+									>
 										ID категории
 									</Typography>
 									<Typography
 										component='code'
-										sx={{ fontSize: '0.75rem', bgcolor: '#f3f4f6', px: 1, py: 0.5, borderRadius: '4px', color: '#6b7280' }}
+										sx={{
+											fontSize: '0.75rem',
+											bgcolor: '#f3f4f6',
+											px: 1,
+											py: 0.5,
+											borderRadius: '4px',
+											color: '#6b7280',
+										}}
 									>
 										{category.id}
 									</Typography>
 								</Box>
 							</Box>
 
-							<Box sx={{ pt: 2, borderTop: '1px solid #f0f0f0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+							<Box
+								sx={{
+									pt: 2,
+									borderTop: '1px solid #f0f0f0',
+									display: 'grid',
+									gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+									gap: 2,
+								}}
+							>
 								<Typography variant='caption' color='text.secondary'>
 									<strong>Создана:</strong> {getSmartDate(category.createdAt)}
 								</Typography>

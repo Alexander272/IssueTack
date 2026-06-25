@@ -33,7 +33,7 @@ export const GroupViewDialog: FC<Props> = ({ group, onClose, onEdit }) => {
 			open={Boolean(group)}
 			onClose={onClose}
 			fullWidth
-			maxWidth='sm'
+			maxWidth='md'
 			slotProps={{
 				paper: {
 					sx: { borderRadius: '16px', p: 1 },
@@ -128,7 +128,11 @@ export const GroupViewDialog: FC<Props> = ({ group, onClose, onEdit }) => {
 								</Box>
 								<Stack spacing={1}>
 									{group.members?.map(member => {
-										const role = getMemberRoleInfo(member.id, group.managerId, group.defaultAssigneeId)
+										const role = getMemberRoleInfo(
+											member.id,
+											group.managerId,
+											group.defaultAssigneeId,
+										)
 										return (
 											<GroupMemberRow
 												key={member.id}

@@ -29,10 +29,7 @@ export const GroupsView: FC = () => {
 		const q = debouncedSearch.toLowerCase()
 		return groups?.data.filter(g => {
 			if (!q) return true
-			return (
-				g.name.toLowerCase().includes(q) ||
-				g.description.toLowerCase().includes(q)
-			)
+			return g.name.toLowerCase().includes(q) || g.description.toLowerCase().includes(q)
 		})
 	}, [groups, debouncedSearch])
 
@@ -94,10 +91,10 @@ export const GroupsView: FC = () => {
 					bgcolor: '#fff',
 					border: '1px solid #e5e7eb',
 					borderRadius: '8px',
-					maxWidth: 400,
+					maxWidth: 600,
 				}}
 			>
-				<SearchIcon sx={{ fontSize: 18, color: '#9ca3af' }} />
+				<SearchIcon sx={{ fontSize: 18, fill: '#9ca3af' }} />
 				<input
 					value={search}
 					onChange={e => setSearch(e.target.value)}
@@ -122,12 +119,7 @@ export const GroupsView: FC = () => {
 				}}
 			>
 				{filtered?.map(group => (
-					<GroupCard
-						key={group.id}
-						group={group}
-						onView={openView}
-						onEdit={openEdit}
-					/>
+					<GroupCard key={group.id} group={group} onView={openView} onEdit={openEdit} />
 				))}
 				{filtered?.length === 0 && (
 					<Box sx={{ gridColumn: '1 / -1', textAlign: 'center', py: 8 }}>
@@ -147,12 +139,7 @@ export const GroupsView: FC = () => {
 				}}
 			/>
 
-			<GroupDialog
-				group={editGroup || undefined}
-				users={users}
-				open={dialogOpen}
-				onClose={closeDialog}
-			/>
+			<GroupDialog group={editGroup || undefined} users={users} open={dialogOpen} onClose={closeDialog} />
 		</Box>
 	)
 }

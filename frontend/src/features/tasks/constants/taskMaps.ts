@@ -19,15 +19,17 @@ export const STATUS_MAP: Record<TicketStatus, StatusMapValue> = {
 
 export interface PriorityMapValue {
   label: string
+  barCount: number
+  barColor: string
   bgColor: string
   textColor: string
 }
 
 export const PRIORITY_MAP: Record<Priority, PriorityMapValue> = {
-  low: { label: 'Низкий', bgColor: '#d1fae5', textColor: '#065f46' },
-  medium: { label: 'Средний', bgColor: '#fef3c7', textColor: '#b45309' },
-  high: { label: 'Высокий', bgColor: '#fee2e2', textColor: '#b91c1c' },
-  urgent: { label: 'Критичный', bgColor: '#fee2e2', textColor: '#b91c1c' },
+  low: { label: 'Низкий', barCount: 1, barColor: '#10b981', bgColor: '#ecfdf5', textColor: '#065f46' },
+  medium: { label: 'Средний', barCount: 2, barColor: '#f59e0b', bgColor: '#fef3c7', textColor: '#92400e' },
+  high: { label: 'Высокий', barCount: 3, barColor: '#ef4444', bgColor: '#fee2e2', textColor: '#b91c1c' },
+  urgent: { label: 'Критичный', barCount: 4, barColor: '#dc2626', bgColor: '#fef2f2', textColor: '#991b1b' },
 }
 
 export const QUEUE_OPTIONS = [

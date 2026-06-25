@@ -12,6 +12,7 @@ export interface IUser {
 
 export interface IUserShort {
 	id: string
+	username: string
 	firstName: string
 	lastName: string
 	email: string

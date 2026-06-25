@@ -21,4 +21,7 @@ export const PermRules = Object.freeze({
 		Write: 'permissions:write',
 		Delete: 'permissions:delete',
 	},
+	Tasks: {
+		Write: 'ticket:write',
+	},
 })

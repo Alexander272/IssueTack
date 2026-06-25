@@ -2,10 +2,10 @@ import { type FC } from 'react'
 import { Box, Button, Typography } from '@mui/material'
 
 import type { IGroup } from '../types/group'
-import { GroupsIcon } from '@/components/Icons/GroupsIcon'
-import { EditBoxIcon } from '@/components/Icons/EditBoxIcon'
-import { VisibleIcon } from '@/components/Icons/VisibleIcon'
 import { getSmartDate } from '@/utils/date'
+import { GroupsIcon } from '@/components/Icons/GroupsIcon'
+import { EyeIcon } from '@/components/Icons/EyeIcon'
+import { EditIcon } from '@/components/Icons/EditIcon'
 
 const AVATAR_BG = ['#3b82f6', '#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6']
 
@@ -66,8 +66,8 @@ export const GroupCard: FC<Props> = ({ group, onView, onEdit }) => {
 							onClick={() => onView(group)}
 							sx={{
 								color: '#9ca3af',
-								'&:hover': { color: 'primary.main', bgcolor: '#f3f4f6' },
-								p: 0.75,
+								'&:hover': { bgcolor: '#f3f4f6', svg: { fill: '#f59e0b' } },
+								p: 1,
 								borderRadius: '6px',
 								border: 'none',
 								cursor: 'pointer',
@@ -76,15 +76,15 @@ export const GroupCard: FC<Props> = ({ group, onView, onEdit }) => {
 							}}
 							title='Просмотр'
 						>
-							<VisibleIcon fontSize={16} />
+							<EyeIcon sx={{ fontSize: 20, fill: '#9ca3af' }} />
 						</Box>
 						<Box
 							component='button'
 							onClick={() => onEdit(group)}
 							sx={{
 								color: '#9ca3af',
-								'&:hover': { color: '#f59e0b', bgcolor: '#f3f4f6' },
-								p: 0.75,
+								'&:hover': { bgcolor: '#f3f4f6', svg: { fill: '#3b82f6' } },
+								p: 1,
 								borderRadius: '6px',
 								border: 'none',
 								cursor: 'pointer',
@@ -93,7 +93,7 @@ export const GroupCard: FC<Props> = ({ group, onView, onEdit }) => {
 							}}
 							title='Редактировать'
 						>
-							<EditBoxIcon sx={{ fontSize: 16 }} />
+							<EditIcon sx={{ fontSize: 20, fill: '#9ca3af' }} />
 						</Box>
 					</Box>
 				</Box>

@@ -52,4 +52,8 @@ export const API = {
 		byId: (ticketId: string, subtaskId: string) =>
 			`/tickets/${ticketId}/subtasks/${subtaskId}` as const,
 	},
+	sites: {
+		base: '/sites' as const,
+		byId: (id: string) => `/sites/${id}` as const,
+	},
 }

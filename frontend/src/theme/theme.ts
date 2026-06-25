@@ -77,7 +77,7 @@ export const theme = createTheme({
 			},
 			styleOverrides: {
 				root: {
-					borderRadius: 12,
+					borderRadius: 8,
 					'& fieldset': {
 						transition: 'all 0.3s ease-in-out',
 					},
@@ -122,7 +122,7 @@ export const theme = createTheme({
 			// },
 			styleOverrides: {
 				root: {
-					borderRadius: 12,
+					borderRadius: 8,
 				},
 				// input: {
 				// 	paddingTop: '6px',
@@ -141,7 +141,7 @@ export const theme = createTheme({
 		MuiButton: {
 			styleOverrides: {
 				root: {
-					borderRadius: 12,
+					borderRadius: 8,
 				},
 			},
 		},

@@ -2,11 +2,12 @@ import { useMemo, useState, type FC } from 'react'
 import { Box, Button, Typography, useTheme } from '@mui/material'
 
 import type { ICategory, ICategoryDTO } from '../types/category'
-import { useGetAllCategoriesQuery, useUpdateCategoryMutation } from '../categoriesApiSlice'
+import { useGetAllCategoriesQuery } from '../categoriesApiSlice'
 import { useGetAllGroupsQuery } from '@/features/groups/groupsApiSlice'
 import { useDebounce } from '@/hooks/useDebounce'
 import { PlusIcon } from '@/components/Icons/PlusIcon'
 import { CategoryFilters } from '../components/CategoryFilters'
+import { CategoryCardList } from '../components/CategoryCardList'
 import { CategoryTable } from '../components/CategoryTable'
 import { CategoryViewDialog } from '../components/CategoryViewDialog'
 import { CategoryDialog } from '../components/Dialogs/CategoryDialog'
@@ -26,7 +27,6 @@ export const CategoriesView: FC = () => {
 
 	const { data: categories } = useGetAllCategoriesQuery()
 	const { data: groups } = useGetAllGroupsQuery()
-	const [updateCategory] = useUpdateCategoryMutation()
 
 	const groupsMap = useMemo(() => {
 		const map = new Map<string, string>()
@@ -72,17 +72,6 @@ export const CategoriesView: FC = () => {
 		setOpen(false)
 	}
 
-	const toggleActive = (cat: ICategory) => {
-		updateCategory({
-			id: cat.id,
-			name: cat.name,
-			description: cat.description,
-			groupId: cat.groupId,
-			priority: cat.priority,
-			isActive: !cat.isActive,
-		})
-	}
-
 	const resetFilters = () => {
 		setFilterGroup('all')
 		setFilterStatus('all')
@@ -91,19 +80,28 @@ export const CategoriesView: FC = () => {
 	}
 
 	return (
-		<Box sx={{ p: 3 }}>
-			<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+		<Box sx={{ p: { xs: 2, sm: 3 } }}>
+			<Box
+				sx={{
+					display: 'flex',
+					flexDirection: { xs: 'column', sm: 'row' },
+					justifyContent: 'space-between',
+					alignItems: { xs: 'flex-start', sm: 'center' },
+					gap: { xs: 2, sm: 0 },
+					mb: 4,
+				}}
+			>
 				<Box>
 					<Typography variant='h5' sx={{ fontWeight: 'bold', color: '#1f2937' }}>
 						Категории задач
 					</Typography>
-					<Typography variant='body2' sx={{ color: '#6b7280' }}>
+					<Typography variant='body2' sx={{ color: '#6b7280', display: { xs: 'none', sm: 'block' } }}>
 						Управление категориями и их привязкой к группам исполнителей
 					</Typography>
 				</Box>
 				<Button
 					variant='outlined'
-					sx={{ borderRadius: '8px', textTransform: 'none', background: '#fff' }}
+					sx={{ borderRadius: '8px', textTransform: 'none', background: '#fff', width: { xs: '100%', sm: 'auto' } }}
 					onClick={openCreate}
 				>
 					<PlusIcon fill={palette.primary.main} fontSize={16} mr={1.5} />
@@ -124,13 +122,12 @@ export const CategoriesView: FC = () => {
 				onReset={resetFilters}
 			/>
 
-			<CategoryTable
-				categories={filtered || []}
-				groupsMap={groupsMap}
-				onView={openView}
-				onEdit={openEdit}
-				onToggle={toggleActive}
-			/>
+			<Box sx={{ display: { xs: 'none', md: 'block' } }}>
+				<CategoryTable categories={filtered || []} groupsMap={groupsMap} onView={openView} onEdit={openEdit} />
+			</Box>
+			<Box sx={{ display: { xs: 'block', md: 'none' } }}>
+				<CategoryCardList categories={filtered || []} groupsMap={groupsMap} onView={openView} onEdit={openEdit} />
+			</Box>
 
 			<CategoryViewDialog
 				category={viewCategory}
