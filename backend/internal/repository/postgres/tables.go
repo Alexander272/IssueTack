@@ -55,7 +55,7 @@ var Tables = struct {
 	ChecklistTemplates:     "checklist_templates",
 	ChecklistTemplateItems: "checklist_template_items",
 	Comments:               "comments",
-	ActivityLog:            "activity_log",
+	ActivityLog:            "activity_logs",
 	AuditLogs:              "policy_audit_logs",
 	Notifications:          "notifications",
 	NotificationSettings:   "user_notification_settings",

@@ -16,7 +16,7 @@ type Ticket struct {
 	Status   TicketStatus `json:"status" db:"status"`
 	Priority Priority     `json:"priority" db:"priority"`
 
-	TicketNumber *int      `json:"ticketNumber,omitempty"`
+	TicketNumber *int       `json:"ticketNumber,omitempty"`
 	RealmID      *uuid.UUID `json:"realmId,omitempty"`
 
 	Site     *SiteShort     `json:"site"`     // Площадка выполнения
@@ -49,29 +49,36 @@ type TicketFilter struct {
 	Actor      *Actor        `json:"actor"`
 	Number     *int          `form:"number" json:"number"`
 	RealmID    *uuid.UUID    `form:"realmId" json:"realmId"`
-	SiteID     *uuid.UUID    `form:"siteId" json:"siteId" db:"site_id"`
+	SiteIDs    []string      `form:"siteIds" json:"siteIds"`
 	Status     *TicketStatus `form:"status" json:"status" db:"status" binding:"omitempty,enum"`
+	Statuses   []TicketStatus `form:"statuses" json:"statuses"`
 	OwnerID    *uuid.UUID    `form:"ownerId" json:"ownerId" db:"owner_id"`
 	AssigneeID *uuid.UUID    `form:"assigneeId" json:"assigneeId" db:"assignee_id"`
-	GroupID    *uuid.UUID    `form:"groupId" json:"groupId" db:"group_id"`
 	GroupIDs   []uuid.UUID   `json:"-"`
+	Priorities []Priority    `form:"priorities" json:"priorities"`
+	Search     *string       `form:"search" json:"search"`
+	DueDateFrom *time.Time   `form:"dueDateFrom" json:"dueDateFrom" time_format:"2006-01-02"`
+	DueDateTo  *time.Time    `form:"dueDateTo" json:"dueDateTo" time_format:"2006-01-02"`
+	Sort       *string       `form:"sort" json:"sort"`
+	Mode      *string    `form:"mode" json:"mode"`
+	CreatorID *uuid.UUID `json:"-"`
 	Limit      int           `json:"limit" db:"limit"`
 	Offset     int           `json:"offset" db:"offset"`
 }
 
 type TicketDTO struct {
-	ID          uuid.UUID `json:"id" db:"id"`
-	Actor       *Actor    `json:"actor"`
-	Title       string    `json:"title" db:"title"`
-	Description string    `json:"description" db:"description"`
+	ID          *uuid.UUID `json:"id" db:"id"`
+	Actor       *Actor     `json:"actor"`
+	Title       string     `json:"title" db:"title"`
+	Description string     `json:"description" db:"description"`
 
 	// Статусы и приоритеты
 	Status   TicketStatus `json:"status" db:"status"`
 	Priority Priority     `json:"priority" db:"priority"`
 
-	RealmID    uuid.UUID `json:"realmId"`
-	SiteID     uuid.UUID `json:"siteId"`     // Площадка выполнения
-	CategoryID uuid.UUID `json:"categoryId"` // Категория
+	RealmID    *uuid.UUID `json:"realmId"`
+	SiteID     uuid.UUID  `json:"siteId"`     // Площадка выполнения
+	CategoryID uuid.UUID  `json:"categoryId"` // Категория
 
 	// Кто участвует
 	CreatorID  uuid.UUID  `json:"creatorId" db:"creator_id"`   // Кто фактически создал (может быть Manager)

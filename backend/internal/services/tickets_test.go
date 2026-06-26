@@ -39,11 +39,12 @@ func TestTicketService_Get_Elevated(t *testing.T) {
 	expected := []*models.Ticket{
 		{ID: uuid.New(), Title: "Ticket 1"},
 	}
-	mockRepo.On("Get", mock.Anything, req).Return(expected, nil)
+	mockRepo.On("Get", mock.Anything, req).Return(expected, 0, nil)
 
-	got, err := svc.Get(context.Background(), req)
+	got, total, err := svc.Get(context.Background(), req)
 	assert.NoError(t, err)
 	assert.Equal(t, expected, got)
+	assert.Equal(t, 0, total)
 	mockPolicies.AssertExpectations(t)
 }
 
@@ -65,11 +66,12 @@ func TestTicketService_Get_GroupFilter(t *testing.T) {
 	expected := []*models.Ticket{
 		{ID: uuid.New(), Title: "Ticket 1"},
 	}
-	mockRepo.On("Get", mock.Anything, req).Return(expected, nil)
+	mockRepo.On("Get", mock.Anything, req).Return(expected, 0, nil)
 
-	got, err := svc.Get(context.Background(), req)
+	got, total, err := svc.Get(context.Background(), req)
 	assert.NoError(t, err)
 	assert.Equal(t, expected, got)
+	assert.Equal(t, 0, total)
 	assert.Equal(t, []uuid.UUID{groupID}, req.GroupIDs)
 }
 
@@ -89,7 +91,7 @@ func TestTicketService_Get_NoGroups_ReturnsError(t *testing.T) {
 	mockGroups.On("GetManagedGroups", mock.Anything, actorID).Return([]uuid.UUID{}, nil)
 	mockGroups.On("GetMemberGroups", mock.Anything, actorID).Return([]uuid.UUID{}, nil)
 
-	_, err := svc.Get(context.Background(), req)
+	_, _, err := svc.Get(context.Background(), req)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 }
@@ -116,8 +118,9 @@ func TestTicketService_Create_WithPolicy(t *testing.T) {
 	mockRepo, mockLogs, _, _, mockNotifications, _, mockPolicies, svc := ticketServiceFixtures()
 
 	actorID := uuid.New()
+	id := uuid.New()
 	dto := &models.TicketDTO{
-		ID:      uuid.New(),
+		ID:      &id,
 		Actor:   &models.Actor{ID: actorID, Name: "test"},
 		Title:   "New Ticket",
 		GroupID: nil,
@@ -137,8 +140,9 @@ func TestTicketService_Create_ManagedGroup(t *testing.T) {
 
 	actorID := uuid.New()
 	groupID := uuid.New()
+	id := uuid.New()
 	dto := &models.TicketDTO{
-		ID:      uuid.New(),
+		ID:      &id,
 		Actor:   &models.Actor{ID: actorID, Name: "test"},
 		Title:   "New Ticket",
 		GroupID: &groupID,
@@ -163,8 +167,9 @@ func TestTicketService_Create_NotManager(t *testing.T) {
 
 	actorID := uuid.New()
 	groupID := uuid.New()
+	id := uuid.New()
 	dto := &models.TicketDTO{
-		ID:      uuid.New(),
+		ID:      &id,
 		Actor:   &models.Actor{ID: actorID, Name: "test"},
 		Title:   "New Ticket",
 		GroupID: &groupID,
@@ -184,7 +189,7 @@ func TestTicketService_Update_Success(t *testing.T) {
 	actorID := uuid.New()
 	ticketID := uuid.New()
 	dto := &models.TicketDTO{
-		ID:    ticketID,
+		ID:    &ticketID,
 		Actor: &models.Actor{ID: actorID, Name: "test"},
 		Title: "Updated Ticket",
 	}

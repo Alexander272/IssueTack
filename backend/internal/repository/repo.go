@@ -102,7 +102,7 @@ func NewRepository(pool *pgxpool.Pool, memDB *redis.Client, conf config.AuthConf
 
 		SessionCache: redis_repo.NewSessionCacheRepo(memDB, conf.AccessTokenTTL),
 
-		Groups:        postgres.NewGroupRepo(pool),
+		Groups:        postgres.NewGroupRepo(pool, transaction),
 		Categories:    postgres.NewCategoryRepo(pool),
 		Sites:         postgres.NewSiteRepo(pool),
 		Tickets:       postgres.NewTicketRepo(pool, transaction),

@@ -10,6 +10,20 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+var sortMapping = map[string]string{
+	"dueDate":       "t.due_date",
+	"closedAt":      "t.closed_at",
+	"priority":      "CASE t.priority WHEN 'urgent' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 END",
+	"status":        "t.status",
+	"ticketNumber":  "t.ticket_number",
+	"title":         "t.title",
+	"owner":         "u_owner.last_name",
+	"category":      "c.name",
+	"site":          "s.name",
+	"assignee":      "COALESCE(u_assignee.last_name, g.name)",
+	"createdAt":     "t.created_at",
+}
+
 type TicketRepo struct {
 	db *pgxpool.Pool
 	Transaction
@@ -23,14 +37,50 @@ func NewTicketRepo(db *pgxpool.Pool, tr Transaction) *TicketRepo {
 }
 
 type Tickets interface {
-	Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, error)
+	Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, int, error)
 	GetByID(ctx context.Context, req *models.GetTicketByIdDTO) (*models.Ticket, error)
 	Create(ctx context.Context, tx Tx, dto *models.TicketDTO) error
 	Update(ctx context.Context, tx Tx, dto *models.TicketDTO) error
 	Delete(ctx context.Context, tx Tx, dto *models.DeleteTicketDTO) error
 }
 
-func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, error) {
+type nullableTicketAssoc struct {
+	OwnerID, AssigneeID, ManagerID            *uuid.UUID
+	OwnerUsername, OwnerFirstName, OwnerLastName, OwnerInternalNumber *string
+	AssigneeUsername, AssigneeFirstName, AssigneeLastName, AssigneeInternalNumber *string
+	ManagerUsername, ManagerFirstName, ManagerLastName, ManagerInternalNumber *string
+	GroupID                                   *uuid.UUID
+	GroupName                                 *string
+}
+
+func (a *nullableTicketAssoc) assign(ticket *models.Ticket) {
+	if a.OwnerID != nil {
+		ticket.Owner = &models.UserShort{
+			ID: *a.OwnerID, Username: *a.OwnerUsername,
+			FirstName: *a.OwnerFirstName, LastName: *a.OwnerLastName,
+			InternalNumber: *a.OwnerInternalNumber,
+		}
+	}
+	if a.AssigneeID != nil {
+		ticket.Assignee = &models.UserShort{
+			ID: *a.AssigneeID, Username: *a.AssigneeUsername,
+			FirstName: *a.AssigneeFirstName, LastName: *a.AssigneeLastName,
+			InternalNumber: *a.AssigneeInternalNumber,
+		}
+	}
+	if a.ManagerID != nil {
+		ticket.Manager = &models.UserShort{
+			ID: *a.ManagerID, Username: *a.ManagerUsername,
+			FirstName: *a.ManagerFirstName, LastName: *a.ManagerLastName,
+			InternalNumber: *a.ManagerInternalNumber,
+		}
+	}
+	if a.GroupID != nil {
+		ticket.Group = &models.GroupShort{ID: *a.GroupID, Name: *a.GroupName}
+	}
+}
+
+func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, int, error) {
 	base := fmt.Sprintf(`SELECT 
 			t.id, t.title, t.description, t.status, t.priority, t.ticket_number, t.realm_id, t.due_date, t.closed_at, t.created_at, t.updated_at,
 			u_creator.id, u_creator.username AS creator_username, u_creator.first_name AS creator_first_name, u_creator.last_name AS creator_last_name, u_creator.internal_number AS creator_internal_number,
@@ -39,7 +89,8 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 			u_manager.id, u_manager.username AS manager_username, u_manager.first_name AS manager_first_name, u_manager.last_name AS manager_last_name, u_manager.internal_number AS manager_internal_number,
 			g.id, g.name,
 			c.id, c.name,
-			s.id, s.name
+			s.id, s.name,
+			COUNT(*) OVER() AS total_count
 		FROM %s t
 		JOIN %s u_creator ON t.creator_id = u_creator.id
 		LEFT JOIN %s u_owner ON t.owner_id = u_owner.id
@@ -56,15 +107,28 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 	args := []interface{}{}
 	argIdx := 1
 
-	if req.SiteID != nil {
-		where = append(where, fmt.Sprintf("t.site_id = $%d", argIdx))
-		args = append(args, *req.SiteID)
-		argIdx++
+	if len(req.SiteIDs) > 0 {
+		ids := make([]string, len(req.SiteIDs))
+		for i, sid := range req.SiteIDs {
+			ids[i] = fmt.Sprintf("$%d", argIdx)
+			args = append(args, sid)
+			argIdx++
+		}
+		where = append(where, "t.site_id IN ("+strings.Join(ids, ",")+")")
 	}
 	if req.Status != nil {
 		where = append(where, fmt.Sprintf("t.status = $%d", argIdx))
 		args = append(args, *req.Status)
 		argIdx++
+	}
+	if len(req.Statuses) > 0 {
+		ids := make([]string, len(req.Statuses))
+		for i, st := range req.Statuses {
+			ids[i] = fmt.Sprintf("$%d", argIdx)
+			args = append(args, st)
+			argIdx++
+		}
+		where = append(where, "t.status IN ("+strings.Join(ids, ",")+")")
 	}
 	if req.OwnerID != nil {
 		where = append(where, fmt.Sprintf("t.owner_id = $%d", argIdx))
@@ -76,9 +140,18 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 		args = append(args, *req.AssigneeID)
 		argIdx++
 	}
-	if req.GroupID != nil {
-		where = append(where, fmt.Sprintf("t.group_id = $%d", argIdx))
-		args = append(args, *req.GroupID)
+	if len(req.GroupIDs) > 0 {
+		ids := make([]string, len(req.GroupIDs))
+		for i, gid := range req.GroupIDs {
+			ids[i] = fmt.Sprintf("$%d", argIdx)
+			args = append(args, gid)
+			argIdx++
+		}
+		where = append(where, "t.group_id IN ("+strings.Join(ids, ",")+")")
+	}
+	if req.CreatorID != nil {
+		where = append(where, fmt.Sprintf("t.creator_id = $%d", argIdx))
+		args = append(args, *req.CreatorID)
 		argIdx++
 	}
 	if req.Number != nil {
@@ -91,21 +164,52 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 		args = append(args, *req.RealmID)
 		argIdx++
 	}
-	if len(req.GroupIDs) > 0 {
-		ids := make([]string, len(req.GroupIDs))
-		for i, gid := range req.GroupIDs {
+	if req.Search != nil && *req.Search != "" {
+		where = append(where, fmt.Sprintf("(LOWER(t.title) LIKE $%d OR t.ticket_number::text LIKE $%d)", argIdx, argIdx+1))
+		searchPattern := "%" + strings.ToLower(*req.Search) + "%"
+		args = append(args, searchPattern, searchPattern)
+		argIdx += 2
+	}
+	if req.DueDateFrom != nil {
+		where = append(where, fmt.Sprintf("t.due_date >= $%d", argIdx))
+		args = append(args, *req.DueDateFrom)
+		argIdx++
+	}
+	if req.DueDateTo != nil {
+		where = append(where, fmt.Sprintf("t.due_date <= $%d", argIdx))
+		args = append(args, *req.DueDateTo)
+		argIdx++
+	}
+	if len(req.Priorities) > 0 {
+		ids := make([]string, len(req.Priorities))
+		for i, p := range req.Priorities {
 			ids[i] = fmt.Sprintf("$%d", argIdx)
-			args = append(args, gid)
+			args = append(args, p)
 			argIdx++
 		}
-		where = append(where, "t.group_id IN ("+strings.Join(ids, ",")+")")
+		where = append(where, "t.priority IN ("+strings.Join(ids, ",")+")")
 	}
 
 	query := base
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
-	query += " ORDER BY t.created_at DESC"
+
+	if req.Sort != nil && *req.Sort != "" {
+		field := *req.Sort
+		dir := "ASC"
+		if rest, ok := strings.CutSuffix(field, "_desc"); ok {
+			field = rest
+			dir = "DESC"
+		}
+		if col, ok := sortMapping[field]; ok {
+			query += fmt.Sprintf(" ORDER BY %s %s", col, dir)
+		} else {
+			query += " ORDER BY t.created_at DESC"
+		}
+	} else {
+		query += " ORDER BY t.created_at DESC"
+	}
 
 	limit := req.Limit
 	if limit <= 0 {
@@ -124,31 +228,18 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
-		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
+		return nil, 0, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
 	defer rows.Close()
 
 	var data []*models.Ticket
+	total := 0
 	for rows.Next() {
-		var (
-			assigneeID            *uuid.UUID
-			assigneeUsername      *string
-			assigneeFirstName     *string
-			assigneeLastName      *string
-			assigneeInternalNumber *string
-			managerID              *uuid.UUID
-			managerUsername        *string
-			managerFirstName       *string
-			managerLastName        *string
-			managerInternalNumber  *string
-			groupID                *uuid.UUID
-			groupName              *string
-		)
+		assoc := nullableTicketAssoc{}
 		ticket := &models.Ticket{
 			Site:     &models.SiteShort{},
 			Category: &models.CategoryShort{},
 			Creator:  models.UserShort{},
-			Owner:    &models.UserShort{},
 		}
 		if err := rows.Scan(
 			&ticket.ID, &ticket.Title, &ticket.Description,
@@ -156,33 +247,26 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 			&ticket.TicketNumber, &ticket.RealmID,
 			&ticket.DueDate, &ticket.ClosedAt, &ticket.CreatedAt, &ticket.UpdatedAt,
 			&ticket.Creator.ID, &ticket.Creator.Username, &ticket.Creator.FirstName, &ticket.Creator.LastName, &ticket.Creator.InternalNumber,
-			&ticket.Owner.ID, &ticket.Owner.Username, &ticket.Owner.FirstName, &ticket.Owner.LastName, &ticket.Owner.InternalNumber,
-			&assigneeID, &assigneeUsername, &assigneeFirstName, &assigneeLastName, &assigneeInternalNumber,
-			&managerID, &managerUsername, &managerFirstName, &managerLastName, &managerInternalNumber,
-			&groupID, &groupName,
+			&assoc.OwnerID, &assoc.OwnerUsername, &assoc.OwnerFirstName, &assoc.OwnerLastName, &assoc.OwnerInternalNumber,
+			&assoc.AssigneeID, &assoc.AssigneeUsername, &assoc.AssigneeFirstName, &assoc.AssigneeLastName, &assoc.AssigneeInternalNumber,
+			&assoc.ManagerID, &assoc.ManagerUsername, &assoc.ManagerFirstName, &assoc.ManagerLastName, &assoc.ManagerInternalNumber,
+			&assoc.GroupID, &assoc.GroupName,
 			&ticket.Category.ID, &ticket.Category.Name,
 			&ticket.Site.ID, &ticket.Site.Name,
+			&total,
 		); err != nil {
-			return nil, MapError(fmt.Errorf("scan row error: %w", err))
+			return nil, 0, MapError(fmt.Errorf("scan row error: %w", err))
 		}
-		if assigneeID != nil {
-			ticket.Assignee = &models.UserShort{ID: *assigneeID, Username: *assigneeUsername, FirstName: *assigneeFirstName, LastName: *assigneeLastName, InternalNumber: *assigneeInternalNumber}
-		}
-		if managerID != nil {
-			ticket.Manager = &models.UserShort{ID: *managerID, Username: *managerUsername, FirstName: *managerFirstName, LastName: *managerLastName, InternalNumber: *managerInternalNumber}
-		}
-		if groupID != nil {
-			ticket.Group = &models.GroupShort{ID: *groupID, Name: *groupName}
-		}
+		assoc.assign(ticket)
 		data = append(data, ticket)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+		return nil, 0, MapError(fmt.Errorf("rows iteration error: %w", err))
 	}
 	if data == nil {
-		return []*models.Ticket{}, nil
+		return []*models.Ticket{}, 0, nil
 	}
-	return data, nil
+	return data, total, nil
 }
 
 func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) (*models.Ticket, error) {
@@ -221,49 +305,30 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 		Creator:  models.UserShort{},
 	}
 
-	var ownerID, assigneeID, managerID *uuid.UUID
-	var ownerUsername, ownerFirstName, ownerLastName *string
-	var assigneeUsername, assigneeFirstName, assigneeLastName *string
-	var managerUsername, managerFirstName, managerLastName *string
-	var ownerInternalNumber, assigneeInternalNumber, managerInternalNumber *string
-	var groupID *uuid.UUID
-	var groupName *string
-
+	assoc := nullableTicketAssoc{}
 	if err := r.db.QueryRow(ctx, query, req.ID).Scan(
 		&ticket.ID, &ticket.Title, &ticket.Description, &ticket.Status, &ticket.Priority,
 		&ticket.TicketNumber, &ticket.RealmID,
 		&ticket.DueDate, &ticket.ClosedAt, &ticket.CreatedAt, &ticket.UpdatedAt,
-		&ownerID, &ownerUsername, &ownerFirstName, &ownerLastName, &ownerInternalNumber,
+		&assoc.OwnerID, &assoc.OwnerUsername, &assoc.OwnerFirstName, &assoc.OwnerLastName, &assoc.OwnerInternalNumber,
 		&ticket.Creator.ID, &ticket.Creator.Username, &ticket.Creator.FirstName, &ticket.Creator.LastName, &ticket.Creator.InternalNumber,
-		&assigneeID, &assigneeUsername, &assigneeFirstName, &assigneeLastName, &assigneeInternalNumber,
-		&managerID, &managerUsername, &managerFirstName, &managerLastName, &managerInternalNumber,
-		&groupID, &groupName,
+		&assoc.AssigneeID, &assoc.AssigneeUsername, &assoc.AssigneeFirstName, &assoc.AssigneeLastName, &assoc.AssigneeInternalNumber,
+		&assoc.ManagerID, &assoc.ManagerUsername, &assoc.ManagerFirstName, &assoc.ManagerLastName, &assoc.ManagerInternalNumber,
+		&assoc.GroupID, &assoc.GroupName,
 		&ticket.Category.ID, &ticket.Category.Name,
 		&ticket.Site.ID, &ticket.Site.Name,
 	); err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
 
-	if ownerID != nil {
-		ticket.Owner = &models.UserShort{ID: *ownerID, Username: *ownerUsername, FirstName: *ownerFirstName, LastName: *ownerLastName, InternalNumber: *ownerInternalNumber}
-	}
-	if assigneeID != nil {
-		ticket.Assignee = &models.UserShort{ID: *assigneeID, Username: *assigneeUsername, FirstName: *assigneeFirstName, LastName: *assigneeLastName, InternalNumber: *assigneeInternalNumber}
-	}
-	if managerID != nil {
-		ticket.Manager = &models.UserShort{ID: *managerID, Username: *managerUsername, FirstName: *managerFirstName, LastName: *managerLastName, InternalNumber: *managerInternalNumber}
-	}
-	if groupID != nil {
-		ticket.Group = &models.GroupShort{ID: *groupID, Name: *groupName}
-	}
+	assoc.assign(ticket)
 
 	return ticket, nil
 }
 
 func (r *TicketRepo) Create(ctx context.Context, tx Tx, dto *models.TicketDTO) error {
-	if dto.ID == uuid.Nil {
-		dto.ID = uuid.New()
-	}
+	id := uuid.New()
+	dto.ID = &id
 
 	numberQuery := fmt.Sprintf(`INSERT INTO %s (realm_id, last_number) VALUES ($1, 1)
 		ON CONFLICT (realm_id) DO UPDATE SET last_number = %s.last_number + 1

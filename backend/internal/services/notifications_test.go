@@ -30,8 +30,9 @@ func TestNotificationService_TicketCreated_Success(t *testing.T) {
 
 	managerID := uuid.New()
 	categoryID := uuid.New()
+	id := uuid.New()
 	dto := &models.TicketDTO{
-		ID:         uuid.New(),
+		ID:         &id,
 		Title:      "Test Ticket",
 		ManagerID:  &managerID,
 		CategoryID: categoryID,
@@ -53,8 +54,9 @@ func TestNotificationService_TicketCreated_WithResponsible(t *testing.T) {
 	managerID := uuid.New()
 	categoryID := uuid.New()
 	respID := uuid.New()
+	id := uuid.New()
 	dto := &models.TicketDTO{
-		ID:         uuid.New(),
+		ID:         &id,
 		Title:      "Test Ticket",
 		ManagerID:  &managerID,
 		CategoryID: categoryID,
@@ -81,9 +83,9 @@ func TestNotificationService_TicketUpdated_Success(t *testing.T) {
 	actorID := uuid.New()
 	managerID := uuid.New()
 	ticket := &models.Ticket{
-		ID:      ticketID,
-		Title:   "Test",
-		Manager: &models.UserShort{ID: managerID},
+		ID:       ticketID,
+		Title:    "Test",
+		Manager:  &models.UserShort{ID: managerID},
 		Category: &models.CategoryShort{ID: uuid.New()},
 	}
 	changes := []*models.FieldChange{
@@ -180,9 +182,9 @@ func TestNotificationService_TicketDeleted_Success(t *testing.T) {
 	managerID := uuid.New()
 	categoryID := uuid.New()
 	ticket := &models.Ticket{
-		ID:    uuid.New(),
-		Title: "Deleted Ticket",
-		Manager: &models.UserShort{ID: managerID},
+		ID:       uuid.New(),
+		Title:    "Deleted Ticket",
+		Manager:  &models.UserShort{ID: managerID},
 		Category: &models.CategoryShort{ID: categoryID},
 	}
 
@@ -202,8 +204,8 @@ func TestNotificationService_TicketDeleted_NoManager(t *testing.T) {
 	categoryID := uuid.New()
 	respID := uuid.New()
 	ticket := &models.Ticket{
-		ID:    uuid.New(),
-		Title: "Deleted Ticket",
+		ID:       uuid.New(),
+		Title:    "Deleted Ticket",
 		Category: &models.CategoryShort{ID: categoryID},
 	}
 

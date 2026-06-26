@@ -36,7 +36,7 @@ func NewTicketService(repo repository.Tickets, tx TransactionManager, logs Activ
 }
 
 type Tickets interface {
-	Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, error)
+	Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, int, error)
 	GetByID(ctx context.Context, req *models.GetTicketByIdDTO) (*models.Ticket, error)
 	Create(ctx context.Context, dto *models.TicketDTO) error
 	Update(ctx context.Context, dto *models.TicketDTO) error
@@ -47,7 +47,7 @@ type TicketAccessChecker interface {
 	CheckAccess(ctx context.Context, ticketID, userID uuid.UUID, action string, realm ...string) error
 }
 
-func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, error) {
+func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, int, error) {
 	realmStr := ""
 	if req.RealmID != nil {
 		realmStr = req.RealmID.String()
@@ -55,23 +55,23 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 
 	elevated, err := s.policies.Enforce(req.Actor.ID.String(), realmStr, string(access.ResourceTicket), string(access.Write))
 	if err != nil {
-		return nil, fmt.Errorf("policy check failed: %w", err)
+		return nil, 0, fmt.Errorf("policy check failed: %w", err)
 	}
 	if !elevated {
 		elevated, err = s.policies.Enforce(req.Actor.ID.String(), realmStr, string(access.ResourceTicket), string(access.Delete))
 		if err != nil {
-			return nil, fmt.Errorf("policy check failed: %w", err)
+			return nil, 0, fmt.Errorf("policy check failed: %w", err)
 		}
 	}
 
 	if !elevated {
 		managed, err := s.groups.GetManagedGroups(ctx, req.Actor.ID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get managed groups: %w", err)
+			return nil, 0, fmt.Errorf("failed to get managed groups: %w", err)
 		}
 		member, err := s.groups.GetMemberGroups(ctx, req.Actor.ID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get member groups: %w", err)
+			return nil, 0, fmt.Errorf("failed to get member groups: %w", err)
 		}
 
 		seen := make(map[uuid.UUID]struct{})
@@ -89,16 +89,26 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 			}
 		}
 		if len(all) == 0 {
-			return nil, models.ErrPermissionDenied
+			return nil, 0, models.ErrPermissionDenied
 		}
 		req.GroupIDs = all
 	}
 
-	data, err := s.repo.Get(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get tickets. error: %w", err)
+	// Handle mode filtering
+	if req.Mode != nil {
+		switch *req.Mode {
+		case "created":
+			req.CreatorID = &req.Actor.ID
+		case "assigned":
+			req.AssigneeID = &req.Actor.ID
+		}
 	}
-	return data, nil
+
+	data, total, err := s.repo.Get(ctx, req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get tickets. error: %w", err)
+	}
+	return data, total, nil
 }
 
 func (s *TicketService) autoAssign(ctx context.Context, dto *models.TicketDTO) error {
@@ -209,7 +219,7 @@ func (s *TicketService) GetByID(ctx context.Context, req *models.GetTicketByIdDT
 
 func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error {
 	realmStr := ""
-	if dto.RealmID != uuid.Nil {
+	if dto.RealmID != nil {
 		realmStr = dto.RealmID.String()
 	}
 
@@ -248,6 +258,10 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		}
 	}
 
+	if dto.OwnerID == nil {
+		dto.OwnerID = &dto.CreatorID
+	}
+
 	if dto.AssigneeID == nil && dto.GroupID != nil {
 		if err := s.autoAssign(ctx, dto); err != nil {
 			return fmt.Errorf("auto-assign: %w", err)
@@ -264,7 +278,7 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 			ChangedBy:     dto.Actor.ID,
 			ChangedByName: dto.Actor.Name,
 			EntityType:    string(access.ResourceTicket),
-			EntityID:      dto.ID,
+			EntityID:      *dto.ID,
 			Entity:        dto.Title,
 		}
 		if err := log.SetNewValues(map[string]string{"title": dto.Title}); err != nil {
@@ -288,17 +302,17 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 
 func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error {
 	realmStr := ""
-	if dto.RealmID != uuid.Nil {
+	if dto.RealmID != nil {
 		realmStr = dto.RealmID.String()
 	}
 
-	if err := s.CheckAccess(ctx, dto.ID, dto.Actor.ID, string(access.Write), realmStr); err != nil {
+	if err := s.CheckAccess(ctx, *dto.ID, dto.Actor.ID, string(access.Write), realmStr); err != nil {
 		return err
 	}
 
 	var changes []*models.FieldChange
 	err := s.tx.WithinTransaction(ctx, func(newTx postgres.Tx) error {
-		oldTicket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: dto.ID})
+		oldTicket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
 		if err != nil {
 			return err
 		}
@@ -322,7 +336,7 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 				ChangedBy:     dto.Actor.ID,
 				ChangedByName: dto.Actor.Name,
 				EntityType:    string(access.ResourceTicket),
-				EntityID:      dto.ID,
+				EntityID:      *dto.ID,
 				Entity:        oldTicket.Title,
 			}
 			if err := log.SetOldValues(oldMap); err != nil {
@@ -343,7 +357,7 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 	}
 
 	if len(changes) > 0 {
-		if err := s.notifications.TicketUpdated(ctx, dto.ID, dto.Actor.ID, changes); err != nil {
+		if err := s.notifications.TicketUpdated(ctx, *dto.ID, dto.Actor.ID, changes); err != nil {
 			return fmt.Errorf("failed to send notification: %w", err)
 		}
 	}

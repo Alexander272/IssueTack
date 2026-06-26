@@ -59,12 +59,12 @@ func (h *Handler) getAll(c *gin.Context) {
 	}
 	filter.Actor = actor
 
-	data, err := h.service.Get(c, filter)
+	data, total, err := h.service.Get(c, filter)
 	if err != nil {
 		response.SendError(c, err, filter)
 		return
 	}
-	response.SendData(c, data, len(data))
+	response.SendData(c, data, total)
 }
 
 func (h *Handler) getByID(c *gin.Context) {
@@ -101,7 +101,7 @@ func (h *Handler) create(c *gin.Context) {
 	if !ok {
 		return
 	}
-	dto.RealmID = realmID
+	dto.RealmID = &realmID
 
 	actor := utils.GetActor(c)
 	if actor == nil {
@@ -129,15 +129,14 @@ func (h *Handler) update(c *gin.Context) {
 		response.SendError(c, err)
 		return
 	}
-	if id != dto.ID {
+	if id != *dto.ID {
 		response.SendError(c, fmt.Errorf("%w: %s", models.ErrInvalidInput, "id is not equal to dto.ID"))
 		return
 	}
-	dto.ID = id
 
 	realmID, ok := utils.GetRealmUUID(c)
 	if ok {
-		dto.RealmID = realmID
+		dto.RealmID = &realmID
 	}
 
 	actor := utils.GetActor(c)
