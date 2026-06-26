@@ -1,11 +1,10 @@
 import { Box } from '@mui/material'
-
-import { TaskCreateForm } from '@/features/tasks/components/TaskCreateForm'
+import { TaskList } from '@/features/tasks/pages/TaskList'
 
 export default function Home() {
 	return (
-		<Box sx={{ flexGrow: 1, overflow: 'auto', p: 3 }}>
-			<TaskCreateForm />
+		<Box sx={{ flexGrow: 1, overflow: 'auto' }}>
+			<TaskList mode='created' />
 		</Box>
 	)
 }

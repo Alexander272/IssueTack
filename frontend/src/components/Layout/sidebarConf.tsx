@@ -11,6 +11,7 @@ import { InboxIcon } from '../Icons/InboxIcon'
 import { StackIcon } from '../Icons/StackIcon'
 import { GroupsIcon } from '../Icons/GroupsIcon'
 import { BusinessIcon } from '../Icons/BusinessIcon'
+import { SendIcon } from '../Icons/SendIcon'
 
 export interface SidebarItem {
 	path: string
@@ -28,7 +29,7 @@ export interface SidebarRule {
 }
 
 const homeItems: SidebarItem[] = [
-	{ path: AppRoutes.Home, label: 'Создать задачу', icon: <InboxIcon sx={{ fontSize: 18 }} /> },
+	{ path: AppRoutes.Home, label: 'Заявки', icon: <SendIcon sx={{ fontSize: 20 }} /> },
 	{ path: AppRoutes.Tasks, label: 'Задачи', icon: <InboxIcon sx={{ fontSize: 18 }} /> },
 	{ path: AppRoutes.Groups, label: 'Группы', icon: <GroupsIcon sx={{ fontSize: 18 }} /> },
 	{ path: AppRoutes.Categories, label: 'Категории', icon: <StackIcon sx={{ fontSize: 18 }} /> },

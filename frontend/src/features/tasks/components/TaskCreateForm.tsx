@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react'
-import { Box, Button, MenuItem, TextField, Typography, Autocomplete, Paper } from '@mui/material'
+import { Box, Button, MenuItem, TextField, Typography, Autocomplete } from '@mui/material'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { toast } from 'react-toastify'
@@ -29,7 +29,13 @@ interface FormValues {
 	dueDate: string | null
 }
 
-export const TaskCreateForm = () => {
+type Props = {
+	onSuccess?: () => void
+	onCancel?: () => void
+	embedded?: boolean
+}
+
+export const TaskCreateForm = ({ onSuccess, onCancel, embedded }: Props) => {
 	const currentUserId = useAppSelector(state => state.user.id)
 	const realm = useAppSelector(getRealm)
 	const isManager = useCheckPermission(PermRules.Tasks.Write)
@@ -78,7 +84,7 @@ export const TaskCreateForm = () => {
 		}
 
 		const dto: ITaskDTO = {
-			id: '',
+			id: null,
 			title: data.title,
 			description: data.description,
 			status: 'open',
@@ -99,6 +105,7 @@ export const TaskCreateForm = () => {
 			await createTask(dto).unwrap()
 			toast.success('Задача создана')
 			reset()
+			onSuccess?.()
 		} catch (error) {
 			const fetchError = error as IFetchError
 			toast.error(fetchError.data?.message || 'Ошибка при создании задачи', { autoClose: false })
@@ -106,21 +113,26 @@ export const TaskCreateForm = () => {
 	})
 
 	return (
-		<Box sx={{ maxWidth: 720, mx: 'auto' }}>
-			<Box sx={{ mb: 3 }}>
-				<Typography variant='h5' sx={{ fontWeight: 700, color: '#1f2937' }}>
-					Создание задачи
-				</Typography>
-				<Typography variant='body2' sx={{ color: '#6b7280', mt: 0.5 }}>
-					Заполните форму для создания новой задачи
-				</Typography>
-			</Box>
+		<Box sx={{ maxWidth: !embedded ? 720 : undefined, mx: 'auto' }}>
+			{!embedded && (
+				<Box sx={{ mb: 3 }}>
+					<Typography variant='h5' sx={{ fontWeight: 700, color: '#1f2937' }}>
+						Создание задачи
+					</Typography>
+					<Typography variant='body2' sx={{ color: '#6b7280', mt: 0.5 }}>
+						Заполните форму для создания новой задачи
+					</Typography>
+				</Box>
+			)}
 
-			<Paper
-				elevation={0}
-				sx={{ borderRadius: '12px', border: '1px solid #e5e7eb', p: 3 }}
+			<Box
 				component='form'
 				onSubmit={onSubmit}
+				sx={
+					embedded
+						? {}
+						: { borderRadius: '12px', border: '1px solid #e5e7eb', p: 3, bgcolor: 'background.paper' }
+				}
 			>
 				<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
 					<Box>
@@ -336,10 +348,10 @@ export const TaskCreateForm = () => {
 						<Button
 							type='button'
 							variant='outlined'
-							onClick={() => reset()}
+							onClick={embedded ? onCancel : () => reset()}
 							sx={{ textTransform: 'none', color: 'text.primary', borderColor: '#ddd' }}
 						>
-							Очистить
+							{embedded ? 'Отмена' : 'Очистить'}
 						</Button>
 						<Button
 							type='submit'
@@ -347,11 +359,11 @@ export const TaskCreateForm = () => {
 							disabled={isLoading}
 							sx={{ textTransform: 'none', px: 3 }}
 						>
-							{isLoading ? 'Создание...' : 'Создать задачу'}
+							{isLoading ? 'Создание...' : 'Создать'}
 						</Button>
 					</Box>
 				</Box>
-			</Paper>
+			</Box>
 		</Box>
 	)
 }

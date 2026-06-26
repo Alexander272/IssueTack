@@ -80,18 +80,18 @@ export const LayoutHeader = ({ onMenuClick }: LayoutHeaderProps) => {
 							</NavBox>
 						)}
 
-						<Stack direction={'row'} spacing={0.5}>
-							{canEditSettings ? (
-								<Link to={AppRoutes.Accesses}>
-									<Tooltip title='Настройка доступа' disableInteractive>
-										<NavBox sx={{ ':hover': { svg: { stroke: palette.primary.main } } }}>
-											<ShieldIcon sx={{ fontSize: 26, transition: '0.3s all ease-in-out' }} />
-										</NavBox>
-									</Tooltip>
-								</Link>
-							) : null}
+						{/* <Stack direction={'row'} spacing={0.5}> */}
+						{canEditSettings ? (
+							<Link to={AppRoutes.Accesses}>
+								<Tooltip title='Настройка доступа' disableInteractive>
+									<NavBox sx={{ ':hover': { svg: { stroke: palette.primary.main } } }}>
+										<ShieldIcon sx={{ fontSize: 26, transition: '0.3s all ease-in-out' }} />
+									</NavBox>
+								</Tooltip>
+							</Link>
+						) : null}
 
-							{/* {canSeeStats ? (
+						{/* {canSeeStats ? (
 								<Link to={AppRoutes.Statistics}>
 									<Tooltip title='Статистика' disableInteractive>
 										<NavBox sx={{ ':hover': { svg: { stroke: palette.primary.main } } }}>
@@ -100,9 +100,15 @@ export const LayoutHeader = ({ onMenuClick }: LayoutHeaderProps) => {
 									</Tooltip>
 								</Link>
 							) : null} */}
-						</Stack>
+						{/* </Stack> */}
 
-						<NavBox onClick={logoutHandler} sx={{ display: { xs: 'none', md: 'flex' }, ':hover': { svg: { fill: palette.primary.main } } }}>
+						<NavBox
+							onClick={logoutHandler}
+							sx={{
+								display: { xs: 'none', md: 'flex' },
+								':hover': { svg: { fill: palette.primary.main } },
+							}}
+						>
 							<LogoutIcon fill={'#000'} fontSize={24} transition={'0.3s all ease-in-out'} />
 						</NavBox>
 					</Stack>

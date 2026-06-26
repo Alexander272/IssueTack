@@ -1,9 +1,9 @@
 import type { FC } from 'react'
-import { SvgIcon, type SxProps, type Theme } from '@mui/material'
+import { SvgIcon, type SvgIconProps } from '@mui/material'
 
-export const BottomArrowIcon: FC<SxProps<Theme>> = style => {
+export const BottomArrowIcon: FC<SvgIconProps> = props => {
 	return (
-		<SvgIcon sx={style}>
+		<SvgIcon {...props}>
 			<svg
 				xmlns='http://www.w3.org/2000/svg'
 				xmlnsXlink='http://www.w3.org/1999/xlink'

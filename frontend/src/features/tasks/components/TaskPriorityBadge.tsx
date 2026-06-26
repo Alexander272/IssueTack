@@ -1,13 +1,14 @@
-import { Box } from '@mui/material'
+import { Box, type SxProps, type Theme } from '@mui/material'
 import type { Priority } from '../types/task'
 import { PRIORITY_MAP } from '../constants/taskMaps'
 import { UrgencyBars } from './UrgencyBars'
 
 interface Props {
 	priority: Priority
+	sx?: SxProps<Theme>
 }
 
-export const TaskPriorityBadge = ({ priority }: Props) => {
+export const TaskPriorityBadge = ({ priority, sx }: Props) => {
 	const info = PRIORITY_MAP[priority]
 
 	return (
@@ -23,6 +24,7 @@ export const TaskPriorityBadge = ({ priority }: Props) => {
 				borderRadius: '16px',
 				fontSize: '0.875rem',
 				fontWeight: 500,
+				...sx,
 			}}
 		>
 			<UrgencyBars level={info.barCount} color={info.barColor} />

@@ -1,11 +1,10 @@
 import { Box } from '@mui/material'
-
 import { TaskList } from '@/features/tasks/pages/TaskList'
 
 export default function Tasks() {
 	return (
 		<Box sx={{ flexGrow: 1, overflow: 'auto' }}>
-			<TaskList />
+			<TaskList mode='assigned' />
 		</Box>
 	)
 }

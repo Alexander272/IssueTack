@@ -27,28 +27,22 @@ type Props = {
 	onEdit: (site: ISite) => void
 }
 
+const thStyle = { py: 2, px: 4, color: 'text.secondary', fontSize: '0.875rem' }
+
 export const SitesTable: FC<Props> = ({ sites, onView, onEdit }) => {
 	return (
 		<TableContainer
 			component={Paper}
 			elevation={0}
-			sx={{ borderRadius: '24px', border: '1px solid #f3f4f6', overflow: 'hidden', overflowX: 'auto' }}
+			sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', overflow: 'hidden', overflowX: 'auto' }}
 		>
 			<Table sx={{ minWidth: 900 }}>
 				<TableHead>
 					<TableRow sx={{ borderBottom: '1px solid #f3f4f6' }}>
-						<TableCell sx={{ py: 2.5, px: 4, color: 'text.secondary', fontSize: '0.875rem' }}>
-							Название
-						</TableCell>
-						<TableCell sx={{ py: 2.5, px: 4, color: 'text.secondary', fontSize: '0.875rem' }}>
-							Адрес
-						</TableCell>
-						<TableCell sx={{ py: 2.5, px: 3, color: 'text.secondary', fontSize: '0.875rem' }}>
-							Создана
-						</TableCell>
-						<TableCell sx={{ py: 2.5, px: 3, color: 'text.secondary', fontSize: '0.875rem' }}>
-							Обновлена
-						</TableCell>
+						<TableCell sx={thStyle}>Название</TableCell>
+						<TableCell sx={thStyle}>Адрес</TableCell>
+						<TableCell sx={thStyle}>Создана</TableCell>
+						<TableCell sx={thStyle}>Обновлена</TableCell>
 						<TableCell align='right' sx={{ p: 0, width: 120 }}></TableCell>
 					</TableRow>
 				</TableHead>
@@ -62,7 +56,7 @@ export const SitesTable: FC<Props> = ({ sites, onView, onEdit }) => {
 								'&:hover': { bgcolor: '#fafafa' },
 							}}
 						>
-							<TableCell sx={{ py: 2, px: 4 }}>
+							<TableCell sx={{ py: 1.5, px: 4 }}>
 								<Stack direction='row' spacing={2} sx={{ alignItems: 'center' }}>
 									<Box
 										sx={{

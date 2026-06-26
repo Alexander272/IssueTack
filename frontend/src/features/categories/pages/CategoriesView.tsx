@@ -6,7 +6,7 @@ import { useGetAllCategoriesQuery } from '../categoriesApiSlice'
 import { useGetAllGroupsQuery } from '@/features/groups/groupsApiSlice'
 import { useDebounce } from '@/hooks/useDebounce'
 import { PlusIcon } from '@/components/Icons/PlusIcon'
-import { CategoryFilters } from '../components/CategoryFilters'
+import { CategoryFilters, type CategoryFilterState } from '../components/CategoryFilters'
 import { CategoryCardList } from '../components/CategoryCardList'
 import { CategoryTable } from '../components/CategoryTable'
 import { CategoryViewDialog } from '../components/CategoryViewDialog'
@@ -19,11 +19,13 @@ export const CategoriesView: FC = () => {
 	const [category, setCategory] = useState<ICategoryDTO | null>(null)
 	const [viewCategory, setViewCategory] = useState<ICategory | null>(null)
 
-	const [filterGroup, setFilterGroup] = useState('all')
-	const [filterStatus, setFilterStatus] = useState('all')
-	const [filterPriority, setFilterPriority] = useState('all')
-	const [search, setSearch] = useState('')
-	const debouncedSearch = useDebounce(search, 300) as string
+	const [filters, setFilters] = useState<CategoryFilterState>({
+		group: 'all',
+		status: 'all',
+		priority: 'all',
+		search: '',
+	})
+	const debouncedSearch = useDebounce(filters.search, 300) as string
 
 	const { data: categories } = useGetAllCategoriesQuery()
 	const { data: groups } = useGetAllGroupsQuery()
@@ -37,14 +39,14 @@ export const CategoriesView: FC = () => {
 	const filtered = useMemo(() => {
 		const q = debouncedSearch.toLowerCase()
 		return categories?.data.filter(c => {
-			if (filterGroup !== 'all' && c.groupId !== filterGroup) return false
-			if (filterStatus === 'active' && !c.isActive) return false
-			if (filterStatus === 'inactive' && c.isActive) return false
-			if (filterPriority !== 'all' && c.priority !== filterPriority) return false
+			if (filters.group !== 'all' && c.groupId !== filters.group) return false
+			if (filters.status === 'active' && !c.isActive) return false
+			if (filters.status === 'inactive' && c.isActive) return false
+			if (filters.priority !== 'all' && c.priority !== filters.priority) return false
 			if (q && !c.name.toLowerCase().includes(q) && !c.description.toLowerCase().includes(q)) return false
 			return true
 		})
-	}, [categories, filterGroup, filterStatus, filterPriority, debouncedSearch])
+	}, [categories, filters, debouncedSearch])
 
 	const openCreate = () => {
 		setCategory(null)
@@ -73,10 +75,7 @@ export const CategoriesView: FC = () => {
 	}
 
 	const resetFilters = () => {
-		setFilterGroup('all')
-		setFilterStatus('all')
-		setFilterPriority('all')
-		setSearch('')
+		setFilters({ group: 'all', status: 'all', priority: 'all', search: '' })
 	}
 
 	return (
@@ -111,14 +110,8 @@ export const CategoriesView: FC = () => {
 
 			<CategoryFilters
 				groups={groups?.data || []}
-				filterGroup={filterGroup}
-				filterStatus={filterStatus}
-				filterPriority={filterPriority}
-				search={search}
-				onGroupChange={setFilterGroup}
-				onStatusChange={setFilterStatus}
-				onPriorityChange={setFilterPriority}
-				onSearchChange={setSearch}
+				filters={filters}
+				onChange={patch => setFilters(prev => ({ ...prev, ...patch }))}
 				onReset={resetFilters}
 			/>
 

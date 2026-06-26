@@ -30,34 +30,24 @@ type Props = {
 	onEdit: (cat: ICategory) => void
 }
 
+const thStyle = { color: 'text.secondary', fontSize: '0.875rem' }
+
 export const CategoryTable: FC<Props> = ({ categories, groupsMap, onView, onEdit }) => {
 	return (
 		<TableContainer
 			component={Paper}
 			elevation={0}
-			sx={{ borderRadius: '24px', border: '1px solid #f3f4f6', overflow: 'hidden', overflowX: 'auto' }}
+			sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', overflow: 'hidden', overflowX: 'auto' }}
 		>
 			<Table sx={{ minWidth: 900 }}>
 				<TableHead>
 					<TableRow sx={{ borderBottom: '1px solid #f3f4f6' }}>
-						<TableCell sx={{ py: 2.5, px: 4, color: 'text.secondary', fontSize: '0.875rem' }}>
-							Название
-						</TableCell>
-						<TableCell sx={{ py: 2.5, px: 4, color: 'text.secondary', fontSize: '0.875rem' }}>
-							Описание
-						</TableCell>
-						<TableCell sx={{ py: 2.5, px: 3, color: 'text.secondary', fontSize: '0.875rem' }}>
-							Группа-владелец
-						</TableCell>
-						<TableCell sx={{ py: 2.5, px: 3, color: 'text.secondary', fontSize: '0.875rem' }}>
-							Приоритет
-						</TableCell>
-						<TableCell sx={{ py: 2.5, px: 3, color: 'text.secondary', fontSize: '0.875rem' }}>
-							Статус
-						</TableCell>
-						<TableCell sx={{ py: 2.5, px: 3, color: 'text.secondary', fontSize: '0.875rem' }}>
-							Обновлено
-						</TableCell>
+						<TableCell sx={thStyle}>Название</TableCell>
+						<TableCell sx={thStyle}>Описание</TableCell>
+						<TableCell sx={thStyle}>Группа-владелец</TableCell>
+						<TableCell sx={thStyle}>Приоритет</TableCell>
+						<TableCell sx={thStyle}>Статус</TableCell>
+						<TableCell sx={thStyle}>Обновлено</TableCell>
 						<TableCell align='right' sx={{ p: 0, width: 120 }}></TableCell>
 					</TableRow>
 				</TableHead>
@@ -74,11 +64,11 @@ export const CategoryTable: FC<Props> = ({ categories, groupsMap, onView, onEdit
 									opacity: cat.isActive ? 1 : 0.6,
 								}}
 							>
-								<TableCell sx={{ py: 2, px: 4 }}>
+								<TableCell>
 									<Typography sx={{ fontWeight: 600, color: '#111827' }}>{cat.name}</Typography>
 								</TableCell>
 
-								<TableCell sx={{ py: 2, px: 4 }}>
+								<TableCell>
 									<Typography
 										sx={{
 											fontSize: '0.875rem',
@@ -93,7 +83,7 @@ export const CategoryTable: FC<Props> = ({ categories, groupsMap, onView, onEdit
 									</Typography>
 								</TableCell>
 
-								<TableCell sx={{ px: 3 }}>
+								<TableCell sx={{ py: 1 }}>
 									<Typography
 										sx={{
 											display: 'inline-flex',
@@ -114,15 +104,15 @@ export const CategoryTable: FC<Props> = ({ categories, groupsMap, onView, onEdit
 									</Typography>
 								</TableCell>
 
-								<TableCell sx={{ px: 3 }}>
+								<TableCell sx={{ py: 1 }}>
 									<TaskPriorityBadge priority={cat.priority} />
 								</TableCell>
 
-								<TableCell sx={{ px: 3 }}>
+								<TableCell sx={{ py: 1 }}>
 									<StatusBadge active={cat.isActive} label={statusLabel(cat.isActive)} />
 								</TableCell>
 
-								<TableCell sx={{ px: 3, color: '#6b7280', fontSize: '0.8rem' }}>
+								<TableCell sx={{ color: '#6b7280', fontSize: '0.8rem' }}>
 									{getSmartDate(cat.updatedAt)}
 								</TableCell>
 

@@ -1,107 +1,101 @@
-import { useState, useCallback, useMemo } from 'react'
-import { Box, Typography } from '@mui/material'
+import { useState, useCallback, useMemo, useEffect } from 'react'
+import { Box, Button, Typography, useTheme } from '@mui/material'
 
 import { Pagination } from '@/components/Pagination/Pagination'
 
-import { useAppSelector } from '@/hooks/redux'
+import type { GroupByField } from '../constants/taskMaps'
+import type { FilterValues } from '../components/filters'
+import type { ITask, ITaskFilter, TicketStatus } from '../types/task'
 import { useGetTasksQuery, useUpdateTaskMutation } from '../tasksApiSlice'
 import { useUpdateSubtaskMutation } from '../modules/subtasks/subtasksApiSlice'
-import type { ITask, TicketStatus } from '../types/task'
-import type { GroupByField } from '../constants/taskMaps'
-import type { FilterValues } from '../components/TaskFilters'
-import { TaskFilters } from '../components/TaskFilters'
-import { TaskTable } from '../components/TaskTable'
+import { TaskFilters } from '../components/filters'
+import { TaskTable } from '../components/Table'
 import { TaskDetailModal } from '../components/TaskDetailModal'
+import { TaskCreateModal } from '../components/TaskCreateModal'
+import { PlusIcon } from '@/components/Icons/PlusIcon'
+
+type Mode = 'created' | 'assigned'
+
+type Props = {
+	mode: Mode
+}
 
 const DEFAULT_FILTERS: FilterValues = {
-	queue: 'all',
-	status: 'all',
 	sort: 'dueDate_asc',
 	search: '',
-	groupBy: 'category',
+	groupBy: 'site',
 	groupEnabled: true,
+
+	ticketNumber: undefined,
+	ownerId: undefined,
+	siteIds: undefined,
+	dueDateFrom: undefined,
+	dueDateTo: undefined,
+	priorities: undefined,
+	assigneeId: undefined,
+	statuses: undefined,
 }
 
-function getSortValue(task: ITask, sortKey: string): string | number {
-	if (sortKey === 'dueDate_asc' || sortKey === 'dueDate_desc') return task.dueDate || ''
-	if (sortKey === 'closedAt_asc' || sortKey === 'closedAt_desc') return task.closedAt || ''
-	if (sortKey === 'priority_asc' || sortKey === 'priority_desc') {
-		const w: Record<string, number> = { urgent: 4, high: 3, medium: 2, low: 1 }
-		return w[task.priority] || 0
-	}
-	if (sortKey === 'status') return task.status
-	return ''
+const PAGE_TITLE: Record<Mode, string> = {
+	created: 'Заявки',
+	assigned: 'Мои задачи',
 }
 
-function compareTasks(a: ITask, b: ITask, sortKey: string): number {
-	const aVal = getSortValue(a, sortKey)
-	const bVal = getSortValue(b, sortKey)
-
-	if (
-		sortKey === 'dueDate_asc' ||
-		sortKey === 'dueDate_desc' ||
-		sortKey === 'closedAt_asc' ||
-		sortKey === 'closedAt_desc'
-	) {
-		if (!aVal && !bVal) return 0
-		if (!aVal) return 1
-		if (!bVal) return -1
-		const cmp = String(aVal).localeCompare(String(bVal))
-		return sortKey.endsWith('_desc') ? -cmp : cmp
-	}
-
-	if (sortKey === 'priority_asc' || sortKey === 'priority_desc') {
-		const diff = Number(aVal) - Number(bVal)
-		return sortKey.endsWith('_desc') ? -diff : diff
-	}
-
-	return String(aVal).localeCompare(String(bVal))
+const PAGE_DESC: Record<Mode, string> = {
+	created: 'Созданные вами заявки',
+	assigned: 'Задачи, назначенные лично или группам',
 }
 
-export const TaskList = () => {
-	const currentUserId = useAppSelector(state => state.user.id)
-
-	const [filters, setFilters] = useState<FilterValues>(DEFAULT_FILTERS)
-	const [selectedTask, setSelectedTask] = useState<ITask | null>(null)
-	const [page, setPage] = useState(0)
+export const TaskList = ({ mode }: Props) => {
+	const { palette } = useTheme()
 	const rowsPerPage = 20
+
+	const STORAGE_KEY = `taskFilters_${mode}`
+
+	const loadFilters = (): FilterValues => {
+		try {
+			const saved = localStorage.getItem(STORAGE_KEY)
+			if (saved) return { ...DEFAULT_FILTERS, ...JSON.parse(saved) }
+		} catch {
+			/* ignore */
+		}
+		return DEFAULT_FILTERS
+	}
+
+	const [filters, setFilters] = useState<FilterValues>(loadFilters)
+	const [selectedTask, setSelectedTask] = useState<ITask | null>(null)
+	const [createOpen, setCreateOpen] = useState(false)
+	const [page, setPage] = useState(0)
+
+	useEffect(() => {
+		localStorage.setItem(STORAGE_KEY, JSON.stringify(filters))
+	}, [filters, STORAGE_KEY])
 
 	const [updateTask] = useUpdateTaskMutation()
 	const [updateSubtask] = useUpdateSubtaskMutation()
 
-	const queryFilter = useMemo(() => {
-		const qf: Record<string, string | number | undefined> = {}
-		if (filters.status !== 'all') qf.status = filters.status
-		return qf
-	}, [filters.status])
+	const queryFilter: ITaskFilter = useMemo(() => ({
+		number: filters.ticketNumber ? Number(filters.ticketNumber) : undefined,
+		ownerId: filters.ownerId ?? undefined,
+		assigneeId: filters.assigneeId ?? undefined,
+		siteIds: filters.siteIds?.length ? filters.siteIds : undefined,
+		priorities: filters.priorities?.length ? filters.priorities : undefined,
+		statuses: filters.statuses?.length ? filters.statuses : undefined,
+		dueDateFrom: filters.dueDateFrom || undefined,
+		dueDateTo: filters.dueDateTo || undefined,
+		search: filters.search || undefined,
+		sort: filters.sort,
+		mode,
+		limit: filters.groupEnabled ? undefined : rowsPerPage,
+		offset: filters.groupEnabled ? undefined : page * rowsPerPage,
+	}), [filters, mode, page])
 
 	const { data, isFetching } = useGetTasksQuery(queryFilter)
 
-	const filteredAndSorted = useMemo(() => {
-		let tasks = data?.data ?? []
+	const tasks = data?.data ?? []
+	const total = data?.total ?? 0
 
-		if (filters.queue === 'personal' && currentUserId) {
-			tasks = tasks.filter(t => t.assignee?.id === currentUserId)
-		} else if (filters.queue === 'group1') {
-			tasks = tasks.filter(t => t.group?.name === 'IT-поддержка')
-		} else if (filters.queue === 'group2') {
-			tasks = tasks.filter(t => t.group?.name === 'Сетевая администрация')
-		}
-
-		if (filters.search) {
-			const q = filters.search.toLowerCase().trim()
-			tasks = tasks.filter(t => t.id.toLowerCase().includes(q) || t.title.toLowerCase().includes(q))
-		}
-
-		tasks.sort((a, b) => compareTasks(a, b, filters.sort))
-
-		return tasks
-	}, [data, filters, currentUserId])
-
-	const paginatedTasks = useMemo(
-		() => filteredAndSorted.slice(page * rowsPerPage, (page + 1) * rowsPerPage),
-		[filteredAndSorted, page, rowsPerPage],
-	)
+	const totalPages = filters.groupEnabled ? 1 : Math.ceil(total / rowsPerPage) || 1
 
 	const handleFilterChange = useCallback((patch: Partial<FilterValues>) => {
 		setFilters(prev => ({ ...prev, ...patch }))
@@ -111,7 +105,8 @@ export const TaskList = () => {
 	const handleReset = useCallback(() => {
 		setFilters(DEFAULT_FILTERS)
 		setPage(0)
-	}, [])
+		localStorage.removeItem(STORAGE_KEY)
+	}, [STORAGE_KEY])
 
 	const handleTaskClick = useCallback((task: ITask) => {
 		setSelectedTask(task)
@@ -149,26 +144,54 @@ export const TaskList = () => {
 
 	return (
 		<Box sx={{ p: 3 }}>
-			<Box sx={{ mb: 3 }}>
-				<Typography variant='h5' sx={{ fontWeight: 700, color: '#1f2937' }}>
-					Мое рабочее место
-				</Typography>
-				<Typography variant='body2' sx={{ color: '#6b7280' }}>
-					Задачи, назначенные лично или группам
-				</Typography>
+			<Box
+				sx={{
+					display: 'flex',
+					flexDirection: { xs: 'column', sm: 'row' },
+					justifyContent: 'space-between',
+					alignItems: { xs: 'flex-start', sm: 'center' },
+					gap: { xs: 2, sm: 0 },
+					mb: 4,
+				}}
+			>
+				<Box>
+					<Typography variant='h5' sx={{ fontWeight: 700, color: '#1f2937' }}>
+						{PAGE_TITLE[mode]}
+					</Typography>
+					<Typography variant='body2' sx={{ color: '#6b7280', display: { xs: 'none', sm: 'block' } }}>
+						{PAGE_DESC[mode]}
+					</Typography>
+				</Box>
+				{mode === 'created' && (
+					<Button
+						variant='outlined'
+						sx={{
+							borderRadius: '8px',
+							textTransform: 'none',
+							background: '#fff',
+							width: { xs: '100%', sm: 'auto' },
+						}}
+						onClick={() => setCreateOpen(true)}
+					>
+						<PlusIcon fill={palette.primary.main} fontSize={16} mr={1.5} />
+						Создать заявку
+					</Button>
+				)}
 			</Box>
 
 			<TaskFilters filters={filters} onChange={handleFilterChange} onReset={handleReset} />
 
-			{isFetching && filteredAndSorted.length === 0 ? (
+			{isFetching && !data ? (
 				<Box sx={{ textAlign: 'center', py: 6, color: '#6b7280' }}>Загрузка...</Box>
 			) : (
 				<>
 					<TaskTable
-						tasks={paginatedTasks}
+						tasks={tasks}
 						groupBy={filters.groupBy as GroupByField}
 						groupEnabled={filters.groupEnabled}
 						onTaskClick={handleTaskClick}
+						sort={filters.sort}
+						onSortChange={sort => handleFilterChange({ sort })}
 					/>
 
 					<Box
@@ -181,13 +204,11 @@ export const TaskList = () => {
 						}}
 					>
 						<Typography sx={{ fontSize: '0.875rem', color: '#6b7280' }}>
-							Показано {filteredAndSorted.length} задач
+							{filters.groupEnabled ? `Всего: ${total} задач` : `Показано ${tasks.length} из ${total} задач`}
 						</Typography>
-						<Pagination
-							page={page + 1}
-							totalPages={Math.ceil(filteredAndSorted.length / rowsPerPage) || 1}
-							onClick={p => setPage(p - 1)}
-						/>
+						{!filters.groupEnabled && (
+							<Pagination page={page + 1} totalPages={totalPages} onClick={p => setPage(p - 1)} />
+						)}
 					</Box>
 				</>
 			)}
@@ -199,6 +220,8 @@ export const TaskList = () => {
 				onStatusChange={handleStatusChange}
 				onSubtaskStatusChange={handleSubtaskStatusChange}
 			/>
+
+			<TaskCreateModal open={createOpen} onClose={() => setCreateOpen(false)} />
 		</Box>
 	)
 }

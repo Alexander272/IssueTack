@@ -48,25 +48,17 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 				body,
 			}),
 			invalidatesTags: [{ type: 'Tasks', id: 'LIST' }],
-			onQueryStarted: async (_arg, api) => {
-				try {
-					await api.queryFulfilled
-				} catch (error) {
-					const fetchError = (error as IBaseFetchError).error
-					toast.error(fetchError.data.message, { autoClose: false })
-				}
-			},
 		}),
 
 		updateTask: builder.mutation<{ id: string; message: string }, ITaskDTO>({
 			query: body => ({
-				url: API.tickets.byId(body.id),
+				url: API.tickets.byId(body.id!),
 				method: 'PUT',
 				body,
 			}),
 			invalidatesTags: (_result, _error, arg) => [
 				{ type: 'Tasks', id: 'LIST' },
-				{ type: 'Tasks', id: arg.id },
+				{ type: 'Tasks', id: arg.id! },
 			],
 			onQueryStarted: async (_arg, api) => {
 				try {

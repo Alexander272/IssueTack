@@ -1,12 +1,8 @@
+import type { IUserShort } from '@/features/user/types/user'
+
 export type TicketStatus = 'open' | 'in_progress' | 'pending' | 'on_hold' | 'resolved' | 'closed' | 'cancelled'
 
 export type Priority = 'low' | 'medium' | 'high' | 'urgent'
-
-export interface ITaskAssignee {
-	id: string
-	fullName: string
-	internalNumber?: string
-}
 
 export interface ISiteShort {
 	id: string
@@ -44,11 +40,11 @@ export interface ITask {
 	realmId?: string
 	site: ISiteShort
 	category: ICategoryShort
-	creator: ITaskAssignee
-	owner: ITaskAssignee | null
+	creator: IUserShort
+	owner: IUserShort | null
 	group: IGroupShort | null
-	assignee: ITaskAssignee | null
-	manager: ITaskAssignee | null
+	assignee: IUserShort | null
+	manager: IUserShort | null
 	dueDate: string | null
 	closedAt: string | null
 	createdAt: string
@@ -59,17 +55,22 @@ export interface ITask {
 
 export interface ITaskFilter {
 	number?: number
-	siteId?: string
-	status?: TicketStatus
+	siteIds?: string[]
+	statuses?: TicketStatus[]
 	ownerId?: string
 	assigneeId?: string
-	groupId?: string
+	search?: string
+	priorities?: Priority[]
+	dueDateFrom?: string
+	dueDateTo?: string
+	sort?: string
 	limit?: number
 	offset?: number
+	mode?: string
 }
 
 export interface ITaskDTO {
-	id: string
+	id: string | null
 	title: string
 	description: string
 	status: TicketStatus
@@ -93,7 +94,7 @@ export interface ISubtask {
 	description: string
 	status: TicketStatus
 	priority: Priority
-	assignee: ITaskAssignee | null
+	assignee: IUserShort | null
 	dueDate: string | null
 	closedAt: string | null
 	sortOrder: number

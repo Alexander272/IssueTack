@@ -1,9 +1,9 @@
-import { SvgIcon, type SxProps, type Theme } from '@mui/material'
+import { SvgIcon, type SvgIconProps } from '@mui/material'
 import type { FC } from 'react'
 
-export const WarnIcon: FC<SxProps<Theme>> = style => {
+export const WarnIcon: FC<SvgIconProps> = props => {
 	return (
-		<SvgIcon sx={style}>
+		<SvgIcon {...props}>
 			<svg
 				xmlns='http://www.w3.org/2000/svg'
 				shapeRendering='geometricPrecision'
