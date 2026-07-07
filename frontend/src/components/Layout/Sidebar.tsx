@@ -1,10 +1,21 @@
 import { useState } from 'react'
-import { Box, Drawer, List, ListItem, ListItemButton, ListItemIcon, ListItemText, Toolbar, useMediaQuery, useTheme } from '@mui/material'
+import {
+	Box,
+	Drawer,
+	List,
+	ListItem,
+	ListItemButton,
+	ListItemIcon,
+	ListItemText,
+	Toolbar,
+	useMediaQuery,
+	useTheme,
+} from '@mui/material'
 import { useLocation, useNavigate } from 'react-router'
 
 import type { SidebarConfig } from './sidebarConf'
-import { LeftArrowIcon } from '@/components/Icons/LeftArrowIcon'
-import { LogoutIcon } from '@/components/Icons/LogoutIcon'
+import { ArrowLeftIcon } from 'lucide-mui'
+import { LogOutIcon } from 'lucide-mui'
 import { useSignOutMutation } from '@/features/auth/authApiSlice'
 
 const COLLAPSED_WIDTH = 60
@@ -73,10 +84,10 @@ export const Sidebar = ({ config, mobileOpen, onMobileClose }: SidebarProps) => 
 										'&.Mui-selected': {
 											backgroundColor: 'rgba(25, 118, 210, 0.08)',
 											color: 'primary.main',
-											svg: { fill: theme => theme.palette.primary.main },
+											svg: { color: theme => theme.palette.primary.main },
 											'& .MuiListItemIcon-root': {
 												color: 'primary.main',
-												svg: { fill: 'primary.main' },
+												// svg: { color: 'primary.main' },
 											},
 										},
 									}}
@@ -90,12 +101,9 @@ export const Sidebar = ({ config, mobileOpen, onMobileClose }: SidebarProps) => 
 				</Box>
 
 				<Box sx={{ borderTop: '1px solid rgba(0, 0, 0, 0.12)', py: 1 }}>
-					<ListItemButton
-						onClick={() => signOut(null)}
-						sx={{ borderRadius: '8px', px: 2 }}
-					>
+					<ListItemButton onClick={() => signOut(null)} sx={{ borderRadius: '8px', px: 2 }}>
 						<ListItemIcon sx={{ minWidth: 40 }}>
-							<LogoutIcon sx={{ fontSize: 20 }} />
+							<LogOutIcon sx={{ fontSize: 20 }} />
 						</ListItemIcon>
 						<ListItemText primary='Выйти' sx={{ fontSize: '14px', fontWeight: 500 }} />
 					</ListItemButton>
@@ -141,10 +149,10 @@ export const Sidebar = ({ config, mobileOpen, onMobileClose }: SidebarProps) => 
 									'&.Mui-selected': {
 										backgroundColor: 'rgba(25, 118, 210, 0.08)',
 										color: 'primary.main',
-										svg: { fill: theme => theme.palette.primary.main },
+										svg: { color: theme => theme.palette.primary.main },
 										'& .MuiListItemIcon-root': {
 											color: 'primary.main',
-											svg: { fill: 'primary.main' },
+											// svg: { color: 'primary.main' },
 										},
 									},
 								}}
@@ -168,7 +176,7 @@ export const Sidebar = ({ config, mobileOpen, onMobileClose }: SidebarProps) => 
 					}}
 				>
 					<ListItemIcon sx={{ minWidth: collapsed ? 0 : 40 }}>
-						<LeftArrowIcon
+						<ArrowLeftIcon
 							sx={{
 								fontSize: 16,
 								transform: collapsed ? 'rotate(180deg)' : 'none',

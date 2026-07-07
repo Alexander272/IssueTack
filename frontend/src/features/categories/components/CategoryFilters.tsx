@@ -1,11 +1,9 @@
 import { useState, type FC } from 'react'
 import { Box, Button, MenuItem, Select, TextField, Typography, useMediaQuery, useTheme } from '@mui/material'
+import { SearchIcon, RefreshCwIcon, FilterIcon } from 'lucide-mui'
 
 import type { IGroup } from '@/features/groups/types/group'
 import { PRIORITY_MAP } from '@/features/tasks/constants/taskMaps'
-import { SearchIcon } from '@/components/Icons/SearchIcon'
-import { RefreshIcon } from '@/components/Icons/RefreshIcon'
-import { FilterIcon } from '@/components/Icons/FilterIcon'
 
 export interface CategoryFilterState {
 	group: string
@@ -51,9 +49,9 @@ export const CategoryFilters: FC<Props> = ({ groups, filters, onChange, onReset 
 					borderColor: '#c4c4c4',
 					order: { xs: 0, sm: 0 },
 					textTransform: 'none',
-					color: 'text.secondary',
+					// color: 'text.secondary',
 					whiteSpace: 'nowrap',
-					fill: showFilters ? 'primary.main' : '#9ca3af',
+					color: showFilters ? 'primary.main' : '#9ca3af',
 				}}
 			>
 				<FilterIcon sx={{ fontSize: 20, mr: 0.5 }} />
@@ -67,7 +65,7 @@ export const CategoryFilters: FC<Props> = ({ groups, filters, onChange, onReset 
 				sx={{ order: { xs: 2, sm: 1 }, flex: { xs: '1 1 100%', sm: 1 }, mt: { xs: 1, sm: 0 } }}
 				slotProps={{
 					input: {
-						startAdornment: <SearchIcon sx={{ fontSize: 16, mr: 1, fill: '#9ca3af' }} />,
+						startAdornment: <SearchIcon sx={{ fontSize: 16, mr: 1, color: '#9ca3af' }} />,
 					},
 				}}
 			/>
@@ -87,7 +85,7 @@ export const CategoryFilters: FC<Props> = ({ groups, filters, onChange, onReset 
 					borderColor: '#c4c4c4',
 				}}
 			>
-				<RefreshIcon sx={{ fontSize: 14, mr: 0.5, fill: '#9ca3af' }} />
+				<RefreshCwIcon sx={{ fontSize: 14, mr: 0.5, color: '#9ca3af' }} />
 				Сбросить
 			</Button>
 

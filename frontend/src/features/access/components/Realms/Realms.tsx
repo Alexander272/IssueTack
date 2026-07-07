@@ -16,8 +16,7 @@ import {
 import type { IRealm } from '@/features/realms/types/realm'
 import { getSmartDate } from '@/utils/date'
 import { useGetAllRealmsQuery } from '@/features/realms/realmsApiSlice'
-import { PlusIcon } from '@/components/Icons/PlusIcon'
-import { ModifyIcon } from '@/components/Icons/ModifyIcon'
+import { PlusIcon, PenToolIcon } from 'lucide-mui'
 import { RealmDialog } from '@/features/realms/components/Dialogs/RealmDialog'
 import { useState } from 'react'
 import { StatusBadge } from '../StatusBadge'
@@ -60,7 +59,7 @@ export const Realms = () => {
 					sx={{ borderRadius: '8px', textTransform: 'none', background: '#fff' }}
 					onClick={createHandler}
 				>
-					<PlusIcon fill={palette.primary.main} fontSize={16} mr={1.5} />
+					<PlusIcon sx={{ color: palette.primary.main, fontSize: 16, mr: 1.5 }} />
 					Добавить
 				</Button>
 			</Box>
@@ -136,10 +135,10 @@ export const Realms = () => {
 												minWidth: 60,
 												minHeight: 60,
 												borderRadius: '6px',
-												':hover': { svg: { fill: palette.secondary.main } },
+												':hover': { svg: { color: palette.secondary.main } },
 											}}
 										>
-											<ModifyIcon sx={{ fontSize: 18 }} />
+											<PenToolIcon sx={{ fontSize: 18 }} />
 										</Button>
 									</Tooltip>
 								</TableCell>

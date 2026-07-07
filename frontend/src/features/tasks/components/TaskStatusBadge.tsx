@@ -26,7 +26,7 @@ export const TaskStatusBadge = ({ status, sx }: Props) => {
 				...sx,
 			}}
 		>
-			<info.icon sx={{ fontSize: 14, fill: info.textColor }} />
+			<info.icon sx={{ fontSize: 14, color: info.textColor }} />
 			<Typography component='span' sx={{ fontSize: '0.75rem', fontWeight: 500, lineHeight: 1 }}>
 				{info.label}
 			</Typography>

@@ -1,10 +1,9 @@
 import { type FC } from 'react'
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Typography } from '@mui/material'
+import { BuildingIcon, XIcon } from 'lucide-mui'
 import dayjs from 'dayjs'
 
 import type { ISite, ISiteDTO } from '../types/site'
-import { BusinessIcon } from '@/components/Icons/BusinessIcon'
-import { TimesIcon } from '@/components/Icons/TimesIcon'
 
 type Props = {
 	site: ISite | null
@@ -32,7 +31,7 @@ export const SiteViewDialog: FC<Props> = ({ site, onClose, onEdit }) => {
 					Просмотр площадки
 				</Typography>
 				<IconButton onClick={onClose} sx={{ color: 'text.secondary' }}>
-					<TimesIcon fontSize={16} />
+					<XIcon sx={{ fontSize: 16 }} />
 				</IconButton>
 			</DialogTitle>
 
@@ -51,7 +50,7 @@ export const SiteViewDialog: FC<Props> = ({ site, onClose, onEdit }) => {
 							flexShrink: 0,
 						}}
 					>
-						<BusinessIcon sx={{ fontSize: 28 }} />
+						<BuildingIcon sx={{ fontSize: 28 }} />
 					</Box>
 					<Box>
 						<Typography variant='h5' sx={{ fontWeight: 'bold' }}>

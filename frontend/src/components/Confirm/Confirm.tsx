@@ -1,6 +1,6 @@
 import { type FC, type JSX, type MouseEvent, useState } from 'react'
 import { Box, Button, Popover, Stack, Typography, useTheme, type SxProps } from '@mui/material'
-import { WarnIcon } from '@/components/Icons/WarnIcon'
+import { AlertTriangleIcon } from 'lucide-mui'
 
 type Props = {
 	onClick: () => void
@@ -61,7 +61,7 @@ export const Confirm: FC<Props> = ({
 							direction={'row'}
 							sx={{ justifyContent: 'center', alignItems: 'center', mb: 1 }}
 						>
-							<WarnIcon fill={iconColor || palette.error.main} />
+							<AlertTriangleIcon sx={{ color: iconColor || palette.error.main }} />
 							<Typography align='center' sx={{ fontSize: '1.1rem', fontWeight: 'bold' }}>
 								{confirmTitle || 'Удаление'}
 							</Typography>

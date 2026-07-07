@@ -1,10 +1,8 @@
 import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material'
+import { BuildingIcon, EyeIcon, EditIcon } from 'lucide-mui'
 import dayjs from 'dayjs'
 
 import type { ISite } from '../types/site'
-import { BusinessIcon } from '@/components/Icons/BusinessIcon'
-import { EyeIcon } from '@/components/Icons/EyeIcon'
-import { EditIcon } from '@/components/Icons/EditIcon'
 
 type Props = {
 	sites: ISite[]
@@ -37,14 +35,14 @@ export const SiteCardList = ({ sites, onView, onEdit }: Props) => {
 									height: 44,
 									borderRadius: '10px',
 									bgcolor: '#dbeafe',
-									fill: '#2563eb',
+									color: '#2563eb',
 									display: 'flex',
 									alignItems: 'center',
 									justifyContent: 'center',
 									flexShrink: 0,
 								}}
 							>
-								<BusinessIcon sx={{ fontSize: 18 }} />
+								<BuildingIcon sx={{ fontSize: 18 }} />
 							</Box>
 							<Box sx={{ flex: 1, minWidth: 0 }}>
 								<Typography
@@ -89,9 +87,7 @@ export const SiteCardList = ({ sites, onView, onEdit }: Props) => {
 								borderTop: '1px solid #f3f4f6',
 							}}
 						>
-							<Typography sx={labelSx}>
-								ID: {site.id.slice(0, 8)}...
-							</Typography>
+							<Typography sx={labelSx}>ID: {site.id.slice(0, 8)}...</Typography>
 							<Box sx={{ display: 'flex', gap: 0.5 }}>
 								<Tooltip title='Просмотр'>
 									<IconButton

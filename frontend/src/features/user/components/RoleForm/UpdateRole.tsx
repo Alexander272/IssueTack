@@ -10,8 +10,7 @@ import { InheritanceCard } from './InheritanceCard'
 import { PermissionsCard } from './PermissionsCard'
 import { useDeleteRoleMutation, useGetRoleWithPermissionsQuery, useUpdateRoleMutation } from '../../roleApiSlice'
 import { Fallback } from '@/components/Fallback/Fallback'
-import { SaveIcon } from '@/components/Icons/SaveIcon'
-import { TrashBinIcon } from '@/components/Icons/TrashBinIcon'
+import { SaveIcon, Trash2Icon } from 'lucide-mui'
 import { BoxFallback } from '@/components/Fallback/BoxFallback'
 
 const defaultValues = {
@@ -146,11 +145,11 @@ export const UpdateRole: FC<Props> = ({ roleId, onCancel, onSuccess }) => {
 								onClick={deleteHandler}
 								sx={{ textTransform: 'none' }}
 							>
-								<TrashBinIcon sx={{ mr: 1, fontSize: 16, fill: palette.error.main }} /> Удалить
+								<Trash2Icon sx={{ mr: 1, fontSize: 16, fill: palette.error.main }} /> Удалить
 							</Button>
 						)}
 						<Button type='submit' variant='outlined' sx={{ textTransform: 'none' }}>
-							<SaveIcon fontSize={16} mr={1} fill={palette.primary.main} /> Сохранить роль
+							<SaveIcon sx={{ color: palette.primary.main, fontSize: 16, mr: 1 }} /> Сохранить роль
 						</Button>
 					</Box>
 				</FormProvider>

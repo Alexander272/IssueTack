@@ -18,8 +18,7 @@ import {
 } from '@mui/material'
 import { ArrowRightIcon } from '@mui/x-date-pickers'
 
-import { PlusIcon } from '@/components/Icons/PlusIcon'
-import { ModifyIcon } from '@/components/Icons/ModifyIcon'
+import { PlusIcon, PenToolIcon } from 'lucide-mui'
 import { StatusBadge } from '../StatusBadge'
 import { pluralize } from '@/utils/plural'
 import { useGetRolesWithStatsQuery } from '@/features/user/roleApiSlice'
@@ -28,7 +27,7 @@ import { RoleDialog } from '@/features/user/components/RoleDialog/RoleDialog'
 import type { IRoleWithStats } from '@/features/user/types/role'
 import type { IRealm } from '@/features/realms/types/realm'
 import { stringToHSLA } from '@/utils/colors'
-import { BottomArrowIcon } from '@/components/Icons/BottomArrowIcon'
+import { ChevronDownIcon } from 'lucide-mui'
 
 export const Role = () => {
 	const { palette } = useTheme()
@@ -107,7 +106,7 @@ export const Role = () => {
 					sx={{ borderRadius: '8px', textTransform: 'none', background: '#fff' }}
 					onClick={createHandler}
 				>
-					<PlusIcon fill={palette.primary.main} fontSize={16} mr={1.5} />
+					<PlusIcon sx={{ color: palette.primary.main, fontSize: 16, mr: 1.5 }} />
 					Добавить
 				</Button>
 			</Box>
@@ -155,11 +154,13 @@ export const Role = () => {
 							</Typography>
 
 							<IconButton sx={{ ml: 'auto' }}>
-								<BottomArrowIcon
-									fontSize={16}
-									fill='#6c757d'
-									transform={collapsed.has(group.realmId) ? 'rotate(180)' : ''}
-									transition={'all .3s ease-in-out'}
+								<ChevronDownIcon
+									sx={{
+										color: '#6c757d',
+										fontSize: 16,
+										transform: collapsed.has(group.realmId) ? 'rotate(180)' : '',
+										transition: 'all .3s ease-in-out',
+									}}
 								/>
 							</IconButton>
 						</Box>
@@ -238,136 +239,139 @@ export const Role = () => {
 													/>
 												</TableCell>
 
-											{/* Наследование */}
-											<TableCell sx={{ px: 3 }}>
-												{role.children && role.children.length > 0 ? (
-													<Box
-														sx={{
-															display: 'flex',
-															alignItems: 'center',
-															flexWrap: 'wrap',
-															gap: 0.5,
-														}}
-													>
-														{role.children.map((name, index) => (
-															<Fragment key={name}>
-																<Typography
-																	variant='caption'
-																	sx={{
-																		bgcolor: '#f3f4f6',
-																		px: 1,
-																		py: 0.2,
-																		borderRadius: '4px',
-																		color: '#6b7280',
-																	}}
-																>
-																	{roleMap.get(name)?.name || name}
-																</Typography>
-																{index < role.children.length - 1 && (
+												{/* Наследование */}
+												<TableCell sx={{ px: 3 }}>
+													{role.children && role.children.length > 0 ? (
+														<Box
+															sx={{
+																display: 'flex',
+																alignItems: 'center',
+																flexWrap: 'wrap',
+																gap: 0.5,
+															}}
+														>
+															{role.children.map((name, index) => (
+																<Fragment key={name}>
 																	<Typography
 																		variant='caption'
-																		sx={{ color: '#d1d5db' }}
+																		sx={{
+																			bgcolor: '#f3f4f6',
+																			px: 1,
+																			py: 0.2,
+																			borderRadius: '4px',
+																			color: '#6b7280',
+																		}}
 																	>
-																		+
+																		{roleMap.get(name)?.name || name}
 																	</Typography>
-																)}
-															</Fragment>
-														))}
+																	{index < role.children.length - 1 && (
+																		<Typography
+																			variant='caption'
+																			sx={{ color: '#d1d5db' }}
+																		>
+																			+
+																		</Typography>
+																	)}
+																</Fragment>
+															))}
 
-														<ArrowRightIcon
-															sx={{ fontSize: 14, color: '#d1d5db', mx: 0.5 }}
+															<ArrowRightIcon
+																sx={{ fontSize: 14, color: '#d1d5db', mx: 0.5 }}
+															/>
+
+															<Typography
+																variant='caption'
+																sx={{
+																	fontWeight: 600,
+																	color: 'primary.main',
+																	bgcolor: 'rgba(79, 70, 229, 0.08)',
+																	px: 1,
+																	py: 0.2,
+																	borderRadius: '4px',
+																}}
+															>
+																{role.name}
+															</Typography>
+														</Box>
+													) : (
+														<Chip
+															label='Нет наследования'
+															size='small'
+															variant='outlined'
+															sx={{
+																borderStyle: 'dashed',
+																color: '#9ca3af',
+																fontSize: '11px',
+															}}
 														/>
-
-														<Typography
-															variant='caption'
-															sx={{
-																fontWeight: 600,
-																color: 'primary.main',
-																bgcolor: 'rgba(79, 70, 229, 0.08)',
-																px: 1,
-																py: 0.2,
-																borderRadius: '4px',
-															}}
-														>
-															{role.name}
-														</Typography>
-													</Box>
-												) : (
-													<Chip
-														label='Нет наследования'
-														size='small'
-														variant='outlined'
-														sx={{
-															borderStyle: 'dashed',
-															color: '#9ca3af',
-															fontSize: '11px',
-														}}
-													/>
-												)}
-											</TableCell>
-
-											{/* Разрешения */}
-											<TableCell sx={{ px: 3 }}>
-												<Typography sx={{ fontSize: '0.875rem', fontWeight: 500 }}>
-													Всего:{' '}
-													<Box component='span' sx={{ color: 'primary.main' }}>
-														{role.perms.total?.count}
-													</Box>
-												</Typography>
-												<Box sx={{ gap: 1, fontSize: '0.75rem', mt: 0.2 }}>
-													<Typography variant='inherit' sx={{ color: '#059669' }}>
-														Собственные: {role.perms.own?.count}
-													</Typography>
-													{role.perms.inherited?.count > 0 && (
-														<Typography variant='inherit' sx={{ color: '#2563eb' }}>
-															Наследованные: {role.perms.inherited?.count}
-														</Typography>
 													)}
-												</Box>
-											</TableCell>
+												</TableCell>
 
-											{/* Кол-во пользователей */}
-											<TableCell sx={{ px: 3, fontWeight: 600, color: '#374151' }}>
-												{role.userCount}
-											</TableCell>
+												{/* Разрешения */}
+												<TableCell sx={{ px: 3 }}>
+													<Typography sx={{ fontSize: '0.875rem', fontWeight: 500 }}>
+														Всего:{' '}
+														<Box component='span' sx={{ color: 'primary.main' }}>
+															{role.perms.total?.count}
+														</Box>
+													</Typography>
+													<Box sx={{ gap: 1, fontSize: '0.75rem', mt: 0.2 }}>
+														<Typography variant='inherit' sx={{ color: '#059669' }}>
+															Собственные: {role.perms.own?.count}
+														</Typography>
+														{role.perms.inherited?.count > 0 && (
+															<Typography variant='inherit' sx={{ color: '#2563eb' }}>
+																Наследованные: {role.perms.inherited?.count}
+															</Typography>
+														)}
+													</Box>
+												</TableCell>
 
-											{/* Действия */}
-											<TableCell align='center' sx={{ p: 0, pr: 1 }}>
-												{role.isEditable && (
-													<Tooltip title='Редактировать роль'>
-														<Button
-															onClick={editHandler(role.id)}
-															sx={{
-																minWidth: 60,
-																minHeight: 60,
-																borderRadius: '6px',
-																':hover': { svg: { fill: palette.secondary.main } },
-															}}
-														>
-															<ModifyIcon sx={{ fontSize: 18 }} />
-														</Button>
-													</Tooltip>
-												)}
-											</TableCell>
-										</TableRow>
-									))}
-									{!group.roles.length && !isFetching ? (
-										<TableRow>
-											<TableCell
-												colSpan={6}
-												align='center'
-												sx={{ py: 3, color: 'text.secondary' }}
-											>
-												Роли не найдены.
-											</TableCell>
-										</TableRow>
-									) : null}
-								</TableBody>
-							</Table>
-						</TableContainer>
-					</Collapse>
-				</Box>
-			)})}
+												{/* Кол-во пользователей */}
+												<TableCell sx={{ px: 3, fontWeight: 600, color: '#374151' }}>
+													{role.userCount}
+												</TableCell>
+
+												{/* Действия */}
+												<TableCell align='center' sx={{ p: 0, pr: 1 }}>
+													{role.isEditable && (
+														<Tooltip title='Редактировать роль'>
+															<Button
+																onClick={editHandler(role.id)}
+																sx={{
+																	minWidth: 60,
+																	minHeight: 60,
+																	borderRadius: '6px',
+																	':hover': {
+																		svg: { color: palette.secondary.main },
+																	},
+																}}
+															>
+																<PenToolIcon sx={{ fontSize: 18 }} />
+															</Button>
+														</Tooltip>
+													)}
+												</TableCell>
+											</TableRow>
+										))}
+										{!group.roles.length && !isFetching ? (
+											<TableRow>
+												<TableCell
+													colSpan={6}
+													align='center'
+													sx={{ py: 3, color: 'text.secondary' }}
+												>
+													Роли не найдены.
+												</TableCell>
+											</TableRow>
+										) : null}
+									</TableBody>
+								</Table>
+							</TableContainer>
+						</Collapse>
+					</Box>
+				)
+			})}
 		</Box>
 	)
 }

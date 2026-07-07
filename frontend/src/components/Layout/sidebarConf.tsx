@@ -1,17 +1,19 @@
 import type { ReactNode } from 'react'
 
 import { AppRoutes } from '@/pages/router/routes'
-import { DashboardIcon } from '../Icons/DashboardIcon'
-import { UserIcon } from '../Icons/UserIcon'
-import { ShieldLockIcon } from '../Icons/ShieldLockIcon'
-import { AccessHandleIcon } from '../Icons/AccessHandleIcon'
-import { LocalNetworkIcon } from '../Icons/LocalNetworkIcon'
-import { DoubleRightIcon } from '../Icons/DoubleRightIcon'
-import { InboxIcon } from '../Icons/InboxIcon'
-import { StackIcon } from '../Icons/StackIcon'
-import { GroupsIcon } from '../Icons/GroupsIcon'
-import { BusinessIcon } from '../Icons/BusinessIcon'
-import { SendIcon } from '../Icons/SendIcon'
+import {
+	LayoutDashboardIcon,
+	UserIcon,
+	ShieldCheckIcon,
+	KeyIcon,
+	NetworkIcon,
+	ChevronsRightIcon,
+	InboxIcon,
+	LayersIcon,
+	UsersIcon,
+	BuildingIcon,
+	SendIcon,
+} from 'lucide-mui'
 
 export interface SidebarItem {
 	path: string
@@ -31,30 +33,30 @@ export interface SidebarRule {
 const homeItems: SidebarItem[] = [
 	{ path: AppRoutes.Home, label: 'Заявки', icon: <SendIcon sx={{ fontSize: 20 }} /> },
 	{ path: AppRoutes.Tasks, label: 'Задачи', icon: <InboxIcon sx={{ fontSize: 18 }} /> },
-	{ path: AppRoutes.Groups, label: 'Группы', icon: <GroupsIcon sx={{ fontSize: 18 }} /> },
-	{ path: AppRoutes.Categories, label: 'Категории', icon: <StackIcon sx={{ fontSize: 18 }} /> },
-	{ path: AppRoutes.Sites, label: 'Площадки', icon: <BusinessIcon sx={{ fontSize: 18 }} /> },
+	{ path: AppRoutes.Groups, label: 'Группы', icon: <UsersIcon sx={{ fontSize: 18 }} /> },
+	{ path: AppRoutes.Categories, label: 'Категории', icon: <LayersIcon sx={{ fontSize: 18 }} /> },
+	{ path: AppRoutes.Sites, label: 'Площадки', icon: <BuildingIcon sx={{ fontSize: 18 }} /> },
 ]
 
 const accessesItems: SidebarItem[] = [
 	{
 		path: AppRoutes.Home,
 		label: 'Главная',
-		icon: <DoubleRightIcon sx={{ fill: '#000', fontSize: 18, transform: 'rotate(180deg)' }} />,
+		icon: <ChevronsRightIcon sx={{ fontSize: 18, transform: 'rotate(180deg)' }} />,
 	},
-	{ path: AppRoutes.Accesses, label: 'Дашборд', icon: <DashboardIcon sx={{ fontSize: 18 }} /> },
+	{ path: AppRoutes.Accesses, label: 'Дашборд', icon: <LayoutDashboardIcon sx={{ fontSize: 18 }} /> },
 	{
 		path: AppRoutes.Realms,
 		label: 'Области',
-		icon: <LocalNetworkIcon sx={{ fill: '#000', fontSize: 22 }} />,
+		icon: <NetworkIcon sx={{ fontSize: 22 }} />,
 	},
 	{
 		path: AppRoutes.UserAccess,
 		label: 'Пользователи',
-		icon: <UserIcon sx={{ fill: '#000', fontSize: 22 }} />,
+		icon: <UserIcon sx={{ fontSize: 22 }} />,
 	},
-	{ path: AppRoutes.RoleAccess, label: 'Роли', icon: <ShieldLockIcon sx={{ fontSize: 22 }} /> },
-	{ path: AppRoutes.Permissions, label: 'Права доступа', icon: <AccessHandleIcon fontSize='small' /> },
+	{ path: AppRoutes.RoleAccess, label: 'Роли', icon: <ShieldCheckIcon sx={{ fontSize: 22 }} /> },
+	{ path: AppRoutes.Permissions, label: 'Права доступа', icon: <KeyIcon fontSize='small' /> },
 ]
 
 export const sidebarRules: SidebarRule[] = [

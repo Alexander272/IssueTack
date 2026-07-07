@@ -5,11 +5,11 @@ import type { IGroup, IGroupDTO } from '../types/group'
 import { useGetAllGroupsQuery } from '../groupsApiSlice'
 import { useGetAvailableUsersQuery } from '@/features/user/usersApiSlice'
 import { useDebounce } from '@/hooks/useDebounce'
-import { PlusIcon } from '@/components/Icons/PlusIcon'
+import { PlusIcon } from 'lucide-mui'
 import { GroupCard } from '../components/GroupCard'
 import { GroupViewDialog } from '../components/GroupViewDialog'
 import { GroupDialog } from '../components/Dialogs/GroupDialog'
-import { SearchIcon } from '@/components/Icons/SearchIcon'
+import { SearchIcon } from 'lucide-mui'
 
 export const GroupsView: FC = () => {
 	const { palette } = useTheme()
@@ -75,7 +75,7 @@ export const GroupsView: FC = () => {
 					sx={{ borderRadius: '8px', textTransform: 'none', background: '#fff' }}
 					onClick={openCreate}
 				>
-					<PlusIcon fill={palette.primary.main} fontSize={16} mr={1.5} />
+					<PlusIcon sx={{ color: palette.primary.main, fontSize: 16, mr: 1.5 }} />
 					Создать группу
 				</Button>
 			</Box>
@@ -94,7 +94,7 @@ export const GroupsView: FC = () => {
 					maxWidth: 600,
 				}}
 			>
-				<SearchIcon sx={{ fontSize: 18, fill: '#9ca3af' }} />
+				<SearchIcon sx={{ fontSize: 18, color: '#9ca3af' }} />
 				<input
 					value={search}
 					onChange={e => setSearch(e.target.value)}

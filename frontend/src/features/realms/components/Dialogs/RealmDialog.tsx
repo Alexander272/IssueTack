@@ -7,7 +7,7 @@ import type { IFetchError } from '@/app/types/error'
 import type { IRealmDTO } from '@/features/realms/types/realm'
 import { useCreateRealmMutation, useUpdateRealmMutation } from '@/features/realms/realmsApiSlice'
 import { Form } from '@/features/realms/components/Form/Form'
-import { TimesIcon } from '@/components/Icons/TimesIcon'
+import { XIcon } from 'lucide-mui'
 
 type Props = {
 	realm?: IRealmDTO
@@ -65,7 +65,7 @@ export const RealmDialog: FC<Props> = ({ realm, open, onClose }) => {
 					{realm ? 'Редактировать область' : 'Создать область'}
 				</Typography>
 				<IconButton onClick={onClose} sx={{ color: 'text.secondary' }}>
-					<TimesIcon fontSize={16} />
+					<XIcon sx={{ fontSize: 16 }} />
 				</IconButton>
 			</DialogTitle>
 

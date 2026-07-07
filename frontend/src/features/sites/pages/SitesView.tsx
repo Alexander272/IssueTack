@@ -3,7 +3,7 @@ import { Box, Button, Typography, useTheme } from '@mui/material'
 
 import type { ISite, ISiteDTO } from '../types/site'
 import { useGetAllSitesQuery } from '../sitesApiSlice'
-import { PlusIcon } from '@/components/Icons/PlusIcon'
+import { PlusIcon } from 'lucide-mui'
 import { SitesTable } from '../components/SitesTable'
 import { SiteCardList } from '../components/SiteCardList'
 import { SiteViewDialog } from '../components/SiteViewDialog'
@@ -73,7 +73,7 @@ export const SitesView: FC = () => {
 					sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 500, gap: 1 }}
 					onClick={openCreate}
 				>
-					<PlusIcon fill={palette.primary.main} fontSize={16} mr={1.5} />
+					<PlusIcon sx={{ color: palette.primary.main, fontSize: 16, mr: 1.5 }} />
 					Добавить площадку
 				</Button>
 			</Box>

@@ -15,13 +15,13 @@ import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
 import type { ISignIn } from '../types/auth'
-import { useAppDispatch } from '@/hooks/redux'
+import { useAppDispatch, useAppSelector } from '@/hooks/redux'
 import { setUser } from '@/features/user/userSlice'
-import { VisibleIcon } from '@/components/Icons/VisibleIcon'
-import { InVisibleIcon } from '@/components/Icons/InVisibleIcon'
+import { getRealm, setRealm } from '@/features/realms/realmSlice'
+import { EyeIcon, EyeOffIcon } from 'lucide-mui'
 import { useSignInMutation } from '../authApiSlice'
 
-const rememberKey = 'remember'
+const rememberKey = '@issueTrack/remember'
 const defaultValues: ISignIn = { username: '', password: '', remember: false }
 
 export const SignInForm = () => {
@@ -29,6 +29,7 @@ export const SignInForm = () => {
 	const { palette } = useTheme()
 
 	const dispatch = useAppDispatch()
+	const realm = useAppSelector(getRealm)
 
 	const {
 		control,
@@ -50,6 +51,9 @@ export const SignInForm = () => {
 		try {
 			const payload = await signIn(data).unwrap()
 			dispatch(setUser(payload.data))
+			if (!realm && payload.data.realms.length > 0 && payload.data.realms[0].realm) {
+				dispatch(setRealm(payload.data.realms[0].realm))
+			}
 		} catch (error) {
 			const fetchError = error as IFetchError
 			toast.error(fetchError.data.message, { autoClose: false })
@@ -119,7 +123,7 @@ export const SignInForm = () => {
 											onClick={togglePassVisible}
 											sx={{ cursor: 'pointer' }}
 										>
-											{passIsVisible ? <VisibleIcon /> : <InVisibleIcon />}
+											{passIsVisible ? <EyeIcon /> : <EyeOffIcon />}
 										</InputAdornment>
 									),
 								},

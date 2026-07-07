@@ -1,18 +1,17 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
-import { Box, Button, Typography, useTheme } from '@mui/material'
-
-import { Pagination } from '@/components/Pagination/Pagination'
+import { Box, Button, Typography, Tab, Tabs, useTheme } from '@mui/material'
+import { useNavigate } from 'react-router'
+import { ArchiveIcon, InboxIcon, PlusIcon } from 'lucide-mui'
 
 import type { GroupByField } from '../constants/taskMaps'
 import type { FilterValues } from '../components/filters'
-import type { ITask, ITaskFilter, TicketStatus } from '../types/task'
-import { useGetTasksQuery, useUpdateTaskMutation } from '../tasksApiSlice'
-import { useUpdateSubtaskMutation } from '../modules/subtasks/subtasksApiSlice'
+import type { ITask, ITaskFilter } from '../types/task'
+import { AppRoutes } from '@/pages/router/routes'
+import { useGetTasksQuery } from '../tasksApiSlice'
+import { Pagination } from '@/components/Pagination/Pagination'
 import { TaskFilters } from '../components/filters'
 import { TaskTable } from '../components/Table'
-import { TaskDetailModal } from '../components/TaskDetailModal'
 import { TaskCreateModal } from '../components/TaskCreateModal'
-import { PlusIcon } from '@/components/Icons/PlusIcon'
 
 type Mode = 'created' | 'assigned'
 
@@ -48,9 +47,10 @@ const PAGE_DESC: Record<Mode, string> = {
 
 export const TaskList = ({ mode }: Props) => {
 	const { palette } = useTheme()
+	const navigate = useNavigate()
 	const rowsPerPage = 20
 
-	const STORAGE_KEY = `taskFilters_${mode}`
+	const STORAGE_KEY = `@issueTrack/taskFilters_${mode}`
 
 	const loadFilters = (): FilterValues => {
 		try {
@@ -63,39 +63,42 @@ export const TaskList = ({ mode }: Props) => {
 	}
 
 	const [filters, setFilters] = useState<FilterValues>(loadFilters)
-	const [selectedTask, setSelectedTask] = useState<ITask | null>(null)
 	const [createOpen, setCreateOpen] = useState(false)
 	const [page, setPage] = useState(0)
+	const [tab, setTab] = useState<'active' | 'archive'>('active')
 
 	useEffect(() => {
 		localStorage.setItem(STORAGE_KEY, JSON.stringify(filters))
 	}, [filters, STORAGE_KEY])
 
-	const [updateTask] = useUpdateTaskMutation()
-	const [updateSubtask] = useUpdateSubtaskMutation()
+	const isArchive = tab === 'archive'
 
-	const queryFilter: ITaskFilter = useMemo(() => ({
-		number: filters.ticketNumber ? Number(filters.ticketNumber) : undefined,
-		ownerId: filters.ownerId ?? undefined,
-		assigneeId: filters.assigneeId ?? undefined,
-		siteIds: filters.siteIds?.length ? filters.siteIds : undefined,
-		priorities: filters.priorities?.length ? filters.priorities : undefined,
-		statuses: filters.statuses?.length ? filters.statuses : undefined,
-		dueDateFrom: filters.dueDateFrom || undefined,
-		dueDateTo: filters.dueDateTo || undefined,
-		search: filters.search || undefined,
-		sort: filters.sort,
-		mode,
-		limit: filters.groupEnabled ? undefined : rowsPerPage,
-		offset: filters.groupEnabled ? undefined : page * rowsPerPage,
-	}), [filters, mode, page])
+	const queryFilter: ITaskFilter = useMemo(
+		() => ({
+			number: filters.ticketNumber ? Number(filters.ticketNumber) : undefined,
+			ownerId: filters.ownerId ?? undefined,
+			assigneeId: filters.assigneeId ?? undefined,
+			siteIds: filters.siteIds?.length ? filters.siteIds : undefined,
+			priorities: filters.priorities?.length ? filters.priorities : undefined,
+			statuses: filters.statuses?.length ? filters.statuses : undefined,
+			dueDateFrom: filters.dueDateFrom || undefined,
+			dueDateTo: filters.dueDateTo || undefined,
+			search: filters.search || undefined,
+			sort: filters.sort,
+			mode,
+			archived: isArchive || undefined,
+			limit: isArchive ? rowsPerPage : undefined,
+			offset: isArchive ? page * rowsPerPage : undefined,
+		}),
+		[filters, mode, page, isArchive],
+	)
 
 	const { data, isFetching } = useGetTasksQuery(queryFilter)
 
 	const tasks = data?.data ?? []
 	const total = data?.total ?? 0
 
-	const totalPages = filters.groupEnabled ? 1 : Math.ceil(total / rowsPerPage) || 1
+	const totalPages = isArchive ? Math.ceil(total / rowsPerPage) || 1 : 1
 
 	const handleFilterChange = useCallback((patch: Partial<FilterValues>) => {
 		setFilters(prev => ({ ...prev, ...patch }))
@@ -108,38 +111,11 @@ export const TaskList = ({ mode }: Props) => {
 		localStorage.removeItem(STORAGE_KEY)
 	}, [STORAGE_KEY])
 
-	const handleTaskClick = useCallback((task: ITask) => {
-		setSelectedTask(task)
-	}, [])
-
-	const handleStatusChange = useCallback(
-		async (taskId: string, status: TicketStatus) => {
-			try {
-				await updateTask({ id: taskId, status } as any)
-				setSelectedTask(prev => (prev?.id === taskId ? { ...prev, status } : prev))
-			} catch {
-				// handled by toast in apiSlice
-			}
+	const handleTaskClick = useCallback(
+		(task: ITask) => {
+			navigate(`${AppRoutes.Tasks}/${task.id}`)
 		},
-		[updateTask],
-	)
-
-	const handleSubtaskStatusChange = useCallback(
-		async (taskId: string, subtaskId: string, status: TicketStatus) => {
-			try {
-				await updateSubtask({ ticketId: taskId, id: subtaskId, status } as any)
-				setSelectedTask(prev => {
-					if (!prev || prev.id !== taskId) return prev
-					return {
-						...prev,
-						subtasks: prev.subtasks?.map(s => (s.id === subtaskId ? { ...s, status } : s)),
-					}
-				})
-			} catch {
-				// handled by toast in apiSlice
-			}
-		},
-		[updateSubtask],
+		[navigate],
 	)
 
 	return (
@@ -151,7 +127,7 @@ export const TaskList = ({ mode }: Props) => {
 					justifyContent: 'space-between',
 					alignItems: { xs: 'flex-start', sm: 'center' },
 					gap: { xs: 2, sm: 0 },
-					mb: 4,
+					mb: 1,
 				}}
 			>
 				<Box>
@@ -173,11 +149,33 @@ export const TaskList = ({ mode }: Props) => {
 						}}
 						onClick={() => setCreateOpen(true)}
 					>
-						<PlusIcon fill={palette.primary.main} fontSize={16} mr={1.5} />
+						<PlusIcon sx={{ color: palette.primary.main, fontSize: 16, mr: 1.5 }} />
 						Создать заявку
 					</Button>
 				)}
 			</Box>
+
+			<Tabs
+				value={tab}
+				onChange={(_, v) => {
+					setTab(v)
+					setPage(0)
+				}}
+				sx={{
+					mb: 2,
+					borderBottom: '1px solid #e5e7eb',
+					minHeight: 36,
+					'& .MuiTab-root': { minHeight: 36, py: 0, textTransform: 'none' },
+				}}
+			>
+				<Tab
+					value='active'
+					label='Активные задачи'
+					iconPosition='start'
+					icon={<InboxIcon sx={{ fontSize: 14 }} />}
+				/>
+				<Tab value='archive' label='Архив' iconPosition='start' icon={<ArchiveIcon sx={{ fontSize: 14 }} />} />
+			</Tabs>
 
 			<TaskFilters filters={filters} onChange={handleFilterChange} onReset={handleReset} />
 
@@ -204,22 +202,14 @@ export const TaskList = ({ mode }: Props) => {
 						}}
 					>
 						<Typography sx={{ fontSize: '0.875rem', color: '#6b7280' }}>
-							{filters.groupEnabled ? `Всего: ${total} задач` : `Показано ${tasks.length} из ${total} задач`}
+							{isArchive ? `Показано ${tasks.length} из ${total} задач` : `Всего: ${total} задач`}
 						</Typography>
-						{!filters.groupEnabled && (
+						{isArchive && (
 							<Pagination page={page + 1} totalPages={totalPages} onClick={p => setPage(p - 1)} />
 						)}
 					</Box>
 				</>
 			)}
-
-			<TaskDetailModal
-				open={!!selectedTask}
-				task={selectedTask}
-				onClose={() => setSelectedTask(null)}
-				onStatusChange={handleStatusChange}
-				onSubtaskStatusChange={handleSubtaskStatusChange}
-			/>
 
 			<TaskCreateModal open={createOpen} onClose={() => setCreateOpen(false)} />
 		</Box>

@@ -7,7 +7,7 @@ import type { IFetchError } from '@/app/types/error'
 import type { IUserData } from '@/features/user/types/user'
 import type { IGroupDTO } from '../../types/group'
 import { useCreateGroupMutation, useUpdateGroupMutation, useDeleteGroupMutation } from '../../groupsApiSlice'
-import { TimesIcon } from '@/components/Icons/TimesIcon'
+import { XIcon } from 'lucide-mui'
 import { GroupForm } from '../Form/GroupForm'
 import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
 
@@ -84,8 +84,8 @@ export const GroupDialog: FC<Props> = ({ group, users, open, onClose }) => {
 				<Typography variant='h6' component='div' sx={{ fontWeight: 'bold' }}>
 					{group?.id ? 'Редактировать группу' : 'Создать группу'}
 				</Typography>
-				<IconButton onClick={onClose} sx={{ color: 'text.secondary' }}>
-					<TimesIcon fontSize={16} />
+				<IconButton size='large' onClick={onClose} sx={{ color: 'text.secondary' }}>
+					<XIcon sx={{ fontSize: 20 }} />
 				</IconButton>
 			</DialogTitle>
 

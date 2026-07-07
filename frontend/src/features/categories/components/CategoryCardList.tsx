@@ -1,14 +1,12 @@
 import { type FC } from 'react'
 import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material'
+import { EditIcon, EyeIcon, UsersIcon } from 'lucide-mui'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ru'
 
 import type { ICategory } from '../types/category'
 import { TaskPriorityBadge } from '@/features/tasks/components/TaskPriorityBadge'
 import { StatusBadge } from '@/features/access/components/StatusBadge'
-import { EditIcon } from '@/components/Icons/EditIcon'
-import { EyeIcon } from '@/components/Icons/EyeIcon'
-import { GroupsIcon } from '@/components/Icons/GroupsIcon'
 
 const statusLabel = (active: boolean) => (active ? 'Активна' : 'Неактивна')
 
@@ -122,7 +120,7 @@ export const CategoryCardList: FC<Props> = ({ categories, groupsMap, onView, onE
 											border: '1px solid #bfdbfe',
 										}}
 									>
-										<GroupsIcon sx={{ fontSize: 16, mr: 0.5, fill: '#1d4ed8' }} />
+										<UsersIcon sx={{ fontSize: 16, mr: 0.5, color: '#1d4ed8' }} />
 										{groupName}
 									</Box>
 								</Box>
@@ -154,8 +152,8 @@ export const CategoryCardList: FC<Props> = ({ categories, groupsMap, onView, onE
 											onClick={() => onView(cat)}
 											size='large'
 											sx={{
-												fill: '#9ca3af',
-												'&:hover': { fill: '#f59e0b', bgcolor: '#f3f4f6' },
+												color: '#9ca3af',
+												'&:hover': { color: '#f59e0b', bgcolor: '#f3f4f6' },
 											}}
 										>
 											<EyeIcon sx={{ fontSize: 16 }} />
@@ -166,8 +164,8 @@ export const CategoryCardList: FC<Props> = ({ categories, groupsMap, onView, onE
 											onClick={() => onEdit(cat)}
 											size='large'
 											sx={{
-												fill: '#9ca3af',
-												'&:hover': { fill: '#3b82f6', bgcolor: '#f3f4f6' },
+												color: '#9ca3af',
+												'&:hover': { color: '#3b82f6', bgcolor: '#f3f4f6' },
 											}}
 										>
 											<EditIcon sx={{ fontSize: 16 }} />

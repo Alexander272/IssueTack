@@ -6,9 +6,13 @@ import { toast } from 'react-toastify'
 import type { IFetchError } from '@/app/types/error'
 import type { ICategoryDTO } from '../../types/category'
 import type { IGroup } from '@/features/groups/types/group'
-import { useCreateCategoryMutation, useUpdateCategoryMutation, useDeleteCategoryMutation } from '../../categoriesApiSlice'
+import {
+	useCreateCategoryMutation,
+	useUpdateCategoryMutation,
+	useDeleteCategoryMutation,
+} from '../../categoriesApiSlice'
 import { Form } from '../Form/Form'
-import { TimesIcon } from '@/components/Icons/TimesIcon'
+import { XIcon } from 'lucide-mui'
 import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
 
 type Props = {
@@ -81,8 +85,8 @@ export const CategoryDialog: FC<Props> = ({ category, groups, open, onClose }) =
 				<Typography variant='h6' component='div' sx={{ fontWeight: 'bold' }}>
 					{category ? 'Редактировать категорию' : 'Создать категорию'}
 				</Typography>
-				<IconButton onClick={onClose} sx={{ color: 'text.secondary' }}>
-					<TimesIcon fontSize={16} />
+				<IconButton size='large' onClick={onClose} sx={{ color: 'text.secondary' }}>
+					<XIcon sx={{ fontSize: 20 }} />
 				</IconButton>
 			</DialogTitle>
 

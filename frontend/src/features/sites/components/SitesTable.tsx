@@ -13,13 +13,10 @@ import {
 	Tooltip,
 	Typography,
 } from '@mui/material'
+import { BuildingIcon, EditIcon, EyeIcon } from 'lucide-mui'
+import dayjs from 'dayjs'
 
 import type { ISite } from '../types/site'
-import dayjs from 'dayjs'
-import 'dayjs/locale/ru'
-import { BusinessIcon } from '@/components/Icons/BusinessIcon'
-import { EditIcon } from '@/components/Icons/EditIcon'
-import { EyeIcon } from '@/components/Icons/EyeIcon'
 
 type Props = {
 	sites: ISite[]
@@ -64,14 +61,14 @@ export const SitesTable: FC<Props> = ({ sites, onView, onEdit }) => {
 											height: 36,
 											borderRadius: '8px',
 											bgcolor: '#dbeafe',
-											fill: '#2563eb',
+											color: '#2563eb',
 											display: 'flex',
 											alignItems: 'center',
 											justifyContent: 'center',
 											flexShrink: 0,
 										}}
 									>
-										<BusinessIcon sx={{ fontSize: 16 }} />
+										<BuildingIcon sx={{ fontSize: 16 }} />
 									</Box>
 									<Typography sx={{ fontWeight: 600, color: '#111827', fontSize: '0.875rem' }}>
 										{site.name}
@@ -108,18 +105,18 @@ export const SitesTable: FC<Props> = ({ sites, onView, onEdit }) => {
 										<IconButton
 											onClick={() => onView(site)}
 											size='large'
-											sx={{ ':hover': { svg: { fill: '#f59e0b' } } }}
+											sx={{ ':hover': { svg: { color: '#f59e0b' } } }}
 										>
-											<EyeIcon sx={{ fontSize: 18, fill: '#9ca3af' }} />
+											<EyeIcon sx={{ fontSize: 18, color: '#9ca3af' }} />
 										</IconButton>
 									</Tooltip>
 									<Tooltip title='Редактировать'>
 										<IconButton
 											onClick={() => onEdit(site)}
 											size='large'
-											sx={{ ':hover': { svg: { fill: '#3b82f6' } } }}
+											sx={{ ':hover': { svg: { color: '#3b82f6' } } }}
 										>
-											<EditIcon sx={{ fontSize: 18, fill: '#9ca3af' }} />
+											<EditIcon sx={{ fontSize: 18, color: '#9ca3af' }} />
 										</IconButton>
 									</Tooltip>
 								</Stack>

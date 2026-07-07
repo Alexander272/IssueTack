@@ -13,11 +13,11 @@ import {
 	TableRow,
 	Box,
 } from '@mui/material'
+import { XIcon, CheckIcon, XCircleIcon, SettingsIcon } from 'lucide-mui'
 
 import type { IUserData, IUserLogin } from '@/features/user/types/user'
 import { getSmartDate } from '@/utils/date'
 import { useGetUserLoginsQuery } from '@/features/user/usersApiSlice'
-import { TimesIcon } from '@/components/Icons/TimesIcon'
 import { BoxFallback } from '@/components/Fallback/BoxFallback'
 import { ChromeIcon } from '@/components/Icons/Browsers/ChromeIcon'
 import { FirefoxIcon } from '@/components/Icons/Browsers/FirefoxIcon'
@@ -35,9 +35,6 @@ import { ComputerIcon } from '@/components/Icons/Devices/ComputerIcon'
 import { PhoneIcon } from '@/components/Icons/Devices/PhoneIcon'
 import { TabletIcon } from '@/components/Icons/Devices/TabletIcon'
 import { RobotIcon } from '@/components/Icons/Devices/RobotIcon'
-import { CheckIcon } from '@/components/Icons/CheckIcon'
-import { CloseRoundIcon } from '@/components/Icons/CloseRoundIcon'
-import { SettingIcon } from '@/components/Icons/SettingIcon'
 
 type Props = {
 	user: IUserData | null
@@ -122,7 +119,7 @@ const getOsConfig = (os: string) => {
 	const config = osConfig[os]
 	if (config) return config
 	return {
-		icon: <SettingIcon sx={{ fontSize: 14, fill: '#475569' }} />,
+		icon: <SettingsIcon sx={{ fontSize: 14, color: '#475569' }} />,
 		colors: { bg: '#f8fafc', color: '#475569' },
 	}
 }
@@ -179,17 +176,19 @@ const LoginRow: FC<{ login: IUserLogin }> = ({ login }) => {
 	const isBot = metadata?.isBot
 	const success = metadata?.success
 
-	const botChip = isBot !== undefined
-		? { variant: isBot ? 'error' as const : 'success' as const, label: isBot ? 'Да' : 'Нет' }
-		: null
+	const botChip =
+		isBot !== undefined
+			? { variant: isBot ? ('error' as const) : ('success' as const), label: isBot ? 'Да' : 'Нет' }
+			: null
 
-	const successChip = success !== undefined
-		? {
-				variant: success ? 'success' as const : 'error' as const,
-				label: success ? 'Да' : 'Нет',
-				icon: success ? <CheckIcon sx={{ fontSize: 14 }} /> : <CloseRoundIcon sx={{ fontSize: 14 }} />,
-			}
-		: null
+	const successChip =
+		success !== undefined
+			? {
+					variant: success ? ('success' as const) : ('error' as const),
+					label: success ? 'Да' : 'Нет',
+					icon: success ? <CheckIcon sx={{ fontSize: 14 }} /> : <XCircleIcon sx={{ fontSize: 14 }} />,
+				}
+			: null
 
 	return (
 		<TableRow hover>
@@ -219,13 +218,7 @@ const LoginRow: FC<{ login: IUserLogin }> = ({ login }) => {
 								icon={getDeviceIcon(device)}
 							/>
 						)}
-						{os && (
-							<Chip
-								colors={getOsConfig(os).colors}
-								label={os}
-								icon={getOsConfig(os).icon}
-							/>
-						)}
+						{os && <Chip colors={getOsConfig(os).colors} label={os} icon={getOsConfig(os).icon} />}
 					</Box>
 				) : (
 					<Typography sx={{ color: 'text.disabled' }}>-</Typography>
@@ -273,7 +266,7 @@ export const LoginsModal: FC<Props> = ({ user, onClose }) => {
 				</Typography>
 
 				<IconButton onClick={onClose} sx={{ color: 'text.secondary' }}>
-					<TimesIcon fontSize={16} />
+					<XIcon sx={{ fontSize: 16 }} />
 				</IconButton>
 			</DialogTitle>
 

@@ -2,15 +2,16 @@ import { type FC } from 'react'
 import { Box, Typography } from '@mui/material'
 
 import type { IUserShort } from '@/features/user/types/user'
-import { UserIcon } from '@/components/Icons/UserIcon'
+import { Avatar } from '@/components/Avatar'
 
 type Props = {
 	user: IUserShort
 	roleLabel?: string
 	roleColor?: string
+	avatarColor: string
 }
 
-export const GroupMemberRow: FC<Props> = ({ user, roleLabel, roleColor }) => (
+export const GroupMemberRow: FC<Props> = ({ user, roleLabel, roleColor, avatarColor }) => (
 	<Box
 		sx={{
 			display: 'flex',
@@ -23,19 +24,9 @@ export const GroupMemberRow: FC<Props> = ({ user, roleLabel, roleColor }) => (
 		}}
 	>
 		<Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-			<Box
-				sx={{
-					width: 36,
-					height: 36,
-					borderRadius: '50%',
-					bgcolor: '#e5e7eb',
-					display: 'flex',
-					alignItems: 'center',
-					justifyContent: 'center',
-				}}
-			>
-				<UserIcon sx={{ fontSize: 18, color: '#6b7280' }} />
-			</Box>
+			<Avatar size={36} bgcolor={avatarColor}>
+				{user.lastName[0]}{user.firstName[0]}
+			</Avatar>
 			<Box>
 				<Typography variant='body2' sx={{ fontWeight: 600, color: '#1f2937' }}>
 					{user.lastName} {user.firstName}

@@ -1,10 +1,8 @@
 import { useState, useMemo, type FC } from 'react'
 import { Box, ClickAwayListener, IconButton, InputAdornment, Paper, TextField, Typography } from '@mui/material'
+import { SearchIcon, XIcon, CheckIcon } from 'lucide-mui'
 
 import type { IUserData } from '@/features/user/types/user'
-import { SearchIcon } from '@/components/Icons/SearchIcon'
-import { TimesIcon } from '@/components/Icons/TimesIcon'
-import { CheckIcon } from '@/components/Icons/CheckSimpleIcon'
 
 type Props = {
 	value: string[]
@@ -94,7 +92,7 @@ export const MemberPicker: FC<Props> = ({ value, onChange, users }) => {
 									input: {
 										startAdornment: (
 											<InputAdornment position='start'>
-												<SearchIcon sx={{ fontSize: 16, fill: '#9ca3af' }} />
+												<SearchIcon sx={{ fontSize: 16, color: '#9ca3af' }} />
 											</InputAdornment>
 										),
 									},
@@ -176,7 +174,7 @@ export const MemberPicker: FC<Props> = ({ value, onChange, users }) => {
 														bgcolor: '#22c55e',
 													}}
 												>
-													<CheckIcon sx={{ fontSize: 14, fill: '#fff' }} />
+													<CheckIcon sx={{ fontSize: 14, color: '#fff' }} />
 												</Box>
 											)}
 										</Box>
@@ -221,7 +219,7 @@ export const MemberPicker: FC<Props> = ({ value, onChange, users }) => {
 									'&:hover': { bgcolor: '#fef2f2' },
 								}}
 							>
-								<TimesIcon fontSize={14} fill={'#ef4444'} />
+								<XIcon sx={{ color: '#ef4444', fontSize: 14 }} />
 							</IconButton>
 						</Box>
 					))}

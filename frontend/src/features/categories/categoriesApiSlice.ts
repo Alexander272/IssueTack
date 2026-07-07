@@ -50,7 +50,7 @@ const categoriesApiSlice = apiSlice.injectEndpoints({
 
 		updateCategory: builder.mutation<ICategory, ICategoryDTO>({
 			query: body => ({
-				url: API.categories.byId(body.id),
+				url: API.categories.byId(body.id || ''),
 				method: 'PUT',
 				body,
 			}),

@@ -18,7 +18,7 @@ import {
 import type { IUserData } from '@/features/user/types/user'
 import { RealmRow } from './RealmRow'
 import { getAvatarColor, getInitials } from './utils'
-import { ModifyIcon } from '@/components/Icons/ModifyIcon'
+import { PenToolIcon } from 'lucide-mui'
 
 type Props = {
 	user: IUserData
@@ -95,10 +95,10 @@ export const UserCard: FC<Props> = ({ user, onClick }) => {
 							minWidth: 40,
 							minHeight: 40,
 							borderRadius: '6px',
-							':hover': { svg: { fill: palette.secondary.main } },
+							':hover': { svg: { color: palette.secondary.main } },
 						}}
 					>
-						<ModifyIcon sx={{ fontSize: 18 }} />
+						<PenToolIcon sx={{ fontSize: 18 }} />
 					</Button>
 				</Tooltip>
 			</Box>

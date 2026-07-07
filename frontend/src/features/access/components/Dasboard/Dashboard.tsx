@@ -11,8 +11,8 @@ const statCards: { label: string; key: 'users' | 'active' | 'roles'; color: stri
 ]
 
 export const Dashboard = () => {
-	const { data: users, isFetching: isFetchingUsers } = useGetAllUsersQuery(null)
-	const { data: roles, isFetching: isFetchingRoles } = useGetRolesQuery(null)
+	const { data: users, isFetching: isFetchingUsers } = useGetAllUsersQuery()
+	const { data: roles, isFetching: isFetchingRoles } = useGetRolesQuery()
 
 	const stats = {
 		users: users?.data.length,

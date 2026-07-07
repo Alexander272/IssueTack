@@ -8,7 +8,7 @@ import type { IRolePermissionsGrouped, IRoleWithPermsDTO } from '../../types/rol
 import { useGetPermissionsQuery } from '@/features/access/permApiSlice'
 import { useCreateRoleMutation } from '../../roleApiSlice'
 import { Fallback } from '@/components/Fallback/Fallback'
-import { SaveIcon } from '@/components/Icons/SaveIcon'
+import { SaveIcon } from 'lucide-mui'
 import { RoleInfoCard } from './RoleInfoCard'
 import { InheritanceCard } from './InheritanceCard'
 import { PermissionsCard } from './PermissionsCard'
@@ -135,7 +135,7 @@ export const CreateRole: FC<Props> = ({ onCancel, onSuccess }) => {
 						</Button>
 
 						<Button type='submit' variant='outlined' sx={{ textTransform: 'none' }}>
-							<SaveIcon fontSize={16} mr={1} fill={palette.primary.main} /> Сохранить роль
+							<SaveIcon sx={{ color: palette.primary.main, fontSize: 16, mr: 1 }} /> Сохранить роль
 						</Button>
 					</Box>
 				</FormProvider>

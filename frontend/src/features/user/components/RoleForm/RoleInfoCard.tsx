@@ -14,7 +14,7 @@ import {
 import type { IForm } from './UpdateRole'
 import { generateSlug } from './utils'
 import { useGetAllRealmsQuery } from '@/features/realms/realmsApiSlice'
-import { RefreshIcon } from '@/components/Icons/RefreshIcon'
+import { RefreshCwIcon } from 'lucide-mui'
 
 export const RoleInfoCard = () => {
 	const { control, setValue } = useFormContext<IForm>()
@@ -82,7 +82,7 @@ export const RoleInfoCard = () => {
 														onClick={() => setValue('slug', generateSlug(nameValue))}
 														edge='end'
 													>
-														<RefreshIcon />
+														<RefreshCwIcon />
 													</IconButton>
 												</InputAdornment>
 											),

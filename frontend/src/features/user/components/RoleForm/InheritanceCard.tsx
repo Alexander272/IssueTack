@@ -1,16 +1,11 @@
 import { useState, useMemo, type FC } from 'react'
 import { useFormContext, useWatch } from 'react-hook-form'
 import { Box, TextField, Typography, IconButton, InputAdornment, ClickAwayListener, Paper } from '@mui/material'
-import { SearchIcon } from '@/components/Icons/SearchIcon'
+import { SearchIcon, XIcon, CheckIcon, LockIcon, ArrowLeftIcon, LinkIcon } from 'lucide-mui'
 
 import type { IRoleWithStats } from '../../types/role'
 import type { IForm } from './UpdateRole'
 import { useGetRolesWithStatsQuery } from '../../roleApiSlice'
-import { TimesIcon } from '@/components/Icons/TimesIcon'
-import { CheckIcon } from '@/components/Icons/CheckSimpleIcon'
-import { LockIcon } from '@/components/Icons/LockIcon'
-import { LeftArrowIcon } from '@/components/Icons/LeftArrowIcon'
-import { HyperlinkIcon } from '@/components/Icons/HyperlinkIcon'
 
 type Props = {
 	roleId?: string
@@ -152,7 +147,7 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 			}}
 		>
 			<Typography variant='h6' sx={{ mb: 1, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
-				<HyperlinkIcon fontSize={16} /> Наследование от других ролей
+				<LinkIcon sx={{ fontSize: 16 }} /> Наследование от других ролей
 			</Typography>
 			<Typography variant='body2' color='text.secondary' sx={{ mb: 2 }}>
 				Выберите родительские роли.
@@ -176,15 +171,15 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 					}}
 				>
 					<Typography sx={{ color: selectedCount ? '#1f2937' : '#9ca3af', fontSize: '0.875rem' }}>
-					{selectedCount
-						? `${selectedCount} рол${selectedCount > 1 ? 'и' : 'ь'} выбран${selectedCount == 1 ? 'а' : 'ы'}`
-									: 'Выберите роли для наследования...'}
-									</Typography>
+						{selectedCount
+							? `${selectedCount} рол${selectedCount > 1 ? 'и' : 'ь'} выбран${selectedCount == 1 ? 'а' : 'ы'}`
+							: 'Выберите роли для наследования...'}
+					</Typography>
 					<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-						<LeftArrowIcon
+						<ArrowLeftIcon
 							sx={{
 								fontSize: 16,
-								fill: '#9ca3af',
+								color: '#9ca3af',
 								transition: 'transform 0.2s ease',
 								transform: isOpen ? 'rotate(90deg)' : 'rotate(270deg)',
 							}}
@@ -218,7 +213,7 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 										input: {
 											startAdornment: (
 												<InputAdornment position='start'>
-													<SearchIcon sx={{ fontSize: 16, fill: '#9ca3af' }} />
+													<SearchIcon sx={{ fontSize: 16, color: '#9ca3af' }} />
 												</InputAdornment>
 											),
 										},
@@ -321,9 +316,9 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 														}}
 													>
 														{isSelected ? (
-															<CheckIcon sx={{ fontSize: 14, fill: '#fff' }} />
+															<CheckIcon sx={{ fontSize: 14, color: '#fff' }} />
 														) : (
-															<LockIcon sx={{ fontSize: 14, fill: '#fff' }} />
+															<LockIcon sx={{ fontSize: 14, color: '#fff' }} />
 														)}
 													</Box>
 												)}
@@ -349,7 +344,7 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 						gap: 1,
 					}}
 				>
-					<HyperlinkIcon fontSize={16} mr={1} />
+					<LinkIcon sx={{ fontSize: 16, mr: 1 }} />
 					Выбранные родительские роли
 				</Typography>
 
@@ -364,7 +359,7 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 						}}
 					>
 						<Box sx={{ width: 32, height: 32, mx: 'auto', mb: 1 }}>
-							<HyperlinkIcon fontSize={22} fill={'#9ca3af'} />
+							<LinkIcon sx={{ color: '#9ca3af', fontSize: 22 }} />
 						</Box>
 						<Typography sx={{ fontSize: '0.875rem' }}>Родительские роли не выбраны</Typography>
 					</Box>
@@ -386,7 +381,7 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 							>
 								<Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
 									<Box>
-										<HyperlinkIcon fontSize={16} fill={'#4f46e5'} />
+										<LinkIcon sx={{ color: '#4f46e5', fontSize: 16 }} />
 									</Box>
 									<Box>
 										<Typography sx={{ fontWeight: 500, fontSize: '0.875rem' }}>
@@ -406,7 +401,7 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 										'&:hover': { bgcolor: '#fef2f2' },
 									}}
 								>
-									<TimesIcon fontSize={14} fill={'#ef4444'} />
+									<XIcon sx={{ color: '#ef4444', fontSize: 14 }} />
 								</IconButton>
 							</Box>
 						))}

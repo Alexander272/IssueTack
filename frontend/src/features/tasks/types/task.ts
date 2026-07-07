@@ -64,6 +64,7 @@ export interface ITaskFilter {
 	dueDateFrom?: string
 	dueDateTo?: string
 	sort?: string
+	archived?: boolean
 	limit?: number
 	offset?: number
 	mode?: string

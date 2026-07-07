@@ -19,8 +19,7 @@ import {
 import { getSmartDate } from '@/utils/date'
 import { stringToHSLA } from '@/utils/colors'
 import { useGetAuditLogsQuery } from '../../auditApiSlice'
-import { UnfoldLessIcon } from '@/components/Icons/UnfoldLessIcon'
-import { UnfoldMoreIcon } from '@/components/Icons/UnfoldMoreIcon'
+import { ChevronsUpDownIcon } from 'lucide-mui'
 
 export const LastActions = () => {
 	const { data: logs, isFetching: isFetchingLogs } = useGetAuditLogsQuery(null)
@@ -106,9 +105,9 @@ export const LastActions = () => {
 										<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
 											<IconButton size='small'>
 												{expandedRows.has(i) ? (
-													<UnfoldLessIcon fontSize='small' />
+													<ChevronsUpDownIcon fontSize='small' />
 												) : (
-													<UnfoldMoreIcon fontSize='small' />
+													<ChevronsUpDownIcon fontSize='small' />
 												)}
 											</IconButton>
 											<Box>

@@ -1,4 +1,5 @@
-import type { TicketStatus, Priority, ITaskAssignee } from '../../../types/task'
+import type { IUserShort } from '@/features/user/types/user'
+import type { TicketStatus, Priority } from '../../../types/task'
 
 export interface ISubtask {
 	id: string
@@ -7,7 +8,7 @@ export interface ISubtask {
 	description: string
 	status: TicketStatus
 	priority: Priority
-	assignee: ITaskAssignee | null
+	assignee: IUserShort | null
 	dueDate: string | null
 	closedAt: string | null
 	sortOrder: number

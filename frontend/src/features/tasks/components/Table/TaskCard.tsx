@@ -138,7 +138,7 @@ export const TaskCard = ({ task, onClick }: Props) => {
 				</Stack>
 
 				<Box sx={{ mb: subtaskProgress && subtaskProgress.total > 0 ? 1.5 : 0 }}>
-					<TaskAssignmentChip assignee={task.assignee} group={task.group} />
+					<TaskAssignmentChip assignee={task.assignee} />
 				</Box>
 
 				{subtaskProgress && subtaskProgress.total > 0 && (

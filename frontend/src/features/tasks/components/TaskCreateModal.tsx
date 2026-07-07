@@ -2,7 +2,7 @@ import { type FC } from 'react'
 import { Dialog, DialogContent, DialogTitle, IconButton, Typography } from '@mui/material'
 
 import { TaskCreateForm } from './TaskCreateForm'
-import { TimesIcon } from '@/components/Icons/TimesIcon'
+import { XIcon } from 'lucide-mui'
 
 type Props = {
 	open: boolean
@@ -24,8 +24,8 @@ export const TaskCreateModal: FC<Props> = ({ open, onClose }) => {
 				<Typography variant='h6' component='div' sx={{ fontWeight: 'bold' }}>
 					Создание заявки
 				</Typography>
-				<IconButton onClick={onClose} sx={{ color: 'text.secondary' }}>
-					<TimesIcon fontSize={16} />
+				<IconButton size='large' onClick={onClose} sx={{ color: 'text.secondary' }}>
+					<XIcon sx={{ fontSize: 20 }} />
 				</IconButton>
 			</DialogTitle>
 

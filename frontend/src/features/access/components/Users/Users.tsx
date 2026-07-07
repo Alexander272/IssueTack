@@ -21,8 +21,7 @@ import { useGetAllUsersQuery, useSyncUsersMutation } from '@/features/user/users
 import { useGetRolesQuery } from '@/features/user/roleApiSlice'
 import { UpdateModal } from '@/features/user/components/Update'
 import { BoxFallback } from '@/components/Fallback/BoxFallback'
-import { SearchIcon } from '@/components/Icons/SearchIcon'
-import { SyncIcon } from '@/components/Icons/SyncIcon'
+import { SearchIcon, RefreshCwIcon } from 'lucide-mui'
 import { UserCard } from './UserCard'
 
 export const Users = () => {
@@ -120,7 +119,7 @@ export const Users = () => {
 					{isLoading ? (
 						<CircularProgress size={16} sx={{ mr: 1.5 }} />
 					) : (
-						<SyncIcon fill={palette.primary.main} fontSize={16} mr={1.5} />
+						<RefreshCwIcon sx={{ color: palette.primary.main, fontSize: 16, mr: 1.5 }} />
 					)}
 					Синхронизировать
 				</Button>
@@ -178,7 +177,7 @@ export const Users = () => {
 				</Select>
 			</Box>
 
-			<UpdateModal user={modalType == 'edit' ? user : null} onClose={() => setUser(null)} />
+			{user && modalType == 'edit' ? <UpdateModal user={user} onClose={() => setUser(null)} /> : null}
 			{/* <LoginsModal user={modalType == 'logins' ? user : null} onClose={() => setUser(null)} /> */}
 
 			{/* Cards */}

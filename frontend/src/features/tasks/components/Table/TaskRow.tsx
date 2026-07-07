@@ -108,7 +108,7 @@ export const TaskRow = ({ task, onClick, sx }: Props) => {
 				<TaskPriorityBadge priority={task.priority} />
 			</TableCell>
 			<TableCell sx={{ py: 1 }}>
-				<TaskAssignmentChip assignee={task.assignee} group={task.group} />
+				<TaskAssignmentChip assignee={task.assignee} />
 			</TableCell>
 			<TableCell sx={{ py: 1 }}>
 				<TaskStatusBadge status={task.status} />

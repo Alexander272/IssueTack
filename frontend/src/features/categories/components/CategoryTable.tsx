@@ -12,14 +12,12 @@ import {
 	Tooltip,
 	Typography,
 } from '@mui/material'
+import { EditIcon, EyeIcon, UsersIcon } from 'lucide-mui'
 
 import type { ICategory } from '../types/category'
 import { getSmartDate } from '@/utils/date'
 import { TaskPriorityBadge } from '@/features/tasks/components/TaskPriorityBadge'
 import { StatusBadge } from '@/features/access/components/StatusBadge'
-import { EditIcon } from '@/components/Icons/EditIcon'
-import { EyeIcon } from '@/components/Icons/EyeIcon'
-import { GroupsIcon } from '@/components/Icons/GroupsIcon'
 
 const statusLabel = (active: boolean) => (active ? 'Активна' : 'Неактивна')
 
@@ -99,7 +97,7 @@ export const CategoryTable: FC<Props> = ({ categories, groupsMap, onView, onEdit
 											border: '1px solid #bfdbfe',
 										}}
 									>
-										<GroupsIcon sx={{ fontSize: 16, mr: 0.5, fill: '#1d4ed8' }} />
+										<UsersIcon sx={{ fontSize: 16, mr: 0.5, color: '#1d4ed8' }} />
 										{groupsMap.get(cat.groupId) || 'Неизвестная группа'}
 									</Typography>
 								</TableCell>
@@ -122,18 +120,18 @@ export const CategoryTable: FC<Props> = ({ categories, groupsMap, onView, onEdit
 											<IconButton
 												onClick={() => onView(cat)}
 												size='large'
-												sx={{ ':hover': { svg: { fill: '#f59e0b' } } }}
+												sx={{ ':hover': { svg: { color: '#f59e0b' } } }}
 											>
-												<EyeIcon sx={{ fontSize: 18, fill: '#9ca3af' }} />
+												<EyeIcon sx={{ fontSize: 18, color: '#9ca3af' }} />
 											</IconButton>
 										</Tooltip>
 										<Tooltip title='Редактировать'>
 											<IconButton
 												onClick={() => onEdit(cat)}
 												size='large'
-												sx={{ ':hover': { svg: { fill: '#3b82f6' } } }}
+												sx={{ ':hover': { svg: { color: '#3b82f6' } } }}
 											>
-												<EditIcon sx={{ fontSize: 18, fill: '#9ca3af' }} />
+												<EditIcon sx={{ fontSize: 18, color: '#9ca3af' }} />
 											</IconButton>
 										</Tooltip>
 									</Stack>

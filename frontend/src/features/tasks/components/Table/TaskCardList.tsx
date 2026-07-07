@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Box, Typography } from '@mui/material'
-import { BottomArrowIcon } from '@/components/Icons/BottomArrowIcon'
+import { ChevronDownIcon } from 'lucide-mui'
 
 import type { ITask } from '../../types/task'
 import type { GroupByField } from '../../constants/taskMaps'
@@ -73,10 +73,10 @@ export const TaskCardList = ({ tasks, groupBy, groupEnabled, onTaskClick }: Prop
 								'&:hover': { bgcolor: '#f3f4f6' },
 							}}
 						>
-							<BottomArrowIcon
+							<ChevronDownIcon
 								sx={{
 									fontSize: 10,
-									fill: '#6b7280',
+									color: '#6b7280',
 									transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
 									transition: 'transform 0.2s',
 									flexShrink: 0,

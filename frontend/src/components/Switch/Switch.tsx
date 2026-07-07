@@ -30,7 +30,7 @@ export const Switch: FC<Props> = ({ value, onChange, labels = ['Нет', 'Да']
 				border: '1px solid #e2e8f0',
 				borderRadius: '20px',
 				padding: '2px',
-				height: 36,
+				height: 40,
 				...sx,
 
 				'--current-radius': (theme: Theme) => {

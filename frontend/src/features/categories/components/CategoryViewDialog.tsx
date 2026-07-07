@@ -10,13 +10,12 @@ import {
 	Stack,
 	Typography,
 } from '@mui/material'
+import { XIcon, UsersIcon } from 'lucide-mui'
 
 import type { ICategory, ICategoryDTO } from '../types/category'
 import { getSmartDate } from '@/utils/date'
 import { TaskPriorityBadge } from '@/features/tasks/components/TaskPriorityBadge'
 import { StatusBadge } from '@/features/access/components/StatusBadge'
-import { TimesIcon } from '@/components/Icons/TimesIcon'
-import { GroupsIcon } from '@/components/Icons/GroupsIcon'
 
 const getInitials = (name: string) => {
 	const words = name.trim().split(/\s+/)
@@ -59,7 +58,7 @@ export const CategoryViewDialog: FC<Props> = ({ category, groupsMap, onClose, on
 					Просмотр категории
 				</Typography>
 				<IconButton onClick={onClose} sx={{ color: 'text.secondary' }}>
-					<TimesIcon fontSize={16} />
+					<XIcon sx={{ fontSize: 16 }} />
 				</IconButton>
 			</DialogTitle>
 			{category && (
@@ -136,7 +135,7 @@ export const CategoryViewDialog: FC<Props> = ({ category, groupsMap, onClose, on
 											border: '1px solid #bfdbfe',
 										}}
 									>
-										<GroupsIcon sx={{ fontSize: 16, mr: 0.5, fill: '#1d4ed8' }} />
+										<UsersIcon sx={{ fontSize: 16, mr: 0.5, color: '#1d4ed8' }} />
 										{groupsMap.get(category.groupId) || 'Неизвестная группа'}
 									</Typography>
 								</Box>

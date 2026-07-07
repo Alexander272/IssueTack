@@ -1,12 +1,9 @@
 import { useState, type FC } from 'react'
 import { Box, Button, TextField, Menu, MenuItem } from '@mui/material'
+import { SearchIcon, FilterIcon, LayersIcon, RefreshCwIcon } from 'lucide-mui'
 
 import type { GroupByField } from '../../constants/taskMaps'
 import { GROUP_BY_OPTIONS } from '../../constants/taskMaps'
-import { SearchIcon } from '@/components/Icons/SearchIcon'
-import { FilterIcon } from '@/components/Icons/FilterIcon'
-import { StackIcon } from '@/components/Icons/StackIcon'
-import { RefreshIcon } from '@/components/Icons/RefreshIcon'
 
 interface Props {
 	search: string
@@ -52,7 +49,7 @@ export const Toolbar: FC<Props> = ({
 				sx={{ flex: { xs: '1 1 100%', sm: 1 }, order: { xs: 0, sm: 0 }, minWidth: { xs: 150, sm: 250 } }}
 				slotProps={{
 					input: {
-						startAdornment: <SearchIcon sx={{ fontSize: 16, mr: 1, fill: '#9ca3af' }} />,
+						startAdornment: <SearchIcon sx={{ fontSize: 16, mr: 1, color: '#9ca3af' }} />,
 					},
 				}}
 			/>
@@ -68,20 +65,23 @@ export const Toolbar: FC<Props> = ({
 						height: 40,
 						borderColor: '#c4c4c4',
 						textTransform: 'none',
-						color: 'text.secondary',
+						// color: 'text.secondary',
 						whiteSpace: 'nowrap',
-						fill: groupEnabled ? 'primary.main' : '#9ca3af',
+						color: groupEnabled ? 'primary.main' : '#9ca3af',
 					}}
 				>
-					<StackIcon sx={{ fontSize: 18, mr: 1 }} />
+					<LayersIcon sx={{ fontSize: 18, mr: 1 }} />
 					Группировка
 				</Button>
-				<Menu
-					open={Boolean(groupAnchorEl)}
-					anchorEl={groupAnchorEl}
-					onClose={() => setGroupAnchorEl(null)}
-				>
-					<MenuItem value='none' selected={!groupEnabled} onClick={() => { onGroupChange(); setGroupAnchorEl(null) }}>
+				<Menu open={Boolean(groupAnchorEl)} anchorEl={groupAnchorEl} onClose={() => setGroupAnchorEl(null)}>
+					<MenuItem
+						value='none'
+						selected={!groupEnabled}
+						onClick={() => {
+							onGroupChange()
+							setGroupAnchorEl(null)
+						}}
+					>
 						Без группировки
 					</MenuItem>
 					{GROUP_BY_OPTIONS.map(opt => (
@@ -89,7 +89,10 @@ export const Toolbar: FC<Props> = ({
 							key={opt.value}
 							value={opt.value}
 							selected={opt.value === groupBy && groupEnabled}
-							onClick={() => { onGroupChange(opt.value); setGroupAnchorEl(null) }}
+							onClick={() => {
+								onGroupChange(opt.value)
+								setGroupAnchorEl(null)
+							}}
 						>
 							{opt.label}
 						</MenuItem>
@@ -106,9 +109,9 @@ export const Toolbar: FC<Props> = ({
 					height: 40,
 					borderColor: '#c4c4c4',
 					textTransform: 'none',
-					color: 'text.secondary',
+					// color: 'text.secondary',
 					whiteSpace: 'nowrap',
-					fill: activeCount > 0 ? 'primary.main' : '#9ca3af',
+					color: activeCount > 0 ? 'primary.main' : '#9ca3af',
 					width: { xs: '100%', sm: 'auto' },
 				}}
 			>
@@ -147,10 +150,11 @@ export const Toolbar: FC<Props> = ({
 					minWidth: 'auto',
 					whiteSpace: 'nowrap',
 					borderColor: '#c4c4c4',
+					// color: '#9ca3af',
 					width: { xs: '100%', sm: 'auto' },
 				}}
 			>
-				<RefreshIcon sx={{ fontSize: 14, mr: 1, fill: '#9ca3af' }} />
+				<RefreshCwIcon sx={{ fontSize: 14, mr: 1 }} />
 				Сбросить
 			</Button>
 		</Box>

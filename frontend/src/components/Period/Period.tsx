@@ -3,7 +3,7 @@ import { Box, Popover, Stack, Divider, Typography } from '@mui/material'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import dayjs, { Dayjs } from 'dayjs'
 
-import { CalendarIcon } from '../Icons/CalendarIcon'
+import { CalendarIcon } from 'lucide-mui'
 import { DateTextField } from '../DatePicker/DatePicker'
 import { ActionButton } from './Button'
 import { PresetChip } from './PresetChip'
@@ -112,7 +112,7 @@ export const PeriodPicker: FC<Props> = ({ value, onChange }) => {
 					userSelect: 'none',
 				}}
 			>
-				<CalendarIcon fontSize={18} /> <Typography sx={{ fontSize: '0.9rem' }}>{getLabel()}</Typography>
+				<CalendarIcon sx={{ fontSize: 18 }} /> <Typography sx={{ fontSize: '0.9rem' }}>{getLabel()}</Typography>
 			</Box>
 
 			<Popover

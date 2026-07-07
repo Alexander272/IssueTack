@@ -20,7 +20,7 @@ import type { IUserData, IUserDataDTO, IUserRealm } from '@/features/user/types/
 import type { IRole } from '../types/role'
 import { useGetRolesQuery } from '@/features/user/roleApiSlice'
 import { useUpdateUserMutation } from '../usersApiSlice'
-import { TimesIcon } from '@/components/Icons/TimesIcon'
+import { XIcon } from 'lucide-mui'
 import { Fallback } from '@/components/Fallback/Fallback'
 import { BoxFallback } from '@/components/Fallback/BoxFallback'
 import { useGetAllRealmsQuery } from '@/features/realms/realmsApiSlice'
@@ -100,8 +100,8 @@ export const UpdateModal: FC<Props> = ({ user, onClose }) => {
 				<Typography variant='h6' component='div' sx={{ fontWeight: 'bold' }}>
 					Добавить пользователя
 				</Typography>
-				<IconButton onClick={onClose} sx={{ color: 'text.secondary' }}>
-					<TimesIcon fontSize={16} />
+				<IconButton size='large' onClick={onClose} sx={{ color: 'text.secondary' }}>
+					<XIcon sx={{ fontSize: 20 }} />
 				</IconButton>
 			</DialogTitle>
 

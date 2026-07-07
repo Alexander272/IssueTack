@@ -1,4 +1,16 @@
-import { Table, TableBody, TableContainer, TableHead, TableRow, TableCell, Paper, Box, useTheme, useMediaQuery } from '@mui/material'
+import {
+	Table,
+	TableBody,
+	TableContainer,
+	TableHead,
+	TableRow,
+	TableCell,
+	Paper,
+	Box,
+	useTheme,
+	useMediaQuery,
+} from '@mui/material'
+import { ArrowDownAZ, ArrowUpAZ } from 'lucide-mui'
 
 import type { ITask } from '../../types/task'
 import type { GroupByField } from '../../constants/taskMaps'
@@ -18,7 +30,7 @@ interface Props {
 
 type Column = { field: string; label: string; sortable: boolean; width?: number }
 const COLUMNS: readonly Column[] = [
-	{ field: 'ticketNumber', label: '№', sortable: true, width: 60 },
+	{ field: 'ticketNumber', label: '№', sortable: true, width: 70 },
 	{ field: 'title', label: 'Тема', sortable: true },
 	{ field: 'owner', label: 'Заказчик', sortable: true, width: 200 },
 	{ field: 'site', label: 'Площадка', sortable: true, width: 160 },
@@ -83,8 +95,12 @@ export const TaskTable = ({ tasks, groupBy, groupEnabled, onTaskClick, sort, onS
 					>
 						{col.label}
 						{isActive && (
-							<Box component='span' sx={{ ml: 0.5, fontSize: '0.625rem' }}>
-								{isDesc ? '▼' : '▲'}
+							<Box component='span' sx={{ ml: 0.5 }}>
+								{isDesc ? (
+									<ArrowDownAZ sx={{ fontSize: 16, mb: -0.5 }} />
+								) : (
+									<ArrowUpAZ sx={{ fontSize: 16, mb: -0.5 }} />
+								)}
 							</Box>
 						)}
 					</TableCell>

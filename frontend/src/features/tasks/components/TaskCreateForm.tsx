@@ -7,16 +7,16 @@ import dayjs from 'dayjs'
 
 import type { IFetchError } from '@/app/types/error'
 import type { Priority, ITaskDTO } from '../types/task'
+import { PermRules } from '@/features/access/constants/permissions'
 import { PRIORITY_MAP } from '../constants/taskMaps'
+import { useAppSelector } from '@/hooks/redux'
+import { useCan } from '@/features/access/utils/can'
 import { useCreateTaskMutation } from '../tasksApiSlice'
 import { useGetAllCategoriesQuery } from '@/features/categories/categoriesApiSlice'
 import { useGetAllGroupsQuery } from '@/features/groups/groupsApiSlice'
 import { useGetAvailableUsersQuery } from '@/features/user/usersApiSlice'
 import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
-import { useAppSelector } from '@/hooks/redux'
 import { getRealm } from '@/features/realms/realmSlice'
-import { useCheckPermission } from '@/features/user/hooks/check'
-import { PermRules } from '@/features/access/constants/permissions'
 
 interface FormValues {
 	title: string
@@ -38,7 +38,7 @@ type Props = {
 export const TaskCreateForm = ({ onSuccess, onCancel, embedded }: Props) => {
 	const currentUserId = useAppSelector(state => state.user.id)
 	const realm = useAppSelector(getRealm)
-	const isManager = useCheckPermission(PermRules.Tasks.Write)
+	const isManager = useCan(PermRules.Tasks.Write)
 
 	const [createTask, { isLoading }] = useCreateTaskMutation()
 	const { data: categoriesData } = useGetAllCategoriesQuery()
@@ -71,7 +71,7 @@ export const TaskCreateForm = ({ onSuccess, onCancel, embedded }: Props) => {
 		if (cat) setValue('priority', cat.priority)
 	}, [selectedCategoryId, categories, setValue])
 
-	const categoryPriority = categories.find(c => c.id === selectedCategoryId)?.priority
+	const category = categories.find(c => c.id === selectedCategoryId)
 
 	const onSubmit = handleSubmit(async data => {
 		if (!currentUserId) {
@@ -88,13 +88,13 @@ export const TaskCreateForm = ({ onSuccess, onCancel, embedded }: Props) => {
 			title: data.title,
 			description: data.description,
 			status: 'open',
-			priority: isManager ? data.priority : categoryPriority || 'medium',
+			priority: isManager ? data.priority : category?.priority || 'medium',
 			realmId: realm.id,
 			siteId: data.siteId,
 			categoryId: data.categoryId,
 			creatorId: currentUserId,
 			ownerId: null,
-			groupId: isManager ? data.groupId || null : null,
+			groupId: isManager ? data.groupId || null : category?.groupId || null,
 			assigneeId: isManager ? data.assigneeId || null : null,
 			managerId: null,
 			dueDate: isManager ? data.dueDate || null : null,

@@ -6,6 +6,7 @@ import { NotFound } from '@/pages/notFound/NotFoundLazy'
 import { Auth } from '@/pages/auth/AuthLazy'
 import { Home } from '@/pages/home/HomeLazy'
 import { Tasks } from '@/pages/tasks/TasksLazy'
+import { TaskDetail } from '@/pages/tasks/TaskDetailLazy'
 import { Sites } from '@/pages/sites/SitesLazy'
 import { Groups } from '@/pages/groups/GroupsLazy'
 import { Categories } from '@/pages/categories/CategoriesLazy'
@@ -37,6 +38,10 @@ const config: RouteObject[] = [
 					{
 						path: AppRoutes.Tasks,
 						element: <Tasks />,
+					},
+					{
+						path: AppRoutes.TaskDetail,
+						element: <TaskDetail />,
 					},
 					{
 						path: AppRoutes.Sites,

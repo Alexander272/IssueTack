@@ -45,7 +45,7 @@ type RealmBadgeProps = {
 }
 
 const RealmBadge: FC<RealmBadgeProps> = ({ label }) => {
-	const { dot, text } = useMemo(() => stringToHSLA(label), [label])
+	const { bg: dot, text } = useMemo(() => stringToHSLA(label), [label])
 
 	return (
 		<Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>

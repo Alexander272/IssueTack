@@ -1,4 +1,4 @@
-import { type FC } from 'react'
+import { type FC, useMemo } from 'react'
 import {
 	Box,
 	Button,
@@ -10,14 +10,16 @@ import {
 	Stack,
 	Typography,
 } from '@mui/material'
+import { UsersIcon, XIcon } from 'lucide-mui'
 
 import type { IGroup, IGroupDTO } from '../types/group'
+import type { IUserShort } from '@/features/user/types/user'
 import { getSmartDate } from '@/utils/date'
-import { GroupsIcon } from '@/components/Icons/GroupsIcon'
-import { TimesIcon } from '@/components/Icons/TimesIcon'
 import { GroupMemberRow } from './GroupMemberRow'
 import { AssignedUser } from './AssignedUser'
 import { getMemberRoleInfo } from '../utils/memberRole'
+
+const MEMBER_COLORS = ['#6366f1', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#0891b2', '#d97706']
 
 type Props = {
 	group: IGroup | null
@@ -27,6 +29,17 @@ type Props = {
 
 export const GroupViewDialog: FC<Props> = ({ group, onClose, onEdit }) => {
 	const memberCount = group?.members?.length ?? 0
+
+	const sortedMembers = useMemo(() => {
+		if (!group?.members) return []
+		return [...(group?.members || '')].sort((a: IUserShort, b: IUserShort) => {
+			if (a.id === group?.managerId) return -1
+			if (b.id === group?.managerId) return 1
+			if (a.id === group?.defaultAssigneeId) return -1
+			if (b.id === group?.defaultAssigneeId) return 1
+			return 0
+		})
+	}, [group?.members, group?.managerId, group?.defaultAssigneeId])
 
 	return (
 		<Dialog
@@ -45,7 +58,7 @@ export const GroupViewDialog: FC<Props> = ({ group, onClose, onEdit }) => {
 					Просмотр группы
 				</Typography>
 				<IconButton onClick={onClose} sx={{ color: 'text.secondary' }}>
-					<TimesIcon fontSize={16} />
+					<XIcon sx={{ fontSize: 16 }} />
 				</IconButton>
 			</DialogTitle>
 			{group && (
@@ -67,7 +80,7 @@ export const GroupViewDialog: FC<Props> = ({ group, onClose, onEdit }) => {
 										justifyContent: 'center',
 									}}
 								>
-									<GroupsIcon sx={{ fontSize: 32, color: '#3b82f6' }} />
+									<UsersIcon sx={{ fontSize: 32, color: '#3b82f6' }} />
 								</Box>
 								<Box>
 									<Typography variant='h5' sx={{ fontWeight: 'bold' }}>
@@ -96,7 +109,7 @@ export const GroupViewDialog: FC<Props> = ({ group, onClose, onEdit }) => {
 										Руководитель группы
 									</Typography>
 									<Box sx={{ mt: 1.5 }}>
-										<AssignedUser user={group.manager} />
+										<AssignedUser user={group.manager} color='#3b82f6' />
 									</Box>
 								</Box>
 
@@ -108,7 +121,7 @@ export const GroupViewDialog: FC<Props> = ({ group, onClose, onEdit }) => {
 										Исполнитель по умолчанию
 									</Typography>
 									<Box sx={{ mt: 1.5 }}>
-										<AssignedUser user={group.defaultAssignee} />
+										<AssignedUser user={group.defaultAssignee} color='#10b981' />
 									</Box>
 								</Box>
 							</Box>
@@ -127,22 +140,24 @@ export const GroupViewDialog: FC<Props> = ({ group, onClose, onEdit }) => {
 									</Typography>
 								</Box>
 								<Stack spacing={1}>
-									{group.members?.map(member => {
+									{sortedMembers.map((member, index) => {
 										const role = getMemberRoleInfo(
 											member.id,
 											group.managerId,
 											group.defaultAssigneeId,
 										)
+										const avatarColor = role?.color || MEMBER_COLORS[index % MEMBER_COLORS.length]
 										return (
 											<GroupMemberRow
 												key={member.id}
 												user={member}
+												avatarColor={avatarColor}
 												roleLabel={role?.label}
 												roleColor={role?.color}
 											/>
 										)
 									})}
-									{!group.members?.length && (
+									{!sortedMembers.length && (
 										<Typography
 											variant='body2'
 											sx={{ color: '#9ca3af', py: 2, textAlign: 'center' }}

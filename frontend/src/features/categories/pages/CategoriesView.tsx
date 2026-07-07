@@ -5,7 +5,7 @@ import type { ICategory, ICategoryDTO } from '../types/category'
 import { useGetAllCategoriesQuery } from '../categoriesApiSlice'
 import { useGetAllGroupsQuery } from '@/features/groups/groupsApiSlice'
 import { useDebounce } from '@/hooks/useDebounce'
-import { PlusIcon } from '@/components/Icons/PlusIcon'
+import { PlusIcon } from 'lucide-mui'
 import { CategoryFilters, type CategoryFilterState } from '../components/CategoryFilters'
 import { CategoryCardList } from '../components/CategoryCardList'
 import { CategoryTable } from '../components/CategoryTable'
@@ -100,10 +100,15 @@ export const CategoriesView: FC = () => {
 				</Box>
 				<Button
 					variant='outlined'
-					sx={{ borderRadius: '8px', textTransform: 'none', background: '#fff', width: { xs: '100%', sm: 'auto' } }}
+					sx={{
+						borderRadius: '8px',
+						textTransform: 'none',
+						background: '#fff',
+						width: { xs: '100%', sm: 'auto' },
+					}}
 					onClick={openCreate}
 				>
-					<PlusIcon fill={palette.primary.main} fontSize={16} mr={1.5} />
+					<PlusIcon sx={{ color: palette.primary.main, fontSize: 16, mr: 1.5 }} />
 					Создать категорию
 				</Button>
 			</Box>
@@ -119,7 +124,12 @@ export const CategoriesView: FC = () => {
 				<CategoryTable categories={filtered || []} groupsMap={groupsMap} onView={openView} onEdit={openEdit} />
 			</Box>
 			<Box sx={{ display: { xs: 'block', md: 'none' } }}>
-				<CategoryCardList categories={filtered || []} groupsMap={groupsMap} onView={openView} onEdit={openEdit} />
+				<CategoryCardList
+					categories={filtered || []}
+					groupsMap={groupsMap}
+					onView={openView}
+					onEdit={openEdit}
+				/>
 			</Box>
 
 			<CategoryViewDialog

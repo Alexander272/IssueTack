@@ -1,11 +1,10 @@
 import { type FC } from 'react'
 import { Box, Button, Typography } from '@mui/material'
+import { UsersIcon, EyeIcon, EditIcon } from 'lucide-mui'
 
 import type { IGroup } from '../types/group'
 import { getSmartDate } from '@/utils/date'
-import { GroupsIcon } from '@/components/Icons/GroupsIcon'
-import { EyeIcon } from '@/components/Icons/EyeIcon'
-import { EditIcon } from '@/components/Icons/EditIcon'
+import { Avatar } from '@/components/Avatar'
 
 const AVATAR_BG = ['#3b82f6', '#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6']
 
@@ -43,7 +42,7 @@ export const GroupCard: FC<Props> = ({ group, onView, onEdit }) => {
 								justifyContent: 'center',
 							}}
 						>
-							<GroupsIcon
+							<UsersIcon
 								sx={{
 									fontSize: 24,
 									color: AVATAR_BG[memberCount % AVATAR_BG.length],
@@ -66,7 +65,7 @@ export const GroupCard: FC<Props> = ({ group, onView, onEdit }) => {
 							onClick={() => onView(group)}
 							sx={{
 								color: '#9ca3af',
-								'&:hover': { bgcolor: '#f3f4f6', svg: { fill: '#f59e0b' } },
+								'&:hover': { bgcolor: '#f3f4f6', svg: { color: '#f59e0b' } },
 								p: 1,
 								borderRadius: '6px',
 								border: 'none',
@@ -76,14 +75,14 @@ export const GroupCard: FC<Props> = ({ group, onView, onEdit }) => {
 							}}
 							title='Просмотр'
 						>
-							<EyeIcon sx={{ fontSize: 20, fill: '#9ca3af' }} />
+							<EyeIcon sx={{ fontSize: 20, color: '#9ca3af' }} />
 						</Box>
 						<Box
 							component='button'
 							onClick={() => onEdit(group)}
 							sx={{
 								color: '#9ca3af',
-								'&:hover': { bgcolor: '#f3f4f6', svg: { fill: '#3b82f6' } },
+								'&:hover': { bgcolor: '#f3f4f6', svg: { color: '#3b82f6' } },
 								p: 1,
 								borderRadius: '6px',
 								border: 'none',
@@ -93,7 +92,7 @@ export const GroupCard: FC<Props> = ({ group, onView, onEdit }) => {
 							}}
 							title='Редактировать'
 						>
-							<EditIcon sx={{ fontSize: 20, fill: '#9ca3af' }} />
+							<EditIcon sx={{ fontSize: 20, color: '#9ca3af' }} />
 						</Box>
 					</Box>
 				</Box>
@@ -115,48 +114,20 @@ export const GroupCard: FC<Props> = ({ group, onView, onEdit }) => {
 
 				<Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
 					<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-						<Box
-							sx={{
-								width: 16,
-								height: 16,
-								borderRadius: '50%',
-								bgcolor: group.manager ? '#3b82f6' : '#e5e7eb',
-								display: 'flex',
-								alignItems: 'center',
-								justifyContent: 'center',
-								fontSize: 8,
-								color: '#fff',
-								fontWeight: 'bold',
-								flexShrink: 0,
-							}}
-						>
+						<Avatar size={16} sx={{ bgcolor: group.manager ? '#3b82f6' : '#e5e7eb' }}>
 							{group.manager ? `${group.manager?.lastName[0]}${group.manager?.firstName[0]}` : '—'}
-						</Box>
+						</Avatar>
 						<Typography variant='caption' sx={{ color: '#6b7280' }}>
 							Руководитель:{' '}
 							{group.manager ? `${group.manager.lastName} ${group.manager.firstName}` : 'Не назначен'}
 						</Typography>
 					</Box>
 					<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-						<Box
-							sx={{
-								width: 16,
-								height: 16,
-								borderRadius: '50%',
-								bgcolor: group.defaultAssignee ? '#10b981' : '#e5e7eb',
-								display: 'flex',
-								alignItems: 'center',
-								justifyContent: 'center',
-								fontSize: 8,
-								color: '#fff',
-								fontWeight: 'bold',
-								flexShrink: 0,
-							}}
-						>
+						<Avatar size={16} bgcolor={group.defaultAssignee ? '#10b981' : '#e5e7eb'}>
 							{group.defaultAssignee
 								? `${group.defaultAssignee.lastName[0]}${group.defaultAssignee.firstName[0]}`
 								: '—'}
-						</Box>
+						</Avatar>
 						<Typography variant='caption' sx={{ color: '#6b7280' }}>
 							По умолчанию:{' '}
 							{group.defaultAssignee

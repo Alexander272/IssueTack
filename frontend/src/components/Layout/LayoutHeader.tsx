@@ -1,17 +1,16 @@
 import { AppBar, Divider, IconButton, Stack, Toolbar, Tooltip, useTheme } from '@mui/material'
+import { LogOutIcon, ShieldIcon } from 'lucide-mui'
 import { Link } from 'react-router'
 import Logo from '@/assets/logo.webp'
 
 import { AppRoutes } from '@/pages/router/routes'
 import { PermRules } from '@/features/access/constants/permissions'
-import { useCheckPermission } from '@/features/user/hooks/check'
+import { useCan } from '@/features/access/utils/can'
 import { useAppSelector } from '@/hooks/redux'
 import { useSignOutMutation } from '@/features/auth/authApiSlice'
 import { getToken, getUserRealms } from '@/features/user/userSlice'
-import { LogoutIcon } from '../Icons/LogoutIcon'
-import { ShieldIcon } from '../Icons/ShieldIcon'
-import { NavBox } from './NavBox'
 import { ActiveRealm } from '@/features/realms/components/ActiveRealm'
+import { NavBox } from './NavBox'
 
 interface LayoutHeaderProps {
 	onMenuClick?: () => void
@@ -29,7 +28,7 @@ export const LayoutHeader = ({ onMenuClick }: LayoutHeaderProps) => {
 		void signOut(null)
 	}
 
-	const canEditSettings = useCheckPermission(PermRules.Users.Write)
+	const canEditSettings = useCan(PermRules.Users.Write)
 	// const canSeeStats = useCheckPermission([
 	// 	PermRules.SearchLog.Read,
 	// 	PermRules.ActivityLog.Read,
@@ -84,8 +83,10 @@ export const LayoutHeader = ({ onMenuClick }: LayoutHeaderProps) => {
 						{canEditSettings ? (
 							<Link to={AppRoutes.Accesses}>
 								<Tooltip title='Настройка доступа' disableInteractive>
-									<NavBox sx={{ ':hover': { svg: { stroke: palette.primary.main } } }}>
-										<ShieldIcon sx={{ fontSize: 26, transition: '0.3s all ease-in-out' }} />
+									<NavBox sx={{ ':hover': { svg: { color: palette.primary.main } } }}>
+										<ShieldIcon
+											sx={{ color: '#404040', fontSize: 26, transition: '0.3s all ease-in-out' }}
+										/>
 									</NavBox>
 								</Tooltip>
 							</Link>
@@ -106,10 +107,10 @@ export const LayoutHeader = ({ onMenuClick }: LayoutHeaderProps) => {
 							onClick={logoutHandler}
 							sx={{
 								display: { xs: 'none', md: 'flex' },
-								':hover': { svg: { fill: palette.primary.main } },
+								':hover': { svg: { color: palette.primary.main } },
 							}}
 						>
-							<LogoutIcon fill={'#000'} fontSize={24} transition={'0.3s all ease-in-out'} />
+							<LogOutIcon sx={{ color: '#404040', fontSize: 24, transition: '0.3s all ease-in-out' }} />
 						</NavBox>
 					</Stack>
 				) : null}
