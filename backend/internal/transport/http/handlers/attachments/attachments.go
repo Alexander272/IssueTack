@@ -54,7 +54,9 @@ func (h *Handler) getByEntity(c *gin.Context) {
 		return
 	}
 
-	data, err := h.service.GetByEntity(c, entityType, id, user.ID)
+	realmIdStr := c.GetHeader("realm")
+
+	data, err := h.service.GetByEntity(c, entityType, id, user.ID, realmIdStr)
 	if err != nil {
 		response.SendError(c, err)
 		return

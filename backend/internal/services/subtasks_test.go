@@ -103,7 +103,7 @@ func TestSubtaskService_Create_Success(t *testing.T) {
 		Actor:    &models.Actor{ID: actorID, Name: "test"},
 	}
 
-	mockAccess.On("CheckAccess", mock.Anything, ticketID, actorID, string(access.Write), mock.Anything).Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, ticketID, actorID).Return(nil)
 	mockRepo.On("Create", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 
@@ -130,7 +130,7 @@ func TestSubtaskService_CreateSeveral_Success(t *testing.T) {
 		{ID: uuid.New(), TicketID: ticketID, Title: "S2", Actor: &models.Actor{ID: actorID, Name: "test"}},
 	}
 
-	mockAccess.On("CheckAccess", mock.Anything, ticketID, actorID, string(access.Write), mock.Anything).Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, ticketID, actorID).Return(nil)
 	mockRepo.On("CreateSeveral", mock.Anything, nil, dtos).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 
@@ -154,7 +154,7 @@ func TestSubtaskService_CreateSeveral_EmptyList(t *testing.T) {
 
 	err := svc.CreateSeveral(context.Background(), nil, []*models.SubtaskDTO{})
 	assert.NoError(t, err)
-	mockAccess.AssertNotCalled(t, "CheckAccess")
+	mockAccess.AssertNotCalled(t, "CheckWorkAccess")
 }
 
 func TestSubtaskService_Update_Success(t *testing.T) {
@@ -175,7 +175,7 @@ func TestSubtaskService_Update_Success(t *testing.T) {
 	}
 
 	mockRepo.On("GetByID", mock.Anything, &models.GetSubtaskDTO{ID: subtaskID}).Return(old, nil)
-	mockAccess.On("CheckAccess", mock.Anything, ticketID, actorID, string(access.Write), mock.Anything).Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, ticketID, actorID).Return(nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 
@@ -201,7 +201,7 @@ func TestSubtaskService_Update_NoChanges(t *testing.T) {
 	}
 
 	mockRepo.On("GetByID", mock.Anything, &models.GetSubtaskDTO{ID: subtaskID}).Return(old, nil)
-	mockAccess.On("CheckAccess", mock.Anything, ticketID, actorID, string(access.Write), mock.Anything).Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, ticketID, actorID).Return(nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 
 	err := svc.Update(context.Background(), nil, dto)
@@ -221,7 +221,7 @@ func TestSubtaskService_Delete_Success(t *testing.T) {
 	}
 
 	mockRepo.On("GetByID", mock.Anything, &models.GetSubtaskDTO{ID: subtaskID}).Return(old, nil)
-	mockAccess.On("CheckAccess", mock.Anything, ticketID, actorID, string(access.Write), mock.Anything).Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, ticketID, actorID).Return(nil)
 	mockRepo.On("Delete", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 

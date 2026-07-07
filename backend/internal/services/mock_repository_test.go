@@ -314,11 +314,11 @@ type MockSubtaskService struct {
 	mock.Mock
 }
 
-func (m *MockSubtaskService) GetByTicketID(ctx context.Context, ticketID, actorID uuid.UUID) ([]*models.Subtask, error) {
+func (m *MockSubtaskService) GetByTicketID(ctx context.Context, ticketID, actorID uuid.UUID, realm ...string) ([]*models.Subtask, error) {
 	args := m.Called(ctx, ticketID, actorID)
 	return args.Get(0).([]*models.Subtask), args.Error(1)
 }
-func (m *MockSubtaskService) GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID) (*models.Subtask, error) {
+func (m *MockSubtaskService) GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID, realm ...string) (*models.Subtask, error) {
 	args := m.Called(ctx, req, actorID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -346,7 +346,7 @@ type MockAttachmentService struct {
 	mock.Mock
 }
 
-func (m *MockAttachmentService) GetByEntity(ctx context.Context, entityType string, entityID uuid.UUID, actorID uuid.UUID) ([]*models.Attachment, error) {
+func (m *MockAttachmentService) GetByEntity(ctx context.Context, entityType string, entityID uuid.UUID, actorID uuid.UUID, realm ...string) ([]*models.Attachment, error) {
 	args := m.Called(ctx, entityType, entityID, actorID)
 	return args.Get(0).([]*models.Attachment), args.Error(1)
 }
@@ -487,6 +487,11 @@ type MockTicketAccessChecker struct {
 
 func (m *MockTicketAccessChecker) CheckAccess(ctx context.Context, ticketID, userID uuid.UUID, action string, realm ...string) error {
 	args := m.Called(ctx, ticketID, userID, action)
+	return args.Error(0)
+}
+
+func (m *MockTicketAccessChecker) CheckWorkAccess(ctx context.Context, ticketID, userID uuid.UUID) error {
+	args := m.Called(ctx, ticketID, userID)
 	return args.Error(0)
 }
 

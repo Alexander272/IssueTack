@@ -30,19 +30,19 @@ func (s *SubtaskService) SetTicketAccess(checker TicketAccessChecker) {
 }
 
 type Subtasks interface {
-	GetByTicketID(ctx context.Context, ticketID, actorID uuid.UUID) ([]*models.Subtask, error)
-	GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID) (*models.Subtask, error)
+	GetByTicketID(ctx context.Context, ticketID, actorID uuid.UUID, realm ...string) ([]*models.Subtask, error)
+	GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID, realm ...string) (*models.Subtask, error)
 	Create(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO) error
 	CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.SubtaskDTO) error
 	Update(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO) error
 	Delete(ctx context.Context, tx postgres.Tx, dto *models.DelSubtaskDTO) error
 }
 
-func (s *SubtaskService) GetByTicketID(ctx context.Context, ticketID, actorID uuid.UUID) ([]*models.Subtask, error) {
+func (s *SubtaskService) GetByTicketID(ctx context.Context, ticketID, actorID uuid.UUID, realm ...string) ([]*models.Subtask, error) {
 	if s.ticketAccess == nil {
 		return nil, models.ErrPermissionDenied
 	}
-	if err := s.ticketAccess.CheckAccess(ctx, ticketID, actorID, string(access.Read)); err != nil {
+	if err := s.ticketAccess.CheckAccess(ctx, ticketID, actorID, string(access.Read), realm...); err != nil {
 		return nil, err
 	}
 	data, err := s.repo.GetByTicketID(ctx, ticketID)
@@ -52,7 +52,7 @@ func (s *SubtaskService) GetByTicketID(ctx context.Context, ticketID, actorID uu
 	return data, nil
 }
 
-func (s *SubtaskService) GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID) (*models.Subtask, error) {
+func (s *SubtaskService) GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID, realm ...string) (*models.Subtask, error) {
 	data, err := s.repo.GetByID(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get subtask: %w", err)
@@ -60,7 +60,7 @@ func (s *SubtaskService) GetByID(ctx context.Context, req *models.GetSubtaskDTO,
 	if s.ticketAccess == nil {
 		return nil, models.ErrPermissionDenied
 	}
-	if err := s.ticketAccess.CheckAccess(ctx, data.TicketID, actorID, string(access.Read)); err != nil {
+	if err := s.ticketAccess.CheckAccess(ctx, data.TicketID, actorID, string(access.Read), realm...); err != nil {
 		return nil, err
 	}
 	return data, nil
@@ -70,7 +70,7 @@ func (s *SubtaskService) Create(ctx context.Context, tx postgres.Tx, dto *models
 	if s.ticketAccess == nil {
 		return models.ErrPermissionDenied
 	}
-	if err := s.ticketAccess.CheckAccess(ctx, dto.TicketID, dto.Actor.ID, string(access.Write)); err != nil {
+	if err := s.ticketAccess.CheckWorkAccess(ctx, dto.TicketID, dto.Actor.ID); err != nil {
 		return err
 	}
 	if err := s.repo.Create(ctx, tx, dto); err != nil {
@@ -101,7 +101,7 @@ func (s *SubtaskService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto 
 		return models.ErrPermissionDenied
 	}
 	if len(dto) > 0 {
-		if err := s.ticketAccess.CheckAccess(ctx, dto[0].TicketID, dto[0].Actor.ID, string(access.Write)); err != nil {
+		if err := s.ticketAccess.CheckWorkAccess(ctx, dto[0].TicketID, dto[0].Actor.ID); err != nil {
 			return err
 		}
 	}
@@ -140,7 +140,7 @@ func (s *SubtaskService) Update(ctx context.Context, tx postgres.Tx, dto *models
 	if s.ticketAccess == nil {
 		return models.ErrPermissionDenied
 	}
-	if err := s.ticketAccess.CheckAccess(ctx, old.TicketID, dto.Actor.ID, string(access.Write)); err != nil {
+	if err := s.ticketAccess.CheckWorkAccess(ctx, old.TicketID, dto.Actor.ID); err != nil {
 		return err
 	}
 
@@ -189,7 +189,7 @@ func (s *SubtaskService) Delete(ctx context.Context, tx postgres.Tx, dto *models
 	if s.ticketAccess == nil {
 		return models.ErrPermissionDenied
 	}
-	if err := s.ticketAccess.CheckAccess(ctx, old.TicketID, dto.Actor.ID, string(access.Write)); err != nil {
+	if err := s.ticketAccess.CheckWorkAccess(ctx, old.TicketID, dto.Actor.ID); err != nil {
 		return err
 	}
 

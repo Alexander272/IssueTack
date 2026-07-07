@@ -40,31 +40,37 @@ func (s *AttachmentService) SetTicketAccess(checker TicketAccessChecker) {
 	s.ticketAccess = checker
 }
 
-func (s *AttachmentService) checkEntityAccess(ctx context.Context, entityType string, entityID, actorID uuid.UUID, action string) error {
+func (s *AttachmentService) checkEntityAccess(ctx context.Context, entityType string, entityID, actorID uuid.UUID, action string, realm ...string) error {
 	if s.ticketAccess == nil {
 		return models.ErrPermissionDenied
 	}
 	switch entityType {
 	case "ticket":
-		return s.ticketAccess.CheckAccess(ctx, entityID, actorID, action)
+		if action == string(access.Write) {
+			return s.ticketAccess.CheckWorkAccess(ctx, entityID, actorID)
+		}
+		return s.ticketAccess.CheckAccess(ctx, entityID, actorID, action, realm...)
 	case "subtask":
 		sub, err := s.subtaskRepo.GetByID(ctx, &models.GetSubtaskDTO{ID: entityID})
 		if err != nil {
 			return fmt.Errorf("failed to load subtask for access check: %w", err)
 		}
-		return s.ticketAccess.CheckAccess(ctx, sub.TicketID, actorID, action)
+		if action == string(access.Write) {
+			return s.ticketAccess.CheckWorkAccess(ctx, sub.TicketID, actorID)
+		}
+		return s.ticketAccess.CheckAccess(ctx, sub.TicketID, actorID, action, realm...)
 	}
 	return fmt.Errorf("unknown entity type: %s", entityType)
 }
 
 type Attachments interface {
-	GetByEntity(ctx context.Context, entityType string, entityID uuid.UUID, actorID uuid.UUID) ([]*models.Attachment, error)
+	GetByEntity(ctx context.Context, entityType string, entityID uuid.UUID, actorID uuid.UUID, realm ...string) ([]*models.Attachment, error)
 	Upload(ctx context.Context, tx postgres.Tx, entityType string, entityID uuid.UUID, fileName string, file io.Reader, uploadedBy uuid.UUID) (*models.Attachment, error)
 	Delete(ctx context.Context, tx postgres.Tx, id uuid.UUID, actorID uuid.UUID) error
 }
 
-func (s *AttachmentService) GetByEntity(ctx context.Context, entityType string, entityID uuid.UUID, actorID uuid.UUID) ([]*models.Attachment, error) {
-	if err := s.checkEntityAccess(ctx, entityType, entityID, actorID, string(access.Read)); err != nil {
+func (s *AttachmentService) GetByEntity(ctx context.Context, entityType string, entityID uuid.UUID, actorID uuid.UUID, realm ...string) ([]*models.Attachment, error) {
+	if err := s.checkEntityAccess(ctx, entityType, entityID, actorID, string(access.Read), realm...); err != nil {
 		return nil, err
 	}
 	data, err := s.repo.GetByEntity(ctx, entityType, entityID)

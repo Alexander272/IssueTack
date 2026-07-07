@@ -55,15 +55,17 @@ type TicketFilter struct {
 	OwnerID    *uuid.UUID    `form:"ownerId" json:"ownerId" db:"owner_id"`
 	AssigneeID *uuid.UUID    `form:"assigneeId" json:"assigneeId" db:"assignee_id"`
 	GroupIDs   []uuid.UUID   `json:"-"`
+	IncludeUngroupedAssignedTo *uuid.UUID `json:"-"`
 	Priorities []Priority    `form:"priorities" json:"priorities"`
 	Search     *string       `form:"search" json:"search"`
 	DueDateFrom *time.Time   `form:"dueDateFrom" json:"dueDateFrom" time_format:"2006-01-02"`
 	DueDateTo  *time.Time    `form:"dueDateTo" json:"dueDateTo" time_format:"2006-01-02"`
 	Sort       *string       `form:"sort" json:"sort"`
-	Mode      *string    `form:"mode" json:"mode"`
-	CreatorID *uuid.UUID `json:"-"`
-	Limit      int           `json:"limit" db:"limit"`
-	Offset     int           `json:"offset" db:"offset"`
+	Mode       *string    `form:"mode" json:"mode"`
+	CreatorID  *uuid.UUID `json:"-"`
+	Archived   *bool      `form:"archived" json:"archived"`
+	Limit      int        `json:"limit" db:"limit"`
+	Offset     int        `json:"offset" db:"offset"`
 }
 
 type TicketDTO struct {

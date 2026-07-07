@@ -53,7 +53,9 @@ func (h *Handler) getByTicket(c *gin.Context) {
 		return
 	}
 
-	data, err := h.service.GetByTicketID(c, id, user.ID)
+	realmIdStr := c.GetHeader("realm")
+
+	data, err := h.service.GetByTicketID(c, id, user.ID, realmIdStr)
 	if err != nil {
 		response.SendError(c, err)
 		return

@@ -43,10 +43,6 @@ type Tickets interface {
 	Delete(ctx context.Context, dto *models.DeleteTicketDTO) error
 }
 
-type TicketAccessChecker interface {
-	CheckAccess(ctx context.Context, ticketID, userID uuid.UUID, action string, realm ...string) error
-}
-
 func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, int, error) {
 	realmStr := ""
 	if req.RealmID != nil {
@@ -88,10 +84,12 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 				all = append(all, gid)
 			}
 		}
-		if len(all) == 0 {
-			return nil, 0, models.ErrPermissionDenied
+
+		if len(all) > 0 {
+			req.GroupIDs = all
 		}
-		req.GroupIDs = all
+
+		req.IncludeUngroupedAssignedTo = &req.Actor.ID
 	}
 
 	// Handle mode filtering
@@ -138,60 +136,6 @@ func (s *TicketService) autoAssign(ctx context.Context, dto *models.TicketDTO) e
 	return nil
 }
 
-func (s *TicketService) CheckAccess(ctx context.Context, ticketID, userID uuid.UUID, action string, realm ...string) error {
-	realmStr := ""
-	if len(realm) > 0 {
-		realmStr = realm[0]
-	}
-
-	ok, err := s.policies.Enforce(userID.String(), realmStr, string(access.ResourceTicket), action)
-	if err != nil {
-		return fmt.Errorf("policy check failed: %w", err)
-	}
-	if ok {
-		return nil
-	}
-
-	ticket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: ticketID})
-	if err != nil {
-		return fmt.Errorf("failed to load ticket for access check: %w", err)
-	}
-	if ticket.Group == nil {
-		return models.ErrPermissionDenied
-	}
-
-	switch action {
-	case string(access.Read):
-		isMember, err := s.groups.IsMember(ctx, ticket.Group.ID, userID)
-		if err != nil {
-			return fmt.Errorf("failed to check membership: %w", err)
-		}
-		if isMember {
-			return nil
-		}
-		managed, err := s.groups.GetManagedGroups(ctx, userID)
-		if err != nil {
-			return fmt.Errorf("failed to check managed groups: %w", err)
-		}
-		for _, gid := range managed {
-			if gid == ticket.Group.ID {
-				return nil
-			}
-		}
-	case string(access.Write), string(access.Delete):
-		managed, err := s.groups.GetManagedGroups(ctx, userID)
-		if err != nil {
-			return fmt.Errorf("failed to check managed groups: %w", err)
-		}
-		for _, gid := range managed {
-			if gid == ticket.Group.ID {
-				return nil
-			}
-		}
-	}
-	return models.ErrPermissionDenied
-}
-
 func (s *TicketService) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) (*models.Ticket, error) {
 	if err := s.CheckAccess(ctx, req.ID, req.Actor.ID, string(access.Read), req.RealmID); err != nil {
 		return nil, err
@@ -202,13 +146,13 @@ func (s *TicketService) GetByID(ctx context.Context, req *models.GetTicketByIdDT
 		return nil, fmt.Errorf("failed to get ticket by id. error: %w", err)
 	}
 
-	subtasks, err := s.subtasks.GetByTicketID(ctx, data.ID, req.Actor.ID)
+	subtasks, err := s.subtasks.GetByTicketID(ctx, data.ID, req.Actor.ID, req.RealmID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get subtasks: %w", err)
 	}
 	data.Subtasks = subtasks
 
-	attachments, err := s.attachments.GetByEntity(ctx, string(access.ResourceTicket), data.ID, req.Actor.ID)
+	attachments, err := s.attachments.GetByEntity(ctx, string(access.ResourceTicket), data.ID, req.Actor.ID, req.RealmID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get attachments: %w", err)
 	}
@@ -228,41 +172,18 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		return fmt.Errorf("policy check failed: %w", err)
 	}
 	if !ok {
-		if dto.GroupID == nil {
-			managed, err := s.groups.GetManagedGroups(ctx, dto.Actor.ID)
-			if err != nil {
-				return fmt.Errorf("failed to get managed groups: %w", err)
-			}
-			if len(managed) == 0 {
-				return models.ErrPermissionDenied
-			}
-			if len(managed) > 1 {
-				return fmt.Errorf("group is required: user manages %d groups", len(managed))
-			}
-			dto.GroupID = &managed[0]
-		} else {
-			managed, err := s.groups.GetManagedGroups(ctx, dto.Actor.ID)
-			if err != nil {
-				return fmt.Errorf("failed to check managed groups: %w", err)
-			}
-			isManager := false
-			for _, gid := range managed {
-				if gid == *dto.GroupID {
-					isManager = true
-					break
-				}
-			}
-			if !isManager {
-				return models.ErrPermissionDenied
-			}
-		}
+		return models.ErrPermissionDenied
+	}
+
+	if dto.GroupID == nil {
+		return fmt.Errorf("group is required")
 	}
 
 	if dto.OwnerID == nil {
 		dto.OwnerID = &dto.CreatorID
 	}
 
-	if dto.AssigneeID == nil && dto.GroupID != nil {
+	if dto.AssigneeID == nil {
 		if err := s.autoAssign(ctx, dto); err != nil {
 			return fmt.Errorf("auto-assign: %w", err)
 		}
@@ -306,8 +227,12 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 		realmStr = dto.RealmID.String()
 	}
 
+	assignedOnly := false
 	if err := s.CheckAccess(ctx, *dto.ID, dto.Actor.ID, string(access.Write), realmStr); err != nil {
-		return err
+		if workErr := s.CheckWorkAccess(ctx, *dto.ID, dto.Actor.ID); workErr != nil {
+			return err
+		}
+		assignedOnly = true
 	}
 
 	var changes []*models.FieldChange
@@ -318,6 +243,14 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 		}
 
 		changes = dto.GetChanges(oldTicket)
+
+		if assignedOnly {
+			for _, change := range changes {
+				if change.Tag != models.ActionStatusChanged && change.Tag != models.ActionClosed {
+					return models.ErrPermissionDenied
+				}
+			}
+		}
 
 		if err := s.repo.Update(ctx, newTx, dto); err != nil {
 			return fmt.Errorf("failed to update ticket. error: %w", err)
@@ -365,7 +298,7 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 }
 
 func (s *TicketService) Delete(ctx context.Context, dto *models.DeleteTicketDTO) error {
-	if err := s.CheckAccess(ctx, dto.ID, dto.Actor.ID, string(access.Write), dto.RealmID); err != nil {
+	if err := s.CheckAccess(ctx, dto.ID, dto.Actor.ID, string(access.Delete), dto.RealmID); err != nil {
 		return err
 	}
 

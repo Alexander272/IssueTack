@@ -98,7 +98,7 @@ func TestAttachmentService_Upload_Success(t *testing.T) {
 	actorID := uuid.New()
 	content := "test file content"
 
-	mockAccess.On("CheckAccess", mock.Anything, entityID, actorID, string(access.Write), mock.Anything).Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, entityID, actorID).Return(nil)
 
 	mockRepo.On("Create", mock.Anything, nil, mock.AnythingOfType("*models.Attachment")).Return(nil)
 
@@ -124,7 +124,7 @@ func TestAttachmentService_Upload_RepoCreateFails(t *testing.T) {
 	entityID := uuid.New()
 	actorID := uuid.New()
 
-	mockAccess.On("CheckAccess", mock.Anything, entityID, actorID, string(access.Write), mock.Anything).Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, entityID, actorID).Return(nil)
 	mockRepo.On("Create", mock.Anything, nil, mock.AnythingOfType("*models.Attachment")).Return(assert.AnError)
 
 	_, err := svc.Upload(context.Background(), nil, "ticket", entityID, "test.txt", strings.NewReader("content"), actorID)
@@ -144,7 +144,7 @@ func TestAttachmentService_Delete_Success(t *testing.T) {
 	}
 
 	mockRepo.On("GetByID", mock.Anything, attID).Return(att, nil)
-	mockAccess.On("CheckAccess", mock.Anything, entityID, actorID, string(access.Write), mock.Anything).Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, entityID, actorID).Return(nil)
 	mockRepo.On("Delete", mock.Anything, nil, attID).Return(nil)
 
 	err := svc.Delete(context.Background(), nil, attID, actorID)
@@ -164,7 +164,7 @@ func TestAttachmentService_Delete_FileNotFound(t *testing.T) {
 	}
 
 	mockRepo.On("GetByID", mock.Anything, attID).Return(att, nil)
-	mockAccess.On("CheckAccess", mock.Anything, entityID, actorID, string(access.Write), mock.Anything).Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, entityID, actorID).Return(nil)
 	mockRepo.On("Delete", mock.Anything, nil, attID).Return(nil)
 
 	err := svc.Delete(context.Background(), nil, attID, actorID)
@@ -178,7 +178,7 @@ func TestAttachmentService_Upload_ReadFileContents(t *testing.T) {
 	actorID := uuid.New()
 	content := "read check content"
 
-	mockAccess.On("CheckAccess", mock.Anything, entityID, actorID, string(access.Write), mock.Anything).Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, entityID, actorID).Return(nil)
 
 	mockRepo.On("Create", mock.Anything, nil, mock.AnythingOfType("*models.Attachment")).Return(nil)
 

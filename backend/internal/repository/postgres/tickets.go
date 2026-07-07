@@ -80,6 +80,11 @@ func (a *nullableTicketAssoc) assign(ticket *models.Ticket) {
 	}
 }
 
+var (
+	activeStatuses  = []models.TicketStatus{"open", "in_progress", "pending", "on_hold"}
+	archiveStatuses = []models.TicketStatus{"resolved", "closed", "cancelled"}
+)
+
 func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, int, error) {
 	base := fmt.Sprintf(`SELECT 
 			t.id, t.title, t.description, t.status, t.priority, t.ticket_number, t.realm_id, t.due_date, t.closed_at, t.created_at, t.updated_at,
@@ -140,14 +145,23 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 		args = append(args, *req.AssigneeID)
 		argIdx++
 	}
-	if len(req.GroupIDs) > 0 {
-		ids := make([]string, len(req.GroupIDs))
-		for i, gid := range req.GroupIDs {
-			ids[i] = fmt.Sprintf("$%d", argIdx)
-			args = append(args, gid)
+	if len(req.GroupIDs) > 0 || req.IncludeUngroupedAssignedTo != nil {
+		var clauses []string
+		if len(req.GroupIDs) > 0 {
+			ids := make([]string, len(req.GroupIDs))
+			for i, gid := range req.GroupIDs {
+				ids[i] = fmt.Sprintf("$%d", argIdx)
+				args = append(args, gid)
+				argIdx++
+			}
+			clauses = append(clauses, "t.group_id IN ("+strings.Join(ids, ",")+")")
+		}
+		if req.IncludeUngroupedAssignedTo != nil {
+			clauses = append(clauses, fmt.Sprintf("(t.group_id IS NULL AND t.assignee_id = $%d)", argIdx))
+			args = append(args, *req.IncludeUngroupedAssignedTo)
 			argIdx++
 		}
-		where = append(where, "t.group_id IN ("+strings.Join(ids, ",")+")")
+		where = append(where, "("+strings.Join(clauses, " OR ")+")")
 	}
 	if req.CreatorID != nil {
 		where = append(where, fmt.Sprintf("t.creator_id = $%d", argIdx))
@@ -190,6 +204,24 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 		where = append(where, "t.priority IN ("+strings.Join(ids, ",")+")")
 	}
 
+	if req.Archived != nil && *req.Archived {
+		ids := make([]string, len(archiveStatuses))
+		for i, st := range archiveStatuses {
+			ids[i] = fmt.Sprintf("$%d", argIdx)
+			args = append(args, st)
+			argIdx++
+		}
+		where = append(where, "t.status IN ("+strings.Join(ids, ",")+")")
+	} else {
+		ids := make([]string, len(activeStatuses))
+		for i, st := range activeStatuses {
+			ids[i] = fmt.Sprintf("$%d", argIdx)
+			args = append(args, st)
+			argIdx++
+		}
+		where = append(where, "t.status IN ("+strings.Join(ids, ",")+")")
+	}
+
 	query := base
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
@@ -201,6 +233,8 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 		if rest, ok := strings.CutSuffix(field, "_desc"); ok {
 			field = rest
 			dir = "DESC"
+		} else if rest, ok := strings.CutSuffix(field, "_asc"); ok {
+			field = rest
 		}
 		if col, ok := sortMapping[field]; ok {
 			query += fmt.Sprintf(" ORDER BY %s %s", col, dir)
@@ -211,20 +245,22 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 		query += " ORDER BY t.created_at DESC"
 	}
 
-	limit := req.Limit
-	if limit <= 0 {
-		limit = 50
-	}
-	query += fmt.Sprintf(" LIMIT $%d", argIdx)
-	args = append(args, limit)
-	argIdx++
+	if req.Archived != nil && *req.Archived {
+		limit := req.Limit
+		if limit <= 0 {
+			limit = 20
+		}
+		query += fmt.Sprintf(" LIMIT $%d", argIdx)
+		args = append(args, limit)
+		argIdx++
 
-	offset := req.Offset
-	if offset < 0 {
-		offset = 0
+		offset := req.Offset
+		if offset < 0 {
+			offset = 0
+		}
+		query += fmt.Sprintf(" OFFSET $%d", argIdx)
+		args = append(args, offset)
 	}
-	query += fmt.Sprintf(" OFFSET $%d", argIdx)
-	args = append(args, offset)
 
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
