@@ -1,11 +1,17 @@
 import { Box, Button, Menu, MenuItem } from '@mui/material'
-import { ChevronDown, Check, Tag, Building2 } from 'lucide-mui'
+import { ChevronDown, Check, Tag, Building2, CheckCircle2, RotateCcw, XCircle } from 'lucide-mui'
 import { useState } from 'react'
 
 import type { ITask, TicketStatus } from '../../types/task'
+import { STATUS_MAP } from '../../constants/taskMaps'
+import { useAppSelector } from '@/hooks/redux'
+import { useCan } from '@/features/access/utils/can'
+import { PermRules } from '@/features/access/constants/permissions'
+import { getUserId } from '@/features/user/userSlice'
 import { TaskStatusBadge } from '../TaskStatusBadge'
 import { TaskPriorityBadge } from '../TaskPriorityBadge'
-import { STATUS_MAP } from '../../constants/taskMaps'
+
+const ACTIVE_STATUSES: TicketStatus[] = ['open', 'in_progress', 'pending', 'on_hold']
 
 interface Props {
 	task: ITask
@@ -14,6 +20,15 @@ interface Props {
 
 export const InfoBar = ({ task, onStatusChange }: Props) => {
 	const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
+	const currentUserId = useAppSelector(getUserId)
+	const canWrite = useCan(PermRules.Tasks.Write)
+	const isOwner = currentUserId != null && currentUserId === task.owner?.id
+	const isCreator = currentUserId != null && currentUserId === task.creator.id
+	const isAssignee = currentUserId != null && currentUserId === task.assignee?.id
+	const canUseMenu = !isOwner || isCreator || isAssignee || canWrite
+	const canAccept = isOwner && task.status === 'resolved'
+	const canReturn = isOwner && task.status === 'resolved'
+	const canCancel = isOwner && ACTIVE_STATUSES.includes(task.status)
 
 	const changeStatus = (status: TicketStatus) => {
 		onStatusChange(task.id, status)
@@ -96,48 +111,86 @@ export const InfoBar = ({ task, onStatusChange }: Props) => {
 					Комментарий
 				</Button> */}
 
-				<Button
-					variant='outlined'
-					onClick={e => setAnchorEl(e.currentTarget)}
-					sx={{
-						textTransform: 'none',
-						boxShadow: 'none',
-						'&:hover': { boxShadow: 'none' },
-					}}
-					endIcon={<ChevronDown sx={{ fontSize: 14 }} />}
-				>
-					Изменить статус
-				</Button>
+				{canCancel && (
+					<Button
+						variant='outlined'
+						color='error'
+						onClick={() => changeStatus('cancelled')}
+						startIcon={<XCircle sx={{ fontSize: 16 }} />}
+						sx={{ textTransform: 'none', boxShadow: 'none', '&:hover': { boxShadow: 'none' } }}
+					>
+						Отменить заявку
+					</Button>
+				)}
 
-				<Menu
-					anchorEl={anchorEl}
-					open={Boolean(anchorEl)}
-					onClose={() => setAnchorEl(null)}
-					slotProps={{
-						paper: {
-							sx: { borderRadius: '12px', mt: 0.5, minWidth: 200 },
-						},
-					}}
-				>
-					{(Object.entries(STATUS_MAP) as [TicketStatus, (typeof STATUS_MAP)[TicketStatus]][]).map(
-						([value, info]) => (
-							<MenuItem
-								key={value}
-								selected={value === task.status}
-								onClick={() => changeStatus(value)}
-								sx={{ fontSize: '0.875rem', gap: 1.5 }}
-							>
-								<info.icon sx={{ fontSize: 16, color: info.textColor }} />
-								{info.label}
-								{value === task.status && (
-									<Box sx={{ ml: 'auto', color: 'primary.main', display: 'flex' }}>
-										<Check sx={{ fontSize: 14 }} />
-									</Box>
-								)}
-							</MenuItem>
-						),
-					)}
-				</Menu>
+				{canAccept && (
+					<Button
+						variant='contained'
+						onClick={() => changeStatus('closed')}
+						startIcon={<CheckCircle2 sx={{ fontSize: 16 }} />}
+						sx={{ textTransform: 'none', boxShadow: 'none', '&:hover': { boxShadow: 'none' } }}
+					>
+						Подтвердить решение
+					</Button>
+				)}
+
+				{canReturn && (
+					<Button
+						variant='outlined'
+						onClick={() => changeStatus('in_progress')}
+						startIcon={<RotateCcw sx={{ fontSize: 16 }} />}
+						sx={{ textTransform: 'none', boxShadow: 'none', '&:hover': { boxShadow: 'none' } }}
+					>
+						Вернуть в работу
+					</Button>
+				)}
+
+				{canUseMenu && (
+					<Button
+						variant='outlined'
+						onClick={e => setAnchorEl(e.currentTarget)}
+						sx={{
+							textTransform: 'none',
+							boxShadow: 'none',
+							'&:hover': { boxShadow: 'none' },
+						}}
+						endIcon={<ChevronDown sx={{ fontSize: 14 }} />}
+					>
+						Изменить статус
+					</Button>
+				)}
+
+				{canUseMenu && (
+					<Menu
+						anchorEl={anchorEl}
+						open={Boolean(anchorEl)}
+						onClose={() => setAnchorEl(null)}
+						slotProps={{
+							paper: {
+								sx: { borderRadius: '12px', mt: 0.5, minWidth: 200 },
+							},
+						}}
+					>
+						{(Object.entries(STATUS_MAP) as [TicketStatus, (typeof STATUS_MAP)[TicketStatus]][]).map(
+							([value, info]) => (
+								<MenuItem
+									key={value}
+									selected={value === task.status}
+									onClick={() => changeStatus(value)}
+									sx={{ fontSize: '0.875rem', gap: 1.5 }}
+								>
+									<info.icon sx={{ fontSize: 16, color: info.textColor }} />
+									{info.label}
+									{value === task.status && (
+										<Box sx={{ ml: 'auto', color: 'primary.main', display: 'flex' }}>
+											<Check sx={{ fontSize: 14 }} />
+										</Box>
+									)}
+								</MenuItem>
+							),
+						)}
+					</Menu>
+				)}
 			</Box>
 		</Box>
 	)

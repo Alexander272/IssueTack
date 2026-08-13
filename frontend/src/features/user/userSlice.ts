@@ -45,6 +45,7 @@ const userSlice = createSlice({
 	},
 })
 
+export const getUserId = (state: RootState) => state.user.id
 export const getToken = (state: RootState) => state.user.token
 export const getPermissions = (state: RootState) => state.user.permissions
 export const getRole = (state: RootState) => state.user.role

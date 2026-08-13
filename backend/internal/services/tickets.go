@@ -241,9 +241,17 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 	}
 
 	assignedOnly := false
+	ownerOnly := false
 	if err := s.CheckAccess(ctx, *dto.ID, dto.Actor.ID, string(access.Write), realmStr); err != nil {
 		if workErr := s.CheckWorkAccess(ctx, *dto.ID, dto.Actor.ID); workErr != nil {
-			return err
+			old, loadErr := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
+			if loadErr != nil {
+				return fmt.Errorf("failed to load ticket for access check: %w", loadErr)
+			}
+			if !s.isOwner(old, dto.Actor.ID) {
+				return err
+			}
+			ownerOnly = true
 		}
 		assignedOnly = true
 	}
@@ -255,11 +263,18 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 			return err
 		}
 
+		if ownerOnly && !s.ownerTransitionAllowed(oldTicket, dto) {
+			return models.ErrPermissionDenied
+		}
+
 		if dto.HasField("status") && dto.Status != oldTicket.Status &&
 			(dto.Status == models.StatusClosed || dto.Status == models.StatusCancelled) {
 			ok, err := s.isCreatorOrManager(ctx, oldTicket, dto.Actor.ID)
 			if err != nil {
 				return fmt.Errorf("failed to check close access: %w", err)
+			}
+			if !ok && s.isOwner(oldTicket, dto.Actor.ID) {
+				ok = true
 			}
 			if !ok {
 				return models.ErrPermissionDenied
@@ -433,6 +448,28 @@ func (s *TicketService) isCreatorOrManager(ctx context.Context, ticket *models.T
 		}
 	}
 	return false, nil
+}
+
+func (s *TicketService) isOwner(ticket *models.Ticket, actorID uuid.UUID) bool {
+	return ticket.Owner != nil && ticket.Owner.ID == actorID
+}
+
+func (s *TicketService) ownerTransitionAllowed(ticket *models.Ticket, dto *models.TicketDTO) bool {
+	if !dto.HasField("status") || dto.Status == ticket.Status {
+		return false
+	}
+	switch dto.Status {
+	case models.StatusCancelled:
+		return ticket.Status != models.StatusResolved &&
+			ticket.Status != models.StatusClosed &&
+			ticket.Status != models.StatusCancelled
+	case models.StatusClosed:
+		return ticket.Status == models.StatusResolved
+	case models.StatusInProgress:
+		return ticket.Status == models.StatusResolved
+	default:
+		return false
+	}
 }
 
 func (s *TicketService) AutoCloseResolved(ctx context.Context, delay time.Duration) (int64, error) {

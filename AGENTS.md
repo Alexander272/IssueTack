@@ -47,7 +47,9 @@
 
 - **`CheckWorkAccess`** = `CheckAccess(Write)` ИЛИ исполнитель тикета. Используется для: смены статуса (через `Update`), создания/изменения подзадач, загрузки/удаления вложений.
 - `TicketService.Update`: если у пользователя только work-access, то разрешена смена только статуса (`ActionStatusChanged`, `ActionClosed`), остальные поля — запрет.
-- Статусы `closed`/`cancelled` может ставить **только автор тикета или менеджер группы** (`isCreatorOrManager`, строгая проверка — Casbin `write`-права не спасают).
+- Статусы `closed`/`cancelled` может ставить **автор, владелец (owner) или менеджер группы** (`isCreatorOrManager` + проверка владельца, строгая проверка — Casbin `write`-права не спасают).
+- **Владелец (owner)** без write/work-доступа может делать в `Update` только три перехода (`ownerTransitionAllowed`): активный статус → `cancelled` (отменить заявку), `resolved` → `closed` (принять решение), `resolved` → `in_progress` (вернуть в работу). Все прочие смены статусов и изменение полей ему запрещены.
+- Во фронтенде (`InfoBar`) кнопка «Изменить статус» показывается только создателю/исполнителю/менеджеру (`isCreator || isAssignee || canWrite`); «чистый» владелец видит только свои три кнопки: «Отменить заявку», «Подтвердить решение», «Вернуть в работу».
 - Переход в `resolved` проставляет `resolved_at`; тикеты со статусом `resolved` автоматически закрываются через `tickets.resolved_to_closed_after` в `config.yaml` (0 — отключено). `closed_at` при `resolved` не проставляется.
 - Переход в `resolved` возможен, только если нет подзадач в активном статусе (`open`/`in_progress`/`pending`/`on_hold`); подзадачи `resolved`/`closed`/`cancelled` не блокируют (`ErrSubtasksNotResolved`, подсчёт — `Subtasks.GetUnresolvedCount`).
 - Статус `closed` можно поставить **только из `resolved`** (`ErrCloseRequiresResolved`); нерешённую задачу можно только отменить (`cancelled`).
