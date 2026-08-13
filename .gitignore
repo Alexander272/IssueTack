@@ -11,6 +11,9 @@
 */ssl
 /backend/files
 
+.opencode
+/backend/app
+
 # Logs
 logs
 *.log
