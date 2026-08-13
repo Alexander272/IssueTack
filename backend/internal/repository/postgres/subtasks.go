@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/google/uuid"
@@ -154,16 +155,36 @@ func (r *SubtaskRepo) CreateSeveral(ctx context.Context, tx Tx, dto []*models.Su
 }
 
 func (r *SubtaskRepo) Update(ctx context.Context, tx Tx, dto *models.SubtaskDTO) error {
-	query := fmt.Sprintf(`UPDATE %s 
-		SET title=$3, description=$4, status=$5, priority=$6, assignee_id=$7, due_date=$8, sort_order=$9, updated_at=NOW()
-		WHERE id=$1 AND ticket_id=$2`,
-		Tables.Subtasks,
+	sets := make([]string, 0, 8)
+	args := []interface{}{dto.ID, dto.TicketID}
+	n := 2
+
+	add := func(jsonKey, column string, value interface{}) {
+		if !dto.HasField(jsonKey) {
+			return
+		}
+		n++
+		sets = append(sets, fmt.Sprintf("%s=$%d", column, n))
+		args = append(args, value)
+	}
+
+	add("title", "title", dto.Title)
+	add("description", "description", dto.Description)
+	add("status", "status", dto.Status)
+	add("priority", "priority", dto.Priority)
+	add("assigneeId", "assignee_id", dto.AssigneeID)
+	add("dueDate", "due_date", dto.DueDate)
+	add("sortOrder", "sort_order", dto.SortOrder)
+
+	if len(sets) == 0 {
+		return nil
+	}
+
+	query := fmt.Sprintf(`UPDATE %s SET %s, updated_at=NOW() WHERE id=$1 AND ticket_id=$2`,
+		Tables.Subtasks, strings.Join(sets, ", "),
 	)
 
-	_, err := r.getExec(tx).Exec(ctx, query,
-		dto.ID, dto.TicketID, dto.Title, dto.Description,
-		dto.Status, dto.Priority, dto.AssigneeID, dto.DueDate, dto.SortOrder,
-	)
+	_, err := r.getExec(tx).Exec(ctx, query, args...)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}

@@ -1,5 +1,5 @@
 import { Box, Button, Menu, MenuItem } from '@mui/material'
-import { ChevronDown, Check, Tag, Building2, MessageSquare } from 'lucide-mui'
+import { ChevronDown, Check, Tag, Building2 } from 'lucide-mui'
 import { useState } from 'react'
 
 import type { ITask, TicketStatus } from '../../types/task'

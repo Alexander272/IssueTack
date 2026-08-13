@@ -169,6 +169,7 @@ func TestSubtaskService_Update_Success(t *testing.T) {
 		Title:    "Updated",
 		Status:   "done",
 		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Provided: map[string]bool{"title": true, "status": true},
 	}
 	old := &models.Subtask{
 		ID: subtaskID, TicketID: ticketID, Title: "Original", Status: "open",
@@ -195,6 +196,7 @@ func TestSubtaskService_Update_NoChanges(t *testing.T) {
 		Title:    "Same",
 		Status:   "open",
 		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Provided: map[string]bool{"title": true, "status": true},
 	}
 	old := &models.Subtask{
 		ID: subtaskID, TicketID: ticketID, Title: "Same", Status: "open",

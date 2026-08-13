@@ -50,15 +50,15 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 			invalidatesTags: [{ type: 'Tasks', id: 'LIST' }],
 		}),
 
-		updateTask: builder.mutation<{ id: string; message: string }, ITaskDTO>({
+		updateTask: builder.mutation<{ id: string; message: string }, Partial<ITaskDTO> & { id: string }>({
 			query: body => ({
-				url: API.tickets.byId(body.id!),
+				url: API.tickets.byId(body.id),
 				method: 'PUT',
 				body,
 			}),
 			invalidatesTags: (_result, _error, arg) => [
 				{ type: 'Tasks', id: 'LIST' },
-				{ type: 'Tasks', id: arg.id! },
+				{ type: 'Tasks', id: arg.id },
 			],
 			onQueryStarted: async (_arg, api) => {
 				try {

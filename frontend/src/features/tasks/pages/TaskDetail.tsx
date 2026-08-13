@@ -40,7 +40,7 @@ export const TaskDetailPage = () => {
 
 	const handleStatusChange = async (taskId: string, status: TicketStatus) => {
 		try {
-			await updateTask({ id: taskId, status } as any)
+			await updateTask({ id: taskId, status })
 		} catch {
 			// handled by toast in apiSlice
 		}
@@ -48,7 +48,7 @@ export const TaskDetailPage = () => {
 
 	const handleSubtaskStatusChange = async (taskId: string, subtaskId: string, status: TicketStatus) => {
 		try {
-			await updateSubtask({ ticketId: taskId, id: subtaskId, status } as any)
+			await updateSubtask({ ticketId: taskId, id: subtaskId, status })
 		} catch {
 			// handled by toast in apiSlice
 		}

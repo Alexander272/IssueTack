@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	json "github.com/goccy/go-json"
 	"github.com/google/uuid"
 )
 
@@ -41,6 +42,40 @@ type SubtaskDTO struct {
 	AssigneeID  *uuid.UUID   `json:"assigneeId,omitempty"`
 	DueDate     *time.Time   `json:"dueDate,omitempty"`
 	SortOrder   int          `json:"sortOrder"`
+
+	// Поля, переданные в запросе (заполняется при UnmarshalJSON). Позволяет делать partial update.
+	Provided map[string]bool `json:"-"`
+}
+
+func (dto *SubtaskDTO) UnmarshalJSON(data []byte) error {
+	type Alias SubtaskDTO
+	aux := &struct {
+		*Alias
+	}{Alias: (*Alias)(dto)}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	dto.Provided = make(map[string]bool, len(raw))
+	for key := range raw {
+		dto.Provided[key] = true
+	}
+	return nil
+}
+
+func (dto *SubtaskDTO) HasField(key string) bool {
+	return dto.Provided != nil && dto.Provided[key]
+}
+
+func (dto *SubtaskDTO) MarkProvided(key string) {
+	if dto.Provided == nil {
+		dto.Provided = make(map[string]bool)
+	}
+	dto.Provided[key] = true
 }
 
 type DelSubtaskDTO struct {
@@ -58,31 +93,35 @@ func (dto *SubtaskDTO) GetChanges(old *Subtask) []*FieldChange {
 		return fmt.Sprintf("%v", v)
 	}
 
-	if dto.Title != old.Title {
+	if dto.HasField("title") && dto.Title != old.Title {
 		changes = append(changes, &FieldChange{ActionTitleChanged, old.Title, dto.Title})
 	}
-	if dto.Description != old.Description {
+	if dto.HasField("description") && dto.Description != old.Description {
 		changes = append(changes, &FieldChange{ActionDescriptionChanged, old.Description, dto.Description})
 	}
-	if dto.Status != old.Status {
+	if dto.HasField("status") && dto.Status != old.Status {
 		changes = append(changes, &FieldChange{ActionStatusChanged, toStr(old.Status), toStr(dto.Status)})
 	}
-	if dto.Priority != old.Priority {
+	if dto.HasField("priority") && dto.Priority != old.Priority {
 		changes = append(changes, &FieldChange{ActionPriorityChanged, toStr(old.Priority), toStr(dto.Priority)})
 	}
-	if dto.AssigneeID != nil && (old.Assignee == nil || *dto.AssigneeID != old.Assignee.ID) {
-		oldVal := "none"
-		if old.Assignee != nil {
-			oldVal = old.Assignee.ID.String()
+	if dto.HasField("assigneeId") {
+		if dto.AssigneeID != nil && (old.Assignee == nil || *dto.AssigneeID != old.Assignee.ID) {
+			oldVal := "none"
+			if old.Assignee != nil {
+				oldVal = old.Assignee.ID.String()
+			}
+			changes = append(changes, &FieldChange{ActionAssigned, oldVal, dto.AssigneeID.String()})
+		} else if dto.AssigneeID == nil && old.Assignee != nil {
+			changes = append(changes, &FieldChange{ActionAssigned, old.Assignee.ID.String(), "none"})
 		}
-		changes = append(changes, &FieldChange{ActionAssigned, oldVal, dto.AssigneeID.String()})
-	} else if dto.AssigneeID == nil && old.Assignee != nil {
-		changes = append(changes, &FieldChange{ActionAssigned, old.Assignee.ID.String(), "none"})
 	}
-	if dto.DueDate != nil && (old.DueDate == nil || *dto.DueDate != *old.DueDate) {
-		changes = append(changes, &FieldChange{ActionDueDateChanged, toStr(old.DueDate), toStr(dto.DueDate)})
-	} else if dto.DueDate == nil && old.DueDate != nil {
-		changes = append(changes, &FieldChange{ActionDueDateChanged, toStr(old.DueDate), "none"})
+	if dto.HasField("dueDate") {
+		if dto.DueDate != nil && (old.DueDate == nil || *dto.DueDate != *old.DueDate) {
+			changes = append(changes, &FieldChange{ActionDueDateChanged, toStr(old.DueDate), toStr(dto.DueDate)})
+		} else if dto.DueDate == nil && old.DueDate != nil {
+			changes = append(changes, &FieldChange{ActionDueDateChanged, toStr(old.DueDate), "none"})
+		}
 	}
 
 	return changes

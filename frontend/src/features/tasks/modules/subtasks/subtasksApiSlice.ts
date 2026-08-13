@@ -41,7 +41,7 @@ const subtasksApiSlice = apiSlice.injectEndpoints({
 			},
 		}),
 
-		updateSubtask: builder.mutation<{ id: string; message: string }, ISubtaskDTO>({
+		updateSubtask: builder.mutation<{ id: string; message: string }, Partial<ISubtaskDTO> & { id: string; ticketId: string }>({
 			query: body => ({
 				url: API.subtasks.byId(body.ticketId, body.id),
 				method: 'PUT',
