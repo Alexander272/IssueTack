@@ -3,6 +3,7 @@ package access
 const (
 	ResourceRole      ResourceSlug = "role"
 	ResourcePerm      ResourceSlug = "permission"
+	ResourceUser      ResourceSlug = "user"
 	ResourceAudit     ResourceSlug = "audit_log"
 	ResourceRealm     ResourceSlug = "realm"
 	ResourceGroup     ResourceSlug = "group"
@@ -22,8 +23,9 @@ var OrderOfResources = map[ResourceSlug]int{
 	ResourceActivity:  10,
 	ResourceAudit:     11,
 	ResourceRealm:     20,
-	ResourceRole:      21,
-	ResourcePerm:      22,
+	ResourceUser:      21,
+	ResourceRole:      22,
+	ResourcePerm:      23,
 }
 
 var Reg = NewRegistry(
@@ -32,6 +34,13 @@ var Reg = NewRegistry(
 		Name:           "Роли",
 		Group:          "Администрирование",
 		Description:    "Управление ролями пользователей",
+		AllowedActions: actions(All),
+	},
+	Resource{
+		Slug:           ResourceUser,
+		Name:           "Пользователи",
+		Group:          "Администрирование",
+		Description:    "Управление пользователями",
 		AllowedActions: actions(All),
 	},
 	Resource{
