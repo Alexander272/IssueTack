@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/google/uuid"
@@ -42,6 +43,7 @@ type Tickets interface {
 	Create(ctx context.Context, tx Tx, dto *models.TicketDTO) error
 	Update(ctx context.Context, tx Tx, dto *models.TicketDTO) error
 	Delete(ctx context.Context, tx Tx, dto *models.DeleteTicketDTO) error
+	CloseResolved(ctx context.Context, cutoff time.Time) (int64, error)
 }
 
 type nullableTicketAssoc struct {
@@ -87,7 +89,7 @@ var (
 
 func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, int, error) {
 	base := fmt.Sprintf(`SELECT 
-			t.id, t.title, t.description, t.status, t.priority, t.ticket_number, t.realm_id, t.due_date, t.closed_at, t.created_at, t.updated_at,
+			t.id, t.title, t.description, t.status, t.priority, t.ticket_number, t.realm_id, t.due_date, t.closed_at, t.resolved_at, t.created_at, t.updated_at,
 			u_creator.id, u_creator.username AS creator_username, u_creator.first_name AS creator_first_name, u_creator.last_name AS creator_last_name, u_creator.internal_number AS creator_internal_number,
 			u_owner.id, u_owner.username AS owner_username, u_owner.first_name AS owner_first_name, u_owner.last_name AS owner_last_name, u_owner.internal_number AS owner_internal_number,
 			u_assignee.id, u_assignee.username AS assignee_username, u_assignee.first_name AS assignee_first_name, u_assignee.last_name AS assignee_last_name, u_assignee.internal_number AS assignee_internal_number,
@@ -281,7 +283,7 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 			&ticket.ID, &ticket.Title, &ticket.Description,
 			&ticket.Status, &ticket.Priority,
 			&ticket.TicketNumber, &ticket.RealmID,
-			&ticket.DueDate, &ticket.ClosedAt, &ticket.CreatedAt, &ticket.UpdatedAt,
+			&ticket.DueDate, &ticket.ClosedAt, &ticket.ResolvedAt, &ticket.CreatedAt, &ticket.UpdatedAt,
 			&ticket.Creator.ID, &ticket.Creator.Username, &ticket.Creator.FirstName, &ticket.Creator.LastName, &ticket.Creator.InternalNumber,
 			&assoc.OwnerID, &assoc.OwnerUsername, &assoc.OwnerFirstName, &assoc.OwnerLastName, &assoc.OwnerInternalNumber,
 			&assoc.AssigneeID, &assoc.AssigneeUsername, &assoc.AssigneeFirstName, &assoc.AssigneeLastName, &assoc.AssigneeInternalNumber,
@@ -307,7 +309,7 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 
 func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) (*models.Ticket, error) {
 	query := fmt.Sprintf(`SELECT 
-			t.id, t.title, t.description, t.status, t.priority, t.ticket_number, t.realm_id, t.due_date, t.closed_at, t.created_at, t.updated_at,
+			t.id, t.title, t.description, t.status, t.priority, t.ticket_number, t.realm_id, t.due_date, t.closed_at, t.resolved_at, t.created_at, t.updated_at,
 			-- Данные владельца
 			u_owner.id, u_owner.username AS owner_username, u_owner.first_name AS owner_first_name, u_owner.last_name AS owner_last_name, u_owner.internal_number AS owner_internal_number,
 			-- Данные создателя
@@ -345,7 +347,7 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 	if err := r.db.QueryRow(ctx, query, req.ID).Scan(
 		&ticket.ID, &ticket.Title, &ticket.Description, &ticket.Status, &ticket.Priority,
 		&ticket.TicketNumber, &ticket.RealmID,
-		&ticket.DueDate, &ticket.ClosedAt, &ticket.CreatedAt, &ticket.UpdatedAt,
+		&ticket.DueDate, &ticket.ClosedAt, &ticket.ResolvedAt, &ticket.CreatedAt, &ticket.UpdatedAt,
 		&assoc.OwnerID, &assoc.OwnerUsername, &assoc.OwnerFirstName, &assoc.OwnerLastName, &assoc.OwnerInternalNumber,
 		&ticket.Creator.ID, &ticket.Creator.Username, &ticket.Creator.FirstName, &ticket.Creator.LastName, &ticket.Creator.InternalNumber,
 		&assoc.AssigneeID, &assoc.AssigneeUsername, &assoc.AssigneeFirstName, &assoc.AssigneeLastName, &assoc.AssigneeInternalNumber,
@@ -394,17 +396,42 @@ func (r *TicketRepo) Create(ctx context.Context, tx Tx, dto *models.TicketDTO) e
 }
 
 func (r *TicketRepo) Update(ctx context.Context, tx Tx, dto *models.TicketDTO) error {
-	query := fmt.Sprintf(`UPDATE %s 
-		SET title=$2, description=$3, status=$4, priority=$5, site_id=$6, assignee_id=$7, 
-		due_date=$8, closed_at=$9, category_id=$10, group_id=$11, owner_id=$12, updated_at=NOW()
-		WHERE id=$1`,
-		Tables.Tickets,
+	sets := make([]string, 0, 12)
+	args := []interface{}{dto.ID}
+	n := 1
+
+	add := func(jsonKey, column string, value interface{}) {
+		if !dto.HasField(jsonKey) {
+			return
+		}
+		n++
+		sets = append(sets, fmt.Sprintf("%s=$%d", column, n))
+		args = append(args, value)
+	}
+
+	add("title", "title", dto.Title)
+	add("description", "description", dto.Description)
+	add("status", "status", dto.Status)
+	add("priority", "priority", dto.Priority)
+	add("siteId", "site_id", dto.SiteID)
+	add("categoryId", "category_id", dto.CategoryID)
+	add("groupId", "group_id", dto.GroupID)
+	add("assigneeId", "assignee_id", dto.AssigneeID)
+	add("managerId", "manager_id", dto.ManagerID)
+	add("ownerId", "owner_id", dto.OwnerID)
+	add("dueDate", "due_date", dto.DueDate)
+	add("closedAt", "closed_at", dto.ClosedAt)
+	add("resolvedAt", "resolved_at", dto.ResolvedAt)
+
+	if len(sets) == 0 {
+		return nil
+	}
+
+	query := fmt.Sprintf(`UPDATE %s SET %s, updated_at=NOW() WHERE id=$1`,
+		Tables.Tickets, strings.Join(sets, ", "),
 	)
 
-	_, err := r.getExec(tx).Exec(
-		ctx, query, dto.ID, dto.Title, dto.Description, dto.Status, dto.Priority, dto.SiteID, dto.AssigneeID,
-		dto.DueDate, dto.ClosedAt, dto.CategoryID, dto.GroupID, dto.OwnerID,
-	)
+	_, err := r.getExec(tx).Exec(ctx, query, args...)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -419,4 +446,15 @@ func (r *TicketRepo) Delete(ctx context.Context, tx Tx, dto *models.DeleteTicket
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
 	return nil
+}
+
+func (r *TicketRepo) CloseResolved(ctx context.Context, cutoff time.Time) (int64, error) {
+	query := fmt.Sprintf(`UPDATE %s SET status='closed', closed_at=COALESCE(closed_at, NOW()), updated_at=NOW()
+		WHERE status='resolved' AND resolved_at IS NOT NULL AND resolved_at <= $1`, Tables.Tickets)
+
+	cmd, err := r.db.Exec(ctx, query, cutoff)
+	if err != nil {
+		return 0, MapError(fmt.Errorf("failed to auto-close resolved tickets: %w", err))
+	}
+	return cmd.RowsAffected(), nil
 }

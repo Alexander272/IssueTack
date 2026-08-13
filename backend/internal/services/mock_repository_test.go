@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
@@ -233,6 +234,10 @@ func (m *MockTicketsRepo) Delete(ctx context.Context, tx postgres.Tx, dto *model
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
 }
+func (m *MockTicketsRepo) CloseResolved(ctx context.Context, cutoff time.Time) (int64, error) {
+	args := m.Called(ctx, cutoff)
+	return args.Get(0).(int64), args.Error(1)
+}
 
 type MockGroupsRepo struct {
 	mock.Mock
@@ -324,6 +329,10 @@ func (m *MockSubtaskService) GetByID(ctx context.Context, req *models.GetSubtask
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*models.Subtask), args.Error(1)
+}
+func (m *MockSubtaskService) GetUnresolvedCount(ctx context.Context, ticketID uuid.UUID) (int, error) {
+	args := m.Called(ctx, ticketID)
+	return args.Int(0), args.Error(1)
 }
 func (m *MockSubtaskService) Create(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO) error {
 	args := m.Called(ctx, tx, dto)

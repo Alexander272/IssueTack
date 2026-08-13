@@ -92,9 +92,9 @@ func main() {
 	handlers := transport.NewHandler(keycloak, service, hub)
 
 	//* HTTP Server
-	// if err := services.Scheduler.Start(&conf.Scheduler); err != nil {
-	// 	log.Fatalf("failed to start scheduler. error: %s\n", err.Error())
-	// }
+	if err := service.Scheduler.Start(&conf.Tickets); err != nil {
+		log.Fatalf("failed to start scheduler. error: %s\n", err.Error())
+	}
 
 	// Запускаем все Runner'ы
 	// for _, runner := range service.GetRunners() {
@@ -126,9 +126,9 @@ func main() {
 	shutdownCtx, shutdown := context.WithTimeout(context.Background(), timeout)
 	defer shutdown()
 
-	// if err := services.Scheduler.Stop(); err != nil {
-	// 	logger.Error("failed to stop scheduler.", logger.ErrAttr(err))
-	// }
+	if err := service.Scheduler.Stop(); err != nil {
+		logger.Error("failed to stop scheduler.", logger.ErrAttr(err))
+	}
 
 	if err := srv.Stop(shutdownCtx); err != nil {
 		logger.Error("failed to stop server:", logger.ErrAttr(err))

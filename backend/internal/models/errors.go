@@ -47,6 +47,9 @@ var (
 
 	// 409 Conflict
 	ErrAlreadyExists = NewDomainError(errors.New("resource already exists"), http.StatusConflict, "AE001", "Запись уже существует")
+	// 409 Conflict
+	ErrSubtasksNotResolved   = NewDomainError(errors.New("ticket has unresolved subtasks"), http.StatusConflict, "TK001", "Нельзя отметить задачу решённой, пока не решены все её подзадачи")
+	ErrCloseRequiresResolved = NewDomainError(errors.New("cannot close ticket that is not resolved"), http.StatusConflict, "TK002", "Нельзя закрыть нерешённую задачу. Задачу можно только отменить")
 
 	// 400 Bad Request
 	ErrInvalidInput          = NewDomainError(errors.New("invalid input data"), http.StatusBadRequest, "BR001", "Переданы некорректные данные")

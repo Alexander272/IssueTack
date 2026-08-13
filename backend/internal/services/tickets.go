@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
@@ -22,17 +23,28 @@ type TicketService struct {
 	policies      AccessPolices
 }
 
-func NewTicketService(repo repository.Tickets, tx TransactionManager, logs ActivityLog, subtasks Subtasks, attachments Attachments, notifications Notifications, groups Groups, policies AccessPolices) *TicketService {
+func NewTicketService(deps *TicketDeps) *TicketService {
 	return &TicketService{
-		repo:          repo,
-		tx:            tx,
-		logs:          logs,
-		subtasks:      subtasks,
-		attachments:   attachments,
-		notifications: notifications,
-		groups:        groups,
-		policies:      policies,
+		repo:          deps.Repo,
+		tx:            deps.TxManager,
+		logs:          deps.Logs,
+		subtasks:      deps.Subtasks,
+		attachments:   deps.Attachments,
+		notifications: deps.Notifications,
+		groups:        deps.Groups,
+		policies:      deps.Policies,
 	}
+}
+
+type TicketDeps struct {
+	Repo          repository.Tickets
+	TxManager     TransactionManager
+	Logs          ActivityLog
+	Subtasks      Subtasks
+	Attachments   Attachments
+	Notifications Notifications
+	Groups        Groups
+	Policies      AccessPolices
 }
 
 type Tickets interface {
@@ -41,6 +53,7 @@ type Tickets interface {
 	Create(ctx context.Context, dto *models.TicketDTO) error
 	Update(ctx context.Context, dto *models.TicketDTO) error
 	Delete(ctx context.Context, dto *models.DeleteTicketDTO) error
+	AutoCloseResolved(ctx context.Context, delay time.Duration) (int64, error)
 }
 
 func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, int, error) {
@@ -242,6 +255,59 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 			return err
 		}
 
+		if dto.HasField("status") && dto.Status != oldTicket.Status &&
+			(dto.Status == models.StatusClosed || dto.Status == models.StatusCancelled) {
+			ok, err := s.isCreatorOrManager(ctx, oldTicket, dto.Actor.ID)
+			if err != nil {
+				return fmt.Errorf("failed to check close access: %w", err)
+			}
+			if !ok {
+				return models.ErrPermissionDenied
+			}
+		}
+
+		if dto.HasField("status") && dto.Status != oldTicket.Status {
+			switch dto.Status {
+			case models.StatusResolved:
+				n, err := s.subtasks.GetUnresolvedCount(ctx, *dto.ID)
+				if err != nil {
+					return fmt.Errorf("failed to check subtasks: %w", err)
+				}
+				if n > 0 {
+					return models.ErrSubtasksNotResolved
+				}
+			case models.StatusClosed:
+				if oldTicket.Status != models.StatusResolved {
+					return models.ErrCloseRequiresResolved
+				}
+			}
+		}
+
+		if dto.HasField("status") {
+			now := time.Now()
+			switch dto.Status {
+			case models.StatusResolved:
+				if oldTicket.ResolvedAt == nil {
+					dto.ResolvedAt = &now
+					dto.MarkProvided("resolvedAt")
+				}
+			case models.StatusClosed, models.StatusCancelled:
+				if oldTicket.ClosedAt == nil {
+					dto.ClosedAt = &now
+					dto.MarkProvided("closedAt")
+				}
+			default:
+				if oldTicket.ClosedAt != nil {
+					dto.ClosedAt = nil
+					dto.MarkProvided("closedAt")
+				}
+				if oldTicket.ResolvedAt != nil {
+					dto.ResolvedAt = nil
+					dto.MarkProvided("resolvedAt")
+				}
+			}
+		}
+
 		changes = dto.GetChanges(oldTicket)
 
 		if assignedOnly {
@@ -347,4 +413,33 @@ func (s *TicketService) Delete(ctx context.Context, dto *models.DeleteTicketDTO)
 	}
 
 	return nil
+}
+
+func (s *TicketService) isCreatorOrManager(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) (bool, error) {
+	if ticket.Creator.ID == actorID {
+		return true, nil
+	}
+	if ticket.Group == nil {
+		return false, nil
+	}
+
+	managed, err := s.groups.GetManagedGroups(ctx, actorID)
+	if err != nil {
+		return false, fmt.Errorf("failed to get managed groups: %w", err)
+	}
+	for _, gid := range managed {
+		if gid == ticket.Group.ID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *TicketService) AutoCloseResolved(ctx context.Context, delay time.Duration) (int64, error) {
+	if delay <= 0 {
+		return 0, nil
+	}
+
+	cutoff := time.Now().Add(-delay)
+	return s.repo.CloseResolved(ctx, cutoff)
 }

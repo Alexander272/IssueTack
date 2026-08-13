@@ -21,6 +21,14 @@ type (
 		StaticLimiter LimiterConfig    `yaml:"static_limiter"`
 		Casbin        CasbinConfig     `yaml:"casbin"`
 		FileServer    FileServerConfig `yaml:"file_server"`
+		Tickets       TicketConfig     `yaml:"tickets"`
+	}
+
+	TicketConfig struct {
+		// Через какое время после перехода в resolved автоматически закрывать тикет (0 — отключено)
+		ResolvedToClosedAfter time.Duration `yaml:"resolved_to_closed_after" env:"TICKETS_RESOLVED_TO_CLOSED_AFTER" env-default:"0"`
+		// Расписание проверки (robfig/cron): "@daily", "@every 6h", "0 3 * * *"
+		AutoCloseSchedule string `yaml:"auto_close_schedule" env:"TICKETS_AUTO_CLOSE_SCHEDULE" env-default:"@daily"`
 	}
 
 	FileServerConfig struct {

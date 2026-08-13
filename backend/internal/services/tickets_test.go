@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
@@ -20,7 +21,16 @@ func ticketServiceFixtures() (*MockTicketsRepo, *MockActivityLogService, *MockSu
 	mockGroups := new(MockGroupsRepo)
 	mockPolicies := new(MockAccessPolices)
 
-	svc := NewTicketService(mockRepo, &mockTransactionManager{}, mockLogs, mockSubtasks, mockAttachments, mockNotifications, mockGroups, mockPolicies)
+	svc := NewTicketService(&TicketDeps{
+		Repo:          mockRepo,
+		TxManager:     &mockTransactionManager{},
+		Logs:          mockLogs,
+		Subtasks:      mockSubtasks,
+		Attachments:   mockAttachments,
+		Notifications: mockNotifications,
+		Groups:        mockGroups,
+		Policies:      mockPolicies,
+	})
 	return mockRepo, mockLogs, mockSubtasks, mockAttachments, mockNotifications, mockGroups, mockPolicies, svc
 }
 
@@ -182,9 +192,10 @@ func TestTicketService_Update_Success(t *testing.T) {
 	actorID := uuid.New()
 	ticketID := uuid.New()
 	dto := &models.TicketDTO{
-		ID:    &ticketID,
-		Actor: &models.Actor{ID: actorID, Name: "test"},
-		Title: "Updated Ticket",
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Title:    "Updated Ticket",
+		Provided: map[string]bool{"title": true},
 	}
 
 	oldTicket := &models.Ticket{
@@ -200,6 +211,344 @@ func TestTicketService_Update_Success(t *testing.T) {
 
 	err := svc.Update(context.Background(), dto)
 	assert.NoError(t, err)
+}
+
+func TestTicketService_Update_StatusOnly_Assignee(t *testing.T) {
+	mockRepo, mockLogs, _, _, mockNotifications, _, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Status:   models.StatusInProgress,
+		Provided: map[string]bool{"status": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:       ticketID,
+		Title:    "Original Ticket",
+		Priority: models.PriorityHigh,
+		Status:   models.StatusOpen,
+		Creator:  models.UserShort{ID: uuid.New()},
+		Assignee: &models.UserShort{ID: actorID},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, ticketID, actorID, mock.Anything).Return(nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockLogs.AssertExpectations(t)
+	mockNotifications.AssertExpectations(t)
+}
+
+func TestTicketService_Update_Assignee_SetResolved_Success(t *testing.T) {
+	mockRepo, mockLogs, mockSubtasks, _, mockNotifications, _, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Status:   models.StatusResolved,
+		Provided: map[string]bool{"status": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:       ticketID,
+		Title:    "Original Ticket",
+		Status:   models.StatusInProgress,
+		Creator:  models.UserShort{ID: uuid.New()},
+		Assignee: &models.UserShort{ID: actorID},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockSubtasks.On("GetUnresolvedCount", mock.Anything, ticketID).Return(0, nil)
+	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, ticketID, actorID, mock.Anything).Return(nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.NoError(t, err)
+	assert.NotNil(t, dto.ResolvedAt)
+	assert.Nil(t, dto.ClosedAt)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestTicketService_Update_Resolve_UnresolvedSubtasks_Denied(t *testing.T) {
+	mockRepo, _, mockSubtasks, _, _, _, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Status:   models.StatusResolved,
+		Provided: map[string]bool{"status": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:       ticketID,
+		Title:    "Original Ticket",
+		Status:   models.StatusInProgress,
+		Creator:  models.UserShort{ID: uuid.New()},
+		Assignee: &models.UserShort{ID: actorID},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockSubtasks.On("GetUnresolvedCount", mock.Anything, ticketID).Return(1, nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrSubtasksNotResolved)
+	assert.Nil(t, dto.ResolvedAt)
+	mockRepo.AssertExpectations(t)
+	mockRepo.AssertNotCalled(t, "Update")
+}
+
+func TestTicketService_Update_Resolve_CancelledSubtasks_Success(t *testing.T) {
+	mockRepo, mockLogs, mockSubtasks, _, mockNotifications, _, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Status:   models.StatusResolved,
+		Provided: map[string]bool{"status": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:       ticketID,
+		Title:    "Original Ticket",
+		Status:   models.StatusInProgress,
+		Creator:  models.UserShort{ID: uuid.New()},
+		Assignee: &models.UserShort{ID: actorID},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockSubtasks.On("GetUnresolvedCount", mock.Anything, ticketID).Return(0, nil)
+	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, ticketID, actorID, mock.Anything).Return(nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestTicketService_Update_Resolve_SubtaskCheckError(t *testing.T) {
+	mockRepo, _, mockSubtasks, _, _, _, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Status:   models.StatusResolved,
+		Provided: map[string]bool{"status": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:       ticketID,
+		Title:    "Original Ticket",
+		Status:   models.StatusInProgress,
+		Creator:  models.UserShort{ID: uuid.New()},
+		Assignee: &models.UserShort{ID: actorID},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockSubtasks.On("GetUnresolvedCount", mock.Anything, ticketID).Return(0, assert.AnError)
+
+	err := svc.Update(context.Background(), dto)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, assert.AnError)
+	mockRepo.AssertNotCalled(t, "Update")
+}
+
+func TestTicketService_Update_Assignee_SetClosed_Denied(t *testing.T) {
+	mockRepo, _, _, _, _, _, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Status:   models.StatusClosed,
+		Provided: map[string]bool{"status": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:       ticketID,
+		Title:    "Original Ticket",
+		Status:   models.StatusInProgress,
+		Creator:  models.UserShort{ID: uuid.New()},
+		Assignee: &models.UserShort{ID: actorID},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+	mockRepo.AssertExpectations(t)
+	mockRepo.AssertNotCalled(t, "Update")
+}
+
+func TestTicketService_Update_Creator_SetClosed_Success(t *testing.T) {
+	mockRepo, mockLogs, _, _, mockNotifications, _, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	groupID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Status:   models.StatusClosed,
+		Provided: map[string]bool{"status": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:      ticketID,
+		Title:   "Original Ticket",
+		Status:  models.StatusResolved,
+		Creator: models.UserShort{ID: actorID},
+		Group:   &models.GroupShort{ID: groupID, Name: "Test Group"},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, ticketID, actorID, mock.Anything).Return(nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.NoError(t, err)
+	assert.NotNil(t, dto.ClosedAt)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestTicketService_Update_Close_NotResolved_Denied(t *testing.T) {
+	mockRepo, _, _, _, _, _, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	groupID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Status:   models.StatusClosed,
+		Provided: map[string]bool{"status": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:      ticketID,
+		Title:   "Original Ticket",
+		Status:  models.StatusInProgress,
+		Creator: models.UserShort{ID: actorID},
+		Group:   &models.GroupShort{ID: groupID, Name: "Test Group"},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrCloseRequiresResolved)
+	mockRepo.AssertExpectations(t)
+	mockRepo.AssertNotCalled(t, "Update")
+}
+
+func TestTicketService_Update_Manager_SetCancelled_Success(t *testing.T) {
+	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	groupID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Status:   models.StatusCancelled,
+		Provided: map[string]bool{"status": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:      ticketID,
+		Title:   "Original Ticket",
+		Status:  models.StatusInProgress,
+		Creator: models.UserShort{ID: uuid.New()},
+		Group:   &models.GroupShort{ID: groupID, Name: "Test Group"},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID).Return([]uuid.UUID{groupID}, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, ticketID, actorID, mock.Anything).Return(nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.NoError(t, err)
+	assert.NotNil(t, dto.ClosedAt)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestTicketService_Update_PolicyWrite_NotManager_SetClosed_Denied(t *testing.T) {
+	mockRepo, _, _, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	groupID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Status:   models.StatusClosed,
+		Provided: map[string]bool{"status": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:      ticketID,
+		Title:   "Original Ticket",
+		Status:  models.StatusInProgress,
+		Creator: models.UserShort{ID: uuid.New()},
+		Group:   &models.GroupShort{ID: groupID, Name: "Test Group"},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(true, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID).Return([]uuid.UUID{}, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+	mockRepo.AssertExpectations(t)
+	mockRepo.AssertNotCalled(t, "Update")
+}
+
+func TestTicketService_AutoCloseResolved_Disabled(t *testing.T) {
+	mockRepo, _, _, _, _, _, _, svc := ticketServiceFixtures()
+
+	n, err := svc.AutoCloseResolved(context.Background(), 0)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), n)
+	mockRepo.AssertNotCalled(t, "CloseResolved")
+}
+
+func TestTicketService_AutoCloseResolved_Success(t *testing.T) {
+	mockRepo, _, _, _, _, _, _, svc := ticketServiceFixtures()
+
+	mockRepo.On("CloseResolved", mock.Anything, mock.Anything).Return(int64(3), nil)
+
+	n, err := svc.AutoCloseResolved(context.Background(), 24*time.Hour)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(3), n)
+	mockRepo.AssertExpectations(t)
 }
 
 func TestTicketService_Delete_Success(t *testing.T) {

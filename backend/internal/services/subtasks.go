@@ -32,6 +32,7 @@ func (s *SubtaskService) SetTicketAccess(checker TicketAccessChecker) {
 type Subtasks interface {
 	GetByTicketID(ctx context.Context, ticketID, actorID uuid.UUID, realm ...string) ([]*models.Subtask, error)
 	GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID, realm ...string) (*models.Subtask, error)
+	GetUnresolvedCount(ctx context.Context, ticketID uuid.UUID) (int, error)
 	Create(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO) error
 	CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.SubtaskDTO) error
 	Update(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO) error
@@ -64,6 +65,22 @@ func (s *SubtaskService) GetByID(ctx context.Context, req *models.GetSubtaskDTO,
 		return nil, err
 	}
 	return data, nil
+}
+
+func (s *SubtaskService) GetUnresolvedCount(ctx context.Context, ticketID uuid.UUID) (int, error) {
+	data, err := s.repo.GetByTicketID(ctx, ticketID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get subtasks: %w", err)
+	}
+	count := 0
+	for _, st := range data {
+		switch st.Status {
+		case models.StatusResolved, models.StatusClosed, models.StatusCancelled:
+		default:
+			count++
+		}
+	}
+	return count, nil
 }
 
 func (s *SubtaskService) Create(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO) error {

@@ -47,6 +47,7 @@ export interface ITask {
 	manager: IUserShort | null
 	dueDate: string | null
 	closedAt: string | null
+	resolvedAt: string | null
 	createdAt: string
 	updatedAt: string
 	subtasks?: ISubtask[]
@@ -86,6 +87,7 @@ export interface ITaskDTO {
 	managerId?: string | null
 	dueDate?: string | null
 	closedAt?: string | null
+	resolvedAt?: string | null
 }
 
 export interface ISubtask {

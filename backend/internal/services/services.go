@@ -31,6 +31,7 @@ type Services struct {
 	Notifications
 	ActivityLog
 	UserRealms
+	Scheduler
 }
 
 type Deps struct {
@@ -95,12 +96,22 @@ func NewServices(deps *Deps) *Services {
 	attachments := NewAttachmentService(deps.Repo.Attachments, &deps.Conf.FileServer, nil, deps.Repo.Subtasks)
 	checklists := NewChecklistService(deps.Repo.Checklists, subtasks)
 	notifications := NewNotificationService(deps.Hub, deps.Repo.Notifications, deps.Repo.Tickets, transaction)
-	tickets := NewTicketService(deps.Repo.Tickets, transaction, logs, subtasks, attachments, notifications, groups, policies)
+	tickets := NewTicketService(&TicketDeps{
+		Repo:          deps.Repo.Tickets,
+		TxManager:     transaction,
+		Logs:          logs,
+		Subtasks:      subtasks,
+		Attachments:   attachments,
+		Notifications: notifications,
+		Groups:        groups,
+		Policies:      policies,
+	})
 
 	subtasks.SetTicketAccess(tickets)
 	attachments.SetTicketAccess(tickets)
 
 	audit.StartListening(deps.Ctx, updatePolicyEvent)
+	scheduler := NewSchedulerService(&SchedulerDeps{Tickets: tickets})
 
 	return &Services{
 		Realms:        realms,
@@ -122,5 +133,6 @@ func NewServices(deps *Deps) *Services {
 		Notifications: notifications,
 		ActivityLog:   logs,
 		UserRealms:    userRealms,
+		Scheduler:     scheduler,
 	}
 }
