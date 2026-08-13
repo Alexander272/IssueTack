@@ -52,6 +52,10 @@ export const API = {
 		byId: (ticketId: string, subtaskId: string) =>
 			`/tickets/${ticketId}/subtasks/${subtaskId}` as const,
 	},
+	attachments: {
+		upload: (entityType: string, entityId: string) =>
+			`/attachments/${entityType}/${entityId}` as const,
+	},
 	sites: {
 		base: '/sites' as const,
 		byId: (id: string) => `/sites/${id}` as const,
