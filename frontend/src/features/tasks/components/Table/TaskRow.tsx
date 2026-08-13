@@ -13,6 +13,7 @@ interface Props {
 }
 
 export const TaskRow = ({ task, onClick, sx }: Props) => {
+	const displayId = task.ticketNumber || '—'
 	const subtaskProgress = task.subtasks
 		? {
 				done: task.subtasks.filter(s => s.status === 'closed' || s.status === 'resolved').length,
@@ -36,7 +37,7 @@ export const TaskRow = ({ task, onClick, sx }: Props) => {
 		>
 			<TableCell>
 				<Typography sx={{ fontWeight: 600, color: '#111827', fontSize: '0.875rem' }}>
-					{task.ticketNumber ?? task.id.slice(0, 4)}
+					{displayId}
 				</Typography>
 			</TableCell>
 			<TableCell>

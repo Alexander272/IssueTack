@@ -4,6 +4,7 @@ import { BuildingIcon, XIcon } from 'lucide-mui'
 import dayjs from 'dayjs'
 
 import type { ISite, ISiteDTO } from '../types/site'
+import { useIsRoot } from '@/features/access/utils/can'
 
 type Props = {
 	site: ISite | null
@@ -14,6 +15,8 @@ type Props = {
 const fieldLabelSx = { fontWeight: 600, display: 'block', color: 'text.secondary', mb: 0.5 }
 
 export const SiteViewDialog: FC<Props> = ({ site, onClose, onEdit }) => {
+	const isRoot = useIsRoot()
+
 	if (!site) return null
 
 	return (
@@ -66,24 +69,26 @@ export const SiteViewDialog: FC<Props> = ({ site, onClose, onEdit }) => {
 						</Typography>
 						<Typography color='text.primary'>{site.address}</Typography>
 					</Box>
-					<Box>
-						<Typography variant='caption' sx={fieldLabelSx}>
-							ID площадки
-						</Typography>
-						<Typography
-							component='code'
-							sx={{
-								fontSize: '0.75rem',
-								bgcolor: '#f3f4f6',
-								px: 1,
-								py: 0.5,
-								borderRadius: '4px',
-								color: '#6b7280',
-							}}
-						>
-							{site.id}
-						</Typography>
-					</Box>
+					{isRoot && (
+						<Box>
+							<Typography variant='caption' sx={fieldLabelSx}>
+								ID площадки
+							</Typography>
+							<Typography
+								component='code'
+								sx={{
+									fontSize: '0.75rem',
+									bgcolor: '#f3f4f6',
+									px: 1,
+									py: 0.5,
+									borderRadius: '4px',
+									color: '#6b7280',
+								}}
+							>
+								{site.id}
+							</Typography>
+						</Box>
+					)}
 				</Box>
 
 				<Box

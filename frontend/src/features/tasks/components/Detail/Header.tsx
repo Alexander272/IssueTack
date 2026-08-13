@@ -32,17 +32,19 @@ export const Header = ({ task }: Props) => {
 				</Tooltip>
 				<Box sx={{ width: '1px', height: 24, bgcolor: '#e5e7eb' }} />
 				<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-					<Typography
-						sx={{
-							fontSize: '0.9375rem',
-							fontFamily: 'monospace',
-							color: '#9ca3af',
-							fontWeight: 500,
-							flexShrink: 0,
-						}}
-					>
-						{task.ticketNumber ?? task.id.slice(0, 4)}.
-					</Typography>
+					{task.ticketNumber && (
+						<Typography
+							sx={{
+								fontSize: '0.9375rem',
+								fontFamily: 'monospace',
+								color: '#9ca3af',
+								fontWeight: 500,
+								flexShrink: 0,
+							}}
+						>
+							{task.ticketNumber}.
+						</Typography>
+					)}
 					<Typography
 						sx={{
 							fontSize: '0.9375rem',

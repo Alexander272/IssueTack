@@ -4,6 +4,7 @@ import { Info, Layers, Building2, Flag, Calendar, CalendarCheck, Clock, Hash } f
 import type { ITask } from '../../types/task'
 import { PRIORITY_MAP } from '../../constants/taskMaps'
 import { getSmartDate } from '@/utils/date'
+import { useIsRoot } from '@/features/access/utils/can'
 
 interface Props {
 	task: ITask
@@ -11,6 +12,7 @@ interface Props {
 
 export const Meta = ({ task }: Props) => {
 	const priorityInfo = PRIORITY_MAP[task.priority]
+	const isRoot = useIsRoot()
 
 	return (
 		<Box sx={{ bgcolor: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
@@ -62,15 +64,17 @@ export const Meta = ({ task }: Props) => {
 					}
 				/>
 				<MetaRow label='Обновлена' icon={<Clock sx={{ fontSize: 14 }} />} value={getSmartDate(task.updatedAt)} />
-				<MetaRow
-					label='ID'
-					icon={<Hash sx={{ fontSize: 14 }} />}
-					value={
-						<Typography component='code' sx={{ fontSize: '0.6875rem', bgcolor: '#f3f4f6', px: 0.75, py: 0.25, borderRadius: '4px', color: '#6b7280' }}>
-							{task.id.slice(0, 8)}...
-						</Typography>
-					}
-				/>
+				{isRoot && (
+					<MetaRow
+						label='ID'
+						icon={<Hash sx={{ fontSize: 14 }} />}
+						value={
+							<Typography component='code' sx={{ fontSize: '0.6875rem', bgcolor: '#f3f4f6', px: 0.75, py: 0.25, borderRadius: '4px', color: '#6b7280' }}>
+								{task.id}
+							</Typography>
+						}
+					/>
+				)}
 			</Box>
 		</Box>
 	)

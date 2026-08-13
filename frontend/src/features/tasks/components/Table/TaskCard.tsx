@@ -15,6 +15,8 @@ interface Props {
 export const TaskCard = ({ task, onClick }: Props) => {
 	const priorityColor = PRIORITY_MAP[task.priority]?.barColor ?? '#6b7280'
 
+	const displayId = task.ticketNumber ? `№${task.ticketNumber}` : null
+
 	const subtaskProgress = task.subtasks
 		? {
 				done: task.subtasks.filter(s => s.status === 'closed' || s.status === 'resolved').length,
@@ -62,9 +64,11 @@ export const TaskCard = ({ task, onClick }: Props) => {
 
 			<Box sx={{ p: 2.5, pl: 3.5 }}>
 				<Stack direction='row' spacing={1} useFlexGap sx={{ alignItems: 'center', mb: 0.5, flexWrap: 'wrap' }}>
-					<Typography sx={{ fontSize: '0.75rem', fontFamily: 'mono', color: '#4f5562', fontWeight: 500 }}>
-						№{task.ticketNumber ?? task.id.slice(0, 4)}
-					</Typography>
+					{displayId && (
+						<Typography sx={{ fontSize: '0.75rem', fontFamily: 'mono', color: '#4f5562', fontWeight: 500 }}>
+							{displayId}
+						</Typography>
+					)}
 
 					<TaskStatusBadge status={task.status} sx={{ px: 1, py: 0.5, fontSize: '0.625rem' }} />
 					<TaskPriorityBadge priority={task.priority} sx={{ px: 1, py: 0.5, fontSize: '0.625rem' }} />

@@ -18,6 +18,7 @@ import { getSmartDate } from '@/utils/date'
 import { GroupMemberRow } from './GroupMemberRow'
 import { AssignedUser } from './AssignedUser'
 import { getMemberRoleInfo } from '../utils/memberRole'
+import { useIsRoot } from '@/features/access/utils/can'
 
 const MEMBER_COLORS = ['#6366f1', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#0891b2', '#d97706']
 
@@ -29,6 +30,7 @@ type Props = {
 
 export const GroupViewDialog: FC<Props> = ({ group, onClose, onEdit }) => {
 	const memberCount = group?.members?.length ?? 0
+	const isRoot = useIsRoot()
 
 	const sortedMembers = useMemo(() => {
 		if (!group?.members) return []
@@ -168,24 +170,26 @@ export const GroupViewDialog: FC<Props> = ({ group, onClose, onEdit }) => {
 								</Stack>
 							</Box>
 
-							<Box sx={{ pt: 1 }}>
-								<Typography variant='caption' sx={{ color: '#9ca3af' }}>
-									<strong>ID группы:</strong>{' '}
-									<Typography
-										component='code'
-										sx={{
-											fontSize: '0.75rem',
-											bgcolor: '#f3f4f6',
-											px: 1,
-											py: 0.5,
-											borderRadius: '4px',
-											color: '#6b7280',
-										}}
-									>
-										{group.id}
+							{isRoot && (
+								<Box sx={{ pt: 1 }}>
+									<Typography variant='caption' sx={{ color: '#9ca3af' }}>
+										<strong>ID группы:</strong>{' '}
+										<Typography
+											component='code'
+											sx={{
+												fontSize: '0.75rem',
+												bgcolor: '#f3f4f6',
+												px: 1,
+												py: 0.5,
+												borderRadius: '4px',
+												color: '#6b7280',
+											}}
+										>
+											{group.id}
+										</Typography>
 									</Typography>
-								</Typography>
-							</Box>
+								</Box>
+							)}
 						</Stack>
 					</DialogContent>
 					<DialogActions sx={{ p: 2, gap: 1 }}>

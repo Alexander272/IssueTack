@@ -3,6 +3,7 @@ import { BuildingIcon, EyeIcon, EditIcon } from 'lucide-mui'
 import dayjs from 'dayjs'
 
 import type { ISite } from '../types/site'
+import { useIsRoot } from '@/features/access/utils/can'
 
 type Props = {
 	sites: ISite[]
@@ -14,6 +15,8 @@ const labelSx = { fontSize: '0.75rem', color: '#9ca3af' }
 const valueSx = { fontSize: '0.75rem', color: '#6b7280' }
 
 export const SiteCardList = ({ sites, onView, onEdit }: Props) => {
+	const isRoot = useIsRoot()
+
 	return (
 		<Stack sx={{ gap: 2 }}>
 			{sites.map(site => (
@@ -87,8 +90,8 @@ export const SiteCardList = ({ sites, onView, onEdit }: Props) => {
 								borderTop: '1px solid #f3f4f6',
 							}}
 						>
-							<Typography sx={labelSx}>ID: {site.id.slice(0, 8)}...</Typography>
-							<Box sx={{ display: 'flex', gap: 0.5 }}>
+							{isRoot && <Typography sx={labelSx}>ID: {site.id}</Typography>}
+							<Box sx={{ display: 'flex', gap: 0.5, ml: isRoot ? 0 : 'auto' }}>
 								<Tooltip title='Просмотр'>
 									<IconButton
 										onClick={() => onView(site)}

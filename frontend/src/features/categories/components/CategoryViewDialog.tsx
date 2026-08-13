@@ -16,6 +16,7 @@ import type { ICategory, ICategoryDTO } from '../types/category'
 import { getSmartDate } from '@/utils/date'
 import { TaskPriorityBadge } from '@/features/tasks/components/TaskPriorityBadge'
 import { StatusBadge } from '@/features/access/components/StatusBadge'
+import { useIsRoot } from '@/features/access/utils/can'
 
 const getInitials = (name: string) => {
 	const words = name.trim().split(/\s+/)
@@ -33,6 +34,8 @@ type Props = {
 }
 
 export const CategoryViewDialog: FC<Props> = ({ category, groupsMap, onClose, onEdit }) => {
+	const isRoot = useIsRoot()
+
 	return (
 		<Dialog
 			open={Boolean(category)}
@@ -148,27 +151,29 @@ export const CategoryViewDialog: FC<Props> = ({ category, groupsMap, onClose, on
 									</Typography>
 									<TaskPriorityBadge priority={category.priority} />
 								</Box>
-								<Box>
-									<Typography
-										variant='caption'
-										sx={{ fontWeight: 600, display: 'block', color: 'text.secondary', mb: 0.5 }}
-									>
-										ID категории
-									</Typography>
-									<Typography
-										component='code'
-										sx={{
-											fontSize: '0.75rem',
-											bgcolor: '#f3f4f6',
-											px: 1,
-											py: 0.5,
-											borderRadius: '4px',
-											color: '#6b7280',
-										}}
-									>
-										{category.id}
-									</Typography>
-								</Box>
+								{isRoot && (
+									<Box>
+										<Typography
+											variant='caption'
+											sx={{ fontWeight: 600, display: 'block', color: 'text.secondary', mb: 0.5 }}
+										>
+											ID категории
+										</Typography>
+										<Typography
+											component='code'
+											sx={{
+												fontSize: '0.75rem',
+												bgcolor: '#f3f4f6',
+												px: 1,
+												py: 0.5,
+												borderRadius: '4px',
+												color: '#6b7280',
+											}}
+										>
+											{category.id}
+										</Typography>
+									</Box>
+								)}
 							</Box>
 
 							<Box
