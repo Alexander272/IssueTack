@@ -23,6 +23,8 @@ export const GroupCard: FC<Props> = ({ group, onView, onEdit }) => {
 				bgcolor: '#fff',
 				borderRadius: '12px',
 				border: '1px solid #e5e7eb',
+				display: 'flex',
+				flexDirection: 'column',
 				overflow: 'hidden',
 				transition: 'box-shadow 0.2s',
 				'&:hover': { boxShadow: '0 4px 12px rgba(0,0,0,0.08)' },
@@ -144,6 +146,7 @@ export const GroupCard: FC<Props> = ({ group, onView, onEdit }) => {
 					py: 1.5,
 					bgcolor: '#f9fafb',
 					borderTop: '1px solid #e5e7eb',
+					flexGrow: 1,
 					display: 'flex',
 					alignItems: 'center',
 					justifyContent: 'space-between',
@@ -156,9 +159,16 @@ export const GroupCard: FC<Props> = ({ group, onView, onEdit }) => {
 					variant='text'
 					size='small'
 					onClick={() => onView(group)}
-					sx={{ textTransform: 'none', fontWeight: 500, fontSize: '0.75rem', p: 0, minWidth: 'auto' }}
+					sx={{
+						textTransform: 'none',
+						fontWeight: 500,
+						fontSize: '0.75rem',
+						pt: 0.5,
+						px: 1,
+						minWidth: '100px',
+					}}
 				>
-					Состав группы →
+					Подробнее →
 				</Button>
 			</Box>
 		</Box>

@@ -4,6 +4,8 @@ import { SearchIcon, XIcon, CheckIcon } from 'lucide-mui'
 
 import type { IUserData } from '@/features/user/types/user'
 
+const AVATAR_BG = ['#3b82f6', '#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6']
+
 type Props = {
 	value: string[]
 	onChange: (value: string[]) => void
@@ -121,6 +123,7 @@ export const MemberPicker: FC<Props> = ({ value, onChange, users }) => {
 												alignItems: 'center',
 												justifyContent: 'space-between',
 												mx: 2,
+												mb: 0.5,
 												px: 2.5,
 												py: 1.5,
 												borderRadius: '12px',
@@ -188,7 +191,7 @@ export const MemberPicker: FC<Props> = ({ value, onChange, users }) => {
 
 			{selectedCount > 0 && (
 				<Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 2 }}>
-					{selectedUsers.map(user => (
+					{selectedUsers.map((user, idx) => (
 						<Box
 							key={user.id}
 							sx={{
@@ -203,6 +206,23 @@ export const MemberPicker: FC<Props> = ({ value, onChange, users }) => {
 							}}
 						>
 							<Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+								<Box
+									sx={{
+										width: 36,
+										height: 36,
+										borderRadius: '12px',
+										bgcolor: `${AVATAR_BG[idx % AVATAR_BG.length]}15`,
+										color: AVATAR_BG[idx % AVATAR_BG.length],
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'center',
+										fontWeight: 600,
+										fontSize: '1rem',
+									}}
+								>
+									{user.firstName[0]}
+									{user.lastName[0]}
+								</Box>
 								<Box>
 									<Typography sx={{ fontWeight: 500, fontSize: '0.875rem' }}>
 										{user.lastName} {user.firstName}
