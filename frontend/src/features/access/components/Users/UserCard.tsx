@@ -18,7 +18,7 @@ import {
 import type { IUserData } from '@/features/user/types/user'
 import { RealmRow } from './RealmRow'
 import { getAvatarColor, getInitials } from './utils'
-import { PenToolIcon } from 'lucide-mui'
+import { SquarePenIcon } from 'lucide-mui'
 
 type Props = {
 	user: IUserData
@@ -98,7 +98,7 @@ export const UserCard: FC<Props> = ({ user, onClick }) => {
 							':hover': { svg: { color: palette.secondary.main } },
 						}}
 					>
-						<PenToolIcon sx={{ fontSize: 18 }} />
+						<SquarePenIcon sx={{ fontSize: 18 }} />
 					</Button>
 				</Tooltip>
 			</Box>

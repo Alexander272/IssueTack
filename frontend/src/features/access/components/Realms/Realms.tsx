@@ -16,7 +16,7 @@ import {
 import type { IRealm } from '@/features/realms/types/realm'
 import { getSmartDate } from '@/utils/date'
 import { useGetAllRealmsQuery } from '@/features/realms/realmsApiSlice'
-import { PlusIcon, PenToolIcon } from 'lucide-mui'
+import { PlusIcon, SquarePenIcon } from 'lucide-mui'
 import { RealmDialog } from '@/features/realms/components/Dialogs/RealmDialog'
 import { useState } from 'react'
 import { StatusBadge } from '../StatusBadge'
@@ -138,7 +138,7 @@ export const Realms = () => {
 												':hover': { svg: { color: palette.secondary.main } },
 											}}
 										>
-											<PenToolIcon sx={{ fontSize: 18 }} />
+											<SquarePenIcon sx={{ fontSize: 18 }} />
 										</Button>
 									</Tooltip>
 								</TableCell>

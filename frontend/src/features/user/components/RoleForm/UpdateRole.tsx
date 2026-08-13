@@ -1,6 +1,7 @@
 import { useEffect, type FC } from 'react'
 import { FormProvider, useForm } from 'react-hook-form'
 import { Box, Button, Stack, Typography, useTheme } from '@mui/material'
+import { SaveIcon, Trash2Icon } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
@@ -9,9 +10,8 @@ import { RoleInfoCard } from './RoleInfoCard'
 import { InheritanceCard } from './InheritanceCard'
 import { PermissionsCard } from './PermissionsCard'
 import { useDeleteRoleMutation, useGetRoleWithPermissionsQuery, useUpdateRoleMutation } from '../../roleApiSlice'
-import { Fallback } from '@/components/Fallback/Fallback'
-import { SaveIcon, Trash2Icon } from 'lucide-mui'
 import { BoxFallback } from '@/components/Fallback/BoxFallback'
+import { Fallback } from '@/components/Fallback/Fallback'
 
 const defaultValues = {
 	name: '',
@@ -145,7 +145,7 @@ export const UpdateRole: FC<Props> = ({ roleId, onCancel, onSuccess }) => {
 								onClick={deleteHandler}
 								sx={{ textTransform: 'none' }}
 							>
-								<Trash2Icon sx={{ mr: 1, fontSize: 16, fill: palette.error.main }} /> Удалить
+								<Trash2Icon sx={{ mr: 1, fontSize: 16, color: palette.error.main }} /> Удалить
 							</Button>
 						)}
 						<Button type='submit' variant='outlined' sx={{ textTransform: 'none' }}>

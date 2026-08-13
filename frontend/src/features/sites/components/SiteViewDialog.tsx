@@ -43,7 +43,7 @@ export const SiteViewDialog: FC<Props> = ({ site, onClose, onEdit }) => {
 							height: 56,
 							borderRadius: '12px',
 							bgcolor: '#dbeafe',
-							fill: '#2563eb',
+							color: '#2563eb',
 							display: 'flex',
 							alignItems: 'center',
 							justifyContent: 'center',

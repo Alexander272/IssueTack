@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import { Box, Stack, type SxProps, type Theme, useTheme } from '@mui/material'
-
 import { ArrowLeftIcon } from 'lucide-mui'
+
 import { Button } from './Button'
 
 type Props = {
@@ -103,7 +103,7 @@ export const Pagination: FC<Props> = ({ page, totalPages, onClick, sx }) => {
 
 			<Button onClick={selectHandler(page - 1)}>
 				<ArrowLeftIcon
-					sx={{ fontSize: 12, fill: page == 1 ? palette.action.disabled : palette.primary.main }}
+					sx={{ fontSize: 12, color: page == 1 ? palette.action.disabled : palette.primary.main }}
 				/>
 			</Button>
 
@@ -118,7 +118,7 @@ export const Pagination: FC<Props> = ({ page, totalPages, onClick, sx }) => {
 					sx={{
 						fontSize: 12,
 						transform: 'rotate(180deg)',
-						fill: page == totalPages ? palette.action.disabled : palette.primary.main,
+						color: page == totalPages ? palette.action.disabled : palette.primary.main,
 					}}
 				/>
 			</Button>

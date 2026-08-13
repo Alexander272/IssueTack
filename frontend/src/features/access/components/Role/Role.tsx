@@ -17,17 +17,16 @@ import {
 	useTheme,
 } from '@mui/material'
 import { ArrowRightIcon } from '@mui/x-date-pickers'
+import { PlusIcon, SquarePenIcon, ChevronDownIcon } from 'lucide-mui'
 
-import { PlusIcon, PenToolIcon } from 'lucide-mui'
-import { StatusBadge } from '../StatusBadge'
+import type { IRoleWithStats } from '@/features/user/types/role'
+import type { IRealm } from '@/features/realms/types/realm'
 import { pluralize } from '@/utils/plural'
+import { stringToHSLA } from '@/utils/colors'
 import { useGetRolesWithStatsQuery } from '@/features/user/roleApiSlice'
 import { useGetAllRealmsQuery } from '@/features/realms/realmsApiSlice'
 import { RoleDialog } from '@/features/user/components/RoleDialog/RoleDialog'
-import type { IRoleWithStats } from '@/features/user/types/role'
-import type { IRealm } from '@/features/realms/types/realm'
-import { stringToHSLA } from '@/utils/colors'
-import { ChevronDownIcon } from 'lucide-mui'
+import { StatusBadge } from '../StatusBadge'
 
 export const Role = () => {
 	const { palette } = useTheme()
@@ -347,7 +346,7 @@ export const Role = () => {
 																	},
 																}}
 															>
-																<PenToolIcon sx={{ fontSize: 18 }} />
+																<SquarePenIcon sx={{ fontSize: 18 }} />
 															</Button>
 														</Tooltip>
 													)}
