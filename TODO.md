@@ -31,7 +31,7 @@
 
 ## Заглушки / не реализовано
 
-- [ ] **Редактирование задачи + назначение**: нет UI. `Description.tsx` — мёртвая кнопка «Редактировать», `Participants.tsx`/`Meta.tsx` — только чтение. План: вынести общую `TaskForm` из `TaskCreateForm` (принимает `initialValues`), добавить `TaskEditModal` (title, description, category, site, priority, group, assignee, dueDate), подключить «Редактировать» и пикер исполнителя. Бэкенд `Update` уже поддерживает partial update.
+- [x] **Редактирование задачи**: UI готов. Кнопка «Редактировать» в `Description.tsx` (только `open` + creator/manager), `TaskEditModal` → `TaskEditForm` (секции: категория/площадка, заголовок/описание, расширенные настройки — менеджер), без каскадов (в отличие от создания), `updateTask` с `Partial<ITaskDTO>`. Бэкенд `Update` уже поддерживает partial update.
 - [ ] **Подзадачи: добавить/удалить/редактировать**: сейчас только смена статуса; бэкенд `Create/CreateSeveral/Update/Delete` готов. UI «Добавить» нет.
 - [ ] **Скачивание/просмотр вложений**: файлы уже лежат на диске (`upload_dir/ticket/<ticketId>/<uuid>_<name>`) и в БД, но содержимое никуда не отдаётся — эндпоинта нет, `initStatic` раздаёт только фронтенд-сборку, `file_path` в JSON скрыт. Клик по карточке в `Detail/Attachments.tsx` ничего не делает. План: бэкенд `GET /attachments/:id/content` (проверка доступа Read по тикету + `Content-Disposition` / `c.File`), фронт — ссылка на скачивание в `Attachments.tsx`.
 - [ ] **Вложения: удаление + загрузка с детальной страницы**: загрузка реализована только в форме создания (`POST /attachments/ticket/:id`, `CheckWorkAccess`); удаления (`DELETE /attachments/:id`) и пикера файлов на странице тикета нет.

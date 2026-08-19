@@ -1,9 +1,13 @@
+import { useState } from 'react'
 import { Box, CircularProgress, Grid, Typography } from '@mui/material'
 import { useParams } from 'react-router'
 
 import type { TicketStatus } from '../types/task'
 import { useGetTaskByIdQuery, useUpdateTaskMutation } from '../tasksApiSlice'
 import { useUpdateSubtaskMutation } from '../modules/subtasks/subtasksApiSlice'
+import { useAppSelector } from '@/hooks/redux'
+import { useCan } from '@/features/access/utils/can'
+import { PermRules } from '@/features/access/constants/permissions'
 import { Header } from '../components/Detail/Header'
 import { InfoBar } from '../components/Detail/InfoBar'
 import { Description } from '../components/Detail/Description'
@@ -13,12 +17,16 @@ import { Comments } from '../components/Detail/Comments'
 import { Participants } from '../components/Detail/Participants'
 import { Meta } from '../components/Detail/Meta'
 import { Notifications } from '../components/Detail/Notifications'
+import { TaskEditModal } from '../components/TaskEditModal'
 
 export const TaskDetailPage = () => {
 	const { id } = useParams<{ id: string }>()
 	const { data, isLoading } = useGetTaskByIdQuery(id!)
 	const [updateTask] = useUpdateTaskMutation()
 	const [updateSubtask] = useUpdateSubtaskMutation()
+	const [editOpen, setEditOpen] = useState(false)
+	const currentUserId = useAppSelector(state => state.user.id)
+	const canWrite = useCan(PermRules.Tasks.Write)
 
 	if (isLoading) {
 		return (
@@ -37,6 +45,8 @@ export const TaskDetailPage = () => {
 	}
 
 	const task = data.data
+	const isCreator = currentUserId === task.creator.id
+	const canEdit = task.status === 'open' && (isCreator || canWrite)
 
 	const handleStatusChange = async (taskId: string, status: TicketStatus) => {
 		try {
@@ -55,6 +65,7 @@ export const TaskDetailPage = () => {
 	}
 
 	return (
+		<>
 		<Box sx={{ flexGrow: 1, overflow: 'auto', bgcolor: '#f9fafb' }}>
 			<Box sx={{ maxWidth: 'xl', mx: 'auto', p: 3 }}>
 				<Box
@@ -73,7 +84,7 @@ export const TaskDetailPage = () => {
 
 				<Grid container spacing={3} sx={{ mt: 2 }}>
 					<Grid size={{ xs: 12, lg: 8 }} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-						<Description description={task.description} />
+						<Description description={task.description} onEdit={canEdit ? () => setEditOpen(true) : undefined} />
 						<Subtasks
 							subtasks={task.subtasks}
 							taskId={task.id}
@@ -91,5 +102,8 @@ export const TaskDetailPage = () => {
 				</Grid>
 			</Box>
 		</Box>
+
+		<TaskEditModal open={editOpen} onClose={() => setEditOpen(false)} task={task} />
+		</>
 	)
 }

@@ -3,9 +3,10 @@ import { PenSquareIcon, AlignLeft } from 'lucide-mui'
 
 interface Props {
 	description: string
+	onEdit?: () => void
 }
 
-export const Description = ({ description }: Props) => {
+export const Description = ({ description, onEdit }: Props) => {
 	return (
 		<Box sx={{ bgcolor: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
 			<Box
@@ -31,7 +32,9 @@ export const Description = ({ description }: Props) => {
 					<AlignLeft sx={{ fontSize: 16 }} />
 					Описание
 				</Typography>
+			{onEdit && (
 				<Button
+					onClick={onEdit}
 					size='small'
 					sx={{
 						textTransform: 'none',
@@ -44,6 +47,7 @@ export const Description = ({ description }: Props) => {
 					<PenSquareIcon sx={{ fontSize: 13 }} />
 					Редактировать
 				</Button>
+			)}
 			</Box>
 			<Box sx={{ p: 2.5 }}>
 				{description ? (

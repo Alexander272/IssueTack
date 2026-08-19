@@ -16,13 +16,14 @@ type Props = {
 	groups: IGroup[]
 	users: IUserData[]
 	assigneeOptions: IUserShort[]
+	number?: number
 }
 
-export const AdvancedSettingsSection = ({ groups, users, assigneeOptions }: Props) => {
+export const AdvancedSettingsSection = ({ groups, users, assigneeOptions, number = 3 }: Props) => {
 	const { control } = useFormContext<FormValues>()
 
 	return (
-		<SectionCard number={3} title='Расширенные настройки' subtitle='Доступно менеджерам'>
+		<SectionCard number={number} title='Расширенные настройки' subtitle='Доступно менеджерам'>
 			<Stack sx={{ gap: 3 }}>
 				<Box>
 					<Typography variant='caption' sx={fieldLabelSx}>
