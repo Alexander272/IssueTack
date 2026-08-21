@@ -198,18 +198,27 @@ export const TaskList = ({ mode }: Props) => {
 					<Box
 						sx={{
 							display: 'flex',
+							flexDirection: { xs: 'column', sm: 'row' },
 							alignItems: 'center',
-							justifyContent: 'space-between',
 							px: 1,
 							py: 1.5,
+							gap: { xs: 1, sm: 0 },
 						}}
 					>
-						<Typography sx={{ fontSize: '0.875rem', color: '#6b7280' }}>
+						<Typography
+							sx={{
+								flex: 1,
+								fontSize: '0.875rem',
+								color: '#6b7280',
+								textAlign: { xs: 'center', sm: 'left' },
+							}}
+						>
 							{isArchive ? `Показано ${tasks.length} из ${total} задач` : `Всего: ${total} задач`}
 						</Typography>
 						{isArchive && (
 							<Pagination page={page + 1} totalPages={totalPages} onClick={p => setPage(p - 1)} />
 						)}
+						<Box sx={{ flex: 1, display: { xs: 'none', sm: 'block' } }} />
 					</Box>
 				</>
 			)}

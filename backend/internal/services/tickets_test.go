@@ -70,8 +70,8 @@ func TestTicketService_Get_GroupFilter(t *testing.T) {
 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Delete)).Return(false, nil)
-	mockGroups.On("GetManagedGroups", mock.Anything, actorID).Return([]uuid.UUID{groupID}, nil)
-	mockGroups.On("GetMemberGroups", mock.Anything, actorID).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{groupID}, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
 
 	expected := []*models.Ticket{
 		{ID: uuid.New(), Title: "Ticket 1"},
@@ -105,8 +105,8 @@ func TestTicketService_Get_NoGroups_ReturnsEmpty(t *testing.T) {
 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Delete)).Return(false, nil)
-	mockGroups.On("GetManagedGroups", mock.Anything, actorID).Return([]uuid.UUID{}, nil)
-	mockGroups.On("GetMemberGroups", mock.Anything, actorID).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
 
 	expectedFilter := &models.TicketFilter{
 		Actor:                     &models.Actor{ID: actorID, Name: "test"},
@@ -497,7 +497,7 @@ func TestTicketService_Update_Manager_SetCancelled_Success(t *testing.T) {
 	}
 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
-	mockGroups.On("GetManagedGroups", mock.Anything, actorID).Return([]uuid.UUID{groupID}, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{groupID}, nil)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
@@ -566,7 +566,7 @@ func TestTicketService_Update_Owner_ReturnToWork_FromResolved_Success(t *testing
 	}
 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
-	mockGroups.On("GetManagedGroups", mock.Anything, actorID).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
@@ -720,7 +720,7 @@ func TestTicketService_Update_PolicyWrite_NotManager_SetClosed_Denied(t *testing
 	}
 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(true, nil)
-	mockGroups.On("GetManagedGroups", mock.Anything, actorID).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 
 	err := svc.Update(context.Background(), dto)
@@ -812,7 +812,7 @@ func TestTicketService_CheckAccess_Denied(t *testing.T) {
 		Group: &models.GroupShort{ID: groupID, Name: "Test Group"},
 	}, nil)
 	mockGroups.On("IsMember", mock.Anything, groupID, actorID).Return(false, nil)
-	mockGroups.On("GetManagedGroups", mock.Anything, actorID).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
 
 	err := svc.CheckAccess(context.Background(), ticketID, actorID, string(access.Read), "")
 	assert.Error(t, err)

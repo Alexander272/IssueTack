@@ -27,7 +27,7 @@
 
 ## Фичи (планы в `.opencode/plans/`)
 
-- [ ] **Архив тикетов + пагинация только для архива** — план: `.opencode/plans/archive-pagination.md`
+- [x] **Архив тикетов + пагинация только для архива** — план: `.opencode/plans/archive-pagination.md`
 
 ## Заглушки / не реализовано
 
@@ -42,8 +42,15 @@
 ## Разделение прав
 
 - [x] **UI по правам**: `AccessFlags` в ответе `GetByID` (`canRead`/`canWrite`/`canDelete`/`canWork`/`allowedStatuses`). Фронт: гейт «Создать заявку» (`useCan(Tasks.Write)`), subtask select `disabled={!canWork}`, статус-меню фильтруется по `allowedStatuses`, edit button по `canWrite`. `PermRules` — добавлены `Tasks.Read`, `Tasks.Delete`.
-- [ ] **Тонкие права операций (бэкенд)**: права на назначение исполнителя, смену группы/менеджера; авто-назначение исполнителя/менеджера из группы при смене группы (сейчас `autoAssign` работает только при `Create`).
+- [ ] **Тонкие права операций (бэкенд)**: права на назначение исполнителя, смену группы/менеджера.
+    - Бэкенд: добавить `IsAdmin` (Casbin write = realm admin) и `IsManager` (менеджер группы) в `AccessFlags`
+    - `GetChanges`: добавить трекинг `managerId` + `ActionManagerChanged` в `enums.go`
+    - `Update`: только admin может менять `groupId`; admin или group manager — `assigneeId`; `managerId` — всегда запрещён (auto-managed)
+    - Хелпер `isManagerOfGroup(ctx, group, userID) bool` через `GetManagedGroups`
+    - Фронт: `IAccessFlags` — `isAdmin`/`isManager`; `AdvancedSettingsSection` — `groupId disabled={!isAdmin}`, `assigneeId disabled={!isAdmin && !isManager}`
 - [ ] **Менеджер тикета**: `manager_id` не проставляется в `Create` (и не обновляется в `Update`) — заполнять менеджером группы.
+    - `Create`: после проверки `GroupID != nil`, загрузить группу и проставить `dto.ManagerID = group.ManagerID` (объединить с `autoAssign`)
+    - `Update`: auto-managed, ручное изменение запрещено
 
 ## Тех. долг (найденные TODO в коде)
 

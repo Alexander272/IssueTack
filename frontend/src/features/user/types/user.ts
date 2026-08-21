@@ -1,6 +1,12 @@
 import type { IRealm } from '@/features/realms/types/realm'
 import type { IRole } from './role'
 
+export interface IUserCapabilities {
+	managedGroupIds: string[]
+	memberGroupIds: string[]
+	isRealmAdmin: boolean
+}
+
 export interface IUser {
 	id: string
 	name: string
@@ -8,6 +14,7 @@ export interface IUser {
 	permissions: Record<string, string[]>
 	token: string
 	realms: IUserRealm[]
+	capabilities: Record<string, IUserCapabilities>
 }
 
 export interface IUserShort {

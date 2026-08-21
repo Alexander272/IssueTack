@@ -16,23 +16,26 @@ import (
 
 type Handler struct {
 	service services.Users
+	session services.Session
 }
 
-func NewHandler(service services.Users) *Handler {
+func NewHandler(service services.Users, session services.Session) *Handler {
 	return &Handler{
 		service: service,
+		session: session,
 	}
 }
 
-func Register(api *gin.RouterGroup, services services.Users, middleware *middleware.Middleware) {
-	handler := NewHandler(services)
+func Register(api *gin.RouterGroup, services services.Users, session services.Session, middleware *middleware.Middleware) {
+	handler := NewHandler(services, session)
 
-	users := api.Group("/users", middleware.CheckPermissions(access.Reg.R(access.ResourceGroup).Read()))
+	users := api.Group("/users", middleware.CheckPermissions(access.Reg.R(access.ResourceUser).Read()))
 	{
 		users.GET("/by-realm", handler.getByRealm)
+		users.GET("/me/capabilities", handler.getCapabilities)
 		users.GET("/:id", handler.getByID)
 
-		users.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceGroup).Write()))
+		users.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceUser).Write()))
 		users.GET("", handler.getAll)
 		users.POST("/sync", handler.sync)
 		users.PUT("/:id", handler.updateAccount)
@@ -121,4 +124,18 @@ func (h *Handler) updateAccount(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, response.IdResponse{Message: "Пользователь обновлен"})
+}
+
+func (h *Handler) getCapabilities(c *gin.Context) {
+	user := utils.GetUser(c)
+	if user == nil {
+		return
+	}
+
+	caps, err := h.session.GetAllCapabilities(c, user.ID)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	response.SendData(c, caps)
 }

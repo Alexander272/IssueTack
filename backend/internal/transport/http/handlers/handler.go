@@ -72,7 +72,7 @@ func (h *Handler) Init(group *gin.RouterGroup) {
 	permissions.Register(secure, h.services.Permissions, h.middleware)
 	roles.Register(secure, h.services.Roles, h.middleware)
 	realms.Register(secure, h.services.Realms, h.middleware)
-	users.Register(secure, h.services.Users, h.middleware)
+	users.Register(secure, h.services.Users, h.services.Session, h.middleware)
 
 	notifications.Register(secure, h.services.Notifications)
 	activity_log.Register(secure, h.services.ActivityLog, h.middleware)

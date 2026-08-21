@@ -1,7 +1,7 @@
 import { toast } from 'react-toastify'
 
 import type { IBaseFetchError } from '@/app/types/error'
-import type { IUserData, IUserDataDTO, IUserLogin } from './types/user'
+import type { IUserData, IUserDataDTO, IUserCapabilities, IUserLogin } from './types/user'
 import { API } from '@/app/api'
 import { apiSlice } from '@/app/apiSlice'
 
@@ -50,6 +50,14 @@ export const usersApiSlice = apiSlice.injectEndpoints({
 			providesTags: [{ type: 'Users', id: 'available' }],
 		}),
 
+		getCapabilities: builder.query<{ data: Record<string, IUserCapabilities> }, void>({
+			query: () => ({
+				url: API.users.capabilities,
+				method: 'GET',
+			}),
+			providesTags: [{ type: 'Users', id: 'capabilities' }],
+		}),
+
 		getUserLogins: builder.query<{ data: IUserLogin[] }, string>({
 			query: id => ({
 				url: `${API.users.logins}/${id}`,
@@ -81,6 +89,7 @@ export const {
 	useGetUserByAccessQuery,
 	useGetUserLoginsQuery,
 	useGetAvailableUsersQuery,
+	useGetCapabilitiesQuery,
 	useSyncUsersMutation,
 	useUpdateUserMutation,
 } = usersApiSlice

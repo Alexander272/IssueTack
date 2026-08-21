@@ -6,8 +6,8 @@ import { toast } from 'react-toastify'
 import type { IFetchError } from '@/app/types/error'
 import type { ITask, ITaskDTO } from '../../types/task'
 import type { IUserShort } from '@/features/user/types/user'
-import { PermRules } from '@/features/access/constants/permissions'
-import { useCan } from '@/features/access/utils/can'
+import { useAppSelector } from '@/hooks/redux'
+import { getIsManager } from '@/features/user/userSlice'
 import { useUpdateTaskMutation } from '../../tasksApiSlice'
 import { useGetAllGroupsQuery } from '@/features/groups/groupsApiSlice'
 import { useGetAvailableUsersQuery } from '@/features/user/usersApiSlice'
@@ -76,7 +76,7 @@ const EditDescriptionSection = () => {
 }
 
 export const TaskEditForm = ({ task, onSuccess, onCancel, embedded }: Props) => {
-	const isManager = useCan(PermRules.Tasks.Write)
+	const isManager = useAppSelector(getIsManager)
 
 	const [updateTask, { isLoading }] = useUpdateTaskMutation()
 	const { data: groupsData } = useGetAllGroupsQuery()

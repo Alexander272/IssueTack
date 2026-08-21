@@ -74,11 +74,11 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 	}
 
 	if !elevated {
-		managed, err := s.groups.GetManagedGroups(ctx, req.Actor.ID)
+		managed, err := s.groups.GetManagedGroups(ctx, req.Actor.ID, nil)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to get managed groups: %w", err)
 		}
-		member, err := s.groups.GetMemberGroups(ctx, req.Actor.ID)
+		member, err := s.groups.GetMemberGroups(ctx, req.Actor.ID, nil)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to get member groups: %w", err)
 		}
@@ -447,7 +447,7 @@ func (s *TicketService) isCreatorOrManager(ctx context.Context, ticket *models.T
 		return false, nil
 	}
 
-	managed, err := s.groups.GetManagedGroups(ctx, actorID)
+	managed, err := s.groups.GetManagedGroups(ctx, actorID, nil)
 	if err != nil {
 		return false, fmt.Errorf("failed to get managed groups: %w", err)
 	}
@@ -543,7 +543,7 @@ func (s *TicketService) checkAccessForTicket(ctx context.Context, ticket *models
 		if isMember {
 			return nil
 		}
-		managed, err := s.groups.GetManagedGroups(ctx, userID)
+		managed, err := s.groups.GetManagedGroups(ctx, userID, nil)
 		if err != nil {
 			return fmt.Errorf("failed to check managed groups: %w", err)
 		}
@@ -559,7 +559,7 @@ func (s *TicketService) checkAccessForTicket(ctx context.Context, ticket *models
 		if ticket.Creator.ID == userID {
 			return nil
 		}
-		managed, err := s.groups.GetManagedGroups(ctx, userID)
+		managed, err := s.groups.GetManagedGroups(ctx, userID, nil)
 		if err != nil {
 			return fmt.Errorf("failed to check managed groups: %w", err)
 		}
@@ -569,7 +569,7 @@ func (s *TicketService) checkAccessForTicket(ctx context.Context, ticket *models
 			}
 		}
 	case string(access.Delete):
-		managed, err := s.groups.GetManagedGroups(ctx, userID)
+		managed, err := s.groups.GetManagedGroups(ctx, userID, nil)
 		if err != nil {
 			return fmt.Errorf("failed to check managed groups: %w", err)
 		}
@@ -588,7 +588,7 @@ func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *mode
 
 	isMgr := false
 	if ticket.Group != nil {
-		managed, err := s.groups.GetManagedGroups(ctx, userID)
+		managed, err := s.groups.GetManagedGroups(ctx, userID, nil)
 		if err == nil {
 			for _, gid := range managed {
 				if gid == ticket.Group.ID {

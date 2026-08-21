@@ -83,8 +83,8 @@ func (a *nullableTicketAssoc) assign(ticket *models.Ticket) {
 }
 
 var (
-	activeStatuses  = []models.TicketStatus{"open", "in_progress", "pending", "on_hold"}
-	archiveStatuses = []models.TicketStatus{"resolved", "closed", "cancelled"}
+	activeStatuses  = []models.TicketStatus{"open", "in_progress", "pending", "on_hold", "resolved"}
+	archiveStatuses = []models.TicketStatus{"closed", "cancelled"}
 )
 
 func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, int, error) {

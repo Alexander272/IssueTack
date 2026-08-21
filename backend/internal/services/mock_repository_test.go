@@ -281,12 +281,12 @@ func (m *MockGroupsRepo) GetMemberCount(ctx context.Context, groupID uuid.UUID) 
 	args := m.Called(ctx, groupID)
 	return args.Int(0), args.Error(1)
 }
-func (m *MockGroupsRepo) GetManagedGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
-	args := m.Called(ctx, userID)
+func (m *MockGroupsRepo) GetManagedGroups(ctx context.Context, userID uuid.UUID, realmID *uuid.UUID) ([]uuid.UUID, error) {
+	args := m.Called(ctx, userID, realmID)
 	return args.Get(0).([]uuid.UUID), args.Error(1)
 }
-func (m *MockGroupsRepo) GetMemberGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
-	args := m.Called(ctx, userID)
+func (m *MockGroupsRepo) GetMemberGroups(ctx context.Context, userID uuid.UUID, realmID *uuid.UUID) ([]uuid.UUID, error) {
+	args := m.Called(ctx, userID, realmID)
 	return args.Get(0).([]uuid.UUID), args.Error(1)
 }
 func (m *MockGroupsRepo) IsMember(ctx context.Context, groupID, userID uuid.UUID) (bool, error) {

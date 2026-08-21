@@ -8,8 +8,7 @@ import type { IUserShort } from '@/features/user/types/user'
 import type { ITaskDTO } from '../../types/task'
 import type { FormValues, Props } from './types'
 import { useAppSelector } from '@/hooks/redux'
-import { useCan } from '@/features/access/utils/can'
-import { PermRules } from '@/features/access/constants/permissions'
+import { getIsManager } from '@/features/user/userSlice'
 import { useGetAllCategoriesQuery } from '@/features/categories/categoriesApiSlice'
 import { useGetAvailableUsersQuery } from '@/features/user/usersApiSlice'
 import { useGetAllGroupsQuery } from '@/features/groups/groupsApiSlice'
@@ -24,7 +23,7 @@ import { AdvancedSettingsSection } from './AdvancedSettingsSection'
 export const TaskCreateForm = ({ onSuccess, onCancel, embedded }: Props) => {
 	const currentUserId = useAppSelector(state => state.user.id)
 	const realm = useAppSelector(getRealm)
-	const isManager = useCan(PermRules.Tasks.Write)
+	const isManager = useAppSelector(getIsManager)
 
 	const [createTask, { isLoading: isCreating }] = useCreateTaskMutation()
 	const [uploadAttachment, { isLoading: isUploading }] = useUploadAttachmentMutation()
@@ -85,9 +84,7 @@ export const TaskCreateForm = ({ onSuccess, onCancel, embedded }: Props) => {
 
 	const category = categories.find(c => c.id === selectedCategoryId)
 	const selectedGroup = groups.find(g => g.id === selectedGroupId)
-	const assigneeOptions: IUserShort[] = selectedGroup?.members?.length
-		? selectedGroup.members
-		: users.map(({ id, username, firstName, lastName, email }) => ({ id, username, firstName, lastName, email }))
+	const assigneeOptions: IUserShort[] = selectedGroup?.members ?? []
 
 	const isSaving = isCreating || isUploading
 

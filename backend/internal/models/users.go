@@ -6,6 +6,12 @@ import (
 	"github.com/google/uuid"
 )
 
+type UserCapabilities struct {
+	ManagedGroupIDs []uuid.UUID `json:"managedGroupIds"`
+	MemberGroupIDs  []uuid.UUID `json:"memberGroupIds"`
+	IsRealmAdmin    bool        `json:"isRealmAdmin"`
+}
+
 type User struct {
 	ID           uuid.UUID  `json:"id" db:"id"`
 	MattermostID *string    `json:"mattermostId" db:"mattermost_id"`
@@ -15,8 +21,9 @@ type User struct {
 	CreatedAt    time.Time  `json:"createdAt" db:"created_at"`
 	UpdatedAt    time.Time  `json:"updatedAt" db:"updated_at"`
 
-	Permissions map[string][]string `json:"permissions"`
-	Realms      []*UserRealm        `json:"realms,omitempty"`
+	Permissions  map[string][]string         `json:"permissions"`
+	Realms       []*UserRealm                `json:"realms,omitempty"`
+	Capabilities map[string]*UserCapabilities `json:"capabilities"`
 
 	AccessToken  string `json:"token"`
 	RefreshToken string `json:"-"`

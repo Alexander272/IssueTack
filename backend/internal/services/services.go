@@ -86,9 +86,9 @@ func NewServices(deps *Deps) *Services {
 		Cache:    cacheSvc,
 	})
 
-	session := NewSessionService(deps.Keycloak, policies, userRealms, users, cacheSvc)
-
 	groups := NewGroupService(deps.Repo.Groups, transaction)
+
+	session := NewSessionService(deps.Keycloak, policies, userRealms, users, groups, cacheSvc)
 	categories := NewCategoryService(deps.Repo.Categories)
 	sites := NewSiteService(deps.Repo.Sites)
 	logs := NewActivityLogService(deps.Repo.ActivityLog, transaction)

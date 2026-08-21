@@ -30,8 +30,8 @@ type Groups interface {
 	GetMembers(ctx context.Context, req *models.GetGroupDTO) ([]*models.UserShort, error)
 	GetMembersMap(ctx context.Context, groupIDs []uuid.UUID) (map[uuid.UUID][]*models.UserShort, error)
 	GetMemberCount(ctx context.Context, groupID uuid.UUID) (int, error)
-	GetManagedGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
-	GetMemberGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
+	GetManagedGroups(ctx context.Context, userID uuid.UUID, realmID *uuid.UUID) ([]uuid.UUID, error)
+	GetMemberGroups(ctx context.Context, userID uuid.UUID, realmID *uuid.UUID) ([]uuid.UUID, error)
 	IsMember(ctx context.Context, groupID, userID uuid.UUID) (bool, error)
 	AddMember(ctx context.Context, dto *models.GroupMemberDTO) error
 	RemoveMember(ctx context.Context, dto *models.GroupMemberDTO) error
@@ -312,16 +312,27 @@ func (r *groupRepo) GetMemberCount(ctx context.Context, groupID uuid.UUID) (int,
 	return count, nil
 }
 
-func (r *groupRepo) GetManagedGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
-	query := fmt.Sprintf(`SELECT id FROM %s WHERE manager_id = $1`, Tables.Groups)
+func (r *groupRepo) GetManagedGroups(ctx context.Context, userID uuid.UUID, realmID *uuid.UUID) ([]uuid.UUID, error) {
+	baseQuery := fmt.Sprintf(`SELECT id FROM %s WHERE manager_id = $1`, Tables.Groups)
 
-	rows, err := r.db.Query(ctx, query, userID)
+	var query string
+	var args []interface{}
+
+	if realmID != nil {
+		query = baseQuery + ` AND realm_id = $2`
+		args = []interface{}{userID, *realmID}
+	} else {
+		query = baseQuery
+		args = []interface{}{userID}
+	}
+
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
 	defer rows.Close()
 
-	var data []uuid.UUID
+	data := make([]uuid.UUID, 0)
 	for rows.Next() {
 		var id uuid.UUID
 		if err := rows.Scan(&id); err != nil {
@@ -335,16 +346,27 @@ func (r *groupRepo) GetManagedGroups(ctx context.Context, userID uuid.UUID) ([]u
 	return data, nil
 }
 
-func (r *groupRepo) GetMemberGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
-	query := fmt.Sprintf(`SELECT group_id FROM %s WHERE user_id = $1`, Tables.GroupMembers)
+func (r *groupRepo) GetMemberGroups(ctx context.Context, userID uuid.UUID, realmID *uuid.UUID) ([]uuid.UUID, error) {
+	baseQuery := fmt.Sprintf(`SELECT gm.group_id FROM %s gm`, Tables.GroupMembers)
 
-	rows, err := r.db.Query(ctx, query, userID)
+	var query string
+	var args []interface{}
+
+	if realmID != nil {
+		query = fmt.Sprintf(`%s JOIN %s g ON g.id = gm.group_id WHERE gm.user_id = $1 AND g.realm_id = $2`, baseQuery, Tables.Groups)
+		args = []interface{}{userID, *realmID}
+	} else {
+		query = fmt.Sprintf(`%s WHERE gm.user_id = $1`, baseQuery)
+		args = []interface{}{userID}
+	}
+
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
 	defer rows.Close()
 
-	var data []uuid.UUID
+	data := make([]uuid.UUID, 0)
 	for rows.Next() {
 		var id uuid.UUID
 		if err := rows.Scan(&id); err != nil {

@@ -1,6 +1,6 @@
 import { useState, useMemo, type FC } from 'react'
 import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
-import { useGetAllUsersQuery } from '@/features/user/usersApiSlice'
+import { useGetAvailableUsersQuery } from '@/features/user/usersApiSlice'
 
 import { Toolbar } from './Toolbar'
 import { Popover } from './Popover'
@@ -14,7 +14,7 @@ export const TaskFilters: FC<TaskFiltersProps> = ({ filters, onChange, onReset }
 	const [filterAnchorEl, setFilterAnchorEl] = useState<HTMLElement | null>(null)
 
 	const { data: sitesData } = useGetAllSitesQuery()
-	const { data: usersData } = useGetAllUsersQuery()
+	const { data: usersData } = useGetAvailableUsersQuery()
 
 	const siteOptions = useMemo(() => (sitesData?.data ?? []).map(s => ({ id: s.id, label: s.name })), [sitesData])
 	const userOptions = useMemo(

@@ -16,6 +16,7 @@ export const API = {
 		access: '/users/access' as const,
 		logins: '/users/logins' as const,
 		available: '/users/by-realm' as const,
+		capabilities: '/users/me/capabilities' as const,
 	},
 	roles: {
 		base: '/roles' as const,

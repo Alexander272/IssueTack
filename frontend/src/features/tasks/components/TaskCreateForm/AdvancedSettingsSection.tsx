@@ -1,6 +1,6 @@
 import { Autocomplete, Box, Stack, TextField, Typography } from '@mui/material'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
-import { Controller, useFormContext } from 'react-hook-form'
+import { Controller, useFormContext, useWatch } from 'react-hook-form'
 import dayjs from 'dayjs'
 import type { IGroup } from '@/features/groups/types/group'
 import type { IUserData, IUserShort } from '@/features/user/types/user'
@@ -21,6 +21,7 @@ type Props = {
 
 export const AdvancedSettingsSection = ({ groups, users, assigneeOptions, number = 3 }: Props) => {
 	const { control } = useFormContext<FormValues>()
+	const groupId = useWatch({ control, name: 'groupId' })
 
 	return (
 		<SectionCard number={number} title='Расширенные настройки' subtitle='Доступно менеджерам'>
@@ -110,15 +111,16 @@ export const AdvancedSettingsSection = ({ groups, users, assigneeOptions, number
 							control={control}
 							name='assigneeId'
 							render={({ field }) => (
-								<Autocomplete
-									options={assigneeOptions}
-									getOptionLabel={u => `${u.lastName} ${u.firstName} (${u.username})`}
-									value={assigneeOptions.find(u => u.id === field.value) ?? null}
-									onChange={(_, value) => field.onChange(value?.id ?? null)}
-									noOptionsText='Нет пользователей'
-									renderInput={params => (
-										<TextField {...params} size='small' placeholder='Авто (по группе)' />
-									)}
+							<Autocomplete
+								options={assigneeOptions}
+								getOptionLabel={u => `${u.lastName} ${u.firstName} (${u.username})`}
+								value={assigneeOptions.find(u => u.id === field.value) ?? null}
+								onChange={(_, value) => field.onChange(value?.id ?? null)}
+								disabled={!groupId}
+								noOptionsText='Нет пользователей'
+								renderInput={params => (
+									<TextField {...params} size='small' placeholder={groupId ? 'Авто (по группе)' : 'Сначала выберите группу'} />
+								)}
 								/>
 							)}
 						/>

@@ -43,7 +43,7 @@ func (s *TicketService) CheckAccess(ctx context.Context, ticketID, userID uuid.U
 		if isMember {
 			return nil
 		}
-		managed, err := s.groups.GetManagedGroups(ctx, userID)
+		managed, err := s.groups.GetManagedGroups(ctx, userID, nil)
 		if err != nil {
 			return fmt.Errorf("failed to check managed groups: %w", err)
 		}
@@ -59,7 +59,7 @@ func (s *TicketService) CheckAccess(ctx context.Context, ticketID, userID uuid.U
 		if ticket.Creator.ID == userID {
 			return nil
 		}
-		managed, err := s.groups.GetManagedGroups(ctx, userID)
+		managed, err := s.groups.GetManagedGroups(ctx, userID, nil)
 		if err != nil {
 			return fmt.Errorf("failed to check managed groups: %w", err)
 		}
@@ -69,7 +69,7 @@ func (s *TicketService) CheckAccess(ctx context.Context, ticketID, userID uuid.U
 			}
 		}
 	case string(access.Delete):
-		managed, err := s.groups.GetManagedGroups(ctx, userID)
+		managed, err := s.groups.GetManagedGroups(ctx, userID, nil)
 		if err != nil {
 			return fmt.Errorf("failed to check managed groups: %w", err)
 		}

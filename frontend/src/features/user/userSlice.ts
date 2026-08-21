@@ -1,7 +1,7 @@
 import { type PayloadAction, createSelector, createSlice } from '@reduxjs/toolkit'
 
 import type { RootState } from '@/app/store'
-import type { IUser, IUserRealm } from './types/user'
+import type { IUser, IUserCapabilities, IUserRealm } from './types/user'
 import { getRealm } from '../realms/realmSlice'
 
 interface IUserState {
@@ -11,6 +11,7 @@ interface IUserState {
 	permissions: Record<string, string[]>
 	token: string | null
 	realms: IUserRealm[]
+	capabilities: Record<string, IUserCapabilities>
 }
 
 const initialState: IUserState = {
@@ -19,6 +20,7 @@ const initialState: IUserState = {
 	token: null,
 	permissions: {},
 	realms: [],
+	capabilities: {},
 }
 
 const userSlice = createSlice({
@@ -28,10 +30,10 @@ const userSlice = createSlice({
 		setUser: (state, action: PayloadAction<IUser>) => {
 			state.id = action.payload.id
 			state.name = action.payload.name
-			// state.role = action.payload.realms[0].role?.name ||''
 			state.permissions = action.payload.permissions
 			state.token = action.payload.token
 			state.realms = action.payload.realms
+			state.capabilities = action.payload.capabilities ?? {}
 		},
 
 		setRole: (state, action: PayloadAction<string>) => {
@@ -39,6 +41,9 @@ const userSlice = createSlice({
 		},
 		setPermissions: (state, action: PayloadAction<Record<string, string[]>>) => {
 			state.permissions = action.payload
+		},
+		setCapabilities: (state, action: PayloadAction<Record<string, IUserCapabilities>>) => {
+			state.capabilities = action.payload
 		},
 
 		resetUser: () => initialState,
@@ -50,6 +55,7 @@ export const getToken = (state: RootState) => state.user.token
 export const getPermissions = (state: RootState) => state.user.permissions
 export const getRole = (state: RootState) => state.user.role
 export const getUserRealms = (state: RootState) => state.user.realms
+export const getUserCapabilities = (state: RootState) => state.user.capabilities
 
 export const getCurrentTenantPermissions = createSelector(
 	[getPermissions, getRealm],
@@ -58,7 +64,19 @@ export const getCurrentTenantPermissions = createSelector(
 
 export const getPermissionsSet = createSelector([getCurrentTenantPermissions], permissions => new Set(permissions))
 
+export const getCurrentCapabilities = createSelector(
+	[getUserCapabilities, getRealm],
+	(caps, realm) => caps[realm?.id || ''] ?? { managedGroupIds: [], memberGroupIds: [], isRealmAdmin: false },
+)
+
+export const getIsManager = createSelector(
+	[getCurrentCapabilities],
+	caps => caps.isRealmAdmin || caps.managedGroupIds.length > 0,
+)
+
+export const hasCapabilities = createSelector([getUserCapabilities], caps => Object.keys(caps).length > 0)
+
 export const userPath = userSlice.name
 export const userReducer = userSlice.reducer
 
-export const { setUser, setRole, setPermissions, resetUser } = userSlice.actions
+export const { setUser, setRole, setPermissions, setCapabilities, resetUser } = userSlice.actions

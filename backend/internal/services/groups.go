@@ -30,8 +30,8 @@ type Groups interface {
 	RemoveMember(ctx context.Context, dto *models.GroupMemberDTO) error
 	GetMembers(ctx context.Context, req *models.GetGroupDTO) ([]*models.UserShort, error)
 	GetMemberCount(ctx context.Context, groupID uuid.UUID) (int, error)
-	GetManagedGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
-	GetMemberGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
+	GetManagedGroups(ctx context.Context, userID uuid.UUID, realmID *uuid.UUID) ([]uuid.UUID, error)
+	GetMemberGroups(ctx context.Context, userID uuid.UUID, realmID *uuid.UUID) ([]uuid.UUID, error)
 	IsMember(ctx context.Context, groupID, userID uuid.UUID) (bool, error)
 }
 
@@ -65,16 +65,16 @@ func (s *GroupService) GetMemberCount(ctx context.Context, groupID uuid.UUID) (i
 	return count, nil
 }
 
-func (s *GroupService) GetManagedGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
-	ids, err := s.repo.GetManagedGroups(ctx, userID)
+func (s *GroupService) GetManagedGroups(ctx context.Context, userID uuid.UUID, realmID *uuid.UUID) ([]uuid.UUID, error) {
+	ids, err := s.repo.GetManagedGroups(ctx, userID, realmID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get managed groups. error: %w", err)
 	}
 	return ids, nil
 }
 
-func (s *GroupService) GetMemberGroups(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
-	ids, err := s.repo.GetMemberGroups(ctx, userID)
+func (s *GroupService) GetMemberGroups(ctx context.Context, userID uuid.UUID, realmID *uuid.UUID) ([]uuid.UUID, error) {
+	ids, err := s.repo.GetMemberGroups(ctx, userID, realmID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get member groups. error: %w", err)
 	}
