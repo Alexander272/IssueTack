@@ -56,6 +56,8 @@ export const API = {
 	attachments: {
 		upload: (entityType: string, entityId: string) =>
 			`/attachments/${entityType}/${entityId}` as const,
+		content: (id: string) =>
+			`/attachments/content/${id}` as const,
 	},
 	sites: {
 		base: '/sites' as const,

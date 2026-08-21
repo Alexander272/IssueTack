@@ -37,10 +37,11 @@ func TestAttachmentService_GetByEntity_Success(t *testing.T) {
 	actorID := uuid.New()
 	expected := []*models.Attachment{{ID: uuid.New(), FileName: "file.pdf"}}
 
-	mockAccess.On("CheckAccess", mock.Anything, entityID, actorID, string(access.Read), mock.Anything).Return(nil)
+	dto := &models.EntityAccessDTO{EntityType: "ticket", EntityID: entityID, ActorID: actorID, Realm: ""}
+	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Action: string(access.Read), Realm: ""}).Return(nil)
 	mockRepo.On("GetByEntity", mock.Anything, "ticket", entityID).Return(expected, nil)
 
-	got, err := svc.GetByEntity(context.Background(), "ticket", entityID, actorID, "")
+	got, err := svc.GetByEntity(context.Background(), dto)
 	assert.NoError(t, err)
 	assert.Equal(t, expected, got)
 }
@@ -49,7 +50,8 @@ func TestAttachmentService_GetByEntity_NoAccess(t *testing.T) {
 	_, _, _, svc, _ := attachmentFixtures(t)
 	svc.ticketAccess = nil
 
-	_, err := svc.GetByEntity(context.Background(), "ticket", uuid.New(), uuid.New(), "")
+	dto := &models.EntityAccessDTO{EntityType: "ticket", EntityID: uuid.New(), ActorID: uuid.New()}
+	_, err := svc.GetByEntity(context.Background(), dto)
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 }
 
@@ -57,9 +59,11 @@ func TestAttachmentService_GetByEntity_AccessDenied(t *testing.T) {
 	mockRepo, _, mockAccess, svc, _ := attachmentFixtures(t)
 
 	entityID := uuid.New()
-	mockAccess.On("CheckAccess", mock.Anything, entityID, mock.Anything, string(access.Read), "").Return(models.ErrPermissionDenied)
+	actorID := uuid.New()
+	dto := &models.EntityAccessDTO{EntityType: "ticket", EntityID: entityID, ActorID: actorID, Realm: ""}
+	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Action: string(access.Read), Realm: ""}).Return(models.ErrPermissionDenied)
 
-	_, err := svc.GetByEntity(context.Background(), "ticket", entityID, uuid.New(), "")
+	_, err := svc.GetByEntity(context.Background(), dto)
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 	mockRepo.AssertNotCalled(t, "GetByEntity")
 }
@@ -75,10 +79,11 @@ func TestAttachmentService_GetByEntity_Subtask(t *testing.T) {
 	mockSubtasks.On("GetByID", mock.Anything, &models.GetSubtaskDTO{ID: subtaskID}).Return(&models.Subtask{
 		ID: subtaskID, TicketID: ticketID,
 	}, nil)
-	mockAccess.On("CheckAccess", mock.Anything, ticketID, actorID, string(access.Read), "").Return(nil)
+	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read), Realm: ""}).Return(nil)
 	mockRepo.On("GetByEntity", mock.Anything, "subtask", subtaskID).Return(expected, nil)
 
-	got, err := svc.GetByEntity(context.Background(), "subtask", subtaskID, actorID, "")
+	dto := &models.EntityAccessDTO{EntityType: "subtask", EntityID: subtaskID, ActorID: actorID, Realm: ""}
+	got, err := svc.GetByEntity(context.Background(), dto)
 	assert.NoError(t, err)
 	assert.Equal(t, expected, got)
 }
@@ -86,7 +91,8 @@ func TestAttachmentService_GetByEntity_Subtask(t *testing.T) {
 func TestAttachmentService_Upload_InvalidEntityType(t *testing.T) {
 	_, _, _, svc, _ := attachmentFixtures(t)
 
-	_, err := svc.Upload(context.Background(), nil, "invalid", uuid.New(), "test.txt", nil, uuid.New(), "")
+	dto := &models.UploadAttachmentDTO{EntityType: "invalid", EntityID: uuid.New(), FileName: "test.txt", UploadedBy: uuid.New()}
+	_, err := svc.Upload(context.Background(), nil, dto)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid entity type")
 }
@@ -98,11 +104,14 @@ func TestAttachmentService_Upload_Success(t *testing.T) {
 	actorID := uuid.New()
 	content := "test file content"
 
-	mockAccess.On("CheckWorkAccess", mock.Anything, entityID, actorID, "").Return(nil)
-
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Realm: ""}).Return(nil)
 	mockRepo.On("Create", mock.Anything, nil, mock.AnythingOfType("*models.Attachment")).Return(nil)
 
-	att, err := svc.Upload(context.Background(), nil, "ticket", entityID, "test.txt", strings.NewReader(content), actorID, "")
+	dto := &models.UploadAttachmentDTO{
+		EntityType: "ticket", EntityID: entityID, FileName: "test.txt",
+		File: strings.NewReader(content), UploadedBy: actorID, Realm: "",
+	}
+	att, err := svc.Upload(context.Background(), nil, dto)
 	assert.NoError(t, err)
 	assert.NotNil(t, att)
 	assert.Equal(t, "test.txt", att.FileName)
@@ -124,10 +133,14 @@ func TestAttachmentService_Upload_RepoCreateFails(t *testing.T) {
 	entityID := uuid.New()
 	actorID := uuid.New()
 
-	mockAccess.On("CheckWorkAccess", mock.Anything, entityID, actorID, "").Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Realm: ""}).Return(nil)
 	mockRepo.On("Create", mock.Anything, nil, mock.AnythingOfType("*models.Attachment")).Return(assert.AnError)
 
-	_, err := svc.Upload(context.Background(), nil, "ticket", entityID, "test.txt", strings.NewReader("content"), actorID, "")
+	dto := &models.UploadAttachmentDTO{
+		EntityType: "ticket", EntityID: entityID, FileName: "test.txt",
+		File: strings.NewReader("content"), UploadedBy: actorID, Realm: "",
+	}
+	_, err := svc.Upload(context.Background(), nil, dto)
 	assert.Error(t, err)
 }
 
@@ -144,10 +157,11 @@ func TestAttachmentService_Delete_Success(t *testing.T) {
 	}
 
 	mockRepo.On("GetByID", mock.Anything, attID).Return(att, nil)
-	mockAccess.On("CheckWorkAccess", mock.Anything, entityID, actorID, "").Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Realm: ""}).Return(nil)
 	mockRepo.On("Delete", mock.Anything, nil, attID).Return(nil)
 
-	err := svc.Delete(context.Background(), nil, attID, actorID, "")
+	dto := &models.DeleteAttachmentDTO{ID: attID, ActorID: actorID, Realm: ""}
+	err := svc.Delete(context.Background(), nil, dto)
 	assert.NoError(t, err)
 }
 
@@ -164,10 +178,11 @@ func TestAttachmentService_Delete_FileNotFound(t *testing.T) {
 	}
 
 	mockRepo.On("GetByID", mock.Anything, attID).Return(att, nil)
-	mockAccess.On("CheckWorkAccess", mock.Anything, entityID, actorID, "").Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Realm: ""}).Return(nil)
 	mockRepo.On("Delete", mock.Anything, nil, attID).Return(nil)
 
-	err := svc.Delete(context.Background(), nil, attID, actorID, "")
+	dto := &models.DeleteAttachmentDTO{ID: attID, ActorID: actorID, Realm: ""}
+	err := svc.Delete(context.Background(), nil, dto)
 	assert.NoError(t, err)
 }
 
@@ -178,11 +193,14 @@ func TestAttachmentService_Upload_ReadFileContents(t *testing.T) {
 	actorID := uuid.New()
 	content := "read check content"
 
-	mockAccess.On("CheckWorkAccess", mock.Anything, entityID, actorID, "").Return(nil)
-
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Realm: ""}).Return(nil)
 	mockRepo.On("Create", mock.Anything, nil, mock.AnythingOfType("*models.Attachment")).Return(nil)
 
-	att, err := svc.Upload(context.Background(), nil, "ticket", entityID, "check.txt", strings.NewReader(content), actorID, "")
+	dto := &models.UploadAttachmentDTO{
+		EntityType: "ticket", EntityID: entityID, FileName: "check.txt",
+		File: strings.NewReader(content), UploadedBy: actorID, Realm: "",
+	}
+	att, err := svc.Upload(context.Background(), nil, dto)
 	assert.NoError(t, err)
 
 	assert.Contains(t, att.FilePath, "ticket")

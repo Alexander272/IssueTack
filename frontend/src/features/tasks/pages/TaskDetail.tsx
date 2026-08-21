@@ -41,6 +41,7 @@ export const TaskDetailPage = () => {
 
 	const task = data.data
 	const canEdit = task.status === 'open' && task.access?.canWrite
+	const canUploadAttachments = task.access?.canWork && task.status !== 'resolved'
 
 	const handleStatusChange = async (taskId: string, status: TicketStatus) => {
 		try {
@@ -85,7 +86,7 @@ export const TaskDetailPage = () => {
 							canWork={task.access?.canWork}
 							onSubtaskStatusChange={handleSubtaskStatusChange}
 						/>
-						<Attachments attachments={task.attachments} />
+						<Attachments attachments={task.attachments} canWork={canUploadAttachments} taskId={task.id} />
 						<Comments comments={[]} taskId={task.id} />
 					</Grid>
 

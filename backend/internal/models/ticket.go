@@ -146,6 +146,13 @@ type DeleteTicketDTO struct {
 	RealmID string    `json:"realmId"`
 }
 
+type AccessCheckDTO struct {
+	TicketID uuid.UUID
+	UserID   uuid.UUID
+	Action   string
+	Realm    string
+}
+
 type FieldChange struct {
 	Tag    ActivityType
 	OldVal string

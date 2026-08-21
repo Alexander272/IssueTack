@@ -30,7 +30,7 @@ type Checklists interface {
 	Delete(ctx context.Context, dto *models.DelChecklistTemplateDTO) error
 	SetItems(ctx context.Context, tx postgres.Tx, templateID uuid.UUID, items []*models.ChecklistTemplateItemDTO) error
 	GetItems(ctx context.Context, templateID uuid.UUID) ([]*models.ChecklistTemplateItem, error)
-	ApplyTemplate(ctx context.Context, tx postgres.Tx, ticketID uuid.UUID, templateID uuid.UUID, actor *models.Actor) error
+	ApplyTemplate(ctx context.Context, tx postgres.Tx, dto *models.ApplyTemplateDTO) error
 }
 
 func (s *ChecklistService) Get(ctx context.Context, req *models.GetChecklistTemplatesDTO) ([]*models.ChecklistTemplate, error) {
@@ -92,8 +92,8 @@ func (s *ChecklistService) GetItems(ctx context.Context, templateID uuid.UUID) (
 	return data, nil
 }
 
-func (s *ChecklistService) ApplyTemplate(ctx context.Context, tx postgres.Tx, ticketID uuid.UUID, templateID uuid.UUID, actor *models.Actor) error {
-	items, err := s.repo.GetItems(ctx, templateID)
+func (s *ChecklistService) ApplyTemplate(ctx context.Context, tx postgres.Tx, dto *models.ApplyTemplateDTO) error {
+	items, err := s.repo.GetItems(ctx, dto.TemplateID)
 	if err != nil {
 		return fmt.Errorf("failed to get template items: %w", err)
 	}
@@ -105,11 +105,11 @@ func (s *ChecklistService) ApplyTemplate(ctx context.Context, tx postgres.Tx, ti
 	subtaskDTOs := make([]*models.SubtaskDTO, len(items))
 	for i, item := range items {
 		subtaskDTOs[i] = &models.SubtaskDTO{
-			TicketID:  ticketID,
+			TicketID:  dto.TicketID,
 			Title:     item.Title,
 			Status:    models.StatusOpen,
 			SortOrder: item.SortOrder,
-			Actor:     actor,
+			Actor:     dto.Actor,
 		}
 	}
 

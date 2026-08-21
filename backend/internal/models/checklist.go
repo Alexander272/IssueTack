@@ -49,3 +49,9 @@ type ChecklistTemplateItemDTO struct {
 type DelChecklistTemplateDTO struct {
 	ID uuid.UUID `json:"id"`
 }
+
+type ApplyTemplateDTO struct {
+	TicketID   uuid.UUID
+	TemplateID uuid.UUID
+	Actor      *Actor
+}

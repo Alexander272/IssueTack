@@ -355,19 +355,26 @@ type MockAttachmentService struct {
 	mock.Mock
 }
 
-func (m *MockAttachmentService) GetByEntity(ctx context.Context, entityType string, entityID uuid.UUID, actorID uuid.UUID, realm string) ([]*models.Attachment, error) {
-	args := m.Called(ctx, entityType, entityID, actorID)
+func (m *MockAttachmentService) GetByEntity(ctx context.Context, dto *models.EntityAccessDTO) ([]*models.Attachment, error) {
+	args := m.Called(ctx, dto)
 	return args.Get(0).([]*models.Attachment), args.Error(1)
 }
-func (m *MockAttachmentService) Upload(ctx context.Context, tx postgres.Tx, entityType string, entityID uuid.UUID, fileName string, file io.Reader, uploadedBy uuid.UUID, realm string) (*models.Attachment, error) {
-	args := m.Called(ctx, tx, entityType, entityID, fileName, file, uploadedBy)
+func (m *MockAttachmentService) GetContent(ctx context.Context, id uuid.UUID, actorID uuid.UUID, realm string) (*models.Attachment, io.ReadCloser, error) {
+	args := m.Called(ctx, id, actorID)
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
+	}
+	return args.Get(0).(*models.Attachment), args.Get(1).(io.ReadCloser), args.Error(2)
+}
+func (m *MockAttachmentService) Upload(ctx context.Context, tx postgres.Tx, dto *models.UploadAttachmentDTO) (*models.Attachment, error) {
+	args := m.Called(ctx, tx, dto)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*models.Attachment), args.Error(1)
 }
-func (m *MockAttachmentService) Delete(ctx context.Context, tx postgres.Tx, id uuid.UUID, actorID uuid.UUID, realm string) error {
-	args := m.Called(ctx, tx, id, actorID)
+func (m *MockAttachmentService) Delete(ctx context.Context, tx postgres.Tx, dto *models.DeleteAttachmentDTO) error {
+	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
 }
 
@@ -494,13 +501,13 @@ type MockTicketAccessChecker struct {
 	mock.Mock
 }
 
-func (m *MockTicketAccessChecker) CheckAccess(ctx context.Context, ticketID, userID uuid.UUID, action string, realm string) error {
-	args := m.Called(ctx, ticketID, userID, action, realm)
+func (m *MockTicketAccessChecker) CheckAccess(ctx context.Context, dto *models.AccessCheckDTO) error {
+	args := m.Called(ctx, dto)
 	return args.Error(0)
 }
 
-func (m *MockTicketAccessChecker) CheckWorkAccess(ctx context.Context, ticketID, userID uuid.UUID, realm string) error {
-	args := m.Called(ctx, ticketID, userID, realm)
+func (m *MockTicketAccessChecker) CheckWorkAccess(ctx context.Context, dto *models.AccessCheckDTO) error {
+	args := m.Called(ctx, dto)
 	return args.Error(0)
 }
 

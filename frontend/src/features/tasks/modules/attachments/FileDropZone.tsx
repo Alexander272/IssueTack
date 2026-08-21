@@ -3,8 +3,9 @@ import { Box, IconButton, Stack, Typography } from '@mui/material'
 import { CloudUploadIcon, Paperclip, XIcon } from 'lucide-mui'
 
 type Props = {
-	files: File[]
-	onChange: (files: File[]) => void
+	files?: File[]
+	onChange?: (files: File[]) => void
+	onUpload?: (list: FileList) => void
 }
 
 const formatFileSize = (bytes: number) => {
@@ -13,13 +14,17 @@ const formatFileSize = (bytes: number) => {
 	return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`
 }
 
-export const FileDropZone = ({ files, onChange }: Props) => {
+export const FileDropZone = ({ files = [], onChange, onUpload }: Props) => {
 	const inputRef = useRef<HTMLInputElement>(null)
 	const [dragOver, setDragOver] = useState(false)
 
 	const handleFiles = (list: FileList | null) => {
 		if (!list || list.length === 0) return
-		onChange([...files, ...Array.from(list)])
+		if (onUpload) {
+			onUpload(list)
+		} else {
+			onChange?.([...files, ...Array.from(list)])
+		}
 	}
 
 	return (
@@ -37,7 +42,7 @@ export const FileDropZone = ({ files, onChange }: Props) => {
 					handleFiles(e.dataTransfer.files)
 				}}
 				sx={{
-					border: `2px dashed #d1d5db`,
+					border: '2px dashed #d1d5db',
 					borderRadius: '12px',
 					p: 4,
 					textAlign: 'center',
@@ -117,7 +122,7 @@ export const FileDropZone = ({ files, onChange }: Props) => {
 							</Box>
 							<IconButton
 								size='small'
-								onClick={() => onChange(files.filter((_, i) => i !== index))}
+								onClick={() => onChange?.(files.filter((_, i) => i !== index))}
 								sx={{ color: '#9ca3af' }}
 							>
 								<XIcon sx={{ fontSize: 14 }} />

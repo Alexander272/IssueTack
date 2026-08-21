@@ -150,7 +150,7 @@ func (s *TicketService) autoAssign(ctx context.Context, dto *models.TicketDTO) e
 }
 
 func (s *TicketService) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) (*models.Ticket, error) {
-	if err := s.CheckAccess(ctx, req.ID, req.Actor.ID, string(access.Read), req.RealmID); err != nil {
+	if err := s.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: req.ID, UserID: req.Actor.ID, Action: string(access.Read), Realm: req.RealmID}); err != nil {
 		return nil, err
 	}
 
@@ -165,7 +165,12 @@ func (s *TicketService) GetByID(ctx context.Context, req *models.GetTicketByIdDT
 	}
 	data.Subtasks = subtasks
 
-	attachments, err := s.attachments.GetByEntity(ctx, string(access.ResourceTicket), data.ID, req.Actor.ID, req.RealmID)
+	attachments, err := s.attachments.GetByEntity(ctx, &models.EntityAccessDTO{
+		EntityType: string(access.ResourceTicket),
+		EntityID:   data.ID,
+		ActorID:    req.Actor.ID,
+		Realm:      req.RealmID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get attachments: %w", err)
 	}
@@ -251,8 +256,8 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 
 	assignedOnly := false
 	ownerOnly := false
-	if err := s.CheckAccess(ctx, *dto.ID, dto.Actor.ID, string(access.Write), realmStr); err != nil {
-		if workErr := s.CheckWorkAccess(ctx, *dto.ID, dto.Actor.ID, realmStr); workErr != nil {
+	if err := s.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: *dto.ID, UserID: dto.Actor.ID, Action: string(access.Write), Realm: realmStr}); err != nil {
+		if workErr := s.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: *dto.ID, UserID: dto.Actor.ID, Realm: realmStr}); workErr != nil {
 			old, loadErr := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
 			if loadErr != nil {
 				return fmt.Errorf("failed to load ticket for access check: %w", loadErr)
@@ -388,7 +393,7 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 }
 
 func (s *TicketService) Delete(ctx context.Context, dto *models.DeleteTicketDTO) error {
-	if err := s.CheckAccess(ctx, dto.ID, dto.Actor.ID, string(access.Delete), dto.RealmID); err != nil {
+	if err := s.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: dto.ID, UserID: dto.Actor.ID, Action: string(access.Delete), Realm: dto.RealmID}); err != nil {
 		return err
 	}
 

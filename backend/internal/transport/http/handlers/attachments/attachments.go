@@ -29,6 +29,7 @@ func Register(api *gin.RouterGroup, service services.Attachments, middleware *mi
 
 	attachments := api.Group("/attachments", middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Read()))
 	{
+		attachments.GET("/content/:id", handlers.getContent)
 		attachments.GET("/:entityType/:entityId", handlers.getByEntity)
 
 		attachments.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Write()))
@@ -37,6 +38,33 @@ func Register(api *gin.RouterGroup, service services.Attachments, middleware *mi
 		attachments.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Delete()))
 		attachments.DELETE("/:id", handlers.delete)
 	}
+}
+
+func (h *Handler) getContent(c *gin.Context) {
+	strId := c.Param("id")
+	id, err := uuid.Parse(strId)
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	user := utils.GetUser(c)
+	if user == nil {
+		return
+	}
+
+	realmIdStr := c.GetHeader("realm")
+
+	att, reader, err := h.service.GetContent(c, id, user.ID, realmIdStr)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	defer reader.Close()
+
+	c.Header("Content-Type", att.MimeType)
+	c.Header("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, att.FileName))
+	c.DataFromReader(http.StatusOK, att.FileSize, att.MimeType, reader, nil)
 }
 
 func (h *Handler) getByEntity(c *gin.Context) {
@@ -56,7 +84,14 @@ func (h *Handler) getByEntity(c *gin.Context) {
 
 	realmIdStr := c.GetHeader("realm")
 
-	data, err := h.service.GetByEntity(c, entityType, id, user.ID, realmIdStr)
+	dto := &models.EntityAccessDTO{
+		EntityType: entityType,
+		EntityID:   id,
+		ActorID:    user.ID,
+		Realm:      realmIdStr,
+	}
+
+	data, err := h.service.GetByEntity(c, dto)
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -88,7 +123,16 @@ func (h *Handler) upload(c *gin.Context) {
 
 	realmIdStr := c.GetHeader("realm")
 
-	att, err := h.service.Upload(c, nil, entityType, id, header.Filename, file, user.ID, realmIdStr)
+	dto := &models.UploadAttachmentDTO{
+		EntityType: entityType,
+		EntityID:   id,
+		FileName:   header.Filename,
+		File:       file,
+		UploadedBy: user.ID,
+		Realm:      realmIdStr,
+	}
+
+	att, err := h.service.Upload(c, nil, dto)
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -111,7 +155,13 @@ func (h *Handler) delete(c *gin.Context) {
 
 	realmIdStr := c.GetHeader("realm")
 
-	if err := h.service.Delete(c, nil, id, user.ID, realmIdStr); err != nil {
+	dto := &models.DeleteAttachmentDTO{
+		ID:      id,
+		ActorID: user.ID,
+		Realm:   realmIdStr,
+	}
+
+	if err := h.service.Delete(c, nil, dto); err != nil {
 		response.SendError(c, err)
 		return
 	}

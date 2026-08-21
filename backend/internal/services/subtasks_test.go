@@ -33,7 +33,7 @@ func TestSubtaskService_GetByTicketID_Success(t *testing.T) {
 		{ID: uuid.New(), Title: "Subtask 1", TicketID: ticketID},
 	}
 
-	mockAccess.On("CheckAccess", mock.Anything, ticketID, actorID, string(access.Read), "").Return(nil)
+	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read), Realm: ""}).Return(nil)
 	mockRepo.On("GetByTicketID", mock.Anything, ticketID).Return(expected, nil)
 
 	got, err := svc.GetByTicketID(context.Background(), ticketID, actorID, "")
@@ -56,9 +56,10 @@ func TestSubtaskService_GetByTicketID_AccessDenied(t *testing.T) {
 	mockRepo, _, mockAccess, svc := subtaskServiceFixtures()
 
 	ticketID := uuid.New()
-	mockAccess.On("CheckAccess", mock.Anything, ticketID, mock.Anything, string(access.Read), "").Return(models.ErrPermissionDenied)
+	actorID := uuid.New()
+	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read), Realm: ""}).Return(models.ErrPermissionDenied)
 
-	_, err := svc.GetByTicketID(context.Background(), ticketID, uuid.New(), "")
+	_, err := svc.GetByTicketID(context.Background(), ticketID, actorID, "")
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 	mockRepo.AssertNotCalled(t, "GetByTicketID")
 }
@@ -73,7 +74,7 @@ func TestSubtaskService_GetByID_Success(t *testing.T) {
 	expected := &models.Subtask{ID: subtaskID, Title: "Subtask", TicketID: ticketID}
 
 	mockRepo.On("GetByID", mock.Anything, req).Return(expected, nil)
-	mockAccess.On("CheckAccess", mock.Anything, ticketID, actorID, string(access.Read), "").Return(nil)
+	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read), Realm: ""}).Return(nil)
 
 	got, err := svc.GetByID(context.Background(), req, actorID, "")
 	assert.NoError(t, err)
@@ -103,7 +104,7 @@ func TestSubtaskService_Create_Success(t *testing.T) {
 		Actor:    &models.Actor{ID: actorID, Name: "test"},
 	}
 
-	mockAccess.On("CheckWorkAccess", mock.Anything, ticketID, actorID, "").Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Realm: ""}).Return(nil)
 	mockRepo.On("Create", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 
@@ -130,7 +131,7 @@ func TestSubtaskService_CreateSeveral_Success(t *testing.T) {
 		{ID: uuid.New(), TicketID: ticketID, Title: "S2", Actor: &models.Actor{ID: actorID, Name: "test"}},
 	}
 
-	mockAccess.On("CheckWorkAccess", mock.Anything, ticketID, actorID, "").Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Realm: ""}).Return(nil)
 	mockRepo.On("CreateSeveral", mock.Anything, nil, dtos).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 
@@ -176,7 +177,7 @@ func TestSubtaskService_Update_Success(t *testing.T) {
 	}
 
 	mockRepo.On("GetByID", mock.Anything, &models.GetSubtaskDTO{ID: subtaskID}).Return(old, nil)
-	mockAccess.On("CheckWorkAccess", mock.Anything, ticketID, actorID, "").Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Realm: ""}).Return(nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 
@@ -203,7 +204,7 @@ func TestSubtaskService_Update_NoChanges(t *testing.T) {
 	}
 
 	mockRepo.On("GetByID", mock.Anything, &models.GetSubtaskDTO{ID: subtaskID}).Return(old, nil)
-	mockAccess.On("CheckWorkAccess", mock.Anything, ticketID, actorID, "").Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Realm: ""}).Return(nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 
 	err := svc.Update(context.Background(), nil, dto, "")
@@ -223,7 +224,7 @@ func TestSubtaskService_Delete_Success(t *testing.T) {
 	}
 
 	mockRepo.On("GetByID", mock.Anything, &models.GetSubtaskDTO{ID: subtaskID}).Return(old, nil)
-	mockAccess.On("CheckWorkAccess", mock.Anything, ticketID, actorID, "").Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Realm: ""}).Return(nil)
 	mockRepo.On("Delete", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 

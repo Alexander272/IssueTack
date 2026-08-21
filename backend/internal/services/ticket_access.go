@@ -6,16 +6,15 @@ import (
 
 	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
-	"github.com/google/uuid"
 )
 
 type TicketAccessChecker interface {
-	CheckAccess(ctx context.Context, ticketID, userID uuid.UUID, action string, realm string) error
-	CheckWorkAccess(ctx context.Context, ticketID, userID uuid.UUID, realm string) error
+	CheckAccess(ctx context.Context, dto *models.AccessCheckDTO) error
+	CheckWorkAccess(ctx context.Context, dto *models.AccessCheckDTO) error
 }
 
-func (s *TicketService) CheckAccess(ctx context.Context, ticketID, userID uuid.UUID, action string, realm string) error {
-	ok, err := s.policies.Enforce(userID.String(), realm, string(access.ResourceTicket), action)
+func (s *TicketService) CheckAccess(ctx context.Context, dto *models.AccessCheckDTO) error {
+	ok, err := s.policies.Enforce(dto.UserID.String(), dto.Realm, string(access.ResourceTicket), dto.Action)
 	if err != nil {
 		return fmt.Errorf("policy check failed: %w", err)
 	}
@@ -23,27 +22,27 @@ func (s *TicketService) CheckAccess(ctx context.Context, ticketID, userID uuid.U
 		return nil
 	}
 
-	ticket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: ticketID})
+	ticket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: dto.TicketID})
 	if err != nil {
 		return fmt.Errorf("failed to load ticket for access check: %w", err)
 	}
 	if ticket.Group == nil {
-		if action == string(access.Read) && (ticket.Assignee != nil && ticket.Assignee.ID == userID || ticket.Creator.ID == userID) {
+		if dto.Action == string(access.Read) && (ticket.Assignee != nil && ticket.Assignee.ID == dto.UserID || ticket.Creator.ID == dto.UserID) {
 			return nil
 		}
 		return models.ErrPermissionDenied
 	}
 
-	switch action {
+	switch dto.Action {
 	case string(access.Read):
-		isMember, err := s.groups.IsMember(ctx, ticket.Group.ID, userID)
+		isMember, err := s.groups.IsMember(ctx, ticket.Group.ID, dto.UserID)
 		if err != nil {
 			return fmt.Errorf("failed to check membership: %w", err)
 		}
 		if isMember {
 			return nil
 		}
-		managed, err := s.groups.GetManagedGroups(ctx, userID, nil)
+		managed, err := s.groups.GetManagedGroups(ctx, dto.UserID, nil)
 		if err != nil {
 			return fmt.Errorf("failed to check managed groups: %w", err)
 		}
@@ -52,14 +51,14 @@ func (s *TicketService) CheckAccess(ctx context.Context, ticketID, userID uuid.U
 				return nil
 			}
 		}
-		if ticket.Assignee != nil && ticket.Assignee.ID == userID {
+		if ticket.Assignee != nil && ticket.Assignee.ID == dto.UserID {
 			return nil
 		}
 	case string(access.Write):
-		if ticket.Creator.ID == userID {
+		if ticket.Creator.ID == dto.UserID {
 			return nil
 		}
-		managed, err := s.groups.GetManagedGroups(ctx, userID, nil)
+		managed, err := s.groups.GetManagedGroups(ctx, dto.UserID, nil)
 		if err != nil {
 			return fmt.Errorf("failed to check managed groups: %w", err)
 		}
@@ -69,7 +68,7 @@ func (s *TicketService) CheckAccess(ctx context.Context, ticketID, userID uuid.U
 			}
 		}
 	case string(access.Delete):
-		managed, err := s.groups.GetManagedGroups(ctx, userID, nil)
+		managed, err := s.groups.GetManagedGroups(ctx, dto.UserID, nil)
 		if err != nil {
 			return fmt.Errorf("failed to check managed groups: %w", err)
 		}
@@ -82,15 +81,20 @@ func (s *TicketService) CheckAccess(ctx context.Context, ticketID, userID uuid.U
 	return models.ErrPermissionDenied
 }
 
-func (s *TicketService) CheckWorkAccess(ctx context.Context, ticketID, userID uuid.UUID, realm string) error {
-	if err := s.CheckAccess(ctx, ticketID, userID, string(access.Write), realm); err == nil {
+func (s *TicketService) CheckWorkAccess(ctx context.Context, dto *models.AccessCheckDTO) error {
+	if err := s.CheckAccess(ctx, &models.AccessCheckDTO{
+		TicketID: dto.TicketID,
+		UserID:   dto.UserID,
+		Action:   string(access.Write),
+		Realm:    dto.Realm,
+	}); err == nil {
 		return nil
 	}
-	ticket, ticketErr := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: ticketID})
+	ticket, ticketErr := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: dto.TicketID})
 	if ticketErr != nil {
 		return ticketErr
 	}
-	if ticket.Assignee != nil && ticket.Assignee.ID == userID {
+	if ticket.Assignee != nil && ticket.Assignee.ID == dto.UserID {
 		return nil
 	}
 	return models.ErrPermissionDenied

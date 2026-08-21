@@ -133,7 +133,7 @@ func TestTicketService_GetByID_Success(t *testing.T) {
 	mockRepo.On("GetByID", mock.Anything, req).Return(ticket, nil)
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Read)).Return(true, nil)
 	mockSubtasks.On("GetByTicketID", mock.Anything, ticketID, actorID).Return([]*models.Subtask{}, nil)
-	mockAttachments.On("GetByEntity", mock.Anything, string(access.ResourceTicket), ticketID, actorID).Return([]*models.Attachment{}, nil)
+	mockAttachments.On("GetByEntity", mock.Anything, mock.AnythingOfType("*models.EntityAccessDTO")).Return([]*models.Attachment{}, nil)
 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(true, nil)
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Delete)).Return(false, nil)
@@ -777,7 +777,7 @@ func TestTicketService_CheckAccess_PolicyGranted(t *testing.T) {
 	actorID := uuid.New()
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Read)).Return(true, nil)
 
-	err := svc.CheckAccess(context.Background(), uuid.New(), actorID, string(access.Read), "")
+	err := svc.CheckAccess(context.Background(), &models.AccessCheckDTO{TicketID: uuid.New(), UserID: actorID, Action: string(access.Read)})
 	assert.NoError(t, err)
 }
 
@@ -795,7 +795,7 @@ func TestTicketService_CheckAccess_GroupMember(t *testing.T) {
 	}, nil)
 	mockGroups.On("IsMember", mock.Anything, groupID, actorID).Return(true, nil)
 
-	err := svc.CheckAccess(context.Background(), ticketID, actorID, string(access.Read), "")
+	err := svc.CheckAccess(context.Background(), &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read)})
 	assert.NoError(t, err)
 }
 
@@ -814,7 +814,7 @@ func TestTicketService_CheckAccess_Denied(t *testing.T) {
 	mockGroups.On("IsMember", mock.Anything, groupID, actorID).Return(false, nil)
 	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
 
-	err := svc.CheckAccess(context.Background(), ticketID, actorID, string(access.Read), "")
+	err := svc.CheckAccess(context.Background(), &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read)})
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 }

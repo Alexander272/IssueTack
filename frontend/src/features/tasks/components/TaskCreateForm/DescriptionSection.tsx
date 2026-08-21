@@ -1,7 +1,7 @@
 import { Box, TextField, Typography } from '@mui/material'
 import { Controller, useFormContext } from 'react-hook-form'
 import { SectionCard } from './SectionCard'
-import { FileDropZone } from './FileDropZone'
+import { FileDropZone } from '../../modules/attachments/FileDropZone'
 import { fieldLabelSx } from './styles'
 import type { FormValues } from './types'
 

@@ -175,7 +175,7 @@ func (h *Handler) apply(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.ApplyTemplate(c, nil, ticketID, templateID, actor); err != nil {
+	if err := h.service.ApplyTemplate(c, nil, &models.ApplyTemplateDTO{TicketID: ticketID, TemplateID: templateID, Actor: actor}); err != nil {
 		response.SendError(c, err)
 		return
 	}

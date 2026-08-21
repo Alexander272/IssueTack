@@ -112,7 +112,7 @@ func TestChecklistService_ApplyTemplate_Success(t *testing.T) {
 	mockRepo.On("GetItems", mock.Anything, templateID).Return(items, nil)
 	mockSubtasks.On("CreateSeveral", mock.Anything, nil, mock.Anything).Return(nil)
 
-	err := svc.ApplyTemplate(context.Background(), nil, ticketID, templateID, actor)
+	err := svc.ApplyTemplate(context.Background(), nil, &models.ApplyTemplateDTO{TicketID: ticketID, TemplateID: templateID, Actor: actor})
 	assert.NoError(t, err)
 }
 
@@ -125,7 +125,7 @@ func TestChecklistService_ApplyTemplate_EmptyItems(t *testing.T) {
 
 	mockRepo.On("GetItems", mock.Anything, templateID).Return([]*models.ChecklistTemplateItem{}, nil)
 
-	err := svc.ApplyTemplate(context.Background(), nil, ticketID, templateID, actor)
+	err := svc.ApplyTemplate(context.Background(), nil, &models.ApplyTemplateDTO{TicketID: ticketID, TemplateID: templateID, Actor: actor})
 	assert.NoError(t, err)
 	mockSubtasks.AssertNotCalled(t, "CreateSeveral")
 }
