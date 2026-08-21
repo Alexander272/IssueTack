@@ -86,7 +86,9 @@ func (h *Handler) upload(c *gin.Context) {
 	}
 	defer file.Close()
 
-	att, err := h.service.Upload(c, nil, entityType, id, header.Filename, file, user.ID)
+	realmIdStr := c.GetHeader("realm")
+
+	att, err := h.service.Upload(c, nil, entityType, id, header.Filename, file, user.ID, realmIdStr)
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -107,7 +109,9 @@ func (h *Handler) delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.Delete(c, nil, id, user.ID); err != nil {
+	realmIdStr := c.GetHeader("realm")
+
+	if err := h.service.Delete(c, nil, id, user.ID, realmIdStr); err != nil {
 		response.SendError(c, err)
 		return
 	}

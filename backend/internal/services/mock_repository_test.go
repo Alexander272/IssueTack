@@ -319,11 +319,11 @@ type MockSubtaskService struct {
 	mock.Mock
 }
 
-func (m *MockSubtaskService) GetByTicketID(ctx context.Context, ticketID, actorID uuid.UUID, realm ...string) ([]*models.Subtask, error) {
+func (m *MockSubtaskService) GetByTicketID(ctx context.Context, ticketID, actorID uuid.UUID, realm string) ([]*models.Subtask, error) {
 	args := m.Called(ctx, ticketID, actorID)
 	return args.Get(0).([]*models.Subtask), args.Error(1)
 }
-func (m *MockSubtaskService) GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID, realm ...string) (*models.Subtask, error) {
+func (m *MockSubtaskService) GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID, realm string) (*models.Subtask, error) {
 	args := m.Called(ctx, req, actorID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -334,19 +334,19 @@ func (m *MockSubtaskService) GetUnresolvedCount(ctx context.Context, ticketID uu
 	args := m.Called(ctx, ticketID)
 	return args.Int(0), args.Error(1)
 }
-func (m *MockSubtaskService) Create(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO) error {
+func (m *MockSubtaskService) Create(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO, realm string) error {
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
 }
-func (m *MockSubtaskService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.SubtaskDTO) error {
+func (m *MockSubtaskService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.SubtaskDTO, realm string) error {
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
 }
-func (m *MockSubtaskService) Update(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO) error {
+func (m *MockSubtaskService) Update(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO, realm string) error {
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
 }
-func (m *MockSubtaskService) Delete(ctx context.Context, tx postgres.Tx, dto *models.DelSubtaskDTO) error {
+func (m *MockSubtaskService) Delete(ctx context.Context, tx postgres.Tx, dto *models.DelSubtaskDTO, realm string) error {
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
 }
@@ -355,18 +355,18 @@ type MockAttachmentService struct {
 	mock.Mock
 }
 
-func (m *MockAttachmentService) GetByEntity(ctx context.Context, entityType string, entityID uuid.UUID, actorID uuid.UUID, realm ...string) ([]*models.Attachment, error) {
+func (m *MockAttachmentService) GetByEntity(ctx context.Context, entityType string, entityID uuid.UUID, actorID uuid.UUID, realm string) ([]*models.Attachment, error) {
 	args := m.Called(ctx, entityType, entityID, actorID)
 	return args.Get(0).([]*models.Attachment), args.Error(1)
 }
-func (m *MockAttachmentService) Upload(ctx context.Context, tx postgres.Tx, entityType string, entityID uuid.UUID, fileName string, file io.Reader, uploadedBy uuid.UUID) (*models.Attachment, error) {
+func (m *MockAttachmentService) Upload(ctx context.Context, tx postgres.Tx, entityType string, entityID uuid.UUID, fileName string, file io.Reader, uploadedBy uuid.UUID, realm string) (*models.Attachment, error) {
 	args := m.Called(ctx, tx, entityType, entityID, fileName, file, uploadedBy)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*models.Attachment), args.Error(1)
 }
-func (m *MockAttachmentService) Delete(ctx context.Context, tx postgres.Tx, id uuid.UUID, actorID uuid.UUID) error {
+func (m *MockAttachmentService) Delete(ctx context.Context, tx postgres.Tx, id uuid.UUID, actorID uuid.UUID, realm string) error {
 	args := m.Called(ctx, tx, id, actorID)
 	return args.Error(0)
 }
@@ -494,13 +494,13 @@ type MockTicketAccessChecker struct {
 	mock.Mock
 }
 
-func (m *MockTicketAccessChecker) CheckAccess(ctx context.Context, ticketID, userID uuid.UUID, action string, realm ...string) error {
-	args := m.Called(ctx, ticketID, userID, action)
+func (m *MockTicketAccessChecker) CheckAccess(ctx context.Context, ticketID, userID uuid.UUID, action string, realm string) error {
+	args := m.Called(ctx, ticketID, userID, action, realm)
 	return args.Error(0)
 }
 
-func (m *MockTicketAccessChecker) CheckWorkAccess(ctx context.Context, ticketID, userID uuid.UUID) error {
-	args := m.Called(ctx, ticketID, userID)
+func (m *MockTicketAccessChecker) CheckWorkAccess(ctx context.Context, ticketID, userID uuid.UUID, realm string) error {
+	args := m.Called(ctx, ticketID, userID, realm)
 	return args.Error(0)
 }
 

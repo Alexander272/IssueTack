@@ -5,9 +5,6 @@ import { useParams } from 'react-router'
 import type { TicketStatus } from '../types/task'
 import { useGetTaskByIdQuery, useUpdateTaskMutation } from '../tasksApiSlice'
 import { useUpdateSubtaskMutation } from '../modules/subtasks/subtasksApiSlice'
-import { useAppSelector } from '@/hooks/redux'
-import { useCan } from '@/features/access/utils/can'
-import { PermRules } from '@/features/access/constants/permissions'
 import { Header } from '../components/Detail/Header'
 import { InfoBar } from '../components/Detail/InfoBar'
 import { Description } from '../components/Detail/Description'
@@ -25,8 +22,6 @@ export const TaskDetailPage = () => {
 	const [updateTask] = useUpdateTaskMutation()
 	const [updateSubtask] = useUpdateSubtaskMutation()
 	const [editOpen, setEditOpen] = useState(false)
-	const currentUserId = useAppSelector(state => state.user.id)
-	const canWrite = useCan(PermRules.Tasks.Write)
 
 	if (isLoading) {
 		return (
@@ -45,8 +40,7 @@ export const TaskDetailPage = () => {
 	}
 
 	const task = data.data
-	const isCreator = currentUserId === task.creator.id
-	const canEdit = task.status === 'open' && (isCreator || canWrite)
+	const canEdit = task.status === 'open' && task.access?.canWrite
 
 	const handleStatusChange = async (taskId: string, status: TicketStatus) => {
 		try {
@@ -88,6 +82,7 @@ export const TaskDetailPage = () => {
 						<Subtasks
 							subtasks={task.subtasks}
 							taskId={task.id}
+							canWork={task.access?.canWork}
 							onSubtaskStatusChange={handleSubtaskStatusChange}
 						/>
 						<Attachments attachments={task.attachments} />

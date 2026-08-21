@@ -84,7 +84,9 @@ func (h *Handler) create(c *gin.Context) {
 	}
 	dto.Actor = actor
 
-	if err := h.service.Create(c, nil, dto); err != nil {
+	realmIdStr := c.GetHeader("realm")
+
+	if err := h.service.Create(c, nil, dto, realmIdStr); err != nil {
 		response.SendError(c, err, dto)
 		return
 	}
@@ -116,7 +118,9 @@ func (h *Handler) update(c *gin.Context) {
 	}
 	dto.Actor = actor
 
-	if err := h.service.Update(c, nil, dto); err != nil {
+	realmIdStr := c.GetHeader("realm")
+
+	if err := h.service.Update(c, nil, dto, realmIdStr); err != nil {
 		response.SendError(c, err, dto)
 		return
 	}
@@ -137,7 +141,9 @@ func (h *Handler) delete(c *gin.Context) {
 	}
 	dto := &models.DelSubtaskDTO{ID: id, Actor: actor}
 
-	if err := h.service.Delete(c, nil, dto); err != nil {
+	realmIdStr := c.GetHeader("realm")
+
+	if err := h.service.Delete(c, nil, dto, realmIdStr); err != nil {
 		response.SendError(c, err)
 		return
 	}

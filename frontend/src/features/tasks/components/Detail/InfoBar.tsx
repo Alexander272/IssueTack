@@ -5,8 +5,6 @@ import { useState } from 'react'
 import type { ITask, TicketStatus } from '../../types/task'
 import { STATUS_MAP } from '../../constants/taskMaps'
 import { useAppSelector } from '@/hooks/redux'
-import { useCan } from '@/features/access/utils/can'
-import { PermRules } from '@/features/access/constants/permissions'
 import { getUserId } from '@/features/user/userSlice'
 import { TaskStatusBadge } from '../TaskStatusBadge'
 import { TaskPriorityBadge } from '../TaskPriorityBadge'
@@ -21,11 +19,9 @@ interface Props {
 export const InfoBar = ({ task, onStatusChange }: Props) => {
 	const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
 	const currentUserId = useAppSelector(getUserId)
-	const canWrite = useCan(PermRules.Tasks.Write)
 	const isOwner = currentUserId != null && currentUserId === task.owner?.id
-	const isCreator = currentUserId != null && currentUserId === task.creator.id
-	const isAssignee = currentUserId != null && currentUserId === task.assignee?.id
-	const canUseMenu = !isOwner || isCreator || isAssignee || canWrite
+	const canUseMenu = task.access?.canWrite || task.access?.canWork
+	const allowedStatuses = task.access?.allowedStatuses
 	const canAccept = isOwner && task.status === 'resolved'
 	const canReturn = isOwner && task.status === 'resolved'
 	const canCancel = isOwner && ACTIVE_STATUSES.includes(task.status)
@@ -172,22 +168,27 @@ export const InfoBar = ({ task, onStatusChange }: Props) => {
 						}}
 					>
 						{(Object.entries(STATUS_MAP) as [TicketStatus, (typeof STATUS_MAP)[TicketStatus]][]).map(
-							([value, info]) => (
-								<MenuItem
-									key={value}
-									selected={value === task.status}
-									onClick={() => changeStatus(value)}
-									sx={{ fontSize: '0.875rem', gap: 1.5 }}
-								>
-									<info.icon sx={{ fontSize: 16, color: info.textColor }} />
-									{info.label}
-									{value === task.status && (
-										<Box sx={{ ml: 'auto', color: 'primary.main', display: 'flex' }}>
-											<Check sx={{ fontSize: 14 }} />
-										</Box>
-									)}
-								</MenuItem>
-							),
+							([value, info]) => {
+								const isAllowed = !allowedStatuses || allowedStatuses.includes(value)
+								const isCurrent = value === task.status
+								return (
+									<MenuItem
+										key={value}
+										disabled={!isAllowed && !isCurrent}
+										selected={isCurrent}
+										onClick={() => isAllowed && changeStatus(value)}
+										sx={{ fontSize: '0.875rem', gap: 1.5 }}
+									>
+										<info.icon sx={{ fontSize: 16, color: info.textColor }} />
+										{info.label}
+										{isCurrent && (
+											<Box sx={{ ml: 'auto', color: 'primary.main', display: 'flex' }}>
+												<Check sx={{ fontSize: 14 }} />
+											</Box>
+										)}
+									</MenuItem>
+								)
+							},
 						)}
 					</Menu>
 				)}

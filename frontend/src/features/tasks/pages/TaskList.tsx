@@ -7,6 +7,8 @@ import type { GroupByField } from '../constants/taskMaps'
 import type { FilterValues } from '../components/filters'
 import type { ITask, ITaskFilter } from '../types/task'
 import { AppRoutes } from '@/pages/router/routes'
+import { useCan } from '@/features/access/utils/can'
+import { PermRules } from '@/features/access/constants/permissions'
 import { useGetTasksQuery } from '../tasksApiSlice'
 import { Pagination } from '@/components/Pagination/Pagination'
 import { TaskFilters } from '../components/filters'
@@ -48,6 +50,7 @@ const PAGE_DESC: Record<Mode, string> = {
 export const TaskList = ({ mode }: Props) => {
 	const { palette } = useTheme()
 	const navigate = useNavigate()
+	const canCreate = useCan(PermRules.Tasks.Write)
 	const rowsPerPage = 20
 
 	const STORAGE_KEY = `@issueTrack/taskFilters_${mode}`
@@ -138,7 +141,7 @@ export const TaskList = ({ mode }: Props) => {
 						{PAGE_DESC[mode]}
 					</Typography>
 				</Box>
-				{mode === 'created' && (
+				{mode === 'created' && canCreate && (
 					<Button
 						variant='outlined'
 						sx={{

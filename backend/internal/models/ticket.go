@@ -39,6 +39,15 @@ type Ticket struct {
 
 	Subtasks    []*Subtask    `json:"subtasks,omitempty"`
 	Attachments []*Attachment `json:"attachments,omitempty"`
+	Access      *AccessFlags  `json:"access,omitempty"`
+}
+
+type AccessFlags struct {
+	CanRead         bool           `json:"canRead"`
+	CanWrite        bool           `json:"canWrite"`
+	CanDelete       bool           `json:"canDelete"`
+	CanWork         bool           `json:"canWork"`
+	AllowedStatuses []TicketStatus `json:"allowedStatuses"`
 }
 
 type GetTicketByIdDTO struct {

@@ -30,6 +30,14 @@ export interface IAttachment {
 	createdAt: string
 }
 
+export interface IAccessFlags {
+	canRead: boolean
+	canWrite: boolean
+	canDelete: boolean
+	canWork: boolean
+	allowedStatuses: TicketStatus[]
+}
+
 export interface ITask {
 	id: string
 	title: string
@@ -52,6 +60,7 @@ export interface ITask {
 	updatedAt: string
 	subtasks?: ISubtask[]
 	attachments?: IAttachment[]
+	access?: IAccessFlags
 }
 
 export interface ITaskFilter {

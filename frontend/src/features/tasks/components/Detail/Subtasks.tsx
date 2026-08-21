@@ -7,6 +7,7 @@ interface Props {
 	subtasks: ISubtask[] | undefined
 	onSubtaskStatusChange: (taskId: string, subtaskId: string, status: TicketStatus) => void
 	taskId: string
+	canWork?: boolean
 }
 
 const SUBTASK_STATUS_OPTIONS: { value: TicketStatus; label: string }[] = [
@@ -15,7 +16,7 @@ const SUBTASK_STATUS_OPTIONS: { value: TicketStatus; label: string }[] = [
 	{ value: 'closed', label: 'Выполнена' },
 ]
 
-export const Subtasks = ({ subtasks, onSubtaskStatusChange, taskId }: Props) => {
+export const Subtasks = ({ subtasks, onSubtaskStatusChange, taskId, canWork = true }: Props) => {
 	const done = subtasks ? subtasks.filter(s => s.status === 'closed' || s.status === 'resolved').length : 0
 	const total = subtasks?.length ?? 0
 	const progress = total > 0 ? Math.round((done / total) * 100) : 0
@@ -84,6 +85,7 @@ export const Subtasks = ({ subtasks, onSubtaskStatusChange, taskId }: Props) => 
 						<FormControl size='small'>
 							<Select
 								value={sub.status}
+								disabled={!canWork}
 								onChange={e => onSubtaskStatusChange(taskId, sub.id, e.target.value as TicketStatus)}
 								sx={{
 									borderRadius: '999px',

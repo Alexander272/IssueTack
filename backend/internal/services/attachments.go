@@ -40,37 +40,37 @@ func (s *AttachmentService) SetTicketAccess(checker TicketAccessChecker) {
 	s.ticketAccess = checker
 }
 
-func (s *AttachmentService) checkEntityAccess(ctx context.Context, entityType string, entityID, actorID uuid.UUID, action string, realm ...string) error {
+func (s *AttachmentService) checkEntityAccess(ctx context.Context, entityType string, entityID, actorID uuid.UUID, action string, realm string) error {
 	if s.ticketAccess == nil {
 		return models.ErrPermissionDenied
 	}
 	switch entityType {
 	case "ticket":
 		if action == string(access.Write) {
-			return s.ticketAccess.CheckWorkAccess(ctx, entityID, actorID)
+			return s.ticketAccess.CheckWorkAccess(ctx, entityID, actorID, realm)
 		}
-		return s.ticketAccess.CheckAccess(ctx, entityID, actorID, action, realm...)
+		return s.ticketAccess.CheckAccess(ctx, entityID, actorID, action, realm)
 	case "subtask":
 		sub, err := s.subtaskRepo.GetByID(ctx, &models.GetSubtaskDTO{ID: entityID})
 		if err != nil {
 			return fmt.Errorf("failed to load subtask for access check: %w", err)
 		}
 		if action == string(access.Write) {
-			return s.ticketAccess.CheckWorkAccess(ctx, sub.TicketID, actorID)
+			return s.ticketAccess.CheckWorkAccess(ctx, sub.TicketID, actorID, realm)
 		}
-		return s.ticketAccess.CheckAccess(ctx, sub.TicketID, actorID, action, realm...)
+		return s.ticketAccess.CheckAccess(ctx, sub.TicketID, actorID, action, realm)
 	}
 	return fmt.Errorf("unknown entity type: %s", entityType)
 }
 
 type Attachments interface {
-	GetByEntity(ctx context.Context, entityType string, entityID uuid.UUID, actorID uuid.UUID, realm ...string) ([]*models.Attachment, error)
-	Upload(ctx context.Context, tx postgres.Tx, entityType string, entityID uuid.UUID, fileName string, file io.Reader, uploadedBy uuid.UUID) (*models.Attachment, error)
-	Delete(ctx context.Context, tx postgres.Tx, id uuid.UUID, actorID uuid.UUID) error
+	GetByEntity(ctx context.Context, entityType string, entityID uuid.UUID, actorID uuid.UUID, realm string) ([]*models.Attachment, error)
+	Upload(ctx context.Context, tx postgres.Tx, entityType string, entityID uuid.UUID, fileName string, file io.Reader, uploadedBy uuid.UUID, realm string) (*models.Attachment, error)
+	Delete(ctx context.Context, tx postgres.Tx, id uuid.UUID, actorID uuid.UUID, realm string) error
 }
 
-func (s *AttachmentService) GetByEntity(ctx context.Context, entityType string, entityID uuid.UUID, actorID uuid.UUID, realm ...string) ([]*models.Attachment, error) {
-	if err := s.checkEntityAccess(ctx, entityType, entityID, actorID, string(access.Read), realm...); err != nil {
+func (s *AttachmentService) GetByEntity(ctx context.Context, entityType string, entityID uuid.UUID, actorID uuid.UUID, realm string) ([]*models.Attachment, error) {
+	if err := s.checkEntityAccess(ctx, entityType, entityID, actorID, string(access.Read), realm); err != nil {
 		return nil, err
 	}
 	data, err := s.repo.GetByEntity(ctx, entityType, entityID)
@@ -80,12 +80,12 @@ func (s *AttachmentService) GetByEntity(ctx context.Context, entityType string, 
 	return data, nil
 }
 
-func (s *AttachmentService) Upload(ctx context.Context, tx postgres.Tx, entityType string, entityID uuid.UUID, fileName string, file io.Reader, uploadedBy uuid.UUID) (*models.Attachment, error) {
+func (s *AttachmentService) Upload(ctx context.Context, tx postgres.Tx, entityType string, entityID uuid.UUID, fileName string, file io.Reader, uploadedBy uuid.UUID, realm string) (*models.Attachment, error) {
 	if !allowedEntityTypes[entityType] {
 		return nil, fmt.Errorf("invalid entity type: %s", entityType)
 	}
 
-	if err := s.checkEntityAccess(ctx, entityType, entityID, uploadedBy, string(access.Write)); err != nil {
+	if err := s.checkEntityAccess(ctx, entityType, entityID, uploadedBy, string(access.Write), realm); err != nil {
 		return nil, err
 	}
 
@@ -128,13 +128,13 @@ func (s *AttachmentService) Upload(ctx context.Context, tx postgres.Tx, entityTy
 	return att, nil
 }
 
-func (s *AttachmentService) Delete(ctx context.Context, tx postgres.Tx, id uuid.UUID, actorID uuid.UUID) error {
+func (s *AttachmentService) Delete(ctx context.Context, tx postgres.Tx, id uuid.UUID, actorID uuid.UUID, realm string) error {
 	att, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to load attachment: %w", err)
 	}
 
-	if err := s.checkEntityAccess(ctx, att.EntityType, att.EntityID, actorID, string(access.Write)); err != nil {
+	if err := s.checkEntityAccess(ctx, att.EntityType, att.EntityID, actorID, string(access.Write), realm); err != nil {
 		return fmt.Errorf("access check failed: %w", err)
 	}
 

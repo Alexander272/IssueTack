@@ -171,6 +171,15 @@ func (s *TicketService) GetByID(ctx context.Context, req *models.GetTicketByIdDT
 	}
 	data.Attachments = attachments
 
+	realmStr := ""
+	if req.RealmID != "" {
+		realmStr = req.RealmID
+	}
+	flags, err := s.GetAccessFlags(ctx, data, req.Actor.ID, realmStr)
+	if err == nil {
+		data.Access = flags
+	}
+
 	return data, nil
 }
 
@@ -243,7 +252,7 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 	assignedOnly := false
 	ownerOnly := false
 	if err := s.CheckAccess(ctx, *dto.ID, dto.Actor.ID, string(access.Write), realmStr); err != nil {
-		if workErr := s.CheckWorkAccess(ctx, *dto.ID, dto.Actor.ID); workErr != nil {
+		if workErr := s.CheckWorkAccess(ctx, *dto.ID, dto.Actor.ID, realmStr); workErr != nil {
 			old, loadErr := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
 			if loadErr != nil {
 				return fmt.Errorf("failed to load ticket for access check: %w", loadErr)
@@ -479,4 +488,185 @@ func (s *TicketService) AutoCloseResolved(ctx context.Context, delay time.Durati
 
 	cutoff := time.Now().Add(-delay)
 	return s.repo.CloseResolved(ctx, cutoff)
+}
+
+var activeStatuses = []models.TicketStatus{
+	models.StatusOpen,
+	models.StatusInProgress,
+	models.StatusPending,
+	models.StatusOnHold,
+}
+
+func isActive(s models.TicketStatus) bool {
+	return s == models.StatusOpen || s == models.StatusInProgress ||
+		s == models.StatusPending || s == models.StatusOnHold
+}
+
+func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, realm string) (*models.AccessFlags, error) {
+	flags := &models.AccessFlags{CanRead: true}
+
+	writeErr := s.checkAccessForTicket(ctx, ticket, userID, string(access.Write), realm)
+	flags.CanWrite = writeErr == nil
+
+	deleteErr := s.checkAccessForTicket(ctx, ticket, userID, string(access.Delete), realm)
+	flags.CanDelete = deleteErr == nil
+
+	flags.CanWork = flags.CanWrite || (ticket.Assignee != nil && ticket.Assignee.ID == userID)
+
+	flags.AllowedStatuses = s.computeAllowedStatuses(ctx, ticket, userID, realm)
+
+	return flags, nil
+}
+
+func (s *TicketService) checkAccessForTicket(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, action string, realm string) error {
+	ok, err := s.policies.Enforce(userID.String(), realm, string(access.ResourceTicket), action)
+	if err != nil {
+		return fmt.Errorf("policy check failed: %w", err)
+	}
+	if ok {
+		return nil
+	}
+
+	if ticket.Group == nil {
+		if action == string(access.Read) && (ticket.Assignee != nil && ticket.Assignee.ID == userID || ticket.Creator.ID == userID) {
+			return nil
+		}
+		return models.ErrPermissionDenied
+	}
+
+	switch action {
+	case string(access.Read):
+		isMember, err := s.groups.IsMember(ctx, ticket.Group.ID, userID)
+		if err != nil {
+			return fmt.Errorf("failed to check membership: %w", err)
+		}
+		if isMember {
+			return nil
+		}
+		managed, err := s.groups.GetManagedGroups(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("failed to check managed groups: %w", err)
+		}
+		for _, gid := range managed {
+			if gid == ticket.Group.ID {
+				return nil
+			}
+		}
+		if ticket.Assignee != nil && ticket.Assignee.ID == userID {
+			return nil
+		}
+	case string(access.Write):
+		if ticket.Creator.ID == userID {
+			return nil
+		}
+		managed, err := s.groups.GetManagedGroups(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("failed to check managed groups: %w", err)
+		}
+		for _, gid := range managed {
+			if gid == ticket.Group.ID {
+				return nil
+			}
+		}
+	case string(access.Delete):
+		managed, err := s.groups.GetManagedGroups(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("failed to check managed groups: %w", err)
+		}
+		for _, gid := range managed {
+			if gid == ticket.Group.ID {
+				return nil
+			}
+		}
+	}
+	return models.ErrPermissionDenied
+}
+
+func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, realm string) []models.TicketStatus {
+	hasWrite := s.checkAccessForTicket(ctx, ticket, userID, string(access.Write), realm) == nil
+	isCreator := ticket.Creator.ID == userID
+
+	isMgr := false
+	if ticket.Group != nil {
+		managed, err := s.groups.GetManagedGroups(ctx, userID)
+		if err == nil {
+			for _, gid := range managed {
+				if gid == ticket.Group.ID {
+					isMgr = true
+					break
+				}
+			}
+		}
+	}
+	isCreatorOrMgr := isCreator || isMgr
+	isOwner := ticket.Owner != nil && ticket.Owner.ID == userID
+	hasWork := hasWrite || (ticket.Assignee != nil && ticket.Assignee.ID == userID)
+
+	current := ticket.Status
+	var allowed []models.TicketStatus
+
+	add := func(statuses ...models.TicketStatus) {
+		for _, st := range statuses {
+			found := false
+			for _, a := range allowed {
+				if a == st {
+					found = true
+					break
+				}
+			}
+			if !found {
+				allowed = append(allowed, st)
+			}
+		}
+	}
+
+	switch {
+	case current == models.StatusClosed || current == models.StatusCancelled:
+		if hasWrite || hasWork {
+			add(activeStatuses...)
+		}
+		if isCreatorOrMgr || isOwner {
+			if current == models.StatusClosed {
+				add(models.StatusCancelled)
+			} else {
+				add(models.StatusClosed)
+			}
+		}
+
+	case current == models.StatusResolved:
+		if isCreatorOrMgr || isOwner {
+			add(models.StatusClosed)
+		}
+		if hasWrite || hasWork || isOwner {
+			add(models.StatusInProgress)
+		}
+		if hasWrite || hasWork {
+			for _, st := range activeStatuses {
+				if st != models.StatusInProgress {
+					add(st)
+				}
+			}
+		}
+		if isCreatorOrMgr {
+			add(models.StatusCancelled)
+		}
+
+	default:
+		if hasWrite || hasWork {
+			for _, st := range activeStatuses {
+				if st != current {
+					add(st)
+				}
+			}
+			n, err := s.subtasks.GetUnresolvedCount(ctx, ticket.ID)
+			if err == nil && n == 0 {
+				add(models.StatusResolved)
+			}
+		}
+		if isCreatorOrMgr || isOwner {
+			add(models.StatusCancelled)
+		}
+	}
+
+	return allowed
 }

@@ -10,17 +10,12 @@ import (
 )
 
 type TicketAccessChecker interface {
-	CheckAccess(ctx context.Context, ticketID, userID uuid.UUID, action string, realm ...string) error
-	CheckWorkAccess(ctx context.Context, ticketID, userID uuid.UUID) error
+	CheckAccess(ctx context.Context, ticketID, userID uuid.UUID, action string, realm string) error
+	CheckWorkAccess(ctx context.Context, ticketID, userID uuid.UUID, realm string) error
 }
 
-func (s *TicketService) CheckAccess(ctx context.Context, ticketID, userID uuid.UUID, action string, realm ...string) error {
-	realmStr := ""
-	if len(realm) > 0 {
-		realmStr = realm[0]
-	}
-
-	ok, err := s.policies.Enforce(userID.String(), realmStr, string(access.ResourceTicket), action)
+func (s *TicketService) CheckAccess(ctx context.Context, ticketID, userID uuid.UUID, action string, realm string) error {
+	ok, err := s.policies.Enforce(userID.String(), realm, string(access.ResourceTicket), action)
 	if err != nil {
 		return fmt.Errorf("policy check failed: %w", err)
 	}
@@ -87,8 +82,8 @@ func (s *TicketService) CheckAccess(ctx context.Context, ticketID, userID uuid.U
 	return models.ErrPermissionDenied
 }
 
-func (s *TicketService) CheckWorkAccess(ctx context.Context, ticketID, userID uuid.UUID) error {
-	if err := s.CheckAccess(ctx, ticketID, userID, string(access.Write)); err == nil {
+func (s *TicketService) CheckWorkAccess(ctx context.Context, ticketID, userID uuid.UUID, realm string) error {
+	if err := s.CheckAccess(ctx, ticketID, userID, string(access.Write), realm); err == nil {
 		return nil
 	}
 	ticket, ticketErr := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: ticketID})
