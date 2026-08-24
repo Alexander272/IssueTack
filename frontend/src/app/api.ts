@@ -29,6 +29,10 @@ export const API = {
 		resources: '/permissions/resources' as const,
 	},
 	audit: '/audit' as const,
+	activityLog: {
+		base: '/activity-log' as const,
+		byEntity: (entityId: string) => `/activity-log?entityId=${entityId}` as const,
+	},
 	statistics: {
 		search: '/statistics/search' as const,
 		priceSearch: '/prices/statistics/search/' as const,
@@ -58,6 +62,11 @@ export const API = {
 			`/attachments/${entityType}/${entityId}` as const,
 		content: (id: string) =>
 			`/attachments/content/${id}` as const,
+	},
+	comments: {
+		byTicket: (ticketId: string) => `/tickets/${ticketId}/comments` as const,
+		delete: (ticketId: string, commentId: string) =>
+			`/tickets/${ticketId}/comments/${commentId}` as const,
 	},
 	sites: {
 		base: '/sites' as const,

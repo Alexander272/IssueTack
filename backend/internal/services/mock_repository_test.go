@@ -511,6 +511,11 @@ func (m *MockTicketAccessChecker) CheckWorkAccess(ctx context.Context, dto *mode
 	return args.Error(0)
 }
 
+func (m *MockTicketAccessChecker) CheckInternalAssigneeAccess(ctx context.Context, dto *models.AccessCheckDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+
 type MockActivityLogRepo struct {
 	mock.Mock
 }

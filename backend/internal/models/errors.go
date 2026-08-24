@@ -83,4 +83,7 @@ var (
 	ErrConstraintViolation = NewDomainError(errors.New("constraint violation"), http.StatusBadRequest, "CV001", "Нарушение ограничения целостности")
 	ErrInvalidPermission   = NewDomainError(errors.New("invalid permission"), http.StatusForbidden, "PE001", "Недопустимое разрешение")
 	ErrFieldNotAllowed     = NewDomainError(errors.New("field is not allowed"), http.StatusForbidden, "PE002", "Поле недопустимо")
+
+	// 400 (business)
+	ErrCommentExpired = NewDomainError(errors.New("comment delete window expired"), http.StatusBadRequest, "BR010", "Время на удаление комментария истекло (15 минут)")
 )

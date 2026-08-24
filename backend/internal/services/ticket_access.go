@@ -11,6 +11,7 @@ import (
 type TicketAccessChecker interface {
 	CheckAccess(ctx context.Context, dto *models.AccessCheckDTO) error
 	CheckWorkAccess(ctx context.Context, dto *models.AccessCheckDTO) error
+	CheckInternalAssigneeAccess(ctx context.Context, dto *models.AccessCheckDTO) error
 }
 
 func (s *TicketService) CheckAccess(ctx context.Context, dto *models.AccessCheckDTO) error {
@@ -97,5 +98,30 @@ func (s *TicketService) CheckWorkAccess(ctx context.Context, dto *models.AccessC
 	if ticket.Assignee != nil && ticket.Assignee.ID == dto.UserID {
 		return nil
 	}
+	return models.ErrPermissionDenied
+}
+
+func (s *TicketService) CheckInternalAssigneeAccess(ctx context.Context, dto *models.AccessCheckDTO) error {
+	ticket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: dto.TicketID})
+	if err != nil {
+		return fmt.Errorf("failed to load ticket: %w", err)
+	}
+
+	if ticket.Assignee != nil && ticket.Assignee.ID == dto.UserID {
+		return nil
+	}
+
+	if ticket.Group != nil {
+		managed, err := s.groups.GetManagedGroups(ctx, dto.UserID, nil)
+		if err != nil {
+			return fmt.Errorf("failed to check managed groups: %w", err)
+		}
+		for _, gid := range managed {
+			if gid == ticket.Group.ID {
+				return nil
+			}
+		}
+	}
+
 	return models.ErrPermissionDenied
 }

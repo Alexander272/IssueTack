@@ -22,6 +22,7 @@ type ActivityLog struct {
 	OldValues     *json.RawMessage `json:"oldValues" db:"old_value"`
 	NewValues     *json.RawMessage `json:"newValues" db:"new_value"`
 	CreatedAt     time.Time        `json:"createdAt" db:"created_at"`
+	Actor         *UserShort       `json:"actor"`
 }
 
 type GetLogsDTO struct {

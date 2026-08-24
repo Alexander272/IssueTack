@@ -28,6 +28,7 @@ type Services struct {
 	Subtasks
 	Attachments
 	Checklists
+	Comments
 	Notifications
 	ActivityLog
 	UserRealms
@@ -96,6 +97,7 @@ func NewServices(deps *Deps) *Services {
 	attachments := NewAttachmentService(deps.Repo.Attachments, &deps.Conf.FileServer, nil, deps.Repo.Subtasks)
 	checklists := NewChecklistService(deps.Repo.Checklists, subtasks)
 	notifications := NewNotificationService(deps.Hub, deps.Repo.Notifications, deps.Repo.Tickets, transaction)
+	comments := NewCommentService(deps.Repo.Comments)
 	tickets := NewTicketService(&TicketDeps{
 		Repo:          deps.Repo.Tickets,
 		TxManager:     transaction,
@@ -109,6 +111,7 @@ func NewServices(deps *Deps) *Services {
 
 	subtasks.SetTicketAccess(tickets)
 	attachments.SetTicketAccess(tickets)
+	comments.SetTicketAccess(tickets)
 
 	audit.StartListening(deps.Ctx, updatePolicyEvent)
 	scheduler := NewSchedulerService(&SchedulerDeps{Tickets: tickets})
@@ -130,6 +133,7 @@ func NewServices(deps *Deps) *Services {
 		Subtasks:      subtasks,
 		Attachments:   attachments,
 		Checklists:    checklists,
+		Comments:      comments,
 		Notifications: notifications,
 		ActivityLog:   logs,
 		UserRealms:    userRealms,

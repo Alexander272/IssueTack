@@ -10,6 +10,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/auth"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/categories"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/checklists"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/comments"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/groups"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/notifications"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/permissions"
@@ -63,7 +64,7 @@ func (h *Handler) Init(group *gin.RouterGroup) {
 	subtasks.Register(secure, h.services.Subtasks, h.middleware)
 	attachments.Register(secure, h.services.Attachments, h.middleware)
 	checklists.Register(secure, h.services.Checklists, h.middleware)
-	// comments.Register(secure, h.services.Comments, h.middleware)
+	comments.Register(secure, h.services.Comments, h.middleware)
 
 	groups.Register(secure, h.services.Groups, h.middleware)
 	categories.Register(secure, h.services.Categories, h.middleware)

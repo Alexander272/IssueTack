@@ -87,7 +87,7 @@ export const TaskDetailPage = () => {
 							onSubtaskStatusChange={handleSubtaskStatusChange}
 						/>
 						<Attachments attachments={task.attachments} canWork={canUploadAttachments} taskId={task.id} />
-						<Comments comments={[]} taskId={task.id} />
+						<Comments taskId={task.id} />
 					</Grid>
 
 					<Grid size={{ xs: 12, lg: 4 }} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

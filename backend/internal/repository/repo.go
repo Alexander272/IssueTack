@@ -59,6 +59,9 @@ type Attachments interface {
 type Checklists interface {
 	postgres.Checklists
 }
+type Comments interface {
+	postgres.Comments
+}
 type ActivityLog interface {
 	postgres.ActivityLog
 }
@@ -83,6 +86,7 @@ type Repository struct {
 	Subtasks
 	Attachments
 	Checklists
+	Comments
 	ActivityLog
 	Notifications
 }
@@ -109,6 +113,7 @@ func NewRepository(pool *pgxpool.Pool, memDB *redis.Client, conf config.AuthConf
 		Subtasks:      postgres.NewSubtaskRepo(pool, transaction),
 		Attachments:   postgres.NewAttachmentRepo(pool, transaction),
 		Checklists:    postgres.NewChecklistRepo(pool, transaction),
+		Comments:      postgres.NewCommentRepo(pool, transaction),
 		ActivityLog:   postgres.NewActivityRepo(pool, transaction),
 		Notifications: postgres.NewNotificationRepo(pool, transaction),
 	}

@@ -7,10 +7,24 @@ import (
 )
 
 type Comment struct {
-	ID         uuid.UUID `json:"id" db:"id"`
-	Text       string    `json:"text" db:"text"`
-	UserID     uuid.UUID `json:"userId" db:"user_id"`
-	TicketID   uuid.UUID `json:"ticketId" db:"ticket_id"`
-	IsInternal bool      `json:"isInternal" db:"is_internal"`
-	CreatedAt  time.Time `json:"createdAt" db:"created_at"`
+	ID         uuid.UUID        `json:"id" db:"id"`
+	Text       string           `json:"text" db:"text"`
+	UserID     uuid.UUID        `json:"userId" db:"user_id"`
+	TicketID   uuid.UUID        `json:"ticketId" db:"ticket_id"`
+	IsInternal bool             `json:"isInternal" db:"is_internal"`
+	CreatedAt  time.Time        `json:"createdAt" db:"created_at"`
+	User       *UserShort       `json:"user"`
+}
+
+type CreateCommentDTO struct {
+	Text       string    `json:"text" binding:"required"`
+	TicketID   uuid.UUID `json:"-" binding:"-"`
+	IsInternal bool      `json:"isInternal"`
+	UserID     uuid.UUID `json:"-"`
+	Realm      string    `json:"-"`
+}
+
+type DeleteCommentDTO struct {
+	ID      uuid.UUID `json:"-"`
+	ActorID uuid.UUID `json:"-"`
 }
