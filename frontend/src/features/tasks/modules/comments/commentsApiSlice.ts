@@ -10,7 +10,7 @@ const commentsApiSlice = apiSlice.injectEndpoints({
 			query: ticketId => API.comments.byTicket(ticketId),
 			providesTags: (_result, _error, ticketId) => [{ type: 'Comments' as const, id: ticketId }],
 		}),
-		createComment: builder.mutation<{ id: string; message: string }, { ticketId: string; text: string; isInternal: boolean }>({
+		createComment: builder.mutation<{ id: string; message: string }, { ticketId: string; text: string; isInternal: boolean; type?: string }>({
 			query: ({ ticketId, ...body }) => ({
 				url: API.comments.byTicket(ticketId),
 				method: 'POST',

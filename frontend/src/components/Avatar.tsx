@@ -19,6 +19,7 @@ export const Avatar = ({ children, size = 28, bgcolor = '#3b82f6', sx }: Props) 
 			alignItems: 'center',
 			justifyContent: 'center',
 			fontSize: Math.max(8, size * 0.4),
+			lineHeight: 1,
 			color: '#fff',
 			fontWeight: 700,
 			flexShrink: 0,

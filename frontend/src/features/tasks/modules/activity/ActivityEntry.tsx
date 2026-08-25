@@ -1,4 +1,5 @@
 import { Box, Typography } from '@mui/material'
+import { getAvatarColor, getInitials as getInitialsBase, getDisplayName as getDisplayNameBase } from '@/utils/avatar'
 
 import type { IActivityLog } from '../../types/activity'
 import { STATUS_MAP } from '../../constants/taskMaps'
@@ -26,37 +27,15 @@ const FIELD_LABELS: Record<string, string> = {
 	closed: 'Закрытие',
 }
 
-const AVATAR_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6']
-
-const hashCode = (str: string): number => {
-	let hash = 0
-	for (let i = 0; i < str.length; i++) {
-		hash = str.charCodeAt(i) + ((hash << 5) - hash)
-	}
-	return hash
-}
-
-const getAvatarColor = (name: string): string => {
-	return AVATAR_COLORS[Math.abs(hashCode(name)) % AVATAR_COLORS.length]
-}
-
 const getDisplayName = (log: IActivityLog): string => {
-	if (log.actor?.firstName || log.actor?.lastName) {
-		return `${log.actor.firstName ?? ''} ${log.actor.lastName ?? ''}`.trim()
-	}
-	return log.changedByName
+	return getDisplayNameBase(log.actor) || log.changedByName
 }
 
 const getInitials = (log: IActivityLog): string => {
 	if (log.actor?.firstName || log.actor?.lastName) {
-		const first = log.actor.firstName?.[0] ?? ''
-		const last = log.actor.lastName?.[0] ?? ''
-		if (first || last) return `${first}${last}`.toUpperCase()
+		return getInitialsBase(log.actor)
 	}
-	const name = log.changedByName
-	const parts = name.trim().split(/\s+/)
-	if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
-	return name.slice(0, 2).toUpperCase()
+	return getInitialsBase(log.changedByName)
 }
 
 const StatusValue = ({ value }: { value: string }) => {

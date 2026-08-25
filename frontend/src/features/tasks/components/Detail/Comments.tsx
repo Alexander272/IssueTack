@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useSelector } from 'react-redux'
 import { Box, Button, CircularProgress, IconButton, Stack, Switch, TextField, Tooltip, Typography } from '@mui/material'
-import { MessageSquare, Trash2, EyeOff } from 'lucide-mui'
+import { MessageSquare, Trash2, EyeOff, ArrowRightLeft } from 'lucide-mui'
 
 import { useGetActivityLogsQuery } from '../../modules/activity/activityApiSlice'
 import { ActivityEntry } from '../../modules/activity/ActivityEntry'
@@ -11,6 +11,7 @@ import {
 	useDeleteCommentMutation,
 } from '../../modules/comments/commentsApiSlice'
 import { getUserId } from '@/features/user/userSlice'
+import { getAvatarColor, getInitials, getDisplayName } from '@/utils/avatar'
 import type { IComment } from '../../types/comment'
 
 interface Props {
@@ -18,37 +19,6 @@ interface Props {
 }
 
 type TabKey = 'comments' | 'history'
-
-const AVATAR_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#6366f1', '#14b8a6']
-
-const hashCode = (str: string): number => {
-	let hash = 0
-	for (let i = 0; i < str.length; i++) {
-		hash = str.charCodeAt(i) + ((hash << 5) - hash)
-	}
-	return hash
-}
-
-const getAvatarColor = (name: string): string => {
-	return AVATAR_COLORS[Math.abs(hashCode(name)) % AVATAR_COLORS.length]
-}
-
-const getDisplayName = (user?: { firstName?: string; lastName?: string; username?: string }): string => {
-	if (user?.firstName || user?.lastName) {
-		return `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
-	}
-	return user?.username ?? 'Пользователь'
-}
-
-const getInitials = (user?: { firstName?: string; lastName?: string; username?: string }): string => {
-	if (user?.firstName || user?.lastName) {
-		const first = user.firstName?.[0] ?? ''
-		const last = user.lastName?.[0] ?? ''
-		if (first || last) return `${first}${last}`.toUpperCase()
-	}
-	const name = user?.username ?? '?'
-	return name.slice(0, 2).toUpperCase()
-}
 
 const CommentEntry = ({
 	comment,
@@ -61,8 +31,9 @@ const CommentEntry = ({
 }) => {
 	const displayName = getDisplayName(comment.user)
 	const initials = getInitials(comment.user)
-	const color = getAvatarColor(displayName)
+	const color = getAvatarColor(comment.userId)
 	const isAuthor = comment.userId === currentUserId
+	const [withinDeleteWindow] = useState(() => Date.now() - new Date(comment.createdAt).getTime() < 15 * 60 * 1000)
 
 	return (
 		<Box sx={{ display: 'flex', gap: 1.5 }}>
@@ -90,7 +61,7 @@ const CommentEntry = ({
 						{displayName}
 					</Typography>
 					{comment.isInternal && (
-						<Tooltip title='Внутренний комментарий — видите только вы'>
+						<Tooltip title='Внутренний комментарий — виден исполнителю и менеджерам группы'>
 							<Box
 								sx={{
 									display: 'inline-flex',
@@ -110,6 +81,25 @@ const CommentEntry = ({
 							</Box>
 						</Tooltip>
 					)}
+					{comment.type === 'status_change' && (
+						<Box
+							sx={{
+								display: 'inline-flex',
+								alignItems: 'center',
+								gap: 0.25,
+								px: 0.75,
+								py: 0.125,
+								borderRadius: '4px',
+								fontSize: '0.6875rem',
+								fontWeight: 500,
+								bgcolor: '#e0f2fe',
+								color: '#0369a1',
+							}}
+						>
+							<ArrowRightLeft sx={{ fontSize: 12 }} />
+							Смена статуса
+						</Box>
+					)}
 					<Typography sx={{ fontSize: '0.75rem', color: '#9ca3af', ml: 'auto', flexShrink: 0 }}>
 						{new Date(comment.createdAt).toLocaleDateString('ru-RU', {
 							day: 'numeric',
@@ -119,16 +109,39 @@ const CommentEntry = ({
 						})}
 					</Typography>
 					{isAuthor && (
-						<IconButton
-							size='small'
-							onClick={onDelete}
-							sx={{ ml: 0.5, color: '#9ca3af', '&:hover': { color: '#ef4444' } }}
+						<Tooltip
+							title={
+								withinDeleteWindow
+									? 'Удалить комментарий'
+									: 'Удаление доступно в течение 15 минут после создания'
+							}
 						>
-							<Trash2 sx={{ fontSize: 14 }} />
-						</IconButton>
+							<span>
+								<IconButton
+									size='small'
+									onClick={onDelete}
+									disabled={!withinDeleteWindow}
+									sx={{
+										ml: 0.5,
+										color: '#9ca3af',
+										'&:hover': { color: '#ef4444' },
+										'&.Mui-disabled': { color: '#d1d5db' },
+									}}
+								>
+									<Trash2 sx={{ fontSize: 14 }} />
+								</IconButton>
+							</span>
+						</Tooltip>
 					)}
 				</Box>
-				<Box sx={{ bgcolor: comment.isInternal ? '#fffbeb' : '#f9fafb', borderRadius: '8px', p: 1.5 }}>
+				<Box
+					sx={{
+						bgcolor: comment.isInternal ? '#fffbeb' : '#f9fafb',
+						borderRadius: '8px',
+						p: 1.5,
+						borderLeft: `3px solid ${color}`,
+					}}
+				>
 					<Typography sx={{ fontSize: '0.8125rem', color: '#374151', whiteSpace: 'pre-wrap' }}>
 						{comment.text}
 					</Typography>
@@ -282,7 +295,11 @@ export const Comments = ({ taskId }: Props) => {
 						<TextField
 							multiline
 							rows={3}
-							placeholder={isInternal ? 'Внутренний комментарий (видите только вы)...' : 'Напишите комментарий...'}
+							placeholder={
+								isInternal
+									? 'Внутренний комментарий (виден исполнителю и менеджерам)...'
+									: 'Напишите комментарий...'
+							}
 							value={text}
 							onChange={e => setText(e.target.value)}
 							fullWidth
@@ -303,7 +320,9 @@ export const Comments = ({ taskId }: Props) => {
 									onChange={e => setIsInternal(e.target.checked)}
 									sx={{
 										'& .MuiSwitch-switchBase.Mui-checked': { color: '#f59e0b' },
-										'& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#f59e0b' },
+										'& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+											bgcolor: '#f59e0b',
+										},
 									}}
 								/>
 								<Typography sx={{ fontSize: '0.75rem', color: isInternal ? '#92400e' : '#6b7280' }}>

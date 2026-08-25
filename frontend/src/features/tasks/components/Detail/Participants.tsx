@@ -3,6 +3,7 @@ import { UserPlus, User, Users, Wrench, Briefcase } from 'lucide-mui'
 import type { ReactNode } from 'react'
 
 import { Avatar } from '@/components/Avatar'
+import { getAvatarColor, getInitials } from '@/utils/avatar'
 
 import type { ITask } from '../../types/task'
 
@@ -10,7 +11,7 @@ interface Props {
 	task: ITask
 }
 
-const UserRow = ({ label, icon, name, sub }: { label: string; icon: ReactNode; name: string; sub?: string }) => (
+const UserRow = ({ label, icon, name, sub, userId }: { label: string; icon: ReactNode; name: string; sub?: string; userId?: string }) => (
 	<Box>
 		<Typography
 			sx={{ fontSize: '0.75rem', color: '#9ca3af', mb: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}
@@ -19,8 +20,8 @@ const UserRow = ({ label, icon, name, sub }: { label: string; icon: ReactNode; n
 		</Typography>
 		{name ? (
 			<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-				<Avatar size={28} bgcolor='#3b82f6'>
-					{name.charAt(0)}
+				<Avatar size={28} bgcolor={getAvatarColor(userId ?? name)}>
+					{getInitials(name)}
 				</Avatar>
 				<Box sx={{ minWidth: 0 }}>
 					<Typography
@@ -88,6 +89,7 @@ export const Participants = ({ task }: Props) => {
 						icon={<UserPlus sx={{ fontSize: 14 }} />}
 						name={getUserName(task.creator)}
 						sub={task.site?.name}
+						userId={task.creator.id}
 					/>
 				) : null}
 				{task.owner && (
@@ -96,6 +98,7 @@ export const Participants = ({ task }: Props) => {
 						icon={<User sx={{ fontSize: 14 }} />}
 						name={getUserName(task.owner)}
 						sub={task.site?.name}
+						userId={task.owner.id}
 					/>
 				)}
 				{task.group && (
@@ -136,6 +139,7 @@ export const Participants = ({ task }: Props) => {
 						icon={<Wrench sx={{ fontSize: 14 }} />}
 						name={getUserName(task.assignee)}
 						sub={task.group?.name}
+						userId={task.assignee.id}
 					/>
 				)}
 				{task.manager && (
@@ -143,6 +147,7 @@ export const Participants = ({ task }: Props) => {
 						label='Руководитель'
 						icon={<Briefcase sx={{ fontSize: 14 }} />}
 						name={getUserName(task.manager)}
+						userId={task.manager.id}
 					/>
 				)}
 			</Box>

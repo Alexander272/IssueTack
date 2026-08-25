@@ -30,14 +30,14 @@ type Comments interface {
 }
 
 func (r *CommentRepo) GetByID(ctx context.Context, id uuid.UUID) (*models.Comment, error) {
-	query := fmt.Sprintf(`SELECT c.id, c.text, c.user_id, c.ticket_id, c.is_internal, c.created_at
+	query := fmt.Sprintf(`SELECT c.id, c.text, c.user_id, c.ticket_id, c.is_internal, c.type, c.created_at
 		FROM %s c WHERE c.id = $1`,
 		Tables.Comments,
 	)
 
 	item := &models.Comment{}
 	if err := r.db.QueryRow(ctx, query, id).Scan(
-		&item.ID, &item.Text, &item.UserID, &item.TicketID, &item.IsInternal, &item.CreatedAt,
+		&item.ID, &item.Text, &item.UserID, &item.TicketID, &item.IsInternal, &item.Type, &item.CreatedAt,
 	); err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -47,7 +47,7 @@ func (r *CommentRepo) GetByID(ctx context.Context, id uuid.UUID) (*models.Commen
 func (r *CommentRepo) GetByTicket(ctx context.Context, ticketID uuid.UUID, userID uuid.UUID, showAllInternal bool) ([]*models.Comment, error) {
 	var query string
 	if showAllInternal {
-		query = fmt.Sprintf(`SELECT c.id, c.text, c.user_id, c.ticket_id, c.is_internal, c.created_at,
+		query = fmt.Sprintf(`SELECT c.id, c.text, c.user_id, c.ticket_id, c.is_internal, c.type, c.created_at,
 			u.id, u.username, u.first_name, u.last_name, u.internal_number
 			FROM %s c
 			LEFT JOIN %s u ON u.id = c.user_id
@@ -56,7 +56,7 @@ func (r *CommentRepo) GetByTicket(ctx context.Context, ticketID uuid.UUID, userI
 			Tables.Comments, Tables.Users,
 		)
 	} else {
-		query = fmt.Sprintf(`SELECT c.id, c.text, c.user_id, c.ticket_id, c.is_internal, c.created_at,
+		query = fmt.Sprintf(`SELECT c.id, c.text, c.user_id, c.ticket_id, c.is_internal, c.type, c.created_at,
 			u.id, u.username, u.first_name, u.last_name, u.internal_number
 			FROM %s c
 			LEFT JOIN %s u ON u.id = c.user_id
@@ -82,7 +82,7 @@ func (r *CommentRepo) GetByTicket(ctx context.Context, ticketID uuid.UUID, userI
 	for rows.Next() {
 		item := &models.Comment{User: &models.UserShort{}}
 		if err := rows.Scan(
-			&item.ID, &item.Text, &item.UserID, &item.TicketID, &item.IsInternal, &item.CreatedAt,
+			&item.ID, &item.Text, &item.UserID, &item.TicketID, &item.IsInternal, &item.Type, &item.CreatedAt,
 			&item.User.ID, &item.User.Username, &item.User.FirstName,
 			&item.User.LastName, &item.User.InternalNumber,
 		); err != nil {
@@ -100,8 +100,8 @@ func (r *CommentRepo) GetByTicket(ctx context.Context, ticketID uuid.UUID, userI
 }
 
 func (r *CommentRepo) Create(ctx context.Context, tx Tx, dto *models.Comment) error {
-	query := fmt.Sprintf(`INSERT INTO %s (id, text, user_id, ticket_id, is_internal)
-		VALUES ($1, $2, $3, $4, $5)`,
+	query := fmt.Sprintf(`INSERT INTO %s (id, text, user_id, ticket_id, is_internal, type)
+		VALUES ($1, $2, $3, $4, $5, $6)`,
 		Tables.Comments,
 	)
 
@@ -110,7 +110,7 @@ func (r *CommentRepo) Create(ctx context.Context, tx Tx, dto *models.Comment) er
 	}
 
 	_, err := r.getExec(tx).Exec(ctx, query,
-		dto.ID, dto.Text, dto.UserID, dto.TicketID, dto.IsInternal,
+		dto.ID, dto.Text, dto.UserID, dto.TicketID, dto.IsInternal, dto.Type,
 	)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))

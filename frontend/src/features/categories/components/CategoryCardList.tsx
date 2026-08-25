@@ -8,15 +8,9 @@ import type { ICategory } from '../types/category'
 import { TaskPriorityBadge } from '@/features/tasks/components/TaskPriorityBadge'
 import { StatusBadge } from '@/features/access/components/StatusBadge'
 
-const statusLabel = (active: boolean) => (active ? 'Активна' : 'Неактивна')
+import { getInitials } from '@/utils/avatar'
 
-const getInitials = (name: string) => {
-	const words = name.trim().split(/\s+/)
-	if (words.length >= 2) {
-		return (words[0][0] + words[1][0]).toUpperCase()
-	}
-	return name.slice(0, 2).toUpperCase()
-}
+const statusLabel = (active: boolean) => (active ? 'Активна' : 'Неактивна')
 
 type Props = {
 	categories: ICategory[]

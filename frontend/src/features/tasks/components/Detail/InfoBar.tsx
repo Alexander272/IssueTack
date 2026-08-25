@@ -8,16 +8,19 @@ import { useAppSelector } from '@/hooks/redux'
 import { getUserId } from '@/features/user/userSlice'
 import { TaskStatusBadge } from '../TaskStatusBadge'
 import { TaskPriorityBadge } from '../TaskPriorityBadge'
+import { StatusChangeDialog } from './StatusChangeDialog'
 
 const ACTIVE_STATUSES: TicketStatus[] = ['open', 'in_progress', 'pending', 'on_hold']
+const COMMENT_REQUIRED_STATUSES: TicketStatus[] = ['in_progress', 'on_hold', 'pending']
 
 interface Props {
 	task: ITask
-	onStatusChange: (taskId: string, status: TicketStatus) => void
+	onStatusChange: (taskId: string, status: TicketStatus, comment?: string) => void
 }
 
 export const InfoBar = ({ task, onStatusChange }: Props) => {
 	const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
+	const [pendingStatus, setPendingStatus] = useState<TicketStatus | null>(null)
 	const currentUserId = useAppSelector(getUserId)
 	const isOwner = currentUserId != null && currentUserId === task.owner?.id
 	const canUseMenu = task.access?.canWrite || task.access?.canWork
@@ -27,8 +30,19 @@ export const InfoBar = ({ task, onStatusChange }: Props) => {
 	const canCancel = isOwner && ACTIVE_STATUSES.includes(task.status)
 
 	const changeStatus = (status: TicketStatus) => {
-		onStatusChange(task.id, status)
 		setAnchorEl(null)
+		if (COMMENT_REQUIRED_STATUSES.includes(status)) {
+			setPendingStatus(status)
+		} else {
+			onStatusChange(task.id, status)
+		}
+	}
+
+	const handleDialogSubmit = (comment: string) => {
+		if (pendingStatus) {
+			onStatusChange(task.id, pendingStatus, comment)
+			setPendingStatus(null)
+		}
 	}
 
 	return (
@@ -90,23 +104,6 @@ export const InfoBar = ({ task, onStatusChange }: Props) => {
 			</Box>
 
 			<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
-				{/* <Button
-					variant='outlined'
-					size='small'
-					sx={{
-						borderRadius: '8px',
-						textTransform: 'none',
-						fontSize: '0.8125rem',
-						color: '#374151',
-						borderColor: '#d1d5db',
-						gap: 0.5,
-						'&:hover': { bgcolor: '#f9fafb', borderColor: '#9ca3af' },
-					}}
-				>
-					<MessageSquare sx={{ fontSize: 14 }} />
-					Комментарий
-				</Button> */}
-
 				{canCancel && (
 					<Button
 						variant='outlined'
@@ -193,6 +190,15 @@ export const InfoBar = ({ task, onStatusChange }: Props) => {
 					</Menu>
 				)}
 			</Box>
+
+			{pendingStatus && (
+				<StatusChangeDialog
+					open
+					statusLabel={STATUS_MAP[pendingStatus].label}
+					onSubmit={handleDialogSubmit}
+					onCancel={() => setPendingStatus(null)}
+				/>
+			)}
 		</Box>
 	)
 }

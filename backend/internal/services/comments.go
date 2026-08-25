@@ -71,6 +71,7 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 		UserID:     dto.UserID,
 		TicketID:   dto.TicketID,
 		IsInternal: dto.IsInternal,
+		Type:       dto.Type,
 	}
 
 	if err := s.repo.Create(ctx, tx, comment); err != nil {

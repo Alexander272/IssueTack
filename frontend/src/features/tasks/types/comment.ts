@@ -11,6 +11,7 @@ export interface IComment {
 	userId: string
 	ticketId: string
 	isInternal: boolean
+	type: string
 	createdAt: string
 	user?: ICommentUser
 }

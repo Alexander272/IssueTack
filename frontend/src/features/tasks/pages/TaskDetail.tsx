@@ -5,6 +5,7 @@ import { useParams } from 'react-router'
 import type { TicketStatus } from '../types/task'
 import { useGetTaskByIdQuery, useUpdateTaskMutation } from '../tasksApiSlice'
 import { useUpdateSubtaskMutation } from '../modules/subtasks/subtasksApiSlice'
+import { useCreateCommentMutation } from '../modules/comments/commentsApiSlice'
 import { Header } from '../components/Detail/Header'
 import { InfoBar } from '../components/Detail/InfoBar'
 import { Description } from '../components/Detail/Description'
@@ -21,6 +22,7 @@ export const TaskDetailPage = () => {
 	const { data, isLoading } = useGetTaskByIdQuery(id!)
 	const [updateTask] = useUpdateTaskMutation()
 	const [updateSubtask] = useUpdateSubtaskMutation()
+	const [createComment] = useCreateCommentMutation()
 	const [editOpen, setEditOpen] = useState(false)
 
 	if (isLoading) {
@@ -43,9 +45,12 @@ export const TaskDetailPage = () => {
 	const canEdit = task.status === 'open' && task.access?.canWrite
 	const canUploadAttachments = task.access?.canWork && task.status !== 'resolved'
 
-	const handleStatusChange = async (taskId: string, status: TicketStatus) => {
+	const handleStatusChange = async (taskId: string, status: TicketStatus, comment?: string) => {
 		try {
 			await updateTask({ id: taskId, status })
+			if (comment) {
+				await createComment({ ticketId: taskId, text: comment, isInternal: false, type: 'status_change' })
+			}
 		} catch {
 			// handled by toast in apiSlice
 		}

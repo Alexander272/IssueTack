@@ -17,14 +17,7 @@ import { getSmartDate } from '@/utils/date'
 import { TaskPriorityBadge } from '@/features/tasks/components/TaskPriorityBadge'
 import { StatusBadge } from '@/features/access/components/StatusBadge'
 import { useIsRoot } from '@/features/access/utils/can'
-
-const getInitials = (name: string) => {
-	const words = name.trim().split(/\s+/)
-	if (words.length >= 2) {
-		return (words[0][0] + words[1][0]).toUpperCase()
-	}
-	return name.slice(0, 2).toUpperCase()
-}
+import { getInitials } from '@/utils/avatar'
 
 type Props = {
 	category: ICategory | null
