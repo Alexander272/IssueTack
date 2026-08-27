@@ -24,6 +24,8 @@ var helpCommands = regexp.MustCompile(`^(?:помощь|help|команды)$`)
 var statusCommands = regexp.MustCompile(`^(?:статус|status|мои|заявки|my)$`)
 var attachCommands = regexp.MustCompile(`^#?(\d+)$`)
 
+// MattermostDeps — зависимости фасада Mattermost: сервисы, необходимые
+// для оркестрации, и capability-уровень Most для отправки сообщений.
 type MattermostDeps struct {
 	Repo        repository.Mattermost
 	Users       Users
@@ -38,6 +40,9 @@ type MattermostDeps struct {
 	BaseURL     string
 }
 
+// MattermostService — тонкий фасад над Mattermost: обрабатывает команды из
+// личных сообщений, диалоги создания заявок, интерактивные кнопки и веб-сокеты,
+// делегируя низкоуровневую работу с Mattermost пакету pkg/mattermost.
 type MattermostService struct {
 	repo          repository.Mattermost
 	users         Users
@@ -56,6 +61,7 @@ type MattermostService struct {
 	recentTickets sync.Map
 }
 
+// NewMattermostService создаёт фасад Mattermost с переданными зависимостями.
 func NewMattermostService(deps *MattermostDeps) *MattermostService {
 	return &MattermostService{
 		repo:        deps.Repo,
@@ -73,6 +79,8 @@ func NewMattermostService(deps *MattermostDeps) *MattermostService {
 	}
 }
 
+// Mattermost — публичный интерфейс фасада Mattermost, используемый
+// HTTP-обработчиками и главной точкой входа.
 type Mattermost interface {
 	GetSettings(ctx context.Context, realmID uuid.UUID) (*models.RealmMattermost, error)
 	SaveSettings(ctx context.Context, realmID uuid.UUID, dto *models.RealmMattermostDTO) error
@@ -94,6 +102,8 @@ type Mattermost interface {
 	StartAllActiveWS(ctx context.Context)
 }
 
+// HandleDMInput — входящее личное сообщение от пользователя Mattermost
+// (уже распарсенное обработчиком) вместе с загруженными файлами.
 type HandleDMInput struct {
 	MmUserID  string
 	BotUserID string
@@ -103,6 +113,7 @@ type HandleDMInput struct {
 	TriggerID string
 }
 
+// GetSettings возвращает настройки интеграции Mattermost для указанного realm.
 func (s *MattermostService) GetSettings(ctx context.Context, realmID uuid.UUID) (*models.RealmMattermost, error) {
 	settings, err := s.repo.GetByRealm(ctx, realmID)
 	if err != nil {
@@ -111,6 +122,8 @@ func (s *MattermostService) GetSettings(ctx context.Context, realmID uuid.UUID) 
 	return settings, nil
 }
 
+// SaveSettings проверяет валидность bot-токена, сохраняет настройки интеграции
+// и запускает веб-сокет для realm.
 func (s *MattermostService) SaveSettings(ctx context.Context, realmID uuid.UUID, dto *models.RealmMattermostDTO) error {
 	botUser, err := s.most.Client.GetMe(dto.BotToken)
 	if err != nil {
@@ -138,6 +151,7 @@ func (s *MattermostService) SaveSettings(ctx context.Context, realmID uuid.UUID,
 	return nil
 }
 
+// DeleteSettings останавливает веб-сокет и удаляет настройки интеграции для realm.
 func (s *MattermostService) DeleteSettings(ctx context.Context, realmID uuid.UUID) error {
 	s.StopWSForRealm(realmID)
 	if err := s.repo.Delete(ctx, nil, realmID); err != nil {
@@ -146,6 +160,8 @@ func (s *MattermostService) DeleteSettings(ctx context.Context, realmID uuid.UUI
 	return nil
 }
 
+// HandleDM обрабатывает личное сообщение пользователя: диспетчеризует его
+// на создание заявки, статус, помощь или синхронизацию.
 func (s *MattermostService) HandleDM(ctx context.Context, input *HandleDMInput) error {
 	var settings *models.RealmMattermost
 	var err error
@@ -256,6 +272,12 @@ func (s *MattermostService) sendStatusMessage(_ context.Context, settings *model
 	return nil
 }
 
+// handleAttachFiles прикрепляет файлы Mattermost к заявке пользователя. Если
+// указан номер заявки — она ищется и проверяется, что пользователь её создатель
+// (иначе файлы не прикрепляются). Без номера файлы прикрепляются к последней
+// созданной пользователем заявке из recentTickets, если с момента создания
+// прошло не более 30 минут, — так команды вида «#123 + файлы» и просто постинг
+// файлов после создания заявки работают единообразно.
 func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *models.RealmMattermost, mmUserID, channelID string, ticketNumber int, fileIDs []string) error {
 	userID, _, err := s.resolveOrCreateUser(ctx, settings.RealmID, mmUserID)
 	if err != nil {
@@ -354,6 +376,7 @@ func (s *MattermostService) checkIsAdmin(ctx context.Context, realmID uuid.UUID,
 	return ur.Role.Slug == "admin"
 }
 
+// SendDMToUser отправляет прямое сообщение пользователю системы по его userID.
 func (s *MattermostService) SendDMToUser(ctx context.Context, userID uuid.UUID, message string) error {
 	link, err := s.repo.GetUserLinkByUserID(ctx, userID)
 	if err != nil {
@@ -371,6 +394,7 @@ func (s *MattermostService) SendDMToUser(ctx context.Context, userID uuid.UUID, 
 	return nil
 }
 
+// GetUserLinkByMmUserID возвращает связку пользователя по его Mattermost userID.
 func (s *MattermostService) GetUserLinkByMmUserID(ctx context.Context, mmUserID string) (*models.MattermostUserLink, error) {
 	link, err := s.repo.GetUserLinkByMmUserID(ctx, mmUserID)
 	if err != nil {
@@ -379,6 +403,7 @@ func (s *MattermostService) GetUserLinkByMmUserID(ctx context.Context, mmUserID 
 	return link, nil
 }
 
+// UpsertUserLink создаёт или обновляет связку системного пользователя с Mattermost userID.
 func (s *MattermostService) UpsertUserLink(ctx context.Context, userID uuid.UUID, mmUserID string) error {
 	if err := s.repo.UpsertUserLink(ctx, nil, &models.MattermostUserLink{
 		UserID:   userID,

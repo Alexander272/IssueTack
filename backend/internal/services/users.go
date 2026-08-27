@@ -20,6 +20,7 @@ type userService struct {
 	eventBus  *events.PolicyEventManager
 }
 
+// UsersDeps содержит зависимости для создания сервиса пользователей.
 type UsersDeps struct {
 	Repo      repository.Users
 	TxManager TransactionManager
@@ -28,6 +29,7 @@ type UsersDeps struct {
 	EventBus  *events.PolicyEventManager
 }
 
+// NewUserService создаёт сервис пользователей.
 func NewUserService(deps *UsersDeps) *userService {
 	return &userService{
 		repo:      deps.Repo,
@@ -38,6 +40,7 @@ func NewUserService(deps *UsersDeps) *userService {
 	}
 }
 
+// Users описывает сервис управления пользователями.
 type Users interface {
 	LoadPolicy(ctx context.Context) ([]*models.UserRole, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*models.UserData, error)
@@ -49,6 +52,7 @@ type Users interface {
 	UpdateMattermostIDs(ctx context.Context, tx postgres.Tx, dto []*models.MattermostUserLink) error
 }
 
+// LoadPolicy возвращает привязки пользователей к ролям для загрузки политик Casbin.
 func (s *userService) LoadPolicy(ctx context.Context) ([]*models.UserRole, error) {
 	data, err := s.repo.LoadPolicy(ctx)
 	if err != nil {
@@ -57,6 +61,7 @@ func (s *userService) LoadPolicy(ctx context.Context) ([]*models.UserRole, error
 	return data, nil
 }
 
+// GetByID возвращает данные пользователя по его идентификатору.
 func (s *userService) GetByID(ctx context.Context, id uuid.UUID) (*models.UserData, error) {
 	data, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -65,6 +70,7 @@ func (s *userService) GetByID(ctx context.Context, id uuid.UUID) (*models.UserDa
 	return data, nil
 }
 
+// GetByLogin возвращает данные пользователя по его логину.
 func (s *userService) GetByLogin(ctx context.Context, login string) (*models.UserData, error) {
 	data, err := s.repo.GetByLogin(ctx, login)
 	if err != nil {
@@ -73,6 +79,7 @@ func (s *userService) GetByLogin(ctx context.Context, login string) (*models.Use
 	return data, nil
 }
 
+// GetAll возвращает список всех пользователей, опционально отфильтрованный по realm'у.
 func (s *userService) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.UserData, error) {
 	data, err := s.repo.GetAll(ctx, realmID)
 	if err != nil {
@@ -81,6 +88,7 @@ func (s *userService) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models
 	return data, nil
 }
 
+// UpdateMattermostIDs обновляет Mattermost-идентификаторы пользователей.
 func (s *userService) UpdateMattermostIDs(ctx context.Context, tx postgres.Tx, dto []*models.MattermostUserLink) error {
 	return s.repo.UpdateMattermostIDs(ctx, tx, dto)
 }

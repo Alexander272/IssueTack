@@ -9,11 +9,13 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
 )
 
+// RealmService управляет realm'ами (пространствами).
 type RealmService struct {
 	repo      repository.Realms
 	txManager TransactionManager
 }
 
+// NewRealmService создаёт сервис управления realm'ами.
 func NewRealmService(repo repository.Realms, txManager TransactionManager) *RealmService {
 	return &RealmService{
 		repo:      repo,
@@ -21,6 +23,7 @@ func NewRealmService(repo repository.Realms, txManager TransactionManager) *Real
 	}
 }
 
+// Realms описывает сервис управления realm'ами.
 type Realms interface {
 	GetAll(ctx context.Context) ([]*models.Realm, error)
 	GetByID(ctx context.Context, req *models.GetRealmByIdDTO) (*models.Realm, error)
@@ -29,6 +32,7 @@ type Realms interface {
 	Delete(ctx context.Context, dto *models.DeleteRealmDTO) error
 }
 
+// GetAll возвращает список всех realm'ов.
 func (s *RealmService) GetAll(ctx context.Context) ([]*models.Realm, error) {
 	data, err := s.repo.GetAll(ctx)
 	if err != nil {
@@ -37,6 +41,7 @@ func (s *RealmService) GetAll(ctx context.Context) ([]*models.Realm, error) {
 	return data, nil
 }
 
+// GetByID возвращает realm по его идентификатору.
 func (s *RealmService) GetByID(ctx context.Context, req *models.GetRealmByIdDTO) (*models.Realm, error) {
 	data, err := s.repo.GetByID(ctx, req)
 	if err != nil {
@@ -45,6 +50,7 @@ func (s *RealmService) GetByID(ctx context.Context, req *models.GetRealmByIdDTO)
 	return data, nil
 }
 
+// Create создаёт новый realm в рамках транзакции.
 func (s *RealmService) Create(ctx context.Context, dto *models.RealmDTO) error {
 	return s.txManager.WithinTransaction(ctx, func(tx postgres.Tx) error {
 		if err := s.repo.Create(ctx, tx, dto); err != nil {
@@ -57,6 +63,7 @@ func (s *RealmService) Create(ctx context.Context, dto *models.RealmDTO) error {
 	})
 }
 
+// Update обновляет данные realm'а.
 func (s *RealmService) Update(ctx context.Context, dto *models.RealmDTO) error {
 	if err := s.repo.Update(ctx, nil, dto); err != nil {
 		return fmt.Errorf("failed to update realm. error: %w", err)
@@ -64,6 +71,7 @@ func (s *RealmService) Update(ctx context.Context, dto *models.RealmDTO) error {
 	return nil
 }
 
+// Delete удаляет realm по заданным параметрам.
 func (s *RealmService) Delete(ctx context.Context, dto *models.DeleteRealmDTO) error {
 	//? может надо бы как-то ограничить удаление realm
 	if err := s.repo.Delete(ctx, nil, dto); err != nil {

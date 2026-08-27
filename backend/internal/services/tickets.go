@@ -12,6 +12,8 @@ import (
 	"github.com/google/uuid"
 )
 
+// TicketService — сервис тикетов: реализует бизнес-правила доступа,
+// переходов по статусам, автозакрытия и журналирование действий.
 type TicketService struct {
 	repo          repository.Tickets
 	tx            TransactionManager
@@ -24,6 +26,7 @@ type TicketService struct {
 	access        TicketAccessChecker
 }
 
+// NewTicketService создаёт новый сервис тикетов на основе переданных зависимостей.
 func NewTicketService(deps *TicketDeps) *TicketService {
 	return &TicketService{
 		repo:          deps.Repo,
@@ -38,6 +41,7 @@ func NewTicketService(deps *TicketDeps) *TicketService {
 	}
 }
 
+// TicketDeps — зависимости, необходимые для создания TicketService.
 type TicketDeps struct {
 	Repo          repository.Tickets
 	TxManager     TransactionManager
@@ -50,15 +54,26 @@ type TicketDeps struct {
 	Access        TicketAccessChecker
 }
 
+// Tickets — интерфейс сервиса тикетов: описывает чтение, создание,
+// обновление и удаление тикетов, а также автоматическое закрытие.
 type Tickets interface {
+	// Get возвращает список тикетов с учётом прав актора и общее количество.
 	Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, int, error)
+	// GetByID возвращает тикет по идентификатору вместе с подзадачами, вложениями и флагами доступа.
 	GetByID(ctx context.Context, req *models.GetTicketByIdDTO) (*models.Ticket, error)
+	// Create создаёт новый тикет.
 	Create(ctx context.Context, dto *models.TicketDTO) error
+	// Update изменяет поля тикета с соблюдением правил доступа и переходов по статусам.
 	Update(ctx context.Context, dto *models.TicketDTO) error
+	// Delete удаляет тикет.
 	Delete(ctx context.Context, dto *models.DeleteTicketDTO) error
+	// AutoCloseResolved закрывает resolved-тикеты по истечении задержки и возвращает их количество.
 	AutoCloseResolved(ctx context.Context, delay time.Duration) (int64, error)
 }
 
+// Get возвращает список тикетов и общее количество с учётом прав актора:
+// при отсутствии повышенных прав список ограничивается его группами
+// и тикетами, где он является создателем или исполнителем.
 func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, int, error) {
 	realmStr := ""
 	if req.RealmID != nil {
@@ -125,6 +140,10 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 	return data, total, nil
 }
 
+// autoAssign назначает исполнителя при создании тикета, если исполнитель не указан явно:
+// приоритет — ответственный по умолчанию группы (DefaultAssigneeID), иначе — единственный
+// участник группы, чтобы тикет не остался без исполнителя. Если в группе несколько участников,
+// исполнитель не назначается — его указывают позже вручную.
 func (s *TicketService) autoAssign(ctx context.Context, dto *models.TicketDTO) error {
 	group, err := s.groups.GetByID(ctx, &models.GetGroupDTO{ID: *dto.GroupID})
 	if err != nil {
@@ -152,6 +171,8 @@ func (s *TicketService) autoAssign(ctx context.Context, dto *models.TicketDTO) e
 	return nil
 }
 
+// GetByID возвращает тикет по идентификатору с проверкой права чтения,
+// дополняя его подзадачами, вложениями и флагами доступа.
 func (s *TicketService) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) (*models.Ticket, error) {
 	if err := s.access.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: req.ID, UserID: req.Actor.ID, Action: string(access.Read), Realm: req.RealmID}); err != nil {
 		return nil, err
@@ -191,6 +212,9 @@ func (s *TicketService) GetByID(ctx context.Context, req *models.GetTicketByIdDT
 	return data, nil
 }
 
+// Create создаёт новый тикет: проверяет права на создание, заполняет
+// владельца/исполнителя (при необходимости — автоматически), фиксирует
+// действие в журнале и отправляет уведомление.
 func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error {
 	realmStr := ""
 	if dto.RealmID != nil {
@@ -251,6 +275,10 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 	return nil
 }
 
+// Update обновляет поля тикета с учётом прав доступа и правил переходов по статусам.
+// Пользователь с work-доступом может менять только статус; «чистый» владелец —
+// только допустимые переходы из трёх (отменить, принять решение, вернуть в работу);
+// статус closed можно поставить только из resolved.
 func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error {
 	realmStr := ""
 	if dto.RealmID != nil {
@@ -395,6 +423,8 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 	return nil
 }
 
+// Delete удаляет тикет: проверяет право на удаление, сохраняет снимок данных
+// в журнале и отправляет уведомление об удалении.
 func (s *TicketService) Delete(ctx context.Context, dto *models.DeleteTicketDTO) error {
 	if err := s.access.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: dto.ID, UserID: dto.Actor.ID, Action: string(access.Delete), Realm: dto.RealmID}); err != nil {
 		return err
@@ -447,6 +477,9 @@ func (s *TicketService) Delete(ctx context.Context, dto *models.DeleteTicketDTO)
 	return nil
 }
 
+// isCreatorOrManager проверяет, является ли пользователь автором тикета или менеджером его группы —
+// строгая проверка, используемая для закрытия/отмены тикета (см. модель доступа). Владелец здесь
+// учитывается отдельно: для него допустимы только ограниченные переходы (ownerTransitionAllowed).
 func (s *TicketService) isCreatorOrManager(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) (bool, error) {
 	if ticket.Creator.ID == actorID {
 		return true, nil
@@ -471,6 +504,10 @@ func (s *TicketService) isOwner(ticket *models.Ticket, actorID uuid.UUID) bool {
 	return ticket.Owner != nil && ticket.Owner.ID == actorID
 }
 
+// ownerTransitionAllowed — допустимые переходы по статусам для «чистого» владельца (без
+// write/work-доступа). Владелец может только: активный статус → cancelled (отменить заявку),
+// resolved → closed (принять решение) и resolved → in_progress (вернуть в работу). Все прочие
+// смены статусов и изменение полей для него запрещены (проверяется в Update).
 func (s *TicketService) ownerTransitionAllowed(ticket *models.Ticket, dto *models.TicketDTO) bool {
 	if !dto.HasField("status") || dto.Status == ticket.Status {
 		return false
@@ -489,6 +526,9 @@ func (s *TicketService) ownerTransitionAllowed(ticket *models.Ticket, dto *model
 	}
 }
 
+// AutoCloseResolved автоматически закрывает resolved-тикеты с истёкшей
+// задержкой и возвращает количество закрытых. При неположительной задержке
+// ничего не делает.
 func (s *TicketService) AutoCloseResolved(ctx context.Context, delay time.Duration) (int64, error) {
 	if delay <= 0 {
 		return 0, nil
@@ -498,6 +538,8 @@ func (s *TicketService) AutoCloseResolved(ctx context.Context, delay time.Durati
 	return s.repo.CloseResolved(ctx, cutoff)
 }
 
+// activeStatuses — статусы, которые считаются «активными» (тикет в работе): из/в них разрешены
+// переходы, а их наличие блокирует закрытие через resolved (см. GetUnresolvedCount).
 var activeStatuses = []models.TicketStatus{
 	models.StatusOpen,
 	models.StatusInProgress,
@@ -510,6 +552,8 @@ func isActive(s models.TicketStatus) bool {
 		s == models.StatusPending || s == models.StatusOnHold
 }
 
+// GetAccessFlags вычисляет флаги доступа к тикету для пользователя
+// (чтение, запись, удаление, работа) и список доступных ему переходов по статусам.
 func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, realm string) (*models.AccessFlags, error) {
 	flags := &models.AccessFlags{CanRead: true}
 
@@ -526,6 +570,12 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 	return flags, nil
 }
 
+// computeAllowedStatuses вычисляет список статусов, доступных пользователю для перевода тикета,
+// в зависимости от его роли (автор/менеджер группы, владелец, write/work-доступ) и текущего
+// статуса. Логика отражает модель доступа: владелец без write/work получает только три перехода
+// (см. ownerTransitionAllowed), исполнитель с work-доступом — активные статусы и resolved
+// (при отсутствии незакрытых подзадач), закрытие/отмена активного тикета — только
+// автору/менеджеру группы (владелец может отменить активный тикет).
 func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, realm string) []models.TicketStatus {
 	hasWrite := s.access.CheckAccessOnTicket(ctx, ticket, userID, string(access.Write), realm) == nil
 	isCreator := ticket.Creator.ID == userID
@@ -549,6 +599,8 @@ func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *mode
 	current := ticket.Status
 	var allowed []models.TicketStatus
 
+	// add добавляет статусы в список разрешённых, исключая дубликаты
+	// (одна роль может давать статус, уже добавленный другой ролью).
 	add := func(statuses ...models.TicketStatus) {
 		for _, st := range statuses {
 			found := false

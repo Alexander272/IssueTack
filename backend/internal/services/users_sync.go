@@ -15,6 +15,7 @@ import (
 
 var internalNumberRe = regexp.MustCompile(`^(.*?)\s*\((\d*)\)$`)
 
+// Sync синхронизирует пользователей из Keycloak с локальной БД: создаёт новых, обновляет изменённых и удаляет отсутствующих.
 func (s *userService) Sync(ctx context.Context, actor *models.Actor) error {
 	logger.Info("Sync users started")
 
@@ -147,6 +148,9 @@ func (s *userService) Sync(ctx context.Context, actor *models.Actor) error {
 	return nil
 }
 
+// getAllGroupMembers постранично (по 1000 записей) выгружает всех участников группы из Keycloak,
+// пока ответ не станет короче размера страницы. Постраничный цикл нужен, чтобы не терять участников
+// в больших группах, превышающих лимит одного ответа Keycloak.
 func (s *userService) getAllGroupMembers(ctx context.Context, token, groupID string) ([]*gocloak.User, error) {
 	var all []*gocloak.User
 	first := 0
@@ -170,6 +174,9 @@ func (s *userService) getAllGroupMembers(ctx context.Context, token, groupID str
 	return all, nil
 }
 
+// collectSubGroupIDs возвращает плоский список ID группы и всех её вложенных подгрупп.
+// Синхронизация идёт по всей ветке, а не только по корневой группе, поэтому подгруппы разворачиваются
+// рекурсивно до любого уровня вложенности.
 func (s *userService) collectSubGroupIDs(group *gocloak.Group) []string {
 	if group == nil || group.ID == nil {
 		return nil
@@ -179,6 +186,8 @@ func (s *userService) collectSubGroupIDs(group *gocloak.Group) []string {
 	return ids
 }
 
+// collectNestedIDs рекурсивно обходит произвольную вложенность подгрупп и накапливает их ID в общий список,
+// пропуская подгруппы без идентификатора.
 func (s *userService) collectNestedIDs(subGroups *[]gocloak.Group, ids *[]string) {
 	if subGroups == nil {
 		return
@@ -192,6 +201,9 @@ func (s *userService) collectNestedIDs(subGroups *[]gocloak.Group, ids *[]string
 	}
 }
 
+// extractInternalNumber извлекает внутренний номер, привязанный к фамилии пользователя в формате
+// "Фамилия (12345)". Если формат не совпадает, возвращает фамилию как есть и пустой номер,
+// чтобы не терять данные при ручном вводе без номера.
 func extractInternalNumber(lastName string) (string, string) {
 	m := internalNumberRe.FindStringSubmatch(lastName)
 	if m == nil {
@@ -200,6 +212,9 @@ func extractInternalNumber(lastName string) (string, string) {
 	return m[1], m[2]
 }
 
+// mapToUserData преобразует пользователя Keycloak в DTO для локальной БД, отбрасывая пользователей
+// с некорректным UUID (возвращает nil), чтобы они не сломали последующую пакетную вставку.
+// Поля Keycloak разворачиваются через nonNil, т.к. API отдаёт указатели.
 func (s *userService) mapToUserData(u *gocloak.User) *models.UserDataDTO {
 	id, err := uuid.Parse(s.nonNil(u.ID))
 	if err != nil {
@@ -219,6 +234,8 @@ func (s *userService) mapToUserData(u *gocloak.User) *models.UserDataDTO {
 	}
 }
 
+// nonNil разворачивает строковый указатель в значение; Keycloak возвращает пустые поля как nil,
+// а для записи в БД удобнее всегда иметь обычную строку.
 func (s *userService) nonNil(value *string) string {
 	if value == nil {
 		return ""
@@ -226,6 +243,9 @@ func (s *userService) nonNil(value *string) string {
 	return *value
 }
 
+// isChanged сравнивает пользователя из БД с данными из Keycloak. Синхронизация идемпотентна:
+// обновляются только те записи, где хотя бы одно поле реально отличается, чтобы не перезаписывать
+// записи впустую на каждом прогоне.
 func (s *userService) isChanged(old, new *models.UserDataDTO) bool {
 	return old.Username != new.Username ||
 		old.Email != new.Email ||

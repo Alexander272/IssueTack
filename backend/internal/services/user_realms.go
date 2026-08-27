@@ -10,11 +10,13 @@ import (
 	"github.com/google/uuid"
 )
 
+// UserRealmService управляет привязками пользователей к realm'ам и их ролям в них.
 type UserRealmService struct {
 	repo      repository.UserRealms
 	txManager TransactionManager
 }
 
+// NewUserRealmService создаёт сервис привязок пользователей к realm'ам.
 func NewUserRealmService(repo repository.UserRealms, txManager TransactionManager) *UserRealmService {
 	return &UserRealmService{
 		repo:      repo,
@@ -22,6 +24,7 @@ func NewUserRealmService(repo repository.UserRealms, txManager TransactionManage
 	}
 }
 
+// UserRealms описывает сервис управления привязками пользователей к realm'ам.
 type UserRealms interface {
 	GetAll(ctx context.Context) ([]*models.UserRealm, error)
 	GetByUserID(ctx context.Context, userID uuid.UUID) ([]*models.UserRealm, error)
@@ -34,6 +37,7 @@ type UserRealms interface {
 	DeleteSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserRealmDTO) error
 }
 
+// GetAll возвращает все привязки пользователей к realm'ам.
 func (s *UserRealmService) GetAll(ctx context.Context) ([]*models.UserRealm, error) {
 	data, err := s.repo.GetAll(ctx)
 	if err != nil {
@@ -42,6 +46,7 @@ func (s *UserRealmService) GetAll(ctx context.Context) ([]*models.UserRealm, err
 	return data, nil
 }
 
+// GetByUserID возвращает привязки пользователя ко всем realm'ам.
 func (s *UserRealmService) GetByUserID(ctx context.Context, userID uuid.UUID) ([]*models.UserRealm, error) {
 	data, err := s.repo.GetByUserID(ctx, userID)
 	if err != nil {
@@ -50,6 +55,7 @@ func (s *UserRealmService) GetByUserID(ctx context.Context, userID uuid.UUID) ([
 	return data, nil
 }
 
+// GetByUserAndRealm возвращает привязку пользователя к конкретному realm'у.
 func (s *UserRealmService) GetByUserAndRealm(ctx context.Context, userID, realmID uuid.UUID) (*models.UserRealm, error) {
 	data, err := s.repo.GetByUserAndRealm(ctx, userID, realmID)
 	if err != nil {
@@ -58,6 +64,7 @@ func (s *UserRealmService) GetByUserAndRealm(ctx context.Context, userID, realmI
 	return data, nil
 }
 
+// Create создаёт привязку пользователя к realm'у, при необходимости в рамках переданной транзакции.
 func (s *UserRealmService) Create(ctx context.Context, tx postgres.Tx, dto *models.UserRealmDTO) error {
 	if tx != nil {
 		if err := s.repo.Create(ctx, tx, dto); err != nil {
@@ -74,6 +81,7 @@ func (s *UserRealmService) Create(ctx context.Context, tx postgres.Tx, dto *mode
 	})
 }
 
+// CreateSeveral создаёт несколько привязок пользователей к realm'ам, при необходимости в рамках переданной транзакции.
 func (s *UserRealmService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserRealmDTO) error {
 	if tx != nil {
 		if err := s.repo.CreateSeveral(ctx, tx, dto); err != nil {
@@ -90,6 +98,7 @@ func (s *UserRealmService) CreateSeveral(ctx context.Context, tx postgres.Tx, dt
 	})
 }
 
+// Update обновляет привязку пользователя к realm'у, при необходимости в рамках переданной транзакции.
 func (s *UserRealmService) Update(ctx context.Context, tx postgres.Tx, dto *models.UserRealmDTO) error {
 	if tx != nil {
 		if err := s.repo.Update(ctx, tx, dto); err != nil {
@@ -106,6 +115,7 @@ func (s *UserRealmService) Update(ctx context.Context, tx postgres.Tx, dto *mode
 	})
 }
 
+// UpdateSeveral обновляет несколько привязок пользователей к realm'ам, при необходимости в рамках переданной транзакции.
 func (s *UserRealmService) UpdateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserRealmDTO) error {
 	if tx != nil {
 		if err := s.repo.UpdateSeveral(ctx, tx, dto); err != nil {
@@ -122,6 +132,7 @@ func (s *UserRealmService) UpdateSeveral(ctx context.Context, tx postgres.Tx, dt
 	})
 }
 
+// Delete удаляет привязку пользователя к realm'у, при необходимости в рамках переданной транзакции.
 func (s *UserRealmService) Delete(ctx context.Context, tx postgres.Tx, userID, realmID uuid.UUID) error {
 	if tx != nil {
 		if err := s.repo.DeleteByUserAndRealm(ctx, tx, userID, realmID); err != nil {
@@ -138,6 +149,7 @@ func (s *UserRealmService) Delete(ctx context.Context, tx postgres.Tx, userID, r
 	})
 }
 
+// DeleteSeveral удаляет несколько привязок пользователей к realm'ам, при необходимости в рамках переданной транзакции.
 func (s *UserRealmService) DeleteSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserRealmDTO) error {
 	if tx != nil {
 		if err := s.repo.DeleteSeveral(ctx, tx, dto); err != nil {

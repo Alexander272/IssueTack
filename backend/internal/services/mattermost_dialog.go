@@ -19,6 +19,10 @@ type recentTicket struct {
 	createdAt time.Time
 }
 
+// HandleDialogOpen открывает диалог создания заявки для пользователя,
+// нажавшего кнопку «Создать заявку». Подгружает категории/площадки realm
+// и формирует поля диалога; в State передаёт канал и id кнопочного поста,
+// чтобы после создания оповестить пользователя и удалить кнопку.
 func (s *MattermostService) HandleDialogOpen(ctx context.Context, triggerID, _, channelID, buttonPostID string, actionCtx map[string]string) error {
 	if triggerID == "" {
 		return fmt.Errorf("missing trigger_id")
@@ -85,6 +89,9 @@ func (s *MattermostService) HandleDialogOpen(ctx context.Context, triggerID, _, 
 	return nil
 }
 
+// HandleDialogSubmission создаёт заявку из отправленного диалога: резолвит
+// пользователя Mattermost в систему, прикрепляет загруженные файлы и удаляет
+// исходный кнопочный пост. Отмена диалога обрабатывается отдельно (без создания).
 func (s *MattermostService) HandleDialogSubmission(ctx context.Context, submission *model.SubmitDialogRequest) error {
 	if submission.Cancelled {
 		return nil
@@ -170,6 +177,9 @@ func (s *MattermostService) HandleDialogSubmission(ctx context.Context, submissi
 	return nil
 }
 
+// HandleInteractiveAction обрабатывает нажатия интерактивных кнопок Mattermost
+// и возвращает пост-ответ (или nil, если ответ не нужен). Для «view_ticket»
+// формирует кнопку «Открыть», ведущую на страницу заявки во фронтенде.
 func (s *MattermostService) HandleInteractiveAction(ctx context.Context, userID, channelID string, actionContext map[string]string) (*model.Post, error) {
 	if s.baseURL == "" {
 		return nil, fmt.Errorf("failed to handle action: http.base_url is not configured")
@@ -200,6 +210,9 @@ func (s *MattermostService) HandleInteractiveAction(ctx context.Context, userID,
 	}
 }
 
+// sendTicketCreatedDM отправляет пользователю личное сообщение с подтверждением
+// создания заявки и ссылкой на неё. Ошибки отправки не фатальны — заявка уже
+// создана, поэтому проблема лишь логируется.
 func (s *MattermostService) sendTicketCreatedDM(settings *models.RealmMattermost, mmUserID string, dto *models.TicketDTO) {
 	if settings.BotToken == "" {
 		return
@@ -214,6 +227,9 @@ func (s *MattermostService) sendTicketCreatedDM(settings *models.RealmMattermost
 	}
 }
 
+// deleteButtonPost удаляет исходный пост с кнопкой «Создать заявку» после того,
+// как диалог был успешно отправлен. Состояние (id поста кнопки) передаётся
+// в диалог заранее через State; если id отсутствует, пост не трогаем.
 func (s *MattermostService) deleteButtonPost(settings *models.RealmMattermost, submission *model.SubmitDialogRequest) {
 	if settings.BotToken == "" || submission.State == "" {
 		return
@@ -229,6 +245,10 @@ func (s *MattermostService) deleteButtonPost(settings *models.RealmMattermost, s
 	}
 }
 
+// processPendingFiles прикрепляет файлы, загруженные пользователем вместе с
+// сообщением-командой, к только что созданной заявке. Ключ — канал+пользователь,
+// т.к. Mattermost не связывает файлы загруженные до диалога напрямую. Каждый
+// файл скачивается отдельно, ошибки не прерывают обработку остальных.
 func (s *MattermostService) processPendingFiles(ctx context.Context, botToken string, submission *model.SubmitDialogRequest, dto *models.TicketDTO) {
 	key := submission.ChannelId + ":" + submission.UserId
 	fileIDsVal, ok := s.pendingFiles.LoadAndDelete(key)

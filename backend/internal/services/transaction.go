@@ -9,18 +9,23 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 )
 
+// TransactionManagerService — сервис управления транзакциями БД.
 type TransactionManagerService struct {
 	repo repository.Transaction
 }
 
+// NewTransactionManager создаёт TransactionManagerService.
 func NewTransactionManager(repo repository.Transaction) *TransactionManagerService {
 	return &TransactionManagerService{repo: repo}
 }
 
+// TransactionManager — интерфейс выполнения функции внутри транзакции БД.
 type TransactionManager interface {
+	// WithinTransaction выполняет функцию внутри транзакции.
 	WithinTransaction(ctx context.Context, fn func(tx postgres.Tx) error) error
 }
 
+// WithinTransaction выполняет функцию внутри транзакции, откатывая её при ошибке или панике и коммитя при успехе.
 func (tm *TransactionManagerService) WithinTransaction(ctx context.Context, fn func(tx postgres.Tx) error) error {
 	tx, err := tm.repo.BeginTx(ctx)
 	if err != nil {

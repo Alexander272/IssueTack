@@ -11,20 +11,26 @@ import (
 	"github.com/go-co-op/gocron/v2"
 )
 
+// SchedulerService управляет фоновыми cron-заданиями, в частности автозакрытием resolved-тикетов.
 type SchedulerService struct {
 	cron    gocron.Scheduler
 	tickets Tickets
 }
 
+// SchedulerDeps содержит зависимости для создания SchedulerService.
 type SchedulerDeps struct {
 	Tickets Tickets
 }
 
+// Scheduler описывает сервис планировщика фоновых заданий.
 type Scheduler interface {
+	// Start регистрирует фоновые задания и запускает планировщик.
 	Start(conf *config.TicketConfig) error
+	// Stop останавливает планировщик.
 	Stop() error
 }
 
+// NewSchedulerService создаёт SchedulerService с инициализированным планировщиком.
 func NewSchedulerService(deps *SchedulerDeps) *SchedulerService {
 	cron, err := gocron.NewScheduler()
 	if err != nil {
@@ -65,7 +71,11 @@ func (s *SchedulerService) Stop() error {
 	return nil
 }
 
-// job автоматически закрывает resolved-тикеты старше conf.ResolvedToClosedAfter.
+// job — фоновая задача cron: автоматически закрывает resolved-тикеты, которые "зависли"
+// дольше conf.ResolvedToClosedAfter после принятия решения. Автозакрытие нужно, чтобы
+// очередь не засорялась давно решёнными заявками. Ошибку не пробрасываем наверх, а только
+// логируем: единичный сбой (например, недоступность БД) не должен ронять планировщик,
+// следующий запуск cron повторит попытку.
 func (s *SchedulerService) job(ctx context.Context, delay time.Duration) {
 	n, err := s.tickets.AutoCloseResolved(ctx, delay)
 	if err != nil {

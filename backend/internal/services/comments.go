@@ -13,11 +13,13 @@ import (
 
 const commentDeleteWindow = 15 * time.Minute
 
+// CommentService — сервис работы с комментариями к тикетам.
 type CommentService struct {
 	repo         repository.Comments
 	ticketAccess TicketAccessChecker
 }
 
+// NewCommentService создаёт CommentService.
 func NewCommentService(repo repository.Comments, ticketAccess TicketAccessChecker) *CommentService {
 	return &CommentService{
 		repo:         repo,
@@ -25,12 +27,17 @@ func NewCommentService(repo repository.Comments, ticketAccess TicketAccessChecke
 	}
 }
 
+// Comments — интерфейс работы с комментариями.
 type Comments interface {
+	// GetByTicket возвращает комментарии тикета с проверкой доступа.
 	GetByTicket(ctx context.Context, ticketID uuid.UUID, userID uuid.UUID, realm string) ([]*models.Comment, error)
+	// Create создаёт комментарий к тикету.
 	Create(ctx context.Context, tx postgres.Tx, dto *models.CreateCommentDTO) (*models.Comment, error)
+	// Delete удаляет комментарий.
 	Delete(ctx context.Context, tx postgres.Tx, dto *models.DeleteCommentDTO) error
 }
 
+// GetByTicket возвращает комментарии тикета с проверкой доступа и видимостью внутренних комментариев.
 func (s *CommentService) GetByTicket(ctx context.Context, ticketID uuid.UUID, userID uuid.UUID, realm string) ([]*models.Comment, error) {
 	if err := s.ticketAccess.CheckAccess(ctx, &models.AccessCheckDTO{
 		TicketID: ticketID,
@@ -54,6 +61,7 @@ func (s *CommentService) GetByTicket(ctx context.Context, ticketID uuid.UUID, us
 	return data, nil
 }
 
+// Create создаёт комментарий к тикету с проверкой work-доступа.
 func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models.CreateCommentDTO) (*models.Comment, error) {
 	if err := s.ticketAccess.CheckWorkAccess(ctx, &models.AccessCheckDTO{
 		TicketID: dto.TicketID,
@@ -77,6 +85,7 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 	return comment, nil
 }
 
+// Delete удаляет комментарий; разрешено только автору в течение окна удаления.
 func (s *CommentService) Delete(ctx context.Context, tx postgres.Tx, dto *models.DeleteCommentDTO) error {
 	comment, err := s.repo.GetByID(ctx, dto.ID)
 	if err != nil {

@@ -21,6 +21,7 @@ var allowedEntityTypes = map[string]bool{
 	"subtask": true,
 }
 
+// AttachmentService — сервис управления вложениями (загрузка, чтение, удаление) с проверкой доступа к сущности.
 type AttachmentService struct {
 	repo         repository.Attachments
 	conf         *config.FileServerConfig
@@ -28,6 +29,7 @@ type AttachmentService struct {
 	subtaskRepo  repository.Subtasks
 }
 
+// NewAttachmentService создаёт AttachmentService.
 func NewAttachmentService(repo repository.Attachments, conf *config.FileServerConfig, ticketAccess TicketAccessChecker, subtaskRepo repository.Subtasks) *AttachmentService {
 	return &AttachmentService{
 		repo:         repo,
@@ -37,6 +39,10 @@ func NewAttachmentService(repo repository.Attachments, conf *config.FileServerCo
 	}
 }
 
+// checkEntityAccess проверяет право действия action на сущность вложения. Для тикета проверка
+// идёт напрямую; для подзадачи сначала загружается её тикет, т.к. доступ к вложению подзадачи
+// определяется доступом к родительскому тикету. Для write используется CheckWorkAccess
+// (исполнитель тоже может работать с тикетом), для остальных действий — CheckAccess.
 func (s *AttachmentService) checkEntityAccess(ctx context.Context, dto *models.EntityAccessDTO, action string) error {
 	if s.ticketAccess == nil {
 		return models.ErrPermissionDenied
@@ -60,13 +66,19 @@ func (s *AttachmentService) checkEntityAccess(ctx context.Context, dto *models.E
 	return fmt.Errorf("unknown entity type: %s", dto.EntityType)
 }
 
+// Attachments — интерфейс работы с вложениями.
 type Attachments interface {
+	// GetByEntity возвращает список вложений сущности (тикета/подзадачи).
 	GetByEntity(ctx context.Context, dto *models.EntityAccessDTO) ([]*models.Attachment, error)
+	// GetContent возвращает вложение и поток чтения его файла.
 	GetContent(ctx context.Context, id uuid.UUID, actorID uuid.UUID, realm string) (*models.Attachment, io.ReadCloser, error)
+	// Upload сохраняет файл вложения и регистрирует его в системе.
 	Upload(ctx context.Context, tx postgres.Tx, dto *models.UploadAttachmentDTO) (*models.Attachment, error)
+	// Delete удаляет вложение и связанный файл с диска.
 	Delete(ctx context.Context, tx postgres.Tx, dto *models.DeleteAttachmentDTO) error
 }
 
+// GetByEntity возвращает список вложений сущности (тикета/подзадачи) с проверкой доступа на чтение.
 func (s *AttachmentService) GetByEntity(ctx context.Context, dto *models.EntityAccessDTO) ([]*models.Attachment, error) {
 	if err := s.checkEntityAccess(ctx, dto, string(access.Read)); err != nil {
 		return nil, err
@@ -78,6 +90,7 @@ func (s *AttachmentService) GetByEntity(ctx context.Context, dto *models.EntityA
 	return data, nil
 }
 
+// GetContent возвращает вложение и поток чтения его файла с проверкой доступа на чтение.
 func (s *AttachmentService) GetContent(ctx context.Context, id uuid.UUID, actorID uuid.UUID, realm string) (*models.Attachment, io.ReadCloser, error) {
 	att, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -101,6 +114,7 @@ func (s *AttachmentService) GetContent(ctx context.Context, id uuid.UUID, actorI
 	return att, f, nil
 }
 
+// Upload сохраняет файл вложения на диск и создаёт запись о вложении с проверкой права на запись.
 func (s *AttachmentService) Upload(ctx context.Context, tx postgres.Tx, dto *models.UploadAttachmentDTO) (*models.Attachment, error) {
 	if !allowedEntityTypes[dto.EntityType] {
 		return nil, fmt.Errorf("invalid entity type: %s", dto.EntityType)
@@ -163,6 +177,7 @@ func (s *AttachmentService) Upload(ctx context.Context, tx postgres.Tx, dto *mod
 	return att, nil
 }
 
+// Delete удаляет вложение (запись в БД и файл с диска) с проверкой права на запись.
 func (s *AttachmentService) Delete(ctx context.Context, tx postgres.Tx, dto *models.DeleteAttachmentDTO) error {
 	att, err := s.repo.GetByID(ctx, dto.ID)
 	if err != nil {

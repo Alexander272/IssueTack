@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// CreateSeveral создаёт несколько пользователей пакетно.
 func (s *userService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserDataDTO) error {
 	if len(dto) == 0 {
 		return nil
@@ -20,6 +21,7 @@ func (s *userService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*
 	return nil
 }
 
+// UpdateAccount обновляет учётную запись пользователя и его привязки к realm'ам, публикуя событие аудита.
 func (s *userService) UpdateAccount(ctx context.Context, dto *models.UpdateAccountDTO) error {
 	candidate, err := s.GetByID(ctx, dto.ID)
 	if err != nil {
@@ -102,6 +104,7 @@ func (s *userService) UpdateAccount(ctx context.Context, dto *models.UpdateAccou
 	return nil
 }
 
+// UpdateSeveral обновляет несколько пользователей пакетно.
 func (s *userService) UpdateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserDataDTO) error {
 	if len(dto) == 0 {
 		return nil
@@ -112,6 +115,7 @@ func (s *userService) UpdateSeveral(ctx context.Context, tx postgres.Tx, dto []*
 	return nil
 }
 
+// DeleteSeveral удаляет несколько пользователей по их идентификаторам.
 func (s *userService) DeleteSeveral(ctx context.Context, tx postgres.Tx, ids []uuid.UUID) error {
 	if len(ids) == 0 {
 		return nil

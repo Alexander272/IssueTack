@@ -20,6 +20,7 @@ type accessPolicesService struct {
 	quit     chan struct{}
 }
 
+// PoliciesDeps содержит зависимости для инициализации сервиса политик доступа.
 type PoliciesDeps struct {
 	Conf     config.CasbinConfig
 	Adapter  Adapter
@@ -27,6 +28,7 @@ type PoliciesDeps struct {
 	Cache    SessionCacher
 }
 
+// NewAccessPoliciesService создаёт Casbin-Enforcer на основе модели и адаптера и запускает перезагрузку политик по событиям.
 func NewAccessPoliciesService(deps *PoliciesDeps) *accessPolicesService {
 	enforcer, err := casbin.NewEnforcer(deps.Conf.ModelPath, deps.Adapter)
 	if err != nil {
@@ -67,16 +69,19 @@ func NewAccessPoliciesService(deps *PoliciesDeps) *accessPolicesService {
 	return s
 }
 
+// AccessPolicies описывает сервис проверки и получения прав доступа через Casbin.
 type AccessPolicies interface {
 	Enforce(sub, dom, obj, act string) (bool, error)
 	Reload() error
 	GetPolicies(user, domain string) (*models.Access, error)
 }
 
+// Enforce проверяет, разрешено ли субъекту sub выполнять действие act над объектом obj в домене dom.
 func (s *accessPolicesService) Enforce(sub, dom, obj, act string) (bool, error) {
 	return s.enforcer.Enforce(sub, dom, obj, act)
 }
 
+// Reload перезагружает политики из адаптера в Enforcer.
 func (s *accessPolicesService) Reload() error {
 	err := s.enforcer.LoadPolicy()
 	if err != nil {
@@ -85,10 +90,12 @@ func (s *accessPolicesService) Reload() error {
 	return nil
 }
 
+// Close завершает работу фонового прослушивания событий обновления политик.
 func (s *accessPolicesService) Close() {
 	close(s.quit)
 }
 
+// GetPolicies возвращает неявные права пользователя в домене в виде отсортированного списка правил доступа.
 func (s *accessPolicesService) GetPolicies(user, domain string) (*models.Access, error) {
 	allPermissions, err := s.enforcer.GetImplicitPermissionsForUser(user, domain)
 	if err != nil {

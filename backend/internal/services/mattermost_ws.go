@@ -11,6 +11,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// StartWSForRealm запускает веб-сокет прослушивания сообщений Mattermost для
+// realm, если он ещё не запущен и интеграция активна. Идемпотентно: повторный
+// вызов для уже запущенного realm ничего не делает.
 func (s *MattermostService) StartWSForRealm(ctx context.Context, realmID uuid.UUID) error {
 	s.wsMu.Lock()
 	defer s.wsMu.Unlock()
@@ -41,6 +44,7 @@ func (s *MattermostService) StartWSForRealm(ctx context.Context, realmID uuid.UU
 	return nil
 }
 
+// StopWSForRealm останавливает веб-сокет указанного realm (если он запущен).
 func (s *MattermostService) StopWSForRealm(realmID uuid.UUID) {
 	s.wsMu.Lock()
 	defer s.wsMu.Unlock()
@@ -53,6 +57,8 @@ func (s *MattermostService) StopWSForRealm(realmID uuid.UUID) {
 	}
 }
 
+// StopAllWS останавливает все запущенные веб-сокеты Mattermost (например,
+// при завершении приложения).
 func (s *MattermostService) StopAllWS() {
 	s.wsMu.Lock()
 	defer s.wsMu.Unlock()
@@ -64,6 +70,10 @@ func (s *MattermostService) StopAllWS() {
 	logger.Info("all mattermost WS clients stopped")
 }
 
+// StartAllActiveWS запускает при старте приложения веб-сокеты для всех
+// активных интеграций Mattermost. Реализовано в отдельном методе, чтобы
+// вынесенная в начале проверка base_url позволяла заранее предупредить
+// о неработоспособности интерактивных кнопок, пока сервис ещё поднимается.
 func (s *MattermostService) StartAllActiveWS(ctx context.Context) {
 	if s.baseURL == "" {
 		logger.Warn("http.base_url is not configured, Mattermost interactive features will not work")
@@ -85,6 +95,11 @@ func (s *MattermostService) StartAllActiveWS(ctx context.Context) {
 	}
 }
 
+// handleWSEvent диспетчеризует входящее сообщение из веб-сокета Mattermost
+// по той же логике, что и личные сообщения (HandleDM). Файлы вместе с
+// командой создания заявки откладываются в pendingFiles по ключу
+// «канал:пользователь», чтобы привязать их к заявке после отправки диалога —
+// Mattermost не связывает файлы с диалогом напрямую.
 func (s *MattermostService) handleWSEvent(ctx context.Context, realmID uuid.UUID, event mattermost.PostedEvent) {
 	userID := event.Post.UserId
 	channelID := event.ChannelID

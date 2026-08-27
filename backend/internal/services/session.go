@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// SessionService управляет сессиями пользователей: вход, выход, обновление токенов и получение прав.
 type SessionService struct {
 	keycloak  *auth.KeycloakClient
 	userRealm UserRealms
@@ -19,6 +20,7 @@ type SessionService struct {
 	cache     SessionCacher
 }
 
+// NewSessionService создаёт сервис сессий с заданными зависимостями.
 func NewSessionService(keycloak *auth.KeycloakClient, policies AccessPolicies, userRealm UserRealms, user Users, groups Groups, cache SessionCacher) *SessionService {
 	return &SessionService{
 		keycloak:  keycloak,
@@ -30,6 +32,7 @@ func NewSessionService(keycloak *auth.KeycloakClient, policies AccessPolicies, u
 	}
 }
 
+// Session описывает сервис управления сессиями пользователей.
 type Session interface {
 	SignIn(ctx context.Context, u models.SignIn) (*models.User, error)
 	SignOut(ctx context.Context, refreshToken string) error
@@ -38,6 +41,7 @@ type Session interface {
 	GetAllCapabilities(ctx context.Context, userID uuid.UUID) (map[string]*models.UserCapabilities, error)
 }
 
+// SignIn выполняет вход пользователя через Keycloak и возвращает данные пользователя с токенами.
 func (s *SessionService) SignIn(ctx context.Context, u models.SignIn) (*models.User, error) {
 	res, err := s.keycloak.Client.Login(ctx, s.keycloak.ClientId, s.keycloak.ClientSecret, s.keycloak.Realm, u.Username, u.Password)
 	if err != nil {
@@ -59,6 +63,7 @@ func (s *SessionService) SignIn(ctx context.Context, u models.SignIn) (*models.U
 	return user, nil
 }
 
+// SignOut завершает сессию пользователя в Keycloak по refresh-токену.
 func (s *SessionService) SignOut(ctx context.Context, refreshToken string) error {
 	err := s.keycloak.Client.Logout(ctx, s.keycloak.ClientId, s.keycloak.ClientSecret, s.keycloak.Realm, refreshToken)
 	if err != nil {
@@ -67,6 +72,7 @@ func (s *SessionService) SignOut(ctx context.Context, refreshToken string) error
 	return nil
 }
 
+// Refresh обновляет токены сессии по refresh-токену и возвращает актуальные данные пользователя.
 func (s *SessionService) Refresh(ctx context.Context, refreshToken string) (*models.User, error) {
 	res, err := s.keycloak.Client.RefreshToken(ctx, refreshToken, s.keycloak.ClientId, s.keycloak.ClientSecret, s.keycloak.Realm)
 	if err != nil {
@@ -88,6 +94,9 @@ func (s *SessionService) Refresh(ctx context.Context, refreshToken string) (*mod
 	return user, nil
 }
 
+// loadUserRealms подгружает в пользователя список его realm'ов и тут же наполняет capabilities.
+// Вызывается после входа/обновления токена, чтобы в вернувшемся пользователе всегда был полный контекст
+// (realm'ы + права/группы) без дополнительного запроса со стороны клиента.
 func (s *SessionService) loadUserRealms(ctx context.Context, user *models.User) error {
 	userRealms, err := s.userRealm.GetByUserID(ctx, user.ID)
 	if err != nil {
@@ -100,6 +109,10 @@ func (s *SessionService) loadUserRealms(ctx context.Context, user *models.User) 
 	return nil
 }
 
+// loadUserCapabilities собирает для каждого realm'а пользователя список управляемых и членских групп,
+// а также признак того, что пользователь является администратором realm (роль с slug "admin").
+// Ошибки получения групп здесь не фатальны: при сбое группа считается пустой, чтобы вход пользователя
+// не падал из-за второстепенных данных.
 func (s *SessionService) loadUserCapabilities(ctx context.Context, user *models.User) {
 	caps := make(map[string]*models.UserCapabilities)
 	for _, r := range user.Realms {
@@ -129,6 +142,7 @@ func (s *SessionService) loadUserCapabilities(ctx context.Context, user *models.
 	user.Capabilities = caps
 }
 
+// GetAllCapabilities возвращает возможности пользователя по каждому realm'у: управляемые и членские группы, признак администратора realm.
 func (s *SessionService) GetAllCapabilities(ctx context.Context, userID uuid.UUID) (map[string]*models.UserCapabilities, error) {
 	userRealms, err := s.userRealm.GetByUserID(ctx, userID)
 	if err != nil {
@@ -161,6 +175,7 @@ func (s *SessionService) GetAllCapabilities(ctx context.Context, userID uuid.UUI
 	return caps, nil
 }
 
+// DecodeAccessToken декодирует access-токен, собирает данные пользователя и его права доступа по realm'ам.
 func (s *SessionService) DecodeAccessToken(ctx context.Context, token string) (*models.User, error) {
 	_, claims, err := s.keycloak.Client.DecodeAccessToken(ctx, token, s.keycloak.Realm)
 	if err != nil {

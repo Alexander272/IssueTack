@@ -16,6 +16,9 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// parseUUIDs конвертирует список строковых идентификаторов из входящего DTO в UUID.
+// Ошибка при разборе любого элемента прерывает всю операцию, поэтому идемпотентность
+// входа гарантируется на уровне валидации ранее (значит, некорректный id — это ошибка данных).
 func parseUUIDs(ids []string) ([]uuid.UUID, error) {
 	result := make([]uuid.UUID, 0, len(ids))
 	for _, id := range ids {
@@ -28,6 +31,7 @@ func parseUUIDs(ids []string) ([]uuid.UUID, error) {
 	return result, nil
 }
 
+// RoleService управляет ролями: их CRUD, назначением прав и наследованием.
 type RoleService struct {
 	repo      repository.Roles
 	realms    repository.Realms
@@ -37,6 +41,7 @@ type RoleService struct {
 	tm        TransactionManager
 }
 
+// RoleDeps содержит зависимости для создания сервиса ролей.
 type RoleDeps struct {
 	Repo        repository.Roles
 	Realms      repository.Realms
@@ -46,6 +51,7 @@ type RoleDeps struct {
 	TM          TransactionManager
 }
 
+// NewRolesService создаёт сервис управления ролями.
 func NewRolesService(deps *RoleDeps) *RoleService {
 	return &RoleService{
 		repo:      deps.Repo,
@@ -57,6 +63,7 @@ func NewRolesService(deps *RoleDeps) *RoleService {
 	}
 }
 
+// Roles описывает сервис управления ролями.
 type Roles interface {
 	GetOne(ctx context.Context, req *models.GetRoleDTO) (*models.Role, error)
 	GetAll(ctx context.Context) ([]*models.Role, error)
@@ -73,6 +80,7 @@ type Roles interface {
 	SetPermissions(ctx context.Context, roleID string, permissionIDs []string) error
 }
 
+// GetOne возвращает роль по заданным параметрам запроса.
 func (s *RoleService) GetOne(ctx context.Context, req *models.GetRoleDTO) (*models.Role, error) {
 	data, err := s.repo.GetOne(ctx, req)
 	if err != nil {
@@ -81,6 +89,7 @@ func (s *RoleService) GetOne(ctx context.Context, req *models.GetRoleDTO) (*mode
 	return data, nil
 }
 
+// GetAll возвращает список всех ролей.
 func (s *RoleService) GetAll(ctx context.Context) ([]*models.Role, error) {
 	data, err := s.repo.GetAll(ctx)
 	if err != nil {
@@ -89,6 +98,7 @@ func (s *RoleService) GetAll(ctx context.Context) ([]*models.Role, error) {
 	return data, nil
 }
 
+// GetIDBySlug возвращает идентификатор роли по её slug внутри realm'а.
 func (s *RoleService) GetIDBySlug(ctx context.Context, realmID uuid.UUID, slug string) (uuid.UUID, error) {
 	id, err := s.repo.GetIDBySlug(ctx, realmID, slug)
 	if err != nil {
@@ -97,6 +107,7 @@ func (s *RoleService) GetIDBySlug(ctx context.Context, realmID uuid.UUID, slug s
 	return id, nil
 }
 
+// GetOneWithPermissions возвращает роль вместе с её прямыми потомками по иерархии и назначенными правами.
 func (s *RoleService) GetOneWithPermissions(ctx context.Context, req *models.GetRoleDTO) (*models.RoleWithPerms, error) {
 	data, err := s.GetOne(ctx, req)
 	if err != nil {
@@ -121,6 +132,7 @@ func (s *RoleService) GetOneWithPermissions(ctx context.Context, req *models.Get
 	return res, nil
 }
 
+// GetWithStats возвращает все роли со статистикой: число потомков, назначенных пользователей и прав.
 func (s *RoleService) GetWithStats(ctx context.Context) ([]*models.RoleWithStats, error) {
 	roles, err := s.GetAll(ctx)
 	if err != nil {
@@ -186,6 +198,7 @@ func (s *RoleService) GetWithStats(ctx context.Context) ([]*models.RoleWithStats
 	return result, nil
 }
 
+// GetPermissionsGrouped возвращает все права с отметками назначения и наследования для указанной роли, сгруппированные по ресурсам.
 func (s *RoleService) GetPermissionsGrouped(ctx context.Context, req *models.GetRoleDTO) ([]*models.RolePermissionsGrouped, error) {
 	allPerms, err := s.perms.GetAll(ctx)
 	if err != nil {
@@ -228,6 +241,7 @@ func (s *RoleService) GetPermissionsGrouped(ctx context.Context, req *models.Get
 	return result, nil
 }
 
+// IsExists проверяет, существует ли роль с указанным именем в realm'е.
 func (s *RoleService) IsExists(ctx context.Context, realmID uuid.UUID, roleName string) (bool, error) {
 	data, err := s.repo.IsExists(ctx, realmID, roleName)
 	if err != nil {
@@ -236,6 +250,8 @@ func (s *RoleService) IsExists(ctx context.Context, realmID uuid.UUID, roleName 
 	return data, nil
 }
 
+// realmName возвращает имя realm по его ID для записи в аудит; при ошибке (например, realm уже удалён)
+// без падения падает на строковое представление самого ID, чтобы событие аудита всё равно сформировалось.
 func (s *RoleService) realmName(ctx context.Context, id uuid.UUID) string {
 	realm, err := s.realms.GetByID(ctx, &models.GetRealmByIdDTO{ID: id})
 	if err != nil {
@@ -245,6 +261,7 @@ func (s *RoleService) realmName(ctx context.Context, id uuid.UUID) string {
 	return realm.Name
 }
 
+// Create создаёт роль с назначенными правами и наследованиями и публикует событие аудита.
 func (s *RoleService) Create(ctx context.Context, dto *models.RoleDTO) error {
 	if len(dto.Permissions) == 0 {
 		return models.ErrInvalidInput
@@ -310,6 +327,7 @@ func (s *RoleService) Create(ctx context.Context, dto *models.RoleDTO) error {
 	return nil
 }
 
+// Update обновляет данные роли, её наследования и права и публикует событие аудита.
 func (s *RoleService) Update(ctx context.Context, dto *models.RoleDTO) error {
 	oldRole, err := s.GetOne(ctx, &models.GetRoleDTO{ID: dto.ID})
 	if err != nil {
@@ -490,6 +508,7 @@ func (s *RoleService) Update(ctx context.Context, dto *models.RoleDTO) error {
 	return nil
 }
 
+// Delete удаляет роль, если она не системная и не защищена от редактирования, и публикует событие аудита.
 func (s *RoleService) Delete(ctx context.Context, dto *models.DeleteRoleDTO) error {
 	role, err := s.repo.GetOne(ctx, &models.GetRoleDTO{ID: dto.ID})
 	if err != nil {
@@ -532,6 +551,7 @@ func (s *RoleService) Delete(ctx context.Context, dto *models.DeleteRoleDTO) err
 	return nil
 }
 
+// AssignPermission назначает право роли.
 func (s *RoleService) AssignPermission(ctx context.Context, dto *models.RolePermissionDTO) error {
 	return s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
 		err := s.repo.AssignPermission(ctx, tx, dto)
@@ -542,6 +562,7 @@ func (s *RoleService) AssignPermission(ctx context.Context, dto *models.RolePerm
 	})
 }
 
+// DeletePermission отзывает право у роли.
 func (s *RoleService) DeletePermission(ctx context.Context, dto *models.RolePermissionDTO) error {
 	return s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
 		err := s.repo.DeletePermission(ctx, tx, dto)
@@ -552,6 +573,7 @@ func (s *RoleService) DeletePermission(ctx context.Context, dto *models.RolePerm
 	})
 }
 
+// SetPermissions заменяет набор прав роли, указанной по идентификатору, новым списком.
 func (s *RoleService) SetPermissions(ctx context.Context, roleID string, permissionIDs []string) error {
 	roleUUID, err := uuid.Parse(roleID)
 	if err != nil {

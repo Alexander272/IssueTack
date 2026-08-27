@@ -17,6 +17,7 @@ type auditLogService struct {
 	tm   TransactionManager
 }
 
+// NewAuditLogService создаёт сервис аудита действий.
 func NewAuditLogService(repo repository.AuditLogs, tm TransactionManager) *auditLogService {
 	return &auditLogService{
 		repo: repo,
@@ -24,6 +25,7 @@ func NewAuditLogService(repo repository.AuditLogs, tm TransactionManager) *audit
 	}
 }
 
+// AuditLogs описывает сервис записи и чтения журнала аудита.
 type AuditLogs interface {
 	StartListening(ctx context.Context, bus *events.PolicyEventManager)
 	Get(ctx context.Context, req *models.GetAuditLogsDTO) ([]*models.AuditLog, error)
@@ -31,6 +33,7 @@ type AuditLogs interface {
 	Create(ctx context.Context, tx postgres.Tx, dto *models.AuditLogDTO) error
 }
 
+// StartListening начинает фоновое прослушивание событий изменения политик и записывает их в журнал аудита.
 func (s *auditLogService) StartListening(ctx context.Context, bus *events.PolicyEventManager) {
 	eventsCh := bus.Subscribe()
 	go func() {
@@ -65,6 +68,7 @@ func (s *auditLogService) StartListening(ctx context.Context, bus *events.Policy
 	}()
 }
 
+// Get возвращает записи журнала аудита по заданным фильтрам.
 func (s *auditLogService) Get(ctx context.Context, req *models.GetAuditLogsDTO) ([]*models.AuditLog, error) {
 	data, err := s.repo.Get(ctx, req)
 	if err != nil {
@@ -73,6 +77,7 @@ func (s *auditLogService) Get(ctx context.Context, req *models.GetAuditLogsDTO) 
 	return data, nil
 }
 
+// GetByRealm возвращает записи журнала аудита по указанному realm.
 func (s *auditLogService) GetByRealm(ctx context.Context, req *models.GetAuditLogsByRealmDTO) ([]*models.AuditLog, error) {
 	data, err := s.repo.GetByRealm(ctx, req)
 	if err != nil {
@@ -81,6 +86,7 @@ func (s *auditLogService) GetByRealm(ctx context.Context, req *models.GetAuditLo
 	return data, nil
 }
 
+// Create создаёт запись журнала аудита, при необходимости в рамках переданной транзакции.
 func (s *auditLogService) Create(ctx context.Context, tx postgres.Tx, dto *models.AuditLogDTO) error {
 	if tx == nil {
 		return s.tm.WithinTransaction(ctx, func(newTx postgres.Tx) error {
@@ -90,6 +96,9 @@ func (s *auditLogService) Create(ctx context.Context, tx postgres.Tx, dto *model
 	return s.executeCreate(ctx, tx, dto)
 }
 
+// executeCreate выполняет фактическую запись журнала аудита в рамках уже переданной транзакции.
+// Разделено на отдельный метод, чтобы Create мог переиспользовать его и при отсутствии внешней транзакции
+// (тогда создаётся своя), и при работе внутри уже открытой.
 func (s *auditLogService) executeCreate(ctx context.Context, tx postgres.Tx, dto *models.AuditLogDTO) error {
 	if err := s.repo.Create(ctx, tx, dto); err != nil {
 		return fmt.Errorf("failed to create activity log. error: %w", err)

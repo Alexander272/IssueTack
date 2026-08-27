@@ -11,6 +11,12 @@ import (
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
+// resolveOrCreateUser находит или создаёт системного пользователя по userID
+// из Mattermost, возвращая его UUID и имя. Сначала ищет уже сохранённую связку;
+// если её нет — пытается сопоставить с существующим пользователем (по email,
+// username или ФИО) и при неудаче создаёт нового. Реализовано так, чтобы
+// внешний Mattermost-пользователь всегда мог создавать заявки без ручной
+// регистрации в системе.
 func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uuid.UUID, mmUserID string) (uuid.UUID, string, error) {
 	link, err := s.repo.GetUserLinkByMmUserID(ctx, mmUserID)
 	if err == nil {
@@ -99,6 +105,10 @@ func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uui
 	return newUserID, mmUser.Username, nil
 }
 
+// ensureLinkAndRealm связывает найденного системного пользователя с его
+// Mattermost userID и добавляет его в realm с ролью «user», если он там ещё
+// не состоит. Ошибки некритичны (только логируются), чтобы не прерывать
+// основной поток сопоставления пользователя.
 func (s *MattermostService) ensureLinkAndRealm(ctx context.Context, realmID uuid.UUID, userID uuid.UUID, mmUserID string) {
 	if err := s.repo.UpsertUserLink(ctx, nil, &models.MattermostUserLink{
 		UserID: userID, MmUserID: mmUserID,
@@ -116,6 +126,7 @@ func (s *MattermostService) ensureLinkAndRealm(ctx context.Context, realmID uuid
 	}
 }
 
+// matchByEmail ищет системного пользователя по email (без учёта регистра).
 func matchByEmail(sysUsers []*models.UserData, email string) (bool, uuid.UUID, string) {
 	if email == "" {
 		return false, uuid.Nil, ""
@@ -128,6 +139,7 @@ func matchByEmail(sysUsers []*models.UserData, email string) (bool, uuid.UUID, s
 	return false, uuid.Nil, ""
 }
 
+// matchByUsername ищет системного пользователя по username (без учёта регистра).
 func matchByUsername(sysUsers []*models.UserData, username string) (bool, uuid.UUID, string) {
 	if username == "" {
 		return false, uuid.Nil, ""
@@ -140,10 +152,18 @@ func matchByUsername(sysUsers []*models.UserData, username string) (bool, uuid.U
 	return false, uuid.Nil, ""
 }
 
+// buildFIO приводит «Имя Фамилия» к единому нижнему регистру и убирает лишние
+// пробелы — чтобы сравнивать записи о людях из разных источников независимо
+// от регистра написания.
 func buildFIO(firstName, lastName string) string {
 	return strings.ToLower(strings.TrimSpace(firstName + " " + lastName))
 }
 
+// handleSync — обработчик команды «синхронизировать [команды]»: сопоставляет
+// пользователей Mattermost с системными (по email/username/ФИО) и создаёт
+// недостающих локальных пользователей в указанном realm. Доступна только
+// администратору realm; необязательными аргументами можно ограничить синк
+// конкретными командами Mattermost.
 func (s *MattermostService) handleSync(ctx context.Context, settings *models.RealmMattermost, senderMmID string, message string) error {
 	senderID, _, err := s.resolveOrCreateUser(ctx, settings.RealmID, senderMmID)
 	if err != nil {
@@ -295,6 +315,9 @@ func (s *MattermostService) handleSync(ctx context.Context, settings *models.Rea
 	return nil
 }
 
+// fetchMMUsers получает список пользователей Mattermost для синка. Если
+// переданы названия команд — берутся их участники (по одной команде за раз,
+// ошибки по отдельным командам не прерывают остальные); иначе — все пользователи.
 func (s *MattermostService) fetchMMUsers(botToken string, teamNames []string) ([]*model.User, error) {
 	var mmUsers []*model.User
 

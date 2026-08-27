@@ -13,29 +13,37 @@ import (
 	"github.com/google/uuid"
 )
 
+// NotificationService — сервис уведомлений пользователей (сохранение в БД и push через WebSocket-хаб).
 type NotificationService struct {
-	hub         *ws_hub.Hub
-	repo        repository.Notifications
-	ticketRepo  repository.Tickets
-	txManager   TransactionManager
+	hub        *ws_hub.Hub
+	repo       repository.Notifications
+	ticketRepo repository.Tickets
+	txManager  TransactionManager
 }
 
+// NewNotificationService создаёт NotificationService.
 func NewNotificationService(hub *ws_hub.Hub, repo repository.Notifications, ticketRepo repository.Tickets, txManager TransactionManager) *NotificationService {
 	return &NotificationService{
-		hub:         hub,
-		repo:        repo,
-		ticketRepo:  ticketRepo,
-		txManager:   txManager,
+		hub:        hub,
+		repo:       repo,
+		ticketRepo: ticketRepo,
+		txManager:  txManager,
 	}
 }
 
+// Notifications — интерфейс уведомлений о событиях тикетов.
 type Notifications interface {
+	// TicketCreated оповещает заинтересованных пользователей о создании тикета.
 	TicketCreated(ctx context.Context, dto *models.TicketDTO) error
+	// TicketUpdated оповещает заинтересованных пользователей об обновлении тикета.
 	TicketUpdated(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID, changes []*models.FieldChange) error
+	// TicketDeleted оповещает заинтересованных пользователей об удалении тикета.
 	TicketDeleted(ctx context.Context, ticket *models.Ticket) error
+	// SendUnread отправляет клиенту непрочитанные уведомления.
 	SendUnread(ctx context.Context, client *ws_hub.Client) error
 }
 
+// TicketCreated оповещает менеджера и ответственных категории о создании нового тикета.
 func (s *NotificationService) TicketCreated(ctx context.Context, dto *models.TicketDTO) error {
 	recipients := make(map[uuid.UUID]struct{})
 
@@ -76,6 +84,7 @@ func (s *NotificationService) TicketCreated(ctx context.Context, dto *models.Tic
 	return nil
 }
 
+// TicketUpdated оповещает менеджера и новых исполнителей об обновлении тикета.
 func (s *NotificationService) TicketUpdated(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID, changes []*models.FieldChange) error {
 	ticket, err := s.ticketRepo.GetByID(ctx, &models.GetTicketByIdDTO{ID: ticketID})
 	if err != nil {
@@ -149,6 +158,7 @@ func (s *NotificationService) TicketUpdated(ctx context.Context, ticketID uuid.U
 	return nil
 }
 
+// TicketDeleted оповещает менеджера и ответственных категории об удалении тикета.
 func (s *NotificationService) TicketDeleted(ctx context.Context, ticket *models.Ticket) error {
 	recipients := make(map[uuid.UUID]struct{})
 
@@ -189,6 +199,7 @@ func (s *NotificationService) TicketDeleted(ctx context.Context, ticket *models.
 	return nil
 }
 
+// SendUnread отправляет клиенту непрочитанные уведомления и помечает их прочитанными.
 func (s *NotificationService) SendUnread(ctx context.Context, client *ws_hub.Client) error {
 	notifications, err := s.repo.GetUnread(ctx, client.UserID)
 	if err != nil {
@@ -210,6 +221,10 @@ func (s *NotificationService) SendUnread(ctx context.Context, client *ws_hub.Cli
 	return nil
 }
 
+// send сохраняет уведомление в БД и, если в настройках пользователя включён push, отправляет его
+// через WebSocket-хаб. Запись и отправка выполняются в одной транзакции, чтобы уведомление не
+// осталось сохранённым, но не доставленным. Повреждённые настройки трактуются как включённый push
+// (значение по умолчанию), чтобы уведомление не потерялось из-за битых данных.
 func (s *NotificationService) send(ctx context.Context, userID uuid.UUID, dto *models.CreateNotificationDTO) error {
 	settings, err := s.repo.GetSettings(ctx, userID)
 	if err != nil {
@@ -228,10 +243,10 @@ func (s *NotificationService) send(ctx context.Context, userID uuid.UUID, dto *m
 
 		if prefs["push"] {
 			eventData, err := json.Marshal(map[string]interface{}{
-				"type":   dto.Type,
-				"title":  dto.Title,
-				"body":   dto.Body,
-				"data":   dto.Data,
+				"type":  dto.Type,
+				"title": dto.Title,
+				"body":  dto.Body,
+				"data":  dto.Data,
 			})
 			if err != nil {
 				logger.Warn("failed to marshal push event data", logger.ErrAttr(err))

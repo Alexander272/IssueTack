@@ -8,22 +8,31 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 )
 
+// CategoryService — сервис работы с категориями тикетов.
 type CategoryService struct {
 	repo repository.Categories
 }
 
+// NewCategoryService создаёт CategoryService.
 func NewCategoryService(repo repository.Categories) *CategoryService {
 	return &CategoryService{repo: repo}
 }
 
+// Categories — интерфейс работы с категориями.
 type Categories interface {
+	// Get возвращает список категорий.
 	Get(ctx context.Context, req *models.GetCategoriesDTO) ([]*models.Category, error)
+	// GetByID возвращает категорию по идентификатору.
 	GetByID(ctx context.Context, req *models.GetCategoryByIdDTO) (*models.Category, error)
+	// Create создаёт категорию.
 	Create(ctx context.Context, dto *models.CategoryDTO) error
+	// Update обновляет категорию.
 	Update(ctx context.Context, dto *models.CategoryDTO) error
+	// Delete удаляет категорию.
 	Delete(ctx context.Context, dto *models.DelCategoryDTO) error
 }
 
+// Get возвращает список категорий.
 func (s *CategoryService) Get(ctx context.Context, req *models.GetCategoriesDTO) ([]*models.Category, error) {
 	data, err := s.repo.Get(ctx, req)
 	if err != nil {
@@ -32,6 +41,7 @@ func (s *CategoryService) Get(ctx context.Context, req *models.GetCategoriesDTO)
 	return data, nil
 }
 
+// GetByID возвращает категорию по идентификатору.
 func (s *CategoryService) GetByID(ctx context.Context, req *models.GetCategoryByIdDTO) (*models.Category, error) {
 	data, err := s.repo.GetByID(ctx, req)
 	if err != nil {
@@ -40,6 +50,7 @@ func (s *CategoryService) GetByID(ctx context.Context, req *models.GetCategoryBy
 	return data, nil
 }
 
+// Create создаёт категорию.
 func (s *CategoryService) Create(ctx context.Context, dto *models.CategoryDTO) error {
 	if err := s.repo.Create(ctx, dto); err != nil {
 		return fmt.Errorf("failed to create category. error: %w", err)
@@ -47,6 +58,7 @@ func (s *CategoryService) Create(ctx context.Context, dto *models.CategoryDTO) e
 	return nil
 }
 
+// Update обновляет категорию.
 func (s *CategoryService) Update(ctx context.Context, dto *models.CategoryDTO) error {
 	if err := s.repo.Update(ctx, dto); err != nil {
 		return fmt.Errorf("failed to update category. error: %w", err)
@@ -54,6 +66,7 @@ func (s *CategoryService) Update(ctx context.Context, dto *models.CategoryDTO) e
 	return nil
 }
 
+// Delete удаляет категорию.
 func (s *CategoryService) Delete(ctx context.Context, dto *models.DelCategoryDTO) error {
 	//TODO возможно надо проверить все ли тикеты в этой категории закрыты
 	if err := s.repo.Delete(ctx, dto); err != nil {

@@ -14,12 +14,14 @@ import (
 	"github.com/google/uuid"
 )
 
+// PermissionService управляет правами (permissions): их синхронизацией, получением и назначением ролям.
 type PermissionService struct {
 	repo     repository.Permissions
 	tm       TransactionManager
 	eventBus *events.PolicyEventManager
 }
 
+// NewPermissionService создаёт сервис прав и выполняет первичную синхронизацию справочника прав.
 func NewPermissionService(repo repository.Permissions, tm TransactionManager, eventBus *events.PolicyEventManager) (*PermissionService, error) {
 	s := &PermissionService{
 		repo:     repo,
@@ -34,6 +36,7 @@ func NewPermissionService(repo repository.Permissions, tm TransactionManager, ev
 	return s, nil
 }
 
+// Permissions описывает сервис управления правами доступа.
 type Permissions interface {
 	LoadPolicy(ctx context.Context) ([]*models.Permission, error)
 	GetAll(ctx context.Context) ([]*models.Permission, error)
@@ -48,6 +51,7 @@ type Permissions interface {
 	Delete(ctx context.Context, tx postgres.Tx, dto *models.DeletePermissionDTO) error
 }
 
+// LoadPolicy возвращает список прав для загрузки политик Casbin.
 func (s *PermissionService) LoadPolicy(ctx context.Context) ([]*models.Permission, error) {
 	data, err := s.repo.LoadPolicy(ctx)
 	if err != nil {
@@ -56,6 +60,7 @@ func (s *PermissionService) LoadPolicy(ctx context.Context) ([]*models.Permissio
 	return data, nil
 }
 
+// Sync приводит справочник прав в соответствие с зарегистрированными ресурсами и удаляет лишние записи.
 func (s *PermissionService) Sync(ctx context.Context) error {
 	accesses := access.Reg.List()
 	dto := make([]*models.PermissionDTO, 0, len(accesses))
@@ -97,6 +102,7 @@ func (s *PermissionService) Sync(ctx context.Context) error {
 	})
 }
 
+// GetByID возвращает право по его идентификатору.
 func (s *PermissionService) GetByID(ctx context.Context, id uuid.UUID) (*models.Permission, error) {
 	data, err := s.repo.GetById(ctx, id)
 	if err != nil {
@@ -105,6 +111,7 @@ func (s *PermissionService) GetByID(ctx context.Context, id uuid.UUID) (*models.
 	return data, nil
 }
 
+// GetByRole возвращает права, назначенные указанной роли.
 func (s *PermissionService) GetByRole(ctx context.Context, req *models.GetPermsByRoleDTO) ([]*models.Permission, error) {
 	data, err := s.repo.GetByRole(ctx, req)
 	if err != nil {
@@ -113,6 +120,7 @@ func (s *PermissionService) GetByRole(ctx context.Context, req *models.GetPermsB
 	return data, nil
 }
 
+// GetAll возвращает все права доступа.
 func (s *PermissionService) GetAll(ctx context.Context) ([]*models.Permission, error) {
 	data, err := s.repo.GetAll(ctx)
 	if err != nil {
@@ -121,6 +129,7 @@ func (s *PermissionService) GetAll(ctx context.Context) ([]*models.Permission, e
 	return data, nil
 }
 
+// GetGrouped возвращает все права, сгруппированные по ресурсам и отсортированные стандартным порядком.
 func (s *PermissionService) GetGrouped(ctx context.Context) ([]*models.GroupedPermission, error) {
 	data, err := s.repo.GetAll(ctx)
 	if err != nil {
@@ -153,6 +162,7 @@ func (s *PermissionService) GetGrouped(ctx context.Context) ([]*models.GroupedPe
 	return res, nil
 }
 
+// GetRolePermissions возвращает множество идентификаторов прав, назначенных роли напрямую.
 func (s *PermissionService) GetRolePermissions(ctx context.Context, tx postgres.Tx, roleID uuid.UUID) (map[uuid.UUID]bool, error) {
 	data, err := s.repo.GetRolePermissionsMap(ctx, tx, roleID)
 	if err != nil {
@@ -161,6 +171,7 @@ func (s *PermissionService) GetRolePermissions(ctx context.Context, tx postgres.
 	return data, nil
 }
 
+// GetInherited возвращает множество идентификаторов прав, унаследованных ролью через иерархию.
 func (s *PermissionService) GetInherited(ctx context.Context, roleID uuid.UUID) (map[uuid.UUID]bool, error) {
 	inheritedIDs, err := s.repo.GetInheritedByRole(ctx, roleID)
 	if err != nil {
@@ -174,6 +185,7 @@ func (s *PermissionService) GetInherited(ctx context.Context, roleID uuid.UUID) 
 	return result, nil
 }
 
+// ReplacePermissions заменяет набор прав роли целиком новым списком.
 func (s *PermissionService) ReplacePermissions(ctx context.Context, tx postgres.Tx, roleID uuid.UUID, permissionIDs []uuid.UUID) error {
 	err := s.repo.ReplacePermissions(ctx, tx, roleID, permissionIDs)
 	if err != nil {
@@ -182,6 +194,7 @@ func (s *PermissionService) ReplacePermissions(ctx context.Context, tx postgres.
 	return nil
 }
 
+// Count возвращает количество прав с учётом заданных фильтров.
 func (s *PermissionService) Count(ctx context.Context, req *models.GetPermsCountDTO) (*models.PermsWithCount, error) {
 	data, err := s.repo.Count(ctx, req)
 	if err != nil {
@@ -189,6 +202,8 @@ func (s *PermissionService) Count(ctx context.Context, req *models.GetPermsCount
 	}
 	return data, nil
 }
+
+// CountForAll возвращает количество прав для нескольких ролей с учётом их потомков по иерархии.
 func (s *PermissionService) CountForAll(ctx context.Context, roleToDescendants map[string][]string) (map[string]models.PermsWithCount, error) {
 	data, err := s.repo.CountForAll(ctx, roleToDescendants)
 	if err != nil {
@@ -197,6 +212,7 @@ func (s *PermissionService) CountForAll(ctx context.Context, roleToDescendants m
 	return data, nil
 }
 
+// Create создаёт новое право доступа, при необходимости в рамках переданной транзакции.
 func (s *PermissionService) Create(ctx context.Context, tx postgres.Tx, dto *models.PermissionDTO) error {
 	// if constants.ResourcesList.Permissions
 
@@ -207,6 +223,7 @@ func (s *PermissionService) Create(ctx context.Context, tx postgres.Tx, dto *mod
 	return nil
 }
 
+// Delete удаляет право доступа, при необходимости в рамках переданной транзакции.
 func (s *PermissionService) Delete(ctx context.Context, tx postgres.Tx, dto *models.DeletePermissionDTO) error {
 	err := s.repo.Delete(ctx, tx, dto)
 	if err != nil {
@@ -215,6 +232,7 @@ func (s *PermissionService) Delete(ctx context.Context, tx postgres.Tx, dto *mod
 	return nil
 }
 
+// DeleteByKeys удаляет права по заданным парам объект-действие.
 func (s *PermissionService) DeleteByKeys(ctx context.Context, tx postgres.Tx, dto []*models.PermissionDTO) error {
 	err := s.repo.DeleteByKeys(ctx, tx, dto)
 	if err != nil {

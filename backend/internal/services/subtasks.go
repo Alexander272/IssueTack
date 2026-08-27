@@ -11,12 +11,14 @@ import (
 	"github.com/google/uuid"
 )
 
+// SubtaskService — сервис работы с подзадачами тикетов.
 type SubtaskService struct {
 	repo         repository.Subtasks
 	logs         ActivityLog
 	ticketAccess TicketAccessChecker
 }
 
+// NewSubtaskService создаёт SubtaskService.
 func NewSubtaskService(repo repository.Subtasks, logs ActivityLog, ticketAccess TicketAccessChecker) *SubtaskService {
 	return &SubtaskService{
 		repo:         repo,
@@ -25,16 +27,25 @@ func NewSubtaskService(repo repository.Subtasks, logs ActivityLog, ticketAccess 
 	}
 }
 
+// Subtasks — интерфейс работы с подзадачами.
 type Subtasks interface {
+	// GetByTicketID возвращает подзадачи тикета.
 	GetByTicketID(ctx context.Context, ticketID, actorID uuid.UUID, realm string) ([]*models.Subtask, error)
+	// GetByID возвращает подзадачу по идентификатору.
 	GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID, realm string) (*models.Subtask, error)
+	// GetUnresolvedCount возвращает количество нерешённых подзадач тикета.
 	GetUnresolvedCount(ctx context.Context, ticketID uuid.UUID) (int, error)
+	// Create создаёт подзадачу.
 	Create(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO, realm string) error
+	// CreateSeveral создаёт несколько подзадач.
 	CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.SubtaskDTO, realm string) error
+	// Update обновляет подзадачу.
 	Update(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO, realm string) error
+	// Delete удаляет подзадачу.
 	Delete(ctx context.Context, tx postgres.Tx, dto *models.DelSubtaskDTO, realm string) error
 }
 
+// GetByTicketID возвращает подзадачи тикета с проверкой доступа на чтение.
 func (s *SubtaskService) GetByTicketID(ctx context.Context, ticketID, actorID uuid.UUID, realm string) ([]*models.Subtask, error) {
 	if s.ticketAccess == nil {
 		return nil, models.ErrPermissionDenied
@@ -49,6 +60,7 @@ func (s *SubtaskService) GetByTicketID(ctx context.Context, ticketID, actorID uu
 	return data, nil
 }
 
+// GetByID возвращает подзадачу по идентификатору с проверкой доступа на чтение.
 func (s *SubtaskService) GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID, realm string) (*models.Subtask, error) {
 	data, err := s.repo.GetByID(ctx, req)
 	if err != nil {
@@ -63,6 +75,7 @@ func (s *SubtaskService) GetByID(ctx context.Context, req *models.GetSubtaskDTO,
 	return data, nil
 }
 
+// GetUnresolvedCount возвращает количество подзадач тикета в нерешённом статусе.
 func (s *SubtaskService) GetUnresolvedCount(ctx context.Context, ticketID uuid.UUID) (int, error) {
 	data, err := s.repo.GetByTicketID(ctx, ticketID)
 	if err != nil {
@@ -79,6 +92,7 @@ func (s *SubtaskService) GetUnresolvedCount(ctx context.Context, ticketID uuid.U
 	return count, nil
 }
 
+// Create создаёт подзадачу с проверкой work-доступа и записью в журнал активности.
 func (s *SubtaskService) Create(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO, realm string) error {
 	if s.ticketAccess == nil {
 		return models.ErrPermissionDenied
@@ -109,6 +123,7 @@ func (s *SubtaskService) Create(ctx context.Context, tx postgres.Tx, dto *models
 	return nil
 }
 
+// CreateSeveral создаёт несколько подзадач с проверкой work-доступа и записью в журнал активности.
 func (s *SubtaskService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.SubtaskDTO, realm string) error {
 	if s.ticketAccess == nil {
 		return models.ErrPermissionDenied
@@ -145,6 +160,7 @@ func (s *SubtaskService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto 
 	return nil
 }
 
+// Update обновляет подзадачу с проверкой work-доступа и фиксацией изменений в журнале активности.
 func (s *SubtaskService) Update(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO, realm string) error {
 	old, err := s.repo.GetByID(ctx, &models.GetSubtaskDTO{ID: dto.ID})
 	if err != nil {
@@ -194,6 +210,7 @@ func (s *SubtaskService) Update(ctx context.Context, tx postgres.Tx, dto *models
 	return nil
 }
 
+// Delete удаляет подзадачу с проверкой work-доступа и записью в журнал активности.
 func (s *SubtaskService) Delete(ctx context.Context, tx postgres.Tx, dto *models.DelSubtaskDTO, realm string) error {
 	old, err := s.repo.GetByID(ctx, &models.GetSubtaskDTO{ID: dto.ID})
 	if err != nil {

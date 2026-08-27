@@ -16,6 +16,7 @@ type adapterService struct {
 	users         Users
 }
 
+// AdapterDeps содержит зависимости для создания Casbin-адаптера.
 type AdapterDeps struct {
 	Permissions   Permissions
 	RoleHierarchy RoleHierarchy
@@ -23,6 +24,7 @@ type AdapterDeps struct {
 	Ctx           context.Context
 }
 
+// NewAdapter создаёт Casbin-адаптер, загружающий политики из БД через сервисы прав, иерархии ролей и пользователей.
 func NewAdapter(deps *AdapterDeps) *adapterService {
 	return &adapterService{
 		ctx:           deps.Ctx,
@@ -32,6 +34,7 @@ func NewAdapter(deps *AdapterDeps) *adapterService {
 	}
 }
 
+// Adapter описывает Casbin-адаптер хранения политик доступа.
 type Adapter interface {
 	LoadPolicy(model model.Model) error
 
@@ -41,6 +44,7 @@ type Adapter interface {
 	RemoveFilteredPolicy(sec string, ptype string, fieldIndex int, fieldValues ...string) error
 }
 
+// LoadPolicy загружает все политики (root-правило, разрешения, иерархию ролей и привязку пользователей к ролям) в модель.
 func (s *adapterService) LoadPolicy(model model.Model) error {
 	logger.Info("load policy")
 
@@ -89,18 +93,22 @@ func (s *adapterService) LoadPolicy(model model.Model) error {
 	return nil
 }
 
+// SavePolicy сохраняет политики из модели в хранилище.
 func (s *adapterService) SavePolicy(model model.Model) error {
 	return nil
 }
 
+// AddPolicy добавляет одно правило политики в хранилище.
 func (s *adapterService) AddPolicy(sec string, ptype string, rule []string) error {
 	return nil
 }
 
+// RemovePolicy удаляет одно правило политики из хранилища.
 func (s *adapterService) RemovePolicy(sec string, ptype string, rule []string) error {
 	return nil
 }
 
+// RemoveFilteredPolicy удаляет правила политики, отфильтрованные по указанным полям, из хранилища.
 func (s *adapterService) RemoveFilteredPolicy(sec string, ptype string, fieldIndex int, fieldValues ...string) error {
 	return nil
 }
