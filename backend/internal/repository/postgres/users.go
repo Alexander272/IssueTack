@@ -304,13 +304,15 @@ func (r *userRepo) CreateSeveral(ctx context.Context, tx Tx, dto []*models.UserD
 			v.FirstName,
 			v.LastName,
 			v.Email,
+			v.MattermostID,
+			v.SiteID,
 			v.IsActive,
 			v.IsSystem,
 			v.InternalNumber,
 		}
 	}
 
-	columns := []string{"id", "username", "first_name", "last_name", "email", "is_active", "is_system", "internal_number"}
+	columns := []string{"id", "username", "first_name", "last_name", "email", "mattermost_id", "site_id", "is_active", "is_system", "internal_number"}
 	_, err := r.getExec(tx).CopyFrom(
 		ctx,
 		pgx.Identifier{Tables.Users},

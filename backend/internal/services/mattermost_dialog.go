@@ -182,7 +182,7 @@ func (s *MattermostService) HandleDialogSubmission(ctx context.Context, submissi
 	settings, err := s.repo.GetByRealm(ctx, realmID)
 	if err == nil {
 		s.sendTicketCreatedDM(settings, submission.UserId, dto)
-		s.updateButtonPost(settings, submission, dto)
+		s.deleteButtonPost(settings, submission)
 		s.processPendingFiles(ctx, settings.BotToken, submission, dto)
 	}
 
@@ -241,27 +241,18 @@ func (s *MattermostService) sendTicketCreatedDM(settings *models.RealmMattermost
 	}
 }
 
-func (s *MattermostService) updateButtonPost(settings *models.RealmMattermost, submission *model.SubmitDialogRequest, dto *models.TicketDTO) {
+func (s *MattermostService) deleteButtonPost(settings *models.RealmMattermost, submission *model.SubmitDialogRequest) {
 	if settings.BotToken == "" || submission.State == "" {
 		return
 	}
 	var state struct {
-		ChannelID    string `json:"channelId"`
 		ButtonPostID string `json:"buttonPostId"`
 	}
 	if err := json.Unmarshal([]byte(submission.State), &state); err != nil || state.ButtonPostID == "" {
 		return
 	}
-	link := ""
-	if s.baseURL != "" {
-		link = fmt.Sprintf("\nОткрыть: %s/tasks/%s", s.baseURL, dto.ID.String())
-	}
-	msg := fmt.Sprintf("Заявка #%s создана.%s", dto.ID.String()[:8], link)
-	patch := &model.PostPatch{
-		Message: &msg,
-	}
-	if err := s.client.UpdatePost(settings.BotToken, state.ButtonPostID, patch); err != nil {
-		logger.Warn("failed to update button post", logger.ErrAttr(err))
+	if err := s.client.DeletePost(settings.BotToken, state.ButtonPostID); err != nil {
+		logger.Warn("failed to delete button post", logger.ErrAttr(err))
 	}
 }
 
