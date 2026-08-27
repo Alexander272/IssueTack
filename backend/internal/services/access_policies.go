@@ -67,7 +67,7 @@ func NewAccessPoliciesService(deps *PoliciesDeps) *accessPolicesService {
 	return s
 }
 
-type AccessPolices interface {
+type AccessPolicies interface {
 	Enforce(sub, dom, obj, act string) (bool, error)
 	Reload() error
 	GetPolicies(user, domain string) (*models.Access, error)

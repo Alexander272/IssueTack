@@ -18,14 +18,11 @@ type CommentService struct {
 	ticketAccess TicketAccessChecker
 }
 
-func NewCommentService(repo repository.Comments) *CommentService {
+func NewCommentService(repo repository.Comments, ticketAccess TicketAccessChecker) *CommentService {
 	return &CommentService{
-		repo: repo,
+		repo:         repo,
+		ticketAccess: ticketAccess,
 	}
-}
-
-func (s *CommentService) SetTicketAccess(checker TicketAccessChecker) {
-	s.ticketAccess = checker
 }
 
 type Comments interface {

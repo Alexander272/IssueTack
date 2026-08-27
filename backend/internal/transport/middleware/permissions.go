@@ -32,7 +32,7 @@ func (m *Middleware) CheckPermissions(perms ...access.Permission) gin.HandlerFun
 		}
 
 		for _, r := range perms {
-			ok, err := m.services.AccessPolices.Enforce(user.ID.String(), realmId, string(r.Resource), string(r.Action))
+			ok, err := m.services.AccessPolicies.Enforce(user.ID.String(), realmId, string(r.Resource), string(r.Action))
 			if err != nil {
 				lastErr = err
 				continue

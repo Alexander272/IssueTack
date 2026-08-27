@@ -12,14 +12,14 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-func ticketServiceFixtures() (*MockTicketsRepo, *MockActivityLogService, *MockSubtaskService, *MockAttachmentService, *MockNotificationService, *MockGroupsRepo, *MockAccessPolices, *TicketService) {
+func ticketServiceFixtures() (*MockTicketsRepo, *MockActivityLogService, *MockSubtaskService, *MockAttachmentService, *MockNotificationService, *MockGroupsRepo, *MockAccessPolicies, *TicketService) {
 	mockRepo := new(MockTicketsRepo)
 	mockLogs := new(MockActivityLogService)
 	mockSubtasks := new(MockSubtaskService)
 	mockAttachments := new(MockAttachmentService)
 	mockNotifications := new(MockNotificationService)
 	mockGroups := new(MockGroupsRepo)
-	mockPolicies := new(MockAccessPolices)
+	mockPolicies := new(MockAccessPolicies)
 
 	svc := NewTicketService(&TicketDeps{
 		Repo:          mockRepo,
@@ -30,6 +30,7 @@ func ticketServiceFixtures() (*MockTicketsRepo, *MockActivityLogService, *MockSu
 		Notifications: mockNotifications,
 		Groups:        mockGroups,
 		Policies:      mockPolicies,
+		Access:        NewTicketAccessService(mockRepo, mockGroups, mockPolicies),
 	})
 	return mockRepo, mockLogs, mockSubtasks, mockAttachments, mockNotifications, mockGroups, mockPolicies, svc
 }
@@ -77,10 +78,10 @@ func TestTicketService_Get_GroupFilter(t *testing.T) {
 		{ID: uuid.New(), Title: "Ticket 1"},
 	}
 	expectedFilter := &models.TicketFilter{
-		Actor:                     &models.Actor{ID: actorID, Name: "test"},
-		Limit:                     20,
-		Offset:                    0,
-		GroupIDs:                  []uuid.UUID{groupID},
+		Actor:                      &models.Actor{ID: actorID, Name: "test"},
+		Limit:                      20,
+		Offset:                     0,
+		GroupIDs:                   []uuid.UUID{groupID},
 		IncludeUngroupedAssignedTo: &actorID,
 	}
 	mockRepo.On("Get", mock.Anything, expectedFilter).Return(expected, 0, nil)
@@ -109,9 +110,9 @@ func TestTicketService_Get_NoGroups_ReturnsEmpty(t *testing.T) {
 	mockGroups.On("GetMemberGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
 
 	expectedFilter := &models.TicketFilter{
-		Actor:                     &models.Actor{ID: actorID, Name: "test"},
-		Limit:                     20,
-		Offset:                    0,
+		Actor:                      &models.Actor{ID: actorID, Name: "test"},
+		Limit:                      20,
+		Offset:                     0,
 		IncludeUngroupedAssignedTo: &actorID,
 	}
 	mockRepo.On("Get", mock.Anything, expectedFilter).Return([]*models.Ticket{}, 0, nil)
@@ -772,17 +773,19 @@ func TestTicketService_Delete_Success(t *testing.T) {
 }
 
 func TestTicketService_CheckAccess_PolicyGranted(t *testing.T) {
-	_, _, _, _, _, _, mockPolicies, svc := ticketServiceFixtures()
+	mockRepo, _, _, _, _, _, mockPolicies, _ := ticketServiceFixtures()
+	accessSvc := NewTicketAccessService(mockRepo, nil, mockPolicies)
 
 	actorID := uuid.New()
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Read)).Return(true, nil)
 
-	err := svc.CheckAccess(context.Background(), &models.AccessCheckDTO{TicketID: uuid.New(), UserID: actorID, Action: string(access.Read)})
+	err := accessSvc.CheckAccess(context.Background(), &models.AccessCheckDTO{TicketID: uuid.New(), UserID: actorID, Action: string(access.Read)})
 	assert.NoError(t, err)
 }
 
 func TestTicketService_CheckAccess_GroupMember(t *testing.T) {
-	mockRepo, _, _, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+	mockRepo, _, _, _, _, mockGroups, mockPolicies, _ := ticketServiceFixtures()
+	accessSvc := NewTicketAccessService(mockRepo, mockGroups, mockPolicies)
 
 	actorID := uuid.New()
 	ticketID := uuid.New()
@@ -795,12 +798,13 @@ func TestTicketService_CheckAccess_GroupMember(t *testing.T) {
 	}, nil)
 	mockGroups.On("IsMember", mock.Anything, groupID, actorID).Return(true, nil)
 
-	err := svc.CheckAccess(context.Background(), &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read)})
+	err := accessSvc.CheckAccess(context.Background(), &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read)})
 	assert.NoError(t, err)
 }
 
 func TestTicketService_CheckAccess_Denied(t *testing.T) {
-	mockRepo, _, _, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+	mockRepo, _, _, _, _, mockGroups, mockPolicies, _ := ticketServiceFixtures()
+	accessSvc := NewTicketAccessService(mockRepo, mockGroups, mockPolicies)
 
 	actorID := uuid.New()
 	ticketID := uuid.New()
@@ -814,7 +818,7 @@ func TestTicketService_CheckAccess_Denied(t *testing.T) {
 	mockGroups.On("IsMember", mock.Anything, groupID, actorID).Return(false, nil)
 	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
 
-	err := svc.CheckAccess(context.Background(), &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read)})
+	err := accessSvc.CheckAccess(context.Background(), &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read)})
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 }

@@ -20,7 +20,8 @@ type TicketService struct {
 	attachments   Attachments
 	notifications Notifications
 	groups        Groups
-	policies      AccessPolices
+	policies      AccessPolicies
+	access        TicketAccessChecker
 }
 
 func NewTicketService(deps *TicketDeps) *TicketService {
@@ -33,6 +34,7 @@ func NewTicketService(deps *TicketDeps) *TicketService {
 		notifications: deps.Notifications,
 		groups:        deps.Groups,
 		policies:      deps.Policies,
+		access:        deps.Access,
 	}
 }
 
@@ -44,7 +46,8 @@ type TicketDeps struct {
 	Attachments   Attachments
 	Notifications Notifications
 	Groups        Groups
-	Policies      AccessPolices
+	Policies      AccessPolicies
+	Access        TicketAccessChecker
 }
 
 type Tickets interface {
@@ -150,7 +153,7 @@ func (s *TicketService) autoAssign(ctx context.Context, dto *models.TicketDTO) e
 }
 
 func (s *TicketService) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) (*models.Ticket, error) {
-	if err := s.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: req.ID, UserID: req.Actor.ID, Action: string(access.Read), Realm: req.RealmID}); err != nil {
+	if err := s.access.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: req.ID, UserID: req.Actor.ID, Action: string(access.Read), Realm: req.RealmID}); err != nil {
 		return nil, err
 	}
 
@@ -256,8 +259,8 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 
 	assignedOnly := false
 	ownerOnly := false
-	if err := s.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: *dto.ID, UserID: dto.Actor.ID, Action: string(access.Write), Realm: realmStr}); err != nil {
-		if workErr := s.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: *dto.ID, UserID: dto.Actor.ID, Realm: realmStr}); workErr != nil {
+	if err := s.access.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: *dto.ID, UserID: dto.Actor.ID, Action: string(access.Write), Realm: realmStr}); err != nil {
+		if workErr := s.access.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: *dto.ID, UserID: dto.Actor.ID, Realm: realmStr}); workErr != nil {
 			old, loadErr := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
 			if loadErr != nil {
 				return fmt.Errorf("failed to load ticket for access check: %w", loadErr)
@@ -393,7 +396,7 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 }
 
 func (s *TicketService) Delete(ctx context.Context, dto *models.DeleteTicketDTO) error {
-	if err := s.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: dto.ID, UserID: dto.Actor.ID, Action: string(access.Delete), Realm: dto.RealmID}); err != nil {
+	if err := s.access.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: dto.ID, UserID: dto.Actor.ID, Action: string(access.Delete), Realm: dto.RealmID}); err != nil {
 		return err
 	}
 
@@ -510,10 +513,10 @@ func isActive(s models.TicketStatus) bool {
 func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, realm string) (*models.AccessFlags, error) {
 	flags := &models.AccessFlags{CanRead: true}
 
-	writeErr := s.checkAccessForTicket(ctx, ticket, userID, string(access.Write), realm)
+	writeErr := s.access.CheckAccessOnTicket(ctx, ticket, userID, string(access.Write), realm)
 	flags.CanWrite = writeErr == nil
 
-	deleteErr := s.checkAccessForTicket(ctx, ticket, userID, string(access.Delete), realm)
+	deleteErr := s.access.CheckAccessOnTicket(ctx, ticket, userID, string(access.Delete), realm)
 	flags.CanDelete = deleteErr == nil
 
 	flags.CanWork = flags.CanWrite || (ticket.Assignee != nil && ticket.Assignee.ID == userID)
@@ -523,72 +526,8 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 	return flags, nil
 }
 
-func (s *TicketService) checkAccessForTicket(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, action string, realm string) error {
-	ok, err := s.policies.Enforce(userID.String(), realm, string(access.ResourceTicket), action)
-	if err != nil {
-		return fmt.Errorf("policy check failed: %w", err)
-	}
-	if ok {
-		return nil
-	}
-
-	if ticket.Group == nil {
-		if action == string(access.Read) && (ticket.Assignee != nil && ticket.Assignee.ID == userID || ticket.Creator.ID == userID) {
-			return nil
-		}
-		return models.ErrPermissionDenied
-	}
-
-	switch action {
-	case string(access.Read):
-		isMember, err := s.groups.IsMember(ctx, ticket.Group.ID, userID)
-		if err != nil {
-			return fmt.Errorf("failed to check membership: %w", err)
-		}
-		if isMember {
-			return nil
-		}
-		managed, err := s.groups.GetManagedGroups(ctx, userID, nil)
-		if err != nil {
-			return fmt.Errorf("failed to check managed groups: %w", err)
-		}
-		for _, gid := range managed {
-			if gid == ticket.Group.ID {
-				return nil
-			}
-		}
-		if ticket.Assignee != nil && ticket.Assignee.ID == userID {
-			return nil
-		}
-	case string(access.Write):
-		if ticket.Creator.ID == userID {
-			return nil
-		}
-		managed, err := s.groups.GetManagedGroups(ctx, userID, nil)
-		if err != nil {
-			return fmt.Errorf("failed to check managed groups: %w", err)
-		}
-		for _, gid := range managed {
-			if gid == ticket.Group.ID {
-				return nil
-			}
-		}
-	case string(access.Delete):
-		managed, err := s.groups.GetManagedGroups(ctx, userID, nil)
-		if err != nil {
-			return fmt.Errorf("failed to check managed groups: %w", err)
-		}
-		for _, gid := range managed {
-			if gid == ticket.Group.ID {
-				return nil
-			}
-		}
-	}
-	return models.ErrPermissionDenied
-}
-
 func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, realm string) []models.TicketStatus {
-	hasWrite := s.checkAccessForTicket(ctx, ticket, userID, string(access.Write), realm) == nil
+	hasWrite := s.access.CheckAccessOnTicket(ctx, ticket, userID, string(access.Write), realm) == nil
 	isCreator := ticket.Creator.ID == userID
 
 	isMgr := false

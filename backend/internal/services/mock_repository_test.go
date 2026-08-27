@@ -444,19 +444,19 @@ func (m *mockTransactionManager) WithinTransaction(ctx context.Context, fn func(
 	return fn(nil)
 }
 
-type MockAccessPolices struct {
+type MockAccessPolicies struct {
 	mock.Mock
 }
 
-func (m *MockAccessPolices) Enforce(sub, dom, obj, act string) (bool, error) {
+func (m *MockAccessPolicies) Enforce(sub, dom, obj, act string) (bool, error) {
 	args := m.Called(sub, dom, obj, act)
 	return args.Bool(0), args.Error(1)
 }
-func (m *MockAccessPolices) Reload() error {
+func (m *MockAccessPolicies) Reload() error {
 	args := m.Called()
 	return args.Error(0)
 }
-func (m *MockAccessPolices) GetPolicies(user, domain string) (*models.Access, error) {
+func (m *MockAccessPolicies) GetPolicies(user, domain string) (*models.Access, error) {
 	args := m.Called(user, domain)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -517,6 +517,11 @@ func (m *MockTicketAccessChecker) CheckWorkAccess(ctx context.Context, dto *mode
 
 func (m *MockTicketAccessChecker) CheckInternalAssigneeAccess(ctx context.Context, dto *models.AccessCheckDTO) error {
 	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+
+func (m *MockTicketAccessChecker) CheckAccessOnTicket(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, action string, realm string) error {
+	args := m.Called(ctx, ticket, userID, action, realm)
 	return args.Error(0)
 }
 

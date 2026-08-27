@@ -17,7 +17,7 @@ type Services struct {
 	RoleHierarchy
 	Permissions
 	AuditLogs
-	AccessPolices
+	AccessPolicies
 	Users
 	Session
 
@@ -90,15 +90,17 @@ func NewServices(deps *Deps) *Services {
 
 	groups := NewGroupService(deps.Repo.Groups, transaction)
 
+	access := NewTicketAccessService(deps.Repo.Tickets, groups, policies)
+
 	session := NewSessionService(deps.Keycloak, policies, userRealms, users, groups, cacheSvc)
 	categories := NewCategoryService(deps.Repo.Categories)
 	sites := NewSiteService(deps.Repo.Sites)
 	logs := NewActivityLogService(deps.Repo.ActivityLog, transaction)
-	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs, nil)
-	attachments := NewAttachmentService(deps.Repo.Attachments, &deps.Conf.FileServer, nil, deps.Repo.Subtasks)
+	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs, access)
+	attachments := NewAttachmentService(deps.Repo.Attachments, &deps.Conf.FileServer, access, deps.Repo.Subtasks)
 	checklists := NewChecklistService(deps.Repo.Checklists, subtasks)
 	notifications := NewNotificationService(deps.Hub, deps.Repo.Notifications, deps.Repo.Tickets, transaction)
-	comments := NewCommentService(deps.Repo.Comments)
+	comments := NewCommentService(deps.Repo.Comments, access)
 	tickets := NewTicketService(&TicketDeps{
 		Repo:          deps.Repo.Tickets,
 		TxManager:     transaction,
@@ -108,11 +110,8 @@ func NewServices(deps *Deps) *Services {
 		Notifications: notifications,
 		Groups:        groups,
 		Policies:      policies,
+		Access:        access,
 	})
-
-	subtasks.SetTicketAccess(tickets)
-	attachments.SetTicketAccess(tickets)
-	comments.SetTicketAccess(tickets)
 
 	audit.StartListening(deps.Ctx, updatePolicyEvent)
 	scheduler := NewSchedulerService(&SchedulerDeps{Tickets: tickets})
@@ -136,14 +135,14 @@ func NewServices(deps *Deps) *Services {
 	})
 
 	return &Services{
-		Realms:        realms,
-		AuditLogs:     audit,
-		Roles:         roles,
-		RoleHierarchy: rolesHierarchy,
-		Permissions:   perms,
-		Users:         users,
-		AccessPolices: policies,
-		Session:       session,
+		Realms:         realms,
+		AuditLogs:      audit,
+		Roles:          roles,
+		RoleHierarchy:  rolesHierarchy,
+		Permissions:    perms,
+		Users:          users,
+		AccessPolicies: policies,
+		Session:        session,
 
 		Groups:        groups,
 		Categories:    categories,

@@ -37,10 +37,6 @@ func NewAttachmentService(repo repository.Attachments, conf *config.FileServerCo
 	}
 }
 
-func (s *AttachmentService) SetTicketAccess(checker TicketAccessChecker) {
-	s.ticketAccess = checker
-}
-
 func (s *AttachmentService) checkEntityAccess(ctx context.Context, dto *models.EntityAccessDTO, action string) error {
 	if s.ticketAccess == nil {
 		return models.ErrPermissionDenied

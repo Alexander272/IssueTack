@@ -15,11 +15,11 @@ type SessionService struct {
 	userRealm UserRealms
 	user      Users
 	groups    Groups
-	policies  AccessPolices
+	policies  AccessPolicies
 	cache     SessionCacher
 }
 
-func NewSessionService(keycloak *auth.KeycloakClient, policies AccessPolices, userRealm UserRealms, user Users, groups Groups, cache SessionCacher) *SessionService {
+func NewSessionService(keycloak *auth.KeycloakClient, policies AccessPolicies, userRealm UserRealms, user Users, groups Groups, cache SessionCacher) *SessionService {
 	return &SessionService{
 		keycloak:  keycloak,
 		policies:  policies,

@@ -25,10 +25,6 @@ func NewSubtaskService(repo repository.Subtasks, logs ActivityLog, ticketAccess 
 	}
 }
 
-func (s *SubtaskService) SetTicketAccess(checker TicketAccessChecker) {
-	s.ticketAccess = checker
-}
-
 type Subtasks interface {
 	GetByTicketID(ctx context.Context, ticketID, actorID uuid.UUID, realm string) ([]*models.Subtask, error)
 	GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID, realm string) (*models.Subtask, error)
