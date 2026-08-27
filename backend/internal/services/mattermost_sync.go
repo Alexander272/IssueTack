@@ -152,7 +152,7 @@ func (s *MattermostService) handleSync(ctx context.Context, settings *models.Rea
 
 	senderRealm, err := s.userRealms.GetByUserAndRealm(ctx, senderID, settings.RealmID)
 	if err != nil || senderRealm.Role == nil || senderRealm.Role.Slug != "admin" {
-		if _, err := s.client.SendDM(settings.BotToken, settings.BotUserID, senderMmID,
+		if err := s.most.DM.Send(settings.BotToken, settings.BotUserID, senderMmID,
 			"Только администраторы могут синхронизировать пользователей"); err != nil {
 			return fmt.Errorf("failed to send no-permission message: %w", err)
 		}
@@ -289,7 +289,7 @@ func (s *MattermostService) handleSync(ctx context.Context, settings *models.Rea
 	}
 
 	msg := fmt.Sprintf("Синхронизация завершена. Создано: %d, привязано: %d", created, linked)
-	if _, err := s.client.SendDM(settings.BotToken, settings.BotUserID, senderMmID, msg); err != nil {
+	if err := s.most.DM.Send(settings.BotToken, settings.BotUserID, senderMmID, msg); err != nil {
 		return fmt.Errorf("failed to send sync result: %w", err)
 	}
 	return nil

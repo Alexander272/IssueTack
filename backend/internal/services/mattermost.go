@@ -39,24 +39,26 @@ type MattermostDeps struct {
 }
 
 type MattermostService struct {
-	repo        repository.Mattermost
-	users       Users
-	userRealms  UserRealms
-	roles       Roles
-	tickets     Tickets
-	groups      Groups
-	categories  Categories
-	sites       Sites
-	attachments Attachments
-	client      *mattermost.Client
-	baseURL     string
-	wsClients   map[string]*mattermost.WSClient
-	wsMu        sync.Mutex
+	repo          repository.Mattermost
+	users         Users
+	userRealms    UserRealms
+	roles         Roles
+	tickets       Tickets
+	groups        Groups
+	categories    Categories
+	sites         Sites
+	attachments   Attachments
+	most          *mattermost.Most
+	client        *mattermost.Client
+	baseURL       string
+	wsClients     map[string]*mattermost.WSClient
+	wsMu          sync.Mutex
 	pendingFiles  sync.Map
 	recentTickets sync.Map
 }
 
 func NewMattermostService(deps *MattermostDeps) *MattermostService {
+	client := mattermost.NewClient(deps.MattermostURL)
 	return &MattermostService{
 		repo:        deps.Repo,
 		users:       deps.Users,
@@ -67,7 +69,8 @@ func NewMattermostService(deps *MattermostDeps) *MattermostService {
 		categories:  deps.Categories,
 		sites:       deps.Sites,
 		attachments: deps.Attachments,
-		client:      mattermost.NewClient(deps.MattermostURL),
+		client:      client,
+		most:        mattermost.NewMost(client, mattermost.MostConfig{BaseURL: deps.BaseURL}),
 		baseURL:     deps.BaseURL,
 		wsClients:   make(map[string]*mattermost.WSClient),
 	}
@@ -206,26 +209,18 @@ func (s *MattermostService) sendCreateButton(botToken, channelID, realmID string
 		return fmt.Errorf("failed to send create button: http.base_url is not configured")
 	}
 
-	post := &model.Post{
-		ChannelId: channelID,
+	_, err := s.most.Post.Create(botToken, mattermost.CreatePostDTO{
+		ChannelID: channelID,
 		Message:   "Для оформления заявки нажмите на кнопку ниже",
-		Props: model.StringInterface{
-			"attachments": []model.StringInterface{{
-				"actions": []model.StringInterface{{
-					"name":  "Создать заявку",
-					"type":  "button",
-					"style": "primary",
-					"integration": model.StringInterface{
-						"url": fmt.Sprintf("%s/api/v1/mattermost/dialog/open", s.baseURL),
-						"context": map[string]string{
-							"realm_id": realmID,
-						},
-					},
-				}},
-			}},
+		Button: &mattermost.InteractiveButton{
+			Text:  "Создать заявку",
+			Style: "primary",
+			URL:   fmt.Sprintf("%s/api/v1/mattermost/dialog/open", s.baseURL),
+			Context: map[string]string{
+				"realm_id": realmID,
+			},
 		},
-	}
-	_, err := s.client.CreatePost(botToken, post)
+	})
 	if err != nil {
 		return fmt.Errorf("failed to send create button: %w", err)
 	}
@@ -243,8 +238,8 @@ func (s *MattermostService) sendHelpMessage(botToken, channelID string, isAdmin 
 		text += "\n• **синхронизировать [команда1,команда2]** — синхронизация пользователей"
 	}
 
-	if _, err := s.client.CreatePost(botToken, &model.Post{
-		ChannelId: channelID,
+	if _, err := s.most.Post.Create(botToken, mattermost.CreatePostDTO{
+		ChannelID: channelID,
 		Message:   text,
 	}); err != nil {
 		return fmt.Errorf("failed to send help message: %w", err)
@@ -255,8 +250,8 @@ func (s *MattermostService) sendHelpMessage(botToken, channelID string, isAdmin 
 func (s *MattermostService) sendStatusMessage(_ context.Context, settings *models.RealmMattermost, _ uuid.UUID, channelID string) error {
 	text := "**Ваши активные заявки:**\n_(пока не реализовано)_"
 
-	if _, err := s.client.CreatePost(settings.BotToken, &model.Post{
-		ChannelId: channelID,
+	if _, err := s.most.Post.Create(settings.BotToken, mattermost.CreatePostDTO{
+		ChannelID: channelID,
 		Message:   text,
 	}); err != nil {
 		return fmt.Errorf("failed to send status message: %w", err)
@@ -274,9 +269,9 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *mod
 
 	if ticketNumber > 0 {
 		tickets, _, err := s.tickets.Get(ctx, &models.TicketFilter{
-			Number:   &ticketNumber,
-			RealmID:  &settings.RealmID,
-			Actor:    &models.Actor{ID: userID},
+			Number:  &ticketNumber,
+			RealmID: &settings.RealmID,
+			Actor:   &models.Actor{ID: userID},
 		})
 		if err != nil || len(tickets) == 0 {
 			return s.sendDM(settings, mmUserID, fmt.Sprintf("Заявка #%d не найдена", ticketNumber))
@@ -347,11 +342,7 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *mod
 }
 
 func (s *MattermostService) sendDM(settings *models.RealmMattermost, mmUserID, message string) error {
-	if settings.BotToken == "" {
-		return nil
-	}
-	_, err := s.client.SendDM(settings.BotToken, settings.BotUserID, mmUserID, message)
-	return err
+	return s.most.DM.Send(settings.BotToken, settings.BotUserID, mmUserID, message)
 }
 
 func (s *MattermostService) checkIsAdmin(ctx context.Context, realmID uuid.UUID, mmUserID string) bool {
@@ -377,7 +368,7 @@ func (s *MattermostService) SendDMToUser(ctx context.Context, userID uuid.UUID, 
 		return fmt.Errorf("failed to find mattermost settings: %w", err)
 	}
 
-	if _, err := s.client.SendDM(settings.BotToken, settings.BotUserID, link.MmUserID, message); err != nil {
+	if err := s.most.DM.Send(settings.BotToken, settings.BotUserID, link.MmUserID, message); err != nil {
 		return fmt.Errorf("failed to send direct message: %w", err)
 	}
 	return nil

@@ -9,6 +9,7 @@ import (
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
+	"github.com/Alexander272/IssueTrack/backend/pkg/mattermost"
 	"github.com/google/uuid"
 	"github.com/mattermost/mattermost/server/public/model"
 )
@@ -46,19 +47,9 @@ func (s *MattermostService) HandleDialogOpen(ctx context.Context, triggerID, _, 
 		logger.Warn("failed to load sites for dialog", logger.ErrAttr(err))
 	}
 
-	elements := []model.DialogElement{
-		{
-			DisplayName: "Заголовок",
-			Name:        "title",
-			Type:        "text",
-			MaxLength:   150,
-		},
-		{
-			DisplayName: "Описание",
-			Name:        "description",
-			Type:        "textarea",
-			MaxLength:   3000,
-		},
+	elements := []mattermost.DialogElement{
+		{DisplayName: "Заголовок", Name: "title", Type: "text", MaxLength: 150},
+		{DisplayName: "Описание", Name: "description", Type: "textarea", MaxLength: 3000},
 	}
 
 	if len(categories) > 0 {
@@ -66,11 +57,8 @@ func (s *MattermostService) HandleDialogOpen(ctx context.Context, triggerID, _, 
 		for _, c := range categories {
 			opts = append(opts, &model.PostActionOptions{Text: c.Name, Value: c.ID.String()})
 		}
-		elements = append(elements, model.DialogElement{
-			DisplayName: "Категория",
-			Name:        "categoryId",
-			Type:        "select",
-			Options:     opts,
+		elements = append(elements, mattermost.DialogElement{
+			DisplayName: "Категория", Name: "categoryId", Type: "select", Options: opts,
 		})
 	}
 
@@ -79,25 +67,18 @@ func (s *MattermostService) HandleDialogOpen(ctx context.Context, triggerID, _, 
 		for _, st := range sites {
 			opts = append(opts, &model.PostActionOptions{Text: st.Name, Value: st.ID.String()})
 		}
-		elements = append(elements, model.DialogElement{
-			DisplayName: "Площадка",
-			Name:        "siteId",
-			Type:        "select",
-			Options:     opts,
+		elements = append(elements, mattermost.DialogElement{
+			DisplayName: "Площадка", Name: "siteId", Type: "select", Options: opts,
 		})
 	}
 
-	if err := s.client.OpenDialog(settings.BotToken, &model.OpenDialogRequest{
-		TriggerId: triggerID,
-		URL:       fmt.Sprintf("%s/api/v1/mattermost/dialog/%s", s.baseURL, realmID),
-		Dialog: model.Dialog{
-			CallbackId:     realmID.String(),
-			Title:          "Новая заявка",
-			Elements:       elements,
-			SubmitLabel:    "Создать",
-			NotifyOnCancel: true,
-			State:          fmt.Sprintf(`{"channelId":"%s","buttonPostId":"%s"}`, channelID, buttonPostID),
-		},
+	if err := s.most.Dialog.Open(settings.BotToken, mattermost.OpenRequest{
+		TriggerID:   triggerID,
+		RealmID:     realmID.String(),
+		Title:       "Новая заявка",
+		SubmitLabel: "Создать",
+		Elements:    elements,
+		State:       fmt.Sprintf(`{"channelId":"%s","buttonPostId":"%s"}`, channelID, buttonPostID),
 	}); err != nil {
 		return fmt.Errorf("failed to open dialog: %w", err)
 	}
@@ -200,27 +181,19 @@ func (s *MattermostService) HandleInteractiveAction(ctx context.Context, userID,
 	case "view_ticket":
 		ticketID := actionContext["ticket_id"]
 		realmID := actionContext["realm_id"]
-		return &model.Post{
-			Message: fmt.Sprintf("Откройте заявку: /tasks/%s", ticketID),
-			Props: model.StringInterface{
-				"attachments": []model.StringInterface{{
-					"text": fmt.Sprintf("Заявка #%s", ticketID[:8]),
-					"actions": []model.StringInterface{{
-						"name":  "Открыть",
-						"type":  "button",
-						"style": "primary",
-						"integration": model.StringInterface{
-							"url": fmt.Sprintf("%s/api/v1/mattermost/action", s.baseURL),
-							"context": map[string]string{
-								"action":    "open_link",
-								"ticket_id": ticketID,
-								"realm_id":  realmID,
-							},
-						},
-					}},
-				}},
+		return s.most.Post.Reply(
+			fmt.Sprintf("Откройте заявку: /tasks/%s", ticketID),
+			&mattermost.InteractiveButton{
+				Text:  "Открыть",
+				Style: "primary",
+				URL:   fmt.Sprintf("%s/api/v1/mattermost/action", s.baseURL),
+				Context: map[string]string{
+					"action":    "open_link",
+					"ticket_id": ticketID,
+					"realm_id":  realmID,
+				},
 			},
-		}, nil
+		), nil
 
 	default:
 		return nil, nil
@@ -236,7 +209,7 @@ func (s *MattermostService) sendTicketCreatedDM(settings *models.RealmMattermost
 	if s.baseURL != "" {
 		msg += fmt.Sprintf("\nОткрыть: %s/tasks/%s", s.baseURL, dto.ID.String())
 	}
-	if _, err := s.client.SendDM(settings.BotToken, settings.BotUserID, mmUserID, msg); err != nil {
+	if err := s.most.DM.Send(settings.BotToken, settings.BotUserID, mmUserID, msg); err != nil {
 		logger.Warn("failed to send ticket created DM", logger.ErrAttr(err))
 	}
 }
@@ -251,7 +224,7 @@ func (s *MattermostService) deleteButtonPost(settings *models.RealmMattermost, s
 	if err := json.Unmarshal([]byte(submission.State), &state); err != nil || state.ButtonPostID == "" {
 		return
 	}
-	if err := s.client.DeletePost(settings.BotToken, state.ButtonPostID); err != nil {
+	if err := s.most.Post.Delete(settings.BotToken, state.ButtonPostID); err != nil {
 		logger.Warn("failed to delete button post", logger.ErrAttr(err))
 	}
 }
