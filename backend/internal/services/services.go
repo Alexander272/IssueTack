@@ -12,7 +12,10 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/pkg/ws_hub"
 )
 
+// Services — композиционный корень всех бизнес-сервисов приложения.
+// Поля сгруппированы по кластерам: доступ/аутентификация, домен, интеграции.
 type Services struct {
+	// Доступ и аутентификация
 	Realms
 	Roles
 	RoleHierarchy
@@ -22,6 +25,7 @@ type Services struct {
 	Users
 	Session
 
+	// Домен (каталог, группы, заявки)
 	Groups
 	Categories
 	Sites
@@ -33,10 +37,14 @@ type Services struct {
 	Notifications
 	ActivityLog
 	UserRealms
+
+	// Интеграции
 	Scheduler
 	Mattermost
 }
 
+// Deps — готовые внешние зависимости (конфиг, репозитории, keycloak, ws-хаб),
+// которые сервисы не создают сами.
 type Deps struct {
 	Ctx      context.Context
 	Conf     *config.Config
@@ -45,11 +53,12 @@ type Deps struct {
 	Hub      *ws_hub.Hub
 }
 
+// NewServices собирает все сервисы, разрешая их зависимости.
 func NewServices(deps *Deps) *Services {
 	transaction := NewTransactionManager(deps.Repo.Transaction)
-
 	updatePolicyEvent := &events.PolicyEventManager{}
 
+	// --- Кластер доступа и аутентификации -------------------------------
 	audit := NewAuditLogService(deps.Repo.AuditLogs, transaction)
 	realms := NewRealmService(deps.Repo.Realms, transaction)
 
@@ -89,11 +98,13 @@ func NewServices(deps *Deps) *Services {
 		Cache:    cacheSvc,
 	})
 
+	// --- Кластер домена (группы, каталог, заявки) -----------------------
+	// Группы создаются здесь же: они нужны и session (доступ), и тикетам.
 	groups := NewGroupService(deps.Repo.Groups, transaction)
+	session := NewSessionService(deps.Keycloak, policies, userRealms, users, groups, cacheSvc)
 
 	access := NewTicketAccessService(deps.Repo.Tickets, groups, policies)
 
-	session := NewSessionService(deps.Keycloak, policies, userRealms, users, groups, cacheSvc)
 	categories := NewCategoryService(deps.Repo.Categories)
 	sites := NewSiteService(deps.Repo.Sites)
 	logs := NewActivityLogService(deps.Repo.ActivityLog, transaction)
@@ -114,6 +125,7 @@ func NewServices(deps *Deps) *Services {
 		Access:        access,
 	})
 
+	// --- Кластер интеграций ---------------------------------------------
 	audit.StartListening(deps.Ctx, updatePolicyEvent)
 	scheduler := NewSchedulerService(&SchedulerDeps{Tickets: tickets})
 
@@ -136,6 +148,7 @@ func NewServices(deps *Deps) *Services {
 	})
 
 	return &Services{
+		// Доступ и аутентификация
 		Realms:         realms,
 		AuditLogs:      audit,
 		Roles:          roles,
@@ -145,6 +158,7 @@ func NewServices(deps *Deps) *Services {
 		AccessPolicies: policies,
 		Session:        session,
 
+		// Домен
 		Groups:        groups,
 		Categories:    categories,
 		Sites:         sites,
@@ -156,7 +170,9 @@ func NewServices(deps *Deps) *Services {
 		Notifications: notifications,
 		ActivityLog:   logs,
 		UserRealms:    userRealms,
-		Scheduler:     scheduler,
-		Mattermost:    mattermostSvc,
+
+		// Интеграции
+		Scheduler:  scheduler,
+		Mattermost: mattermostSvc,
 	}
 }
