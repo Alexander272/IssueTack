@@ -30,6 +30,8 @@ type UploadAttachmentDTO struct {
 	EntityType string
 	EntityID   uuid.UUID
 	FileName   string
+	FileSize   int64
+	MimeType   string
 	File       io.Reader
 	UploadedBy uuid.UUID
 	Realm      string

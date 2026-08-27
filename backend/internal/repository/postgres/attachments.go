@@ -3,6 +3,8 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"mime"
+	"path/filepath"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/google/uuid"
@@ -18,6 +20,12 @@ func NewAttachmentRepo(db *pgxpool.Pool, tr Transaction) *AttachmentRepo {
 	return &AttachmentRepo{
 		db:          db,
 		Transaction: tr,
+	}
+}
+
+func fillMimeType(a *models.Attachment) {
+	if a.MimeType == "" {
+		a.MimeType = mime.TypeByExtension(filepath.Ext(a.FileName))
 	}
 }
 
@@ -50,6 +58,7 @@ func (r *AttachmentRepo) GetByEntity(ctx context.Context, entityType string, ent
 		); err != nil {
 			return nil, MapError(fmt.Errorf("scan row error: %w", err))
 		}
+		fillMimeType(item)
 		data = append(data, item)
 	}
 	if err := rows.Err(); err != nil {
@@ -75,6 +84,7 @@ func (r *AttachmentRepo) GetByID(ctx context.Context, id uuid.UUID) (*models.Att
 	); err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
+	fillMimeType(item)
 	return item, nil
 }
 

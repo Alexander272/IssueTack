@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"mime"
 	"os"
 	"path/filepath"
 
@@ -119,6 +120,13 @@ func (s *AttachmentService) Upload(ctx context.Context, tx postgres.Tx, dto *mod
 	}
 
 	ext := filepath.Ext(dto.FileName)
+	mimeType := dto.MimeType
+	if mimeType == "" {
+		mimeType = mime.TypeByExtension(ext)
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+	}
 	base := filepath.Base(dto.FileName[:len(dto.FileName)-len(ext)])
 	safeName := fmt.Sprintf("%s_%s%s", uuid.New().String(), base, ext)
 
@@ -146,6 +154,8 @@ func (s *AttachmentService) Upload(ctx context.Context, tx postgres.Tx, dto *mod
 		EntityID:   dto.EntityID,
 		FileName:   dto.FileName,
 		FilePath:   absPath,
+		FileSize:   dto.FileSize,
+		MimeType:   mimeType,
 		UploadedBy: dto.UploadedBy,
 	}
 

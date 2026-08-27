@@ -2,7 +2,10 @@ package attachments
 
 import (
 	"fmt"
+	"mime"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
@@ -62,9 +65,24 @@ func (h *Handler) getContent(c *gin.Context) {
 	}
 	defer reader.Close()
 
-	c.Header("Content-Type", att.MimeType)
+	mimeType := att.MimeType
+	if mimeType == "" {
+		mimeType = mime.TypeByExtension(filepath.Ext(att.FileName))
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+	}
+
+	size := att.FileSize
+	if size == 0 {
+		if info, err := os.Stat(att.FilePath); err == nil {
+			size = info.Size()
+		}
+	}
+
+	c.Header("Content-Type", mimeType)
 	c.Header("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, att.FileName))
-	c.DataFromReader(http.StatusOK, att.FileSize, att.MimeType, reader, nil)
+	c.DataFromReader(http.StatusOK, size, mimeType, reader, nil)
 }
 
 func (h *Handler) getByEntity(c *gin.Context) {
@@ -127,6 +145,8 @@ func (h *Handler) upload(c *gin.Context) {
 		EntityType: entityType,
 		EntityID:   id,
 		FileName:   header.Filename,
+		FileSize:   header.Size,
+		MimeType:   header.Header.Get("Content-Type"),
 		File:       file,
 		UploadedBy: user.ID,
 		Realm:      realmIdStr,

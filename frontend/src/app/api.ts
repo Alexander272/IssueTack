@@ -62,7 +62,7 @@ export const API = {
 		upload: (entityType: string, entityId: string) =>
 			`/attachments/${entityType}/${entityId}` as const,
 		content: (id: string) =>
-			`/attachments/content/${id}` as const,
+			`/api/v1/attachments/content/${id}` as const,
 	},
 	comments: {
 		byTicket: (ticketId: string) => `/tickets/${ticketId}/comments` as const,
