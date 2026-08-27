@@ -32,6 +32,7 @@ type Users interface {
 	Update(ctx context.Context, tx Tx, dto *models.UserDataDTO) error
 	UpdateSeveral(ctx context.Context, tx Tx, dto []*models.UserDataDTO) error
 	UpdateAccount(ctx context.Context, tx Tx, dto *models.UpdateAccountDTO) error
+	UpdateMattermostIDs(ctx context.Context, tx Tx, dto []*models.MattermostUserLink) error
 	DeleteSeveral(ctx context.Context, tx Tx, ids []uuid.UUID) error
 }
 
@@ -408,6 +409,31 @@ func (r *userRepo) UpdateAccount(ctx context.Context, tx Tx, dto *models.UpdateA
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
 	return nil
+}
+
+func (r *userRepo) UpdateMattermostIDs(ctx context.Context, tx Tx, dto []*models.MattermostUserLink) error {
+	if len(dto) == 0 {
+		return nil
+	}
+	n := len(dto)
+	userIDs := make([]uuid.UUID, n)
+	mmIDs := make([]string, n)
+	for i, v := range dto {
+		userIDs[i] = v.UserID
+		mmIDs[i] = v.MmUserID
+	}
+	query := fmt.Sprintf(`
+		UPDATE %s AS t
+		SET mattermost_id = s.mm_user_id
+		FROM (
+			SELECT * FROM UNNEST($1::uuid[], $2::text[])
+			AS s(user_id, mm_user_id)
+		) AS s
+		WHERE t.id = s.user_id`,
+		Tables.Users,
+	)
+	_, err := r.getExec(tx).Exec(ctx, query, userIDs, mmIDs)
+	return MapError(fmt.Errorf("failed to update mattermost ids: %w", err))
 }
 
 func (r *userRepo) DeleteSeveral(ctx context.Context, tx Tx, ids []uuid.UUID) error {

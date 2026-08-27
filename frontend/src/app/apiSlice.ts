@@ -75,6 +75,7 @@ export const apiSlice = createApi({
 		'Groups',
 		'Sites',
 		'Comments',
+		'Mattermost',
 	],
 	endpoints: () => ({}),
 })

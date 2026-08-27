@@ -25,6 +25,7 @@ func NewUserRealmService(repo repository.UserRealms, txManager TransactionManage
 type UserRealms interface {
 	GetAll(ctx context.Context) ([]*models.UserRealm, error)
 	GetByUserID(ctx context.Context, userID uuid.UUID) ([]*models.UserRealm, error)
+	GetByUserAndRealm(ctx context.Context, userID, realmID uuid.UUID) (*models.UserRealm, error)
 	Create(ctx context.Context, tx postgres.Tx, dto *models.UserRealmDTO) error
 	CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserRealmDTO) error
 	Update(ctx context.Context, tx postgres.Tx, dto *models.UserRealmDTO) error
@@ -45,6 +46,14 @@ func (s *UserRealmService) GetByUserID(ctx context.Context, userID uuid.UUID) ([
 	data, err := s.repo.GetByUserID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user realms by user id. error: %w", err)
+	}
+	return data, nil
+}
+
+func (s *UserRealmService) GetByUserAndRealm(ctx context.Context, userID, realmID uuid.UUID) (*models.UserRealm, error) {
+	data, err := s.repo.GetByUserAndRealm(ctx, userID, realmID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user realm by user and realm. error: %w", err)
 	}
 	return data, nil
 }

@@ -63,11 +63,11 @@ const config: RouteObject[] = [
 								index: true,
 								element: <Dashboard />,
 							},
-							{
-								path: AppRoutes.Realms,
-								element: <Realms />,
-							},
-							{
+						{
+							path: AppRoutes.Realms,
+							element: <Realms />,
+						},
+						{
 								path: AppRoutes.UserAccess,
 								element: <Users />,
 							},

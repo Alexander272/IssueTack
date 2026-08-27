@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import {
 	Box,
 	Button,
 	Paper,
+	Stack,
 	Table,
 	TableBody,
 	TableCell,
@@ -12,13 +14,13 @@ import {
 	Typography,
 	useTheme,
 } from '@mui/material'
+import { PlusIcon, SquarePenIcon, SettingsIcon } from 'lucide-mui'
 
 import type { IRealm } from '@/features/realms/types/realm'
 import { getSmartDate } from '@/utils/date'
 import { useGetAllRealmsQuery } from '@/features/realms/realmsApiSlice'
-import { PlusIcon, SquarePenIcon } from 'lucide-mui'
 import { RealmDialog } from '@/features/realms/components/Dialogs/RealmDialog'
-import { useState } from 'react'
+import { MattermostDialog } from '@/features/realms/components/Settings/MattermostDialog'
 import { StatusBadge } from '../StatusBadge'
 
 export const Realms = () => {
@@ -26,6 +28,7 @@ export const Realms = () => {
 
 	const [open, setOpen] = useState(false)
 	const [realm, setRealm] = useState<IRealm | null>(null)
+	const [settingsRealmId, setSettingsRealmId] = useState<string | null>(null)
 
 	const { data, isFetching } = useGetAllRealmsQuery()
 
@@ -41,6 +44,10 @@ export const Realms = () => {
 	const clearHandler = () => {
 		setRealm(null)
 		setOpen(false)
+	}
+
+	const settingsHandler = (id: string) => () => {
+		setSettingsRealmId(id)
 	}
 
 	return (
@@ -65,6 +72,11 @@ export const Realms = () => {
 			</Box>
 
 			<RealmDialog realm={realm || undefined} open={open} onClose={clearHandler} />
+			<MattermostDialog
+				realmId={settingsRealmId ?? ''}
+				open={Boolean(settingsRealmId)}
+				onClose={() => setSettingsRealmId(null)}
+			/>
 
 			<TableContainer
 				component={Paper}
@@ -92,7 +104,7 @@ export const Realms = () => {
 							<TableCell sx={{ py: 2.5, px: 3, color: 'text.secondary', fontSize: '0.875rem' }}>
 								Создано
 							</TableCell>
-							<TableCell align='right' sx={{ p: 0, width: 64 }}></TableCell>
+							<TableCell align='right' sx={{ p: 0, width: 124 }}></TableCell>
 						</TableRow>
 					</TableHead>
 
@@ -128,19 +140,34 @@ export const Realms = () => {
 
 								{/* Действия */}
 								<TableCell align='center' sx={{ p: 0, pr: 1 }}>
-									<Tooltip title='Редактировать область'>
-										<Button
-											onClick={editHandler(r)}
-											sx={{
-												minWidth: 60,
-												minHeight: 60,
-												borderRadius: '6px',
-												':hover': { svg: { color: palette.secondary.main } },
-											}}
-										>
-											<SquarePenIcon sx={{ fontSize: 18 }} />
-										</Button>
-									</Tooltip>
+									<Stack direction='row' spacing={0.5}>
+										<Tooltip title='Настройки'>
+											<Button
+												onClick={settingsHandler(r.id)}
+												sx={{
+													minWidth: 60,
+													minHeight: 60,
+													borderRadius: '6px',
+													':hover': { svg: { color: palette.primary.main } },
+												}}
+											>
+												<SettingsIcon sx={{ fontSize: 18 }} />
+											</Button>
+										</Tooltip>
+										<Tooltip title='Редактировать область'>
+											<Button
+												onClick={editHandler(r)}
+												sx={{
+													minWidth: 60,
+													minHeight: 60,
+													borderRadius: '6px',
+													':hover': { svg: { color: palette.secondary.main } },
+												}}
+											>
+												<SquarePenIcon sx={{ fontSize: 18 }} />
+											</Button>
+										</Tooltip>
+									</Stack>
 								</TableCell>
 							</TableRow>
 						))}

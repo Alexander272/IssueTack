@@ -60,6 +60,7 @@ func NewRolesService(deps *RoleDeps) *RoleService {
 type Roles interface {
 	GetOne(ctx context.Context, req *models.GetRoleDTO) (*models.Role, error)
 	GetAll(ctx context.Context) ([]*models.Role, error)
+	GetIDBySlug(ctx context.Context, realmID uuid.UUID, slug string) (uuid.UUID, error)
 	GetOneWithPermissions(ctx context.Context, req *models.GetRoleDTO) (*models.RoleWithPerms, error)
 	GetWithStats(ctx context.Context) ([]*models.RoleWithStats, error)
 	GetPermissionsGrouped(ctx context.Context, req *models.GetRoleDTO) ([]*models.RolePermissionsGrouped, error)
@@ -86,6 +87,14 @@ func (s *RoleService) GetAll(ctx context.Context) ([]*models.Role, error) {
 		return nil, fmt.Errorf("failed to get all roles: %w", err)
 	}
 	return data, nil
+}
+
+func (s *RoleService) GetIDBySlug(ctx context.Context, realmID uuid.UUID, slug string) (uuid.UUID, error) {
+	id, err := s.repo.GetIDBySlug(ctx, realmID, slug)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("failed to get role id by slug: %w", err)
+	}
+	return id, nil
 }
 
 func (s *RoleService) GetOneWithPermissions(ctx context.Context, req *models.GetRoleDTO) (*models.RoleWithPerms, error) {

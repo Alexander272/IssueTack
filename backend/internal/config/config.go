@@ -22,6 +22,7 @@ type (
 		Casbin        CasbinConfig     `yaml:"casbin"`
 		FileServer    FileServerConfig `yaml:"file_server"`
 		Tickets       TicketConfig     `yaml:"tickets"`
+		Mattermost    MattermostConfig `yaml:"mattermost"`
 	}
 
 	TicketConfig struct {
@@ -39,6 +40,7 @@ type (
 	HttpConfig struct {
 		Host               string        `yaml:"host" env:"HOST" env-default:"localhost"`
 		Port               string        `yaml:"port" env:"PORT" env-default:"8080"`
+		BaseURL            string        `yaml:"base_url" env:"BASE_URL" env-default:""`
 		ReadTimeout        time.Duration `yaml:"read_timeout" env:"READ_TIMEOUT" env-default:"10s"`
 		WriteTimeout       time.Duration `yaml:"write_timeout" env:"WRITE_TIMEOUT" env-default:"10s"`
 		MaxHeaderMegabytes int           `yaml:"max_header_bytes" env-default:"1"`
@@ -94,6 +96,10 @@ type (
 	CasbinConfig struct {
 		ModelPath     string `yaml:"model_path" env:"CASBIN_MODEL_PATH" env-default:"/configs/privacy.conf"`
 		EnableWatcher bool   `yaml:"enable_watcher" env:"CASBIN_ENABLE_WATCHER" env-default:"false"`
+	}
+
+	MattermostConfig struct {
+		URL string `yaml:"url" env:"MATTERMOST_URL" env-default:""`
 	}
 )
 

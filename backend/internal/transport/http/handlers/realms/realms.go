@@ -1,6 +1,7 @@
 package realms
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -14,26 +15,33 @@ import (
 )
 
 type Handler struct {
-	service services.Realms
+	service   services.Realms
+	mattermost services.Mattermost
 }
 
-func NewHandler(service services.Realms) *Handler {
+func NewHandler(service services.Realms, mattermost services.Mattermost) *Handler {
 	return &Handler{
-		service: service,
+		service:   service,
+		mattermost: mattermost,
 	}
 }
 
-func Register(api *gin.RouterGroup, svc services.Realms, middleware *middleware.Middleware) {
-	handlers := NewHandler(svc)
+func Register(api *gin.RouterGroup, svc services.Realms, mmSvc services.Mattermost, middleware *middleware.Middleware) {
+	handlers := NewHandler(svc, mmSvc)
 
 	realms := api.Group("/realms", middleware.CheckPermissions(access.Reg.R(access.ResourceRealm).Read()))
 	{
 		realms.GET("", handlers.getAll)
 		realms.GET("/:id", handlers.getByID)
 
+		realms.GET("/:id/mattermost", handlers.getMattermostSettings)
+
 		realms.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceRealm).Write()))
 		realms.POST("", handlers.create)
 		realms.PUT("/:id", handlers.update)
+
+		realms.PUT("/:id/mattermost", handlers.saveMattermostSettings)
+		realms.DELETE("/:id/mattermost", handlers.deleteMattermostSettings)
 
 		realms.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceRealm).Delete()))
 		realms.DELETE("/:id", handlers.delete)
@@ -114,6 +122,62 @@ func (h *Handler) delete(c *gin.Context) {
 	}
 
 	if err := h.service.Delete(c, &models.DeleteRealmDTO{ID: id}); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) getMattermostSettings(c *gin.Context) {
+	strId := c.Param("id")
+	id, err := uuid.Parse(strId)
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	data, err := h.mattermost.GetSettings(c, id)
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			response.SendData[*models.RealmMattermost](c, nil)
+			return
+		}
+		response.SendError(c, err)
+		return
+	}
+	response.SendData(c, data)
+}
+
+func (h *Handler) saveMattermostSettings(c *gin.Context) {
+	strId := c.Param("id")
+	id, err := uuid.Parse(strId)
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	dto := &models.RealmMattermostDTO{}
+	if err := c.BindJSON(dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+
+	if err := h.mattermost.SaveSettings(c, id, dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, response.IdResponse{Message: "Настройки Mattermost сохранены"})
+}
+
+func (h *Handler) deleteMattermostSettings(c *gin.Context) {
+	strId := c.Param("id")
+	id, err := uuid.Parse(strId)
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	if err := h.mattermost.DeleteSettings(c, id); err != nil {
 		response.SendError(c, err)
 		return
 	}

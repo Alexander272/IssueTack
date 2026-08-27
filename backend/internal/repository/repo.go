@@ -68,6 +68,9 @@ type ActivityLog interface {
 type Notifications interface {
 	postgres.Notifications
 }
+type Mattermost interface {
+	postgres.MattermostRepoInterface
+}
 
 type Repository struct {
 	Transaction
@@ -89,6 +92,7 @@ type Repository struct {
 	Comments
 	ActivityLog
 	Notifications
+	Mattermost
 }
 
 func NewRepository(pool *pgxpool.Pool, memDB *redis.Client, conf config.AuthConfig) *Repository {
@@ -116,5 +120,6 @@ func NewRepository(pool *pgxpool.Pool, memDB *redis.Client, conf config.AuthConf
 		Comments:      postgres.NewCommentRepo(pool, transaction),
 		ActivityLog:   postgres.NewActivityRepo(pool, transaction),
 		Notifications: postgres.NewNotificationRepo(pool, transaction),
+		Mattermost:    postgres.NewMattermostRepo(pool, transaction),
 	}
 }

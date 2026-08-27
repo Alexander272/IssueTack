@@ -7,6 +7,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/activity_log"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/attachments"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/audit_log"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/mattermost"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/auth"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/categories"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/checklists"
@@ -72,10 +73,12 @@ func (h *Handler) Init(group *gin.RouterGroup) {
 
 	permissions.Register(secure, h.services.Permissions, h.middleware)
 	roles.Register(secure, h.services.Roles, h.middleware)
-	realms.Register(secure, h.services.Realms, h.middleware)
+	realms.Register(secure, h.services.Realms, h.services.Mattermost, h.middleware)
 	users.Register(secure, h.services.Users, h.services.Session, h.middleware)
 
 	notifications.Register(secure, h.services.Notifications)
 	activity_log.Register(secure, h.services.ActivityLog, h.middleware)
 	audit_log.Register(secure, h.services.AuditLogs, h.middleware)
+
+	mattermost.Register(v1, h.services.Mattermost)
 }

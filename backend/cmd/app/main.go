@@ -96,6 +96,8 @@ func main() {
 		log.Fatalf("failed to start scheduler. error: %s\n", err.Error())
 	}
 
+	service.Mattermost.StartAllActiveWS(ctx)
+
 	// Запускаем все Runner'ы
 	// for _, runner := range service.GetRunners() {
 	// 	go func(r services.Runner) {
@@ -129,6 +131,8 @@ func main() {
 	if err := service.Scheduler.Stop(); err != nil {
 		logger.Error("failed to stop scheduler.", logger.ErrAttr(err))
 	}
+
+	service.Mattermost.StopAllWS()
 
 	if err := srv.Stop(shutdownCtx); err != nil {
 		logger.Error("failed to stop server:", logger.ErrAttr(err))

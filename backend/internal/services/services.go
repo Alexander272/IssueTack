@@ -33,6 +33,7 @@ type Services struct {
 	ActivityLog
 	UserRealms
 	Scheduler
+	Mattermost
 }
 
 type Deps struct {
@@ -116,6 +117,24 @@ func NewServices(deps *Deps) *Services {
 	audit.StartListening(deps.Ctx, updatePolicyEvent)
 	scheduler := NewSchedulerService(&SchedulerDeps{Tickets: tickets})
 
+	mattermostURL := ""
+	if deps.Conf.Mattermost.URL != "" {
+		mattermostURL = deps.Conf.Mattermost.URL
+	}
+	mattermostSvc := NewMattermostService(&MattermostDeps{
+		Repo:          deps.Repo.Mattermost,
+		Users:         users,
+		UserRealms:    userRealms,
+		Roles:         roles,
+		Tickets:       tickets,
+		Groups:        groups,
+		Categories:    categories,
+		Sites:         sites,
+		Attachments:   attachments,
+		MattermostURL: mattermostURL,
+		BaseURL:       deps.Conf.Http.BaseURL,
+	})
+
 	return &Services{
 		Realms:        realms,
 		AuditLogs:     audit,
@@ -138,5 +157,6 @@ func NewServices(deps *Deps) *Services {
 		ActivityLog:   logs,
 		UserRealms:    userRealms,
 		Scheduler:     scheduler,
+		Mattermost:    mattermostSvc,
 	}
 }

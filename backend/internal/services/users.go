@@ -7,6 +7,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/events"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
+	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
 	"github.com/Alexander272/IssueTrack/backend/pkg/auth"
 	"github.com/google/uuid"
 )
@@ -42,8 +43,10 @@ type Users interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*models.UserData, error)
 	GetByLogin(ctx context.Context, login string) (*models.UserData, error)
 	GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.UserData, error)
+	CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserDataDTO) error
 	Sync(ctx context.Context, actor *models.Actor) error
 	UpdateAccount(ctx context.Context, dto *models.UpdateAccountDTO) error
+	UpdateMattermostIDs(ctx context.Context, tx postgres.Tx, dto []*models.MattermostUserLink) error
 }
 
 func (s *userService) LoadPolicy(ctx context.Context) ([]*models.UserRole, error) {
@@ -76,4 +79,8 @@ func (s *userService) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models
 		return nil, fmt.Errorf("failed to get all users. error: %w", err)
 	}
 	return data, nil
+}
+
+func (s *userService) UpdateMattermostIDs(ctx context.Context, tx postgres.Tx, dto []*models.MattermostUserLink) error {
+	return s.repo.UpdateMattermostIDs(ctx, tx, dto)
 }

@@ -2,6 +2,7 @@ import { toast } from 'react-toastify'
 
 import type { IBaseFetchError } from '@/app/types/error'
 import type { IRealm, IRealmDTO } from './types/realm'
+import type { IRealmMattermost, IRealmMattermostDTO } from './types/mattermost'
 import { apiSlice } from '@/app/apiSlice'
 import { API } from '@/app/api'
 
@@ -64,6 +65,41 @@ const realmsApiSlice = apiSlice.injectEndpoints({
 			}),
 			invalidatesTags: [{ type: 'Realms', id: 'ALL' }],
 		}),
+
+		getMattermostSettings: builder.query<{ data: IRealmMattermost }, string>({
+			query: realmId => ({
+				url: API.realms.mattermost(realmId),
+				method: 'GET',
+			}),
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = error as IBaseFetchError
+					if (fetchError.error?.status !== 404) {
+						toast.error(fetchError.error.data.message, { autoClose: false })
+					}
+				}
+			},
+			providesTags: [{ type: 'Mattermost', id: 'ALL' }],
+		}),
+
+		saveMattermostSettings: builder.mutation<void, { realmId: string; dto: IRealmMattermostDTO }>({
+			query: ({ realmId, dto }) => ({
+				url: API.realms.mattermost(realmId),
+				method: 'PUT',
+				body: dto,
+			}),
+			invalidatesTags: [{ type: 'Mattermost', id: 'ALL' }],
+		}),
+
+		deleteMattermostSettings: builder.mutation<void, string>({
+			query: realmId => ({
+				url: API.realms.mattermost(realmId),
+				method: 'DELETE',
+			}),
+			invalidatesTags: [{ type: 'Mattermost', id: 'ALL' }],
+		}),
 	}),
 })
 
@@ -73,4 +109,7 @@ export const {
 	useCreateRealmMutation,
 	useUpdateRealmMutation,
 	useDeleteRealmMutation,
+	useGetMattermostSettingsQuery,
+	useSaveMattermostSettingsMutation,
+	useDeleteMattermostSettingsMutation,
 } = realmsApiSlice

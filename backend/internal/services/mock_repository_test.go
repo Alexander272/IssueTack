@@ -96,6 +96,10 @@ func (m *MockRolesRepo) GetAll(ctx context.Context) ([]*models.Role, error) {
 	args := m.Called(ctx)
 	return args.Get(0).([]*models.Role), args.Error(1)
 }
+func (m *MockRolesRepo) GetIDBySlug(ctx context.Context, realmID uuid.UUID, slug string) (uuid.UUID, error) {
+	args := m.Called(ctx, realmID, slug)
+	return args.Get(0).(uuid.UUID), args.Error(1)
+}
 func (m *MockRolesRepo) GetUserCount(ctx context.Context, roleIDs []string) (map[string]int, error) {
 	args := m.Called(ctx, roleIDs)
 	return args.Get(0).(map[string]int), args.Error(1)

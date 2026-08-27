@@ -25,6 +25,7 @@ func NewRoleRepo(db *pgxpool.Pool, tr Transaction) *RoleRepo {
 type Roles interface {
 	GetOne(ctx context.Context, req *models.GetRoleDTO) (*models.Role, error)
 	GetAll(ctx context.Context) ([]*models.Role, error)
+	GetIDBySlug(ctx context.Context, realmID uuid.UUID, slug string) (uuid.UUID, error)
 	GetUserCount(ctx context.Context, roleIDs []string) (map[string]int, error)
 	GetIDsBySlugs(ctx context.Context, realmID uuid.UUID, slugs []string) (map[string]uuid.UUID, error)
 	IsExists(ctx context.Context, realmID uuid.UUID, roleName string) (bool, error)
@@ -75,6 +76,15 @@ func (r *RoleRepo) GetOne(ctx context.Context, req *models.GetRoleDTO) (*models.
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
 	return data, nil
+}
+
+func (r *RoleRepo) GetIDBySlug(ctx context.Context, realmID uuid.UUID, slug string) (uuid.UUID, error) {
+	query := fmt.Sprintf(`SELECT id FROM %s WHERE slug = $1 AND realm_id = $2`, Tables.Roles)
+	var id uuid.UUID
+	if err := r.db.QueryRow(ctx, query, slug, realmID).Scan(&id); err != nil {
+		return uuid.Nil, MapError(fmt.Errorf("failed to get role id by slug: %w", err))
+	}
+	return id, nil
 }
 
 func (r *RoleRepo) IsExists(ctx context.Context, realmID uuid.UUID, roleName string) (bool, error) {
