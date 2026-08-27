@@ -8,6 +8,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/events"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/Alexander272/IssueTrack/backend/pkg/auth"
+	"github.com/Alexander272/IssueTrack/backend/pkg/mattermost"
 	"github.com/Alexander272/IssueTrack/backend/pkg/ws_hub"
 )
 
@@ -116,22 +117,21 @@ func NewServices(deps *Deps) *Services {
 	audit.StartListening(deps.Ctx, updatePolicyEvent)
 	scheduler := NewSchedulerService(&SchedulerDeps{Tickets: tickets})
 
-	mattermostURL := ""
-	if deps.Conf.Mattermost.URL != "" {
-		mattermostURL = deps.Conf.Mattermost.URL
-	}
+	mmClient := mattermost.NewClient(deps.Conf.Mattermost.URL)
+	mmMost := mattermost.NewMost(mmClient, mattermost.MostConfig{BaseURL: deps.Conf.Http.BaseURL})
 	mattermostSvc := NewMattermostService(&MattermostDeps{
-		Repo:          deps.Repo.Mattermost,
-		Users:         users,
-		UserRealms:    userRealms,
-		Roles:         roles,
-		Tickets:       tickets,
-		Groups:        groups,
-		Categories:    categories,
-		Sites:         sites,
-		Attachments:   attachments,
-		MattermostURL: mattermostURL,
-		BaseURL:       deps.Conf.Http.BaseURL,
+		Repo:        deps.Repo.Mattermost,
+		Users:       users,
+		UserRealms:  userRealms,
+		Roles:       roles,
+		Tickets:     tickets,
+		Groups:      groups,
+		Categories:  categories,
+		Sites:       sites,
+		Attachments: attachments,
+		Client:      mmClient,
+		Most:        mmMost,
+		BaseURL:     deps.Conf.Http.BaseURL,
 	})
 
 	return &Services{

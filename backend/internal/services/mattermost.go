@@ -25,17 +25,18 @@ var statusCommands = regexp.MustCompile(`^(?:статус|status|мои|заяв
 var attachCommands = regexp.MustCompile(`^#?(\d+)$`)
 
 type MattermostDeps struct {
-	Repo          repository.Mattermost
-	Users         Users
-	UserRealms    UserRealms
-	Roles         Roles
-	Tickets       Tickets
-	Groups        Groups
-	Categories    Categories
-	Sites         Sites
-	Attachments   Attachments
-	MattermostURL string
-	BaseURL       string
+	Repo        repository.Mattermost
+	Users       Users
+	UserRealms  UserRealms
+	Roles       Roles
+	Tickets     Tickets
+	Groups      Groups
+	Categories  Categories
+	Sites       Sites
+	Attachments Attachments
+	Client      *mattermost.Client
+	Most        *mattermost.Most
+	BaseURL     string
 }
 
 type MattermostService struct {
@@ -58,7 +59,6 @@ type MattermostService struct {
 }
 
 func NewMattermostService(deps *MattermostDeps) *MattermostService {
-	client := mattermost.NewClient(deps.MattermostURL)
 	return &MattermostService{
 		repo:        deps.Repo,
 		users:       deps.Users,
@@ -69,8 +69,8 @@ func NewMattermostService(deps *MattermostDeps) *MattermostService {
 		categories:  deps.Categories,
 		sites:       deps.Sites,
 		attachments: deps.Attachments,
-		client:      client,
-		most:        mattermost.NewMost(client, mattermost.MostConfig{BaseURL: deps.BaseURL}),
+		client:      deps.Client,
+		most:        deps.Most,
 		baseURL:     deps.BaseURL,
 		wsClients:   make(map[string]*mattermost.WSClient),
 	}
