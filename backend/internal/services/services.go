@@ -117,8 +117,10 @@ func NewServices(deps *Deps) *Services {
 	audit.StartListening(deps.Ctx, updatePolicyEvent)
 	scheduler := NewSchedulerService(&SchedulerDeps{Tickets: tickets})
 
-	mmClient := mattermost.NewClient(deps.Conf.Mattermost.URL)
-	mmMost := mattermost.NewMost(mmClient, mattermost.MostConfig{BaseURL: deps.Conf.Http.BaseURL})
+	mmMost := mattermost.NewMost(mattermost.MostConfig{
+		ServerURL: deps.Conf.Mattermost.URL,
+		BaseURL:   deps.Conf.Http.BaseURL,
+	})
 	mattermostSvc := NewMattermostService(&MattermostDeps{
 		Repo:        deps.Repo.Mattermost,
 		Users:       users,
@@ -129,7 +131,6 @@ func NewServices(deps *Deps) *Services {
 		Categories:  categories,
 		Sites:       sites,
 		Attachments: attachments,
-		Client:      mmClient,
 		Most:        mmMost,
 		BaseURL:     deps.Conf.Http.BaseURL,
 	})

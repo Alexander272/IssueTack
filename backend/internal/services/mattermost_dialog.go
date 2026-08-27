@@ -247,7 +247,7 @@ func (s *MattermostService) processPendingFiles(ctx context.Context, botToken st
 	)
 
 	for _, fileID := range fileIDs {
-		data, err := s.client.DownloadFile(botToken, fileID)
+		data, err := s.most.Client.DownloadFile(botToken, fileID)
 		if err != nil {
 			logger.Warn("failed to download MM file",
 				logger.StringAttr("file_id", fileID),
@@ -256,7 +256,7 @@ func (s *MattermostService) processPendingFiles(ctx context.Context, botToken st
 			continue
 		}
 
-		info, err := s.client.GetFileInfo(botToken, fileID)
+		info, err := s.most.Client.GetFileInfo(botToken, fileID)
 		if err != nil {
 			logger.Warn("failed to get MM file info",
 				logger.StringAttr("file_id", fileID),

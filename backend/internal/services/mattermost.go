@@ -34,7 +34,6 @@ type MattermostDeps struct {
 	Categories  Categories
 	Sites       Sites
 	Attachments Attachments
-	Client      *mattermost.Client
 	Most        *mattermost.Most
 	BaseURL     string
 }
@@ -50,7 +49,6 @@ type MattermostService struct {
 	sites         Sites
 	attachments   Attachments
 	most          *mattermost.Most
-	client        *mattermost.Client
 	baseURL       string
 	wsClients     map[string]*mattermost.WSClient
 	wsMu          sync.Mutex
@@ -69,7 +67,6 @@ func NewMattermostService(deps *MattermostDeps) *MattermostService {
 		categories:  deps.Categories,
 		sites:       deps.Sites,
 		attachments: deps.Attachments,
-		client:      deps.Client,
 		most:        deps.Most,
 		baseURL:     deps.BaseURL,
 		wsClients:   make(map[string]*mattermost.WSClient),
@@ -115,7 +112,7 @@ func (s *MattermostService) GetSettings(ctx context.Context, realmID uuid.UUID) 
 }
 
 func (s *MattermostService) SaveSettings(ctx context.Context, realmID uuid.UUID, dto *models.RealmMattermostDTO) error {
-	botUser, err := s.client.GetMe(dto.BotToken)
+	botUser, err := s.most.Client.GetMe(dto.BotToken)
 	if err != nil {
 		return fmt.Errorf("invalid bot token: %w", err)
 	}
@@ -295,12 +292,12 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *mod
 
 	attached := 0
 	for _, fileID := range fileIDs {
-		data, err := s.client.DownloadFile(settings.BotToken, fileID)
+		data, err := s.most.Client.DownloadFile(settings.BotToken, fileID)
 		if err != nil {
 			logger.Warn("failed to download MM file for attach", logger.StringAttr("file_id", fileID), logger.ErrAttr(err))
 			continue
 		}
-		info, err := s.client.GetFileInfo(settings.BotToken, fileID)
+		info, err := s.most.Client.GetFileInfo(settings.BotToken, fileID)
 		if err != nil {
 			logger.Warn("failed to get MM file info for attach", logger.StringAttr("file_id", fileID), logger.ErrAttr(err))
 			continue

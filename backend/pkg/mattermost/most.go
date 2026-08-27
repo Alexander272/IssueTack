@@ -11,17 +11,21 @@ type Most struct {
 	*Post
 	*Dialog
 	*DM
+	Client *Client
 }
 
 type MostConfig struct {
-	BaseURL string // external base URL used to build interactive callback URLs
+	ServerURL string // Mattermost server URL for the low-level client
+	BaseURL   string // external base URL used to build interactive callback URLs
 }
 
-func NewMost(client *Client, cfg MostConfig) *Most {
+func NewMost(cfg MostConfig) *Most {
+	client := NewClient(cfg.ServerURL)
 	return &Most{
 		Post:   NewPost(client),
 		Dialog: NewDialog(client, cfg.BaseURL),
 		DM:     NewDM(client),
+		Client: client,
 	}
 }
 

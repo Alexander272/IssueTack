@@ -36,7 +36,7 @@ func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uui
 		return uuid.Nil, "", fmt.Errorf("failed to get realm settings: %w", err)
 	}
 
-	mmUser, err := s.client.GetUser(settings.BotToken, mmUserID)
+	mmUser, err := s.most.Client.GetUser(settings.BotToken, mmUserID)
 	if err != nil {
 		return uuid.Nil, "", fmt.Errorf("failed to get mattermost user: %w", err)
 	}
@@ -300,7 +300,7 @@ func (s *MattermostService) fetchMMUsers(botToken string, teamNames []string) ([
 
 	if len(teamNames) > 0 {
 		for _, teamName := range teamNames {
-			team, err := s.client.GetTeamByName(botToken, teamName)
+			team, err := s.most.Client.GetTeamByName(botToken, teamName)
 			if err != nil {
 				logger.Warn("failed to get team by name",
 					logger.StringAttr("team", teamName),
@@ -308,7 +308,7 @@ func (s *MattermostService) fetchMMUsers(botToken string, teamNames []string) ([
 				)
 				continue
 			}
-			users, err := s.client.GetUsersInTeam(botToken, team.Id)
+			users, err := s.most.Client.GetUsersInTeam(botToken, team.Id)
 			if err != nil {
 				logger.Warn("failed to get users in team",
 					logger.StringAttr("team", teamName),
@@ -320,7 +320,7 @@ func (s *MattermostService) fetchMMUsers(botToken string, teamNames []string) ([
 		}
 	} else {
 		var err error
-		mmUsers, err = s.client.GetAllUsers(botToken)
+		mmUsers, err = s.most.Client.GetAllUsers(botToken)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get mattermost users: %w", err)
 		}

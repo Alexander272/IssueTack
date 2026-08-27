@@ -29,7 +29,7 @@ func (s *MattermostService) StartWSForRealm(ctx context.Context, realmID uuid.UU
 		return nil
 	}
 
-	wsClient := mattermost.NewWSClient(s.client.URL(), settings.BotUserID, func(ctx context.Context, event mattermost.PostedEvent) {
+	wsClient := mattermost.NewWSClient(s.most.Client.URL(), settings.BotUserID, func(ctx context.Context, event mattermost.PostedEvent) {
 		s.handleWSEvent(ctx, realmID, event)
 	})
 
