@@ -22,7 +22,7 @@ var createCommands = regexp.MustCompile(`^(?:заявка|новая|ticket|со
 var syncCommands = regexp.MustCompile(`^(?:синхронизировать|sync)(?:\s+(.+))?$`)
 var helpCommands = regexp.MustCompile(`^(?:помощь|help|команды)$`)
 var statusCommands = regexp.MustCompile(`^(?:статус|status|мои|заявки|my)$`)
-var attachCommands = regexp.MustCompile(`^#?(\d+)$`)
+var attachCommands = regexp.MustCompile(`^[#№]?(\d+)$`)
 
 // MattermostDeps — зависимости фасада Mattermost: сервисы, необходимые
 // для оркестрации, и capability-уровень Most для отправки сообщений.
@@ -273,7 +273,7 @@ func (s *MattermostService) sendStatusMessage(_ context.Context, settings *model
 // указан номер заявки — она ищется и проверяется, что пользователь её создатель
 // (иначе файлы не прикрепляются). Без номера файлы прикрепляются к последней
 // созданной пользователем заявке из recentTickets, если с момента создания
-// прошло не более 30 минут, — так команды вида «#123 + файлы» и просто постинг
+// прошло не более 30 минут, — так команды вида «№123 + файлы» и просто постинг
 // файлов после создания заявки работают единообразно.
 func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *models.RealmMattermost, mmUserID, channelID string, ticketNumber int, fileIDs []string) error {
 	userID, _, err := s.resolveOrCreateUser(ctx, settings.RealmID, mmUserID, nil)
@@ -290,7 +290,7 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *mod
 			Actor:   &models.Actor{ID: userID},
 		})
 		if err != nil || len(tickets) == 0 {
-			return s.sendDM(settings, mmUserID, fmt.Sprintf("Заявка #%d не найдена", ticketNumber))
+			return s.sendDM(settings, mmUserID, fmt.Sprintf("Заявка №%d не найдена", ticketNumber))
 		}
 		ticket := tickets[0]
 		if ticket.Creator.ID != userID {
@@ -298,13 +298,13 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *mod
 		}
 		ticketID = ticket.ID
 	} else {
-		val, ok := s.recentTickets.LoadAndDelete(mmUserID + ":" + channelID)
+		val, ok := s.recentTickets.Load(mmUserID + ":" + channelID)
 		if !ok {
-			return s.sendDM(settings, mmUserID, "Не найдена заявка для прикрепления файлов. Отправьте номер заявки (например, #123) вместе с файлами")
+			return s.sendDM(settings, mmUserID, "Не найдена заявка для прикрепления файлов. Отправьте номер заявки (например, №123) вместе с файлами")
 		}
 		rt := val.(*recentTicket)
 		if time.Since(rt.createdAt) > 30*time.Minute {
-			return s.sendDM(settings, mmUserID, "Прошло более 30 минут с создания заявки. Укажите номер заявки (например, #123) вместе с файлами")
+			return s.sendDM(settings, mmUserID, "Прошло более 30 минут с создания заявки. Укажите номер заявки (например, №123) вместе с файлами")
 		}
 		ticketID = rt.id
 	}
@@ -350,7 +350,7 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *mod
 	if attached > 0 {
 		msg := fmt.Sprintf("К заявке прикреплено файлов: %d", attached)
 		if ticketNumber > 0 {
-			msg = fmt.Sprintf("К заявке #%d прикреплено файлов: %d", ticketNumber, attached)
+			msg = fmt.Sprintf("К заявке №%d прикреплено файлов: %d", ticketNumber, attached)
 		}
 		return s.sendDM(settings, mmUserID, msg)
 	}
