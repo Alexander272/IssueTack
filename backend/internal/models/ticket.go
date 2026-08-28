@@ -57,26 +57,26 @@ type GetTicketByIdDTO struct {
 }
 
 type TicketFilter struct {
-	Actor      *Actor        `json:"actor"`
-	Number     *int          `form:"number" json:"number"`
-	RealmID    *uuid.UUID    `form:"realmId" json:"realmId"`
-	SiteIDs    []string      `form:"siteIds" json:"siteIds"`
-	Status     *TicketStatus `form:"status" json:"status" db:"status" binding:"omitempty,enum"`
-	Statuses   []TicketStatus `form:"statuses" json:"statuses"`
-	OwnerID    *uuid.UUID    `form:"ownerId" json:"ownerId" db:"owner_id"`
-	AssigneeID *uuid.UUID    `form:"assigneeId" json:"assigneeId" db:"assignee_id"`
-	GroupIDs   []uuid.UUID   `json:"-"`
-	IncludeUngroupedAssignedTo *uuid.UUID `json:"-"`
-	Priorities []Priority    `form:"priorities" json:"priorities"`
-	Search     *string       `form:"search" json:"search"`
-	DueDateFrom *time.Time   `form:"dueDateFrom" json:"dueDateFrom" time_format:"2006-01-02"`
-	DueDateTo  *time.Time    `form:"dueDateTo" json:"dueDateTo" time_format:"2006-01-02"`
-	Sort       *string       `form:"sort" json:"sort"`
-	Mode       *string    `form:"mode" json:"mode"`
-	CreatorID  *uuid.UUID `json:"-"`
-	Archived   *bool      `form:"archived" json:"archived"`
-	Limit      int        `json:"limit" db:"limit"`
-	Offset     int        `json:"offset" db:"offset"`
+	Actor                      *Actor         `json:"actor"`
+	Number                     *int           `form:"number" json:"number"`
+	RealmID                    *uuid.UUID     `form:"realmId" json:"realmId"`
+	SiteIDs                    []string       `form:"siteIds" json:"siteIds"`
+	Status                     *TicketStatus  `form:"status" json:"status" db:"status" binding:"omitempty,enum"`
+	Statuses                   []TicketStatus `form:"statuses" json:"statuses"`
+	OwnerID                    *uuid.UUID     `form:"ownerId" json:"ownerId" db:"owner_id"`
+	AssigneeID                 *uuid.UUID     `form:"assigneeId" json:"assigneeId" db:"assignee_id"`
+	GroupIDs                   []uuid.UUID    `json:"-"`
+	IncludeUngroupedAssignedTo *uuid.UUID     `json:"-"`
+	Priorities                 []Priority     `form:"priorities" json:"priorities"`
+	Search                     *string        `form:"search" json:"search"`
+	DueDateFrom                *time.Time     `form:"dueDateFrom" json:"dueDateFrom" time_format:"2006-01-02"`
+	DueDateTo                  *time.Time     `form:"dueDateTo" json:"dueDateTo" time_format:"2006-01-02"`
+	Sort                       *string        `form:"sort" json:"sort"`
+	Mode                       *string        `form:"mode" json:"mode"`
+	CreatorID                  *uuid.UUID     `json:"-"`
+	Archived                   *bool          `form:"archived" json:"archived"`
+	Limit                      int            `json:"limit" db:"limit"`
+	Offset                     int            `json:"offset" db:"offset"`
 }
 
 type TicketDTO struct {
@@ -89,9 +89,10 @@ type TicketDTO struct {
 	Status   TicketStatus `json:"status" db:"status"`
 	Priority Priority     `json:"priority" db:"priority"`
 
-	RealmID    *uuid.UUID `json:"realmId"`
-	SiteID     uuid.UUID  `json:"siteId"`     // Площадка выполнения
-	CategoryID uuid.UUID  `json:"categoryId"` // Категория
+	TicketNumber int        `json:"ticketNumber,omitempty"`
+	RealmID      *uuid.UUID `json:"realmId"`
+	SiteID       uuid.UUID  `json:"siteId"`     // Площадка выполнения
+	CategoryID   uuid.UUID  `json:"categoryId"` // Категория
 
 	// Кто участвует
 	CreatorID  uuid.UUID  `json:"creatorId" db:"creator_id"`   // Кто фактически создал (может быть Manager)

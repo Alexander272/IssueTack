@@ -12,17 +12,17 @@ import (
 )
 
 var sortMapping = map[string]string{
-	"dueDate":       "t.due_date",
-	"closedAt":      "t.closed_at",
-	"priority":      "CASE t.priority WHEN 'urgent' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 END",
-	"status":        "t.status",
-	"ticketNumber":  "t.ticket_number",
-	"title":         "t.title",
-	"owner":         "u_owner.last_name",
-	"category":      "c.name",
-	"site":          "s.name",
-	"assignee":      "COALESCE(u_assignee.last_name, g.name)",
-	"createdAt":     "t.created_at",
+	"dueDate":      "t.due_date",
+	"closedAt":     "t.closed_at",
+	"priority":     "CASE t.priority WHEN 'urgent' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 END",
+	"status":       "t.status",
+	"ticketNumber": "t.ticket_number",
+	"title":        "t.title",
+	"owner":        "u_owner.last_name",
+	"category":     "c.name",
+	"site":         "s.name",
+	"assignee":     "COALESCE(u_assignee.last_name, g.name)",
+	"createdAt":    "t.created_at",
 }
 
 type TicketRepo struct {
@@ -47,12 +47,12 @@ type Tickets interface {
 }
 
 type nullableTicketAssoc struct {
-	OwnerID, AssigneeID, ManagerID            *uuid.UUID
-	OwnerUsername, OwnerFirstName, OwnerLastName, OwnerInternalNumber *string
+	OwnerID, AssigneeID, ManagerID                                                *uuid.UUID
+	OwnerUsername, OwnerFirstName, OwnerLastName, OwnerInternalNumber             *string
 	AssigneeUsername, AssigneeFirstName, AssigneeLastName, AssigneeInternalNumber *string
-	ManagerUsername, ManagerFirstName, ManagerLastName, ManagerInternalNumber *string
-	GroupID                                   *uuid.UUID
-	GroupName                                 *string
+	ManagerUsername, ManagerFirstName, ManagerLastName, ManagerInternalNumber     *string
+	GroupID                                                                       *uuid.UUID
+	GroupName                                                                     *string
 }
 
 func (a *nullableTicketAssoc) assign(ticket *models.Ticket) {
@@ -378,6 +378,7 @@ func (r *TicketRepo) Create(ctx context.Context, tx Tx, dto *models.TicketDTO) e
 	if err := r.getExec(tx).QueryRow(ctx, numberQuery, dto.RealmID).Scan(&ticketNumber); err != nil {
 		return MapError(fmt.Errorf("failed to get next ticket number: %w", err))
 	}
+	dto.TicketNumber = ticketNumber
 
 	query := fmt.Sprintf(`INSERT INTO %s (id, title, description, status, priority, site_id, category_id,
 		creator_id, owner_id, group_id, assignee_id, manager_id, due_date, ticket_number, realm_id) 

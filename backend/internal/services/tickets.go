@@ -547,11 +547,6 @@ var activeStatuses = []models.TicketStatus{
 	models.StatusOnHold,
 }
 
-func isActive(s models.TicketStatus) bool {
-	return s == models.StatusOpen || s == models.StatusInProgress ||
-		s == models.StatusPending || s == models.StatusOnHold
-}
-
 // GetAccessFlags вычисляет флаги доступа к тикету для пользователя
 // (чтение, запись, удаление, работа) и список доступных ему переходов по статусам.
 func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, realm string) (*models.AccessFlags, error) {
