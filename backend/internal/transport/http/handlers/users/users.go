@@ -96,7 +96,7 @@ func (h *Handler) sync(c *gin.Context) {
 
 func (h *Handler) updateAccount(c *gin.Context) {
 	dto := &models.UpdateAccountDTO{}
-	if err := c.ShouldBindJSON(dto); err != nil {
+	if err := utils.BindJSON(c, dto); err != nil {
 		response.SendError(c, err)
 		return
 	}

@@ -10,6 +10,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/gin-gonic/gin"
@@ -123,7 +124,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 
 	if c.Request.ContentLength > 0 {
 		dto := &models.SignIn{}
-		if err := c.ShouldBindJSON(dto); err != nil {
+		if err := utils.BindJSON(c, dto); err != nil {
 			response.SendError(c, err)
 			return
 		}

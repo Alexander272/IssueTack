@@ -110,9 +110,5 @@ func Init(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to read config file. error: %w", err)
 	}
 
-	// if err := cleanenv.ReadEnv(&conf); err != nil {
-	// 	return nil, fmt.Errorf("failed to read env file. error: %w", err)
-	// }
-
 	return &conf, nil
 }

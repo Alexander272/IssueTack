@@ -214,8 +214,6 @@ func (s *PermissionService) CountForAll(ctx context.Context, roleToDescendants m
 
 // Create создаёт новое право доступа, при необходимости в рамках переданной транзакции.
 func (s *PermissionService) Create(ctx context.Context, tx postgres.Tx, dto *models.PermissionDTO) error {
-	// if constants.ResourcesList.Permissions
-
 	err := s.repo.Create(ctx, tx, dto)
 	if err != nil {
 		return fmt.Errorf("failed to create permission: %w", err)

@@ -68,7 +68,8 @@ func Send(c *gin.Context, e string, request interface{}) {
 		return
 	}
 
-	_, err := http.Post(url, "application/json", &buf)
+	client := &http.Client{Timeout: 5 * time.Second}
+	_, err := client.Post(url, "application/json", &buf)
 	if err != nil {
 		slog.Error("failed to send error to bot.", slog.String("error", err.Error()))
 	}

@@ -101,7 +101,10 @@ func (r *userRepo) GetByID(ctx context.Context, id uuid.UUID) (*models.UserData,
 		return nil, models.ErrNotFound
 	}
 
-	data := mapUsersData(userRows)
+	data, err := mapUsersData(userRows)
+	if err != nil {
+		return nil, err
+	}
 	return data[0], nil
 }
 
@@ -138,7 +141,10 @@ func (r *userRepo) GetByLogin(ctx context.Context, login string) (*models.UserDa
 		return nil, models.ErrNotFound
 	}
 
-	data := mapUsersData(userRows)
+	data, err := mapUsersData(userRows)
+	if err != nil {
+		return nil, err
+	}
 	return data[0], nil
 }
 
@@ -175,7 +181,10 @@ func (r *userRepo) GetByMattermostID(ctx context.Context, mattermostID string) (
 		return nil, models.ErrNotFound
 	}
 
-	data := mapUsersData(userRows)
+	data, err := mapUsersData(userRows)
+	if err != nil {
+		return nil, err
+	}
 	return data[0], nil
 }
 
@@ -218,7 +227,11 @@ func (r *userRepo) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.Us
 		return nil, err
 	}
 
-	return mapUsersData(userRows), nil
+	data, err := mapUsersData(userRows)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 func scanUserRows(rows pgx.Rows) ([]*pq_models.User, error) {
@@ -245,15 +258,19 @@ func scanUserRows(rows pgx.Rows) ([]*pq_models.User, error) {
 	return result, nil
 }
 
-func mapUsersData(rows []*pq_models.User) []*models.UserData {
+func mapUsersData(rows []*pq_models.User) ([]*models.UserData, error) {
 	result := make([]*models.UserData, 0, 10)
 	userIndex := make(map[string]int)
 
 	for _, u := range rows {
 		if !u.UserRealmId.Valid {
 			if _, ok := userIndex[u.Id]; !ok {
+				id, err := uuid.Parse(u.Id)
+				if err != nil {
+					return nil, fmt.Errorf("invalid user id %q: %w", u.Id, err)
+				}
 				result = append(result, &models.UserData{
-					ID:             uuid.MustParse(u.Id),
+					ID:             id,
 					Username:       u.Username,
 					Email:          u.Email,
 					FirstName:      u.FirstName,
@@ -271,8 +288,12 @@ func mapUsersData(rows []*pq_models.User) []*models.UserData {
 
 		var role *models.Role
 		if u.RoleId.Valid {
+			roleID, err := uuid.Parse(u.RoleId.String)
+			if err != nil {
+				return nil, fmt.Errorf("invalid role id %q: %w", u.RoleId.String, err)
+			}
 			role = &models.Role{
-				ID:          uuid.MustParse(u.RoleId.String),
+				ID:          roleID,
 				Slug:        u.RoleSlug.String,
 				Name:        u.RoleName.String,
 				Description: u.RoleDescription.String,
@@ -283,34 +304,52 @@ func mapUsersData(rows []*pq_models.User) []*models.UserData {
 		}
 
 		var realm *models.Realm
+		var realmID uuid.UUID
 		if u.RealmId.Valid {
+			var err error
+			realmID, err = uuid.Parse(u.RealmId.String)
+			if err != nil {
+				return nil, fmt.Errorf("invalid realm id %q: %w", u.RealmId.String, err)
+			}
 			realm = &models.Realm{
-				ID:          uuid.MustParse(u.RealmId.String),
+				ID:          realmID,
 				Name:        u.RealmName.String,
 				Description: u.RealmDescription.String,
 				IsActive:    u.RealmIsActive.Bool,
 			}
 		}
 
+		userRealmID, err := uuid.Parse(u.UserRealmId.String)
+		if err != nil {
+			return nil, fmt.Errorf("invalid user realm id %q: %w", u.UserRealmId.String, err)
+		}
 		userRealm := &models.UserRealm{
-			ID:        uuid.MustParse(u.UserRealmId.String),
+			ID:        userRealmID,
 			IsActive:  u.IsActive.Bool,
 			CreatedAt: u.RealmCreatedAt.Time,
 			Realm:     realm,
 			Role:      role,
 		}
 		if u.RealmId.Valid {
-			userRealm.RealmID = uuid.MustParse(u.RealmId.String)
+			userRealm.RealmID = realmID
 		}
 		if u.RoleId.Valid {
-			userRealm.RoleID = uuid.MustParse(u.RoleId.String)
+			roleID, err := uuid.Parse(u.RoleId.String)
+			if err != nil {
+				return nil, fmt.Errorf("invalid role id %q: %w", u.RoleId.String, err)
+			}
+			userRealm.RoleID = roleID
 		}
 
 		if idx, ok := userIndex[u.Id]; ok {
 			result[idx].Realms = append(result[idx].Realms, userRealm)
 		} else {
+			id, err := uuid.Parse(u.Id)
+			if err != nil {
+				return nil, fmt.Errorf("invalid user id %q: %w", u.Id, err)
+			}
 			result = append(result, &models.UserData{
-				ID:             uuid.MustParse(u.Id),
+				ID:             id,
 				Username:       u.Username,
 				Email:          u.Email,
 				FirstName:      u.FirstName,
@@ -325,7 +364,7 @@ func mapUsersData(rows []*pq_models.User) []*models.UserData {
 		}
 	}
 
-	return result
+	return result, nil
 }
 
 func (r *userRepo) CreateSeveral(ctx context.Context, tx Tx, dto []*models.UserDataDTO) error {

@@ -29,10 +29,11 @@ type CommentService struct {
 	mmRepo        repository.Mattermost
 	mmSender      mattermostSender
 	notifications Notifications
+	txManager     TransactionManager
 }
 
 // NewCommentService создаёт CommentService.
-func NewCommentService(repo repository.Comments, ticketAccess TicketAccessChecker, tickets repository.Tickets, users Users, mmRepo repository.Mattermost, mmSender mattermostSender, notifications Notifications) *CommentService {
+func NewCommentService(repo repository.Comments, ticketAccess TicketAccessChecker, tickets repository.Tickets, users Users, mmRepo repository.Mattermost, mmSender mattermostSender, notifications Notifications, txManager TransactionManager) *CommentService {
 	return &CommentService{
 		repo:          repo,
 		ticketAccess:  ticketAccess,
@@ -41,6 +42,7 @@ func NewCommentService(repo repository.Comments, ticketAccess TicketAccessChecke
 		mmRepo:        mmRepo,
 		mmSender:      mmSender,
 		notifications: notifications,
+		txManager:     txManager,
 	}
 }
 
@@ -79,6 +81,9 @@ func (s *CommentService) GetByTicket(ctx context.Context, ticketID uuid.UUID, us
 }
 
 // Create создаёт комментарий к тикету с проверкой work-доступа.
+// Если транзакция не передана, открывает собственную (owner-tx), чтобы
+// запись комментария была атомарной; side-эффекты (Mattermost, уведомления)
+// выполняются уже после фикса транзакции.
 func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models.CreateCommentDTO) (*models.Comment, error) {
 	if err := s.ticketAccess.CheckWorkAccess(ctx, &models.AccessCheckDTO{
 		TicketID: dto.TicketID,
@@ -88,6 +93,7 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 		return nil, err
 	}
 
+	var err error
 	comment := &models.Comment{
 		Text:       dto.Text,
 		UserID:     dto.UserID,
@@ -96,9 +102,19 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 		Type:       dto.Type,
 	}
 
-	if err := s.repo.Create(ctx, tx, comment); err != nil {
+	if tx == nil {
+		err = s.txManager.WithinTransaction(ctx, func(newTx postgres.Tx) error {
+			return s.repo.Create(ctx, newTx, comment)
+		})
+	} else {
+		err = s.repo.Create(ctx, tx, comment)
+	}
+	if err != nil {
 		return nil, fmt.Errorf("failed to create comment: %w", err)
 	}
+
+	// Side-эффекты выполняются только после фикса транзакции и не влияют на сам
+	// факт создания комментария — их сбои только логируются.
 	s.notifyOwnerViaMattermost(ctx, comment)
 	if s.notifications != nil {
 		if err := s.notifications.TicketCommented(ctx, comment.TicketID, comment.UserID); err != nil {

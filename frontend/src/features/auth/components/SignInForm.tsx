@@ -24,6 +24,21 @@ import { useSignInMutation } from '../authApiSlice'
 const rememberKey = '@issueTrack/remember'
 const defaultValues: ISignIn = { username: '', password: '', remember: false }
 
+type Remembered = { username?: string; remember?: boolean }
+
+const loadRemembered = (): ISignIn => {
+	let stored: Remembered | null = null
+	try {
+		stored = JSON.parse(localStorage.getItem(rememberKey) || 'null')
+	} catch {
+		// ignore malformed stored value
+	}
+	if (stored && typeof stored === 'object' && !!stored.username) {
+		return { username: stored.username, password: '', remember: stored.remember !== false }
+	}
+	return defaultValues
+}
+
 export const SignInForm = () => {
 	const [passIsVisible, setPassIsVisible] = useState(false)
 	const { palette } = useTheme()
@@ -35,7 +50,7 @@ export const SignInForm = () => {
 		control,
 		handleSubmit,
 		formState: { errors },
-	} = useForm<ISignIn>({ defaultValues: JSON.parse(localStorage.getItem(rememberKey) || 'null') || defaultValues })
+	} = useForm<ISignIn>({ defaultValues: loadRemembered() })
 
 	const [signIn, { isLoading }] = useSignInMutation()
 
@@ -43,7 +58,7 @@ export const SignInForm = () => {
 
 	const signInHandler = async (data: ISignIn) => {
 		if (data.remember) {
-			localStorage.setItem(rememberKey, JSON.stringify(data))
+			localStorage.setItem(rememberKey, JSON.stringify({ username: data.username, remember: true }))
 		} else {
 			localStorage.removeItem(rememberKey)
 		}

@@ -75,7 +75,7 @@ func (h *Handler) create(c *gin.Context) {
 	realm := c.GetHeader("realm")
 
 	var dto models.CreateCommentDTO
-	if err := c.ShouldBindJSON(&dto); err != nil {
+	if err := utils.BindJSON(c, &dto); err != nil {
 		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
 		return
 	}

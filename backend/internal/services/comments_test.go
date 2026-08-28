@@ -26,6 +26,7 @@ func commentServiceFixtures() (*MockCommentsRepo, *MockTicketAccessChecker, *Moc
 		mmRepo:        mockMMRepo,
 		mmSender:      mockSender,
 		notifications: nil,
+		txManager:     &mockTransactionManager{},
 	}
 	return mockRepo, mockAccess, mockTickets, mockUsers, mockMMRepo, mockSender, svc
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost/server/public/model"
@@ -128,7 +129,7 @@ func (h *Handler) handleInteractiveAction(c *gin.Context) {
 		ChannelID string            `json:"channel_id"`
 		Context   map[string]string `json:"context"`
 	}
-	if err := c.ShouldBindJSON(&payload); err != nil {
+	if err := utils.BindJSON(c, &payload); err != nil {
 		response.SendError(c, fmt.Errorf("invalid interactive action payload: %w", err))
 		return
 	}
@@ -157,9 +158,9 @@ func (h *Handler) handleWSEvent(c *gin.Context) {
 		Event  string `json:"event"`
 		UserID string `json:"user_id"`
 		Data   struct {
-			Post         string `json:"post"`
-			ChannelID    string `json:"channel_id"`
-			SenderName   string `json:"sender_name"`
+			Post       string `json:"post"`
+			ChannelID  string `json:"channel_id"`
+			SenderName string `json:"sender_name"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &raw); err != nil {

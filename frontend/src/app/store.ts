@@ -14,7 +14,7 @@ const rootReducer = combineReducers({
 
 export const store = configureStore({
 	reducer: rootReducer,
-	devTools: process.env.NODE_ENV === 'development',
+	devTools: import.meta.env.DEV,
 	middleware: getDefaultMiddleware =>
 		getDefaultMiddleware().prepend(resetStoreListener.middleware).concat(apiSlice.middleware),
 })

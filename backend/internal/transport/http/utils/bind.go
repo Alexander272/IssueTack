@@ -1,38 +1,36 @@
-package handlers
+package utils
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"reflect"
 	"strings"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
+	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 )
 
-func init() {
-	binding.JSON = fieldAwareBinding{}
-}
-
-type fieldAwareBinding struct{}
-
-func (fieldAwareBinding) Name() string { return "json" }
-
-func (b fieldAwareBinding) Bind(req *http.Request, obj any) error {
-	if req == nil || req.Body == nil {
+// BindJSON связывает JSON-тело запроса с dto. В отличие от штатного
+// c.ShouldBindJSON, для ошибок десериализации он дополнительно определяет имя
+// поля, из-за которого произошла ошибка, и возвращает *response.InputFieldError.
+//
+// Штатный декодер (goccy/go-json) сам сообщает имя поля только для ошибок типа
+// (*json.UnmarshalTypeError) и синтаксиса (*json.SyntaxError). Для кастомных
+// десериализаторов (например uuid.UUID) имя поля в ошибке отсутствует — оно
+// восстанавливается рекурсивным обходом структуры (см. inspectValue). Такой
+// обход выполняется только когда штатная ошибка не содержит поле, поэтому на
+// счастливом пути и на типовых ошибках накладных расходов нет.
+func BindJSON(c *gin.Context, obj any) error {
+	if c.Request == nil || c.Request.Body == nil {
 		return errors.New("invalid request")
 	}
-	body, err := io.ReadAll(req.Body)
+	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		return err
 	}
-	return decodeJSONBody(body, obj)
-}
-
-func (fieldAwareBinding) BindBody(body []byte, obj any) error {
 	return decodeJSONBody(body, obj)
 }
 

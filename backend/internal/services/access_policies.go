@@ -13,7 +13,7 @@ import (
 	"github.com/casbin/casbin/v3"
 )
 
-type accessPolicesService struct {
+type accessPoliciesService struct {
 	enforcer casbin.IEnforcer
 	adapter  Adapter
 	eventBus *events.PolicyEventManager
@@ -29,7 +29,7 @@ type PoliciesDeps struct {
 }
 
 // NewAccessPoliciesService создаёт Casbin-Enforcer на основе модели и адаптера и запускает перезагрузку политик по событиям.
-func NewAccessPoliciesService(deps *PoliciesDeps) *accessPolicesService {
+func NewAccessPoliciesService(deps *PoliciesDeps) *accessPoliciesService {
 	enforcer, err := casbin.NewEnforcer(deps.Conf.ModelPath, deps.Adapter)
 	if err != nil {
 		log.Fatalf("failed to initialize permission service. error: %s", err.Error())
@@ -39,7 +39,7 @@ func NewAccessPoliciesService(deps *PoliciesDeps) *accessPolicesService {
 	// 	log.Fatalf("failed to load policy from DB: %s", err.Error())
 	// }
 
-	s := &accessPolicesService{
+	s := &accessPoliciesService{
 		enforcer: enforcer,
 		adapter:  deps.Adapter,
 		eventBus: deps.EventBus,
@@ -77,12 +77,12 @@ type AccessPolicies interface {
 }
 
 // Enforce проверяет, разрешено ли субъекту sub выполнять действие act над объектом obj в домене dom.
-func (s *accessPolicesService) Enforce(sub, dom, obj, act string) (bool, error) {
+func (s *accessPoliciesService) Enforce(sub, dom, obj, act string) (bool, error) {
 	return s.enforcer.Enforce(sub, dom, obj, act)
 }
 
 // Reload перезагружает политики из адаптера в Enforcer.
-func (s *accessPolicesService) Reload() error {
+func (s *accessPoliciesService) Reload() error {
 	err := s.enforcer.LoadPolicy()
 	if err != nil {
 		return fmt.Errorf("failed to reload policies: %w", err)
@@ -91,12 +91,12 @@ func (s *accessPolicesService) Reload() error {
 }
 
 // Close завершает работу фонового прослушивания событий обновления политик.
-func (s *accessPolicesService) Close() {
+func (s *accessPoliciesService) Close() {
 	close(s.quit)
 }
 
 // GetPolicies возвращает неявные права пользователя в домене в виде отсортированного списка правил доступа.
-func (s *accessPolicesService) GetPolicies(user, domain string) (*models.Access, error) {
+func (s *accessPoliciesService) GetPolicies(user, domain string) (*models.Access, error) {
 	allPermissions, err := s.enforcer.GetImplicitPermissionsForUser(user, domain)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get implicit permissions for user: %w", err)

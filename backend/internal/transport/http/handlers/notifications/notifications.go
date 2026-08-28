@@ -59,7 +59,7 @@ func (h *Handler) updateSettings(c *gin.Context) {
 	}
 
 	var body map[string]bool
-	if err := c.ShouldBindJSON(&body); err != nil {
+	if err := utils.BindJSON(c, &body); err != nil {
 		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
 		return
 	}

@@ -120,7 +120,7 @@ func NewServices(deps *Deps) *Services {
 		BaseURL:   deps.Conf.Http.BaseURL,
 	})
 
-	comments := NewCommentService(deps.Repo.Comments, access, deps.Repo.Tickets, users, deps.Repo.Mattermost, mmMost, notifications)
+	comments := NewCommentService(deps.Repo.Comments, access, deps.Repo.Tickets, users, deps.Repo.Mattermost, mmMost, notifications, transaction)
 	tickets := NewTicketService(&TicketDeps{
 		Repo:          deps.Repo.Tickets,
 		TxManager:     transaction,
