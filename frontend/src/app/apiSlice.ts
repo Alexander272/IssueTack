@@ -31,7 +31,7 @@ const baseQuery = fetchBaseQuery({
 const mutex = new Mutex()
 
 type BaseQuery = BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError>
-const baseQueryWithReAuth: BaseQuery = async (args, api, extraOptions) => {
+export const baseQueryWithReAuth: BaseQuery = async (args, api, extraOptions) => {
 	// mutex позволяет предотвратить множественное обращение на обновление токена
 	await mutex.waitForUnlock()
 	let result = await baseQuery(args, api, extraOptions)

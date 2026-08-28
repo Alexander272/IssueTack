@@ -3,6 +3,7 @@ package services
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -23,6 +24,7 @@ var syncCommands = regexp.MustCompile(`^(?:синхронизировать|sync
 var helpCommands = regexp.MustCompile(`^(?:помощь|help|команды)$`)
 var statusCommands = regexp.MustCompile(`^(?:статус|status|мои|заявки|my)$`)
 var attachCommands = regexp.MustCompile(`^[#№]?(\d+)$`)
+var commentCommands = regexp.MustCompile(`^[#№]?(\d+)\s+(.+)$`)
 
 // MattermostDeps — зависимости фасада Mattermost: сервисы, необходимые
 // для оркестрации, и capability-уровень Most для отправки сообщений.
@@ -36,6 +38,7 @@ type MattermostDeps struct {
 	Categories  Categories
 	Sites       Sites
 	Attachments Attachments
+	Comments    Comments
 	Most        *mattermost.Most
 	BaseURL     string
 }
@@ -53,6 +56,7 @@ type MattermostService struct {
 	categories    Categories
 	sites         Sites
 	attachments   Attachments
+	comments      Comments
 	most          *mattermost.Most
 	baseURL       string
 	wsClients     map[string]*mattermost.WSClient
@@ -73,6 +77,7 @@ func NewMattermostService(deps *MattermostDeps) *MattermostService {
 		categories:  deps.Categories,
 		sites:       deps.Sites,
 		attachments: deps.Attachments,
+		comments:    deps.Comments,
 		most:        deps.Most,
 		baseURL:     deps.BaseURL,
 		wsClients:   make(map[string]*mattermost.WSClient),
@@ -201,11 +206,17 @@ func (s *MattermostService) HandleDM(ctx context.Context, input *HandleDMInput) 
 	case attachCommands.MatchString(msg) && len(input.FileIDs) > 0:
 		parts := attachCommands.FindStringSubmatch(msg)
 		number, _ := strconv.Atoi(parts[1])
-		return s.handleAttachFiles(ctx, settings, input.MmUserID, input.ChannelID, number, input.FileIDs)
+		return s.handleAttachFiles(ctx, settings, input.MmUserID, input.ChannelID, number, input.FileIDs, "")
+
+	case len(input.FileIDs) > 0 && !attachCommands.MatchString(msg):
+		return s.handleTextWithFiles(ctx, settings, input.MmUserID, input.ChannelID, msg, input.FileIDs)
+
+	case commentCommands.MatchString(msg):
+		return s.handleComment(ctx, settings, input.MmUserID, input.ChannelID, msg)
 
 	default:
 		if len(input.FileIDs) > 0 {
-			return s.handleAttachFiles(ctx, settings, input.MmUserID, input.ChannelID, 0, input.FileIDs)
+			return s.handleAttachFiles(ctx, settings, input.MmUserID, input.ChannelID, 0, input.FileIDs, "")
 		}
 		isAdmin := s.checkIsAdmin(ctx, settings.RealmID, input.MmUserID)
 		return s.sendHelpMessage(settings.BotToken, input.ChannelID, isAdmin)
@@ -240,6 +251,9 @@ func (s *MattermostService) sendHelpMessage(botToken, channelID string, isAdmin 
 
 • **заявка | новая | создать** — создать новую заявку
 • **статус | мои | заявки** — мои активные заявки
+• **№123 текст** — добавить комментарий к заявке №123
+• **№123 + файл(ы)** — прикрепить файлы к заявке №123
+• **файл(ы) + текст** — прикрепить файлы и оставить комментарий к последней заявке (или по номеру)
 • **помощь** — показать эту справку`
 
 	if isAdmin {
@@ -269,19 +283,21 @@ func (s *MattermostService) sendStatusMessage(_ context.Context, settings *model
 	return nil
 }
 
-// handleAttachFiles прикрепляет файлы Mattermost к заявке пользователя. Если
-// указан номер заявки — она ищется и проверяется, что пользователь её создатель
-// (иначе файлы не прикрепляются). Без номера файлы прикрепляются к последней
-// созданной пользователем заявке из recentTickets, если с момента создания
-// прошло не более 30 минут, — так команды вида «№123 + файлы» и просто постинг
-// файлов после создания заявки работают единообразно.
-func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *models.RealmMattermost, mmUserID, channelID string, ticketNumber int, fileIDs []string) error {
+// handleAttachFiles прикрепляет файлы Mattermost к заявке пользователя и, если
+// передан commentText (текст сообщения, а не только номер), оставляет его
+// комментарием к той же заявке. Если указан номер заявки — файлы ищутся по нему,
+// и файлы прикрепляются, только если пользователь её создатель (иначе файлы не
+// прикрепляются; комментарий всё же создаётся при наличии work-доступа). Без
+// номера файлы прикрепляются к последней созданной пользователем заявке из
+// recentTickets, если с момента создания прошло не более 30 минут.
+func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *models.RealmMattermost, mmUserID, channelID string, ticketNumber int, fileIDs []string, commentText string) error {
 	userID, _, err := s.resolveOrCreateUser(ctx, settings.RealmID, mmUserID, nil)
 	if err != nil {
 		return fmt.Errorf("failed to resolve user: %w", err)
 	}
 
 	var ticketID uuid.UUID
+	numberFromRecent := 0
 
 	if ticketNumber > 0 {
 		tickets, _, err := s.tickets.Get(ctx, &models.TicketFilter{
@@ -293,10 +309,14 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *mod
 			return s.sendDM(settings, mmUserID, fmt.Sprintf("Заявка №%d не найдена", ticketNumber))
 		}
 		ticket := tickets[0]
-		if ticket.Creator.ID != userID {
-			return s.sendDM(settings, mmUserID, "Прикреплять файлы может только создатель заявки")
-		}
 		ticketID = ticket.ID
+		if ticket.Creator.ID != userID {
+			if commentText == "" {
+				return s.sendDM(settings, mmUserID, "Прикреплять файлы может только создатель заявки")
+			}
+			return s.commentAndReply(ctx, settings, mmUserID, ticketID, commentText)
+		}
+		numberFromRecent = ticketNumber
 	} else {
 		val, ok := s.recentTickets.Load(mmUserID + ":" + channelID)
 		if !ok {
@@ -347,14 +367,115 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *mod
 		attached++
 	}
 
-	if attached > 0 {
-		msg := fmt.Sprintf("К заявке прикреплено файлов: %d", attached)
-		if ticketNumber > 0 {
-			msg = fmt.Sprintf("К заявке №%d прикреплено файлов: %d", ticketNumber, attached)
-		}
-		return s.sendDM(settings, mmUserID, msg)
+	var reply string
+	if numberFromRecent > 0 {
+		reply = fmt.Sprintf("К заявке №%d прикреплено файлов: %d", numberFromRecent, attached)
+	} else {
+		reply = fmt.Sprintf("К заявке прикреплено файлов: %d", attached)
 	}
-	return nil
+	if commentText != "" {
+		if _, err := s.comments.Create(ctx, nil, &models.CreateCommentDTO{
+			Text:       commentText,
+			TicketID:   ticketID,
+			IsInternal: false,
+			Type:       "",
+			UserID:     userID,
+			Realm:      settings.RealmID.String(),
+		}); err != nil {
+			if errors.Is(err, models.ErrPermissionDenied) {
+				reply += "\nНет прав на комментарий к этой заявке"
+			} else {
+				logger.Warn("failed to create comment with files", logger.StringAttr("ticket_id", ticketID.String()), logger.ErrAttr(err))
+				reply += "\nНе удалось сохранить текст комментария"
+			}
+		} else {
+			reply += "\nКомментарий добавлен"
+		}
+	}
+	return s.sendDM(settings, mmUserID, reply)
+}
+
+// commentAndReply создаёт комментарий к тикету (work-доступ) и отправляет
+// пользователю DM с результатом. Используется, когда файлы не прикрепить
+// (пользователь не создатель), но комментарий оставить можно.
+func (s *MattermostService) commentAndReply(ctx context.Context, settings *models.RealmMattermost, mmUserID string, ticketID uuid.UUID, commentText string) error {
+	if commentText == "" {
+		return nil
+	}
+	userID, _, err := s.resolveOrCreateUser(ctx, settings.RealmID, mmUserID, nil)
+	if err != nil {
+		return fmt.Errorf("failed to resolve user: %w", err)
+	}
+	if _, err := s.comments.Create(ctx, nil, &models.CreateCommentDTO{
+		Text:       commentText,
+		TicketID:   ticketID,
+		IsInternal: false,
+		Type:       "",
+		UserID:     userID,
+		Realm:      settings.RealmID.String(),
+	}); err != nil {
+		if errors.Is(err, models.ErrPermissionDenied) {
+			return s.sendDM(settings, mmUserID, "Нет прав комментировать эту заявку")
+		}
+		return fmt.Errorf("failed to create comment: %w", err)
+	}
+	return s.sendDM(settings, mmUserID, "Комментарий добавлен. Файлы может прикреплять только создатель заявки")
+}
+
+// handleTextWithFiles обрабатывает сообщение с файлами и текстом: прикрепляет
+// файлы и оставляет текст комментарием к той же заявке. Номер заявки берётся из
+// сообщения (если есть, например «№123 ...»), иначе файлы и комментарий идут к
+// последней созданной пользователем заявке из recentTickets.
+func (s *MattermostService) handleTextWithFiles(ctx context.Context, settings *models.RealmMattermost, mmUserID, channelID, msg string, fileIDs []string) error {
+	number := 0
+	text := ""
+	if m := commentCommands.FindStringSubmatch(msg); m != nil {
+		number, _ = strconv.Atoi(m[1])
+		text = strings.TrimSpace(m[2])
+	} else {
+		text = strings.TrimSpace(msg)
+	}
+	return s.handleAttachFiles(ctx, settings, mmUserID, channelID, number, fileIDs, text)
+}
+
+// handleComment создаёт комментарий к заявке из личного сообщения Mattermost.
+// Синтаксис: «№123 текст комментария». Пользователь резолвится по mattermost_id,
+// комментарий проходит ту же проверку work-доступа, что и написанный в программе.
+func (s *MattermostService) handleComment(ctx context.Context, settings *models.RealmMattermost, mmUserID, channelID, message string) error {
+	parts := commentCommands.FindStringSubmatch(message)
+	number, _ := strconv.Atoi(parts[1])
+	text := strings.TrimSpace(parts[2])
+
+	userID, _, err := s.resolveOrCreateUser(ctx, settings.RealmID, mmUserID, nil)
+	if err != nil {
+		return fmt.Errorf("failed to resolve user: %w", err)
+	}
+
+	tickets, _, err := s.tickets.Get(ctx, &models.TicketFilter{
+		Number:  &number,
+		RealmID: &settings.RealmID,
+		Actor:   &models.Actor{ID: userID},
+	})
+	if err != nil || len(tickets) == 0 {
+		return s.sendDM(settings, mmUserID, fmt.Sprintf("Заявка №%d не найдена", number))
+	}
+	ticket := tickets[0]
+
+	if _, err := s.comments.Create(ctx, nil, &models.CreateCommentDTO{
+		Text:       text,
+		TicketID:   ticket.ID,
+		IsInternal: false,
+		Type:       "",
+		UserID:     userID,
+		Realm:      settings.RealmID.String(),
+	}); err != nil {
+		if errors.Is(err, models.ErrPermissionDenied) {
+			return s.sendDM(settings, mmUserID, fmt.Sprintf("Нет прав комментировать заявку №%d", number))
+		}
+		return fmt.Errorf("failed to create comment from mattermost: %w", err)
+	}
+
+	return s.sendDM(settings, mmUserID, fmt.Sprintf("Комментарий добавлен к заявке №%d", number))
 }
 
 func (s *MattermostService) sendDM(settings *models.RealmMattermost, mmUserID, message string) error {

@@ -13,12 +13,13 @@ import (
 // GroupService — сервис работы с группами и их участниками.
 type GroupService struct {
 	repo      repository.Groups
+	tickets   repository.Tickets
 	txManager TransactionManager
 }
 
 // NewGroupService создаёт GroupService.
-func NewGroupService(repo repository.Groups, txManager TransactionManager) *GroupService {
-	return &GroupService{repo: repo, txManager: txManager}
+func NewGroupService(repo repository.Groups, tickets repository.Tickets, txManager TransactionManager) *GroupService {
+	return &GroupService{repo: repo, tickets: tickets, txManager: txManager}
 }
 
 // Groups — интерфейс работы с группами.
@@ -178,7 +179,13 @@ func (s *GroupService) Update(ctx context.Context, dto *models.GroupDTO) error {
 
 // Delete удаляет группу.
 func (s *GroupService) Delete(ctx context.Context, dto *models.DelGroupDTO) error {
-	//TODO возможно надо проверить все ли тикеты в этой группе закрыты
+	count, err := s.tickets.CountNotClosedByGroup(ctx, dto.ID)
+	if err != nil {
+		return fmt.Errorf("failed to count not closed tickets in group: %w", err)
+	}
+	if count > 0 {
+		return models.ErrGroupHasOpenTickets
+	}
 
 	if err := s.repo.Delete(ctx, dto); err != nil {
 		return fmt.Errorf("failed to delete group. error: %w", err)

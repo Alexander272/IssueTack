@@ -68,6 +68,9 @@ type ActivityLog interface {
 type Notifications interface {
 	postgres.Notifications
 }
+type TicketSubscriptions interface {
+	postgres.TicketSubscriptions
+}
 type Mattermost interface {
 	postgres.MattermostRepoInterface
 }
@@ -92,6 +95,7 @@ type Repository struct {
 	Comments
 	ActivityLog
 	Notifications
+	TicketSubscriptions
 	Mattermost
 }
 
@@ -110,16 +114,17 @@ func NewRepository(pool *pgxpool.Pool, memDB *redis.Client, conf config.AuthConf
 
 		SessionCache: redis_repo.NewSessionCacheRepo(memDB, conf.AccessTokenTTL),
 
-		Groups:        postgres.NewGroupRepo(pool, transaction),
-		Categories:    postgres.NewCategoryRepo(pool),
-		Sites:         postgres.NewSiteRepo(pool),
-		Tickets:       postgres.NewTicketRepo(pool, transaction),
-		Subtasks:      postgres.NewSubtaskRepo(pool, transaction),
-		Attachments:   postgres.NewAttachmentRepo(pool, transaction),
-		Checklists:    postgres.NewChecklistRepo(pool, transaction),
-		Comments:      postgres.NewCommentRepo(pool, transaction),
-		ActivityLog:   postgres.NewActivityRepo(pool, transaction),
-		Notifications: postgres.NewNotificationRepo(pool, transaction),
-		Mattermost:    postgres.NewMattermostRepo(pool, transaction),
+		Groups:              postgres.NewGroupRepo(pool, transaction),
+		Categories:          postgres.NewCategoryRepo(pool),
+		Sites:               postgres.NewSiteRepo(pool),
+		Tickets:             postgres.NewTicketRepo(pool, transaction),
+		Subtasks:            postgres.NewSubtaskRepo(pool, transaction),
+		Attachments:         postgres.NewAttachmentRepo(pool, transaction),
+		Checklists:          postgres.NewChecklistRepo(pool, transaction),
+		Comments:            postgres.NewCommentRepo(pool, transaction),
+		ActivityLog:         postgres.NewActivityRepo(pool, transaction),
+		Notifications:       postgres.NewNotificationRepo(pool, transaction),
+		TicketSubscriptions: postgres.NewSubscriptionRepo(pool, transaction),
+		Mattermost:          postgres.NewMattermostRepo(pool, transaction),
 	}
 }

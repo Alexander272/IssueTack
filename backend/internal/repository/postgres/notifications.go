@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
+	json "github.com/goccy/go-json"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -29,6 +30,8 @@ type Notifications interface {
 	MarkAllRead(ctx context.Context, tx Tx, userID uuid.UUID) error
 	GetResponsibleByCategory(ctx context.Context, categoryID uuid.UUID) ([]uuid.UUID, error)
 	GetSettings(ctx context.Context, userID uuid.UUID) (*models.NotificationSettings, error)
+	SaveSettings(ctx context.Context, tx Tx, userID uuid.UUID, settings json.RawMessage) error
+	GetRealmAdmins(ctx context.Context, realmID uuid.UUID) ([]uuid.UUID, error)
 }
 
 func (r *notificationRepository) Create(ctx context.Context, tx Tx, dto *models.CreateNotificationDTO) error {
@@ -128,4 +131,48 @@ func (r *notificationRepository) GetSettings(ctx context.Context, userID uuid.UU
 		return nil, MapError(fmt.Errorf("failed to get notification settings: %w", err))
 	}
 	return settings, nil
+}
+
+// SaveSettings сохраняет персональные настройки уведомлений пользователя (upsert).
+func (r *notificationRepository) SaveSettings(ctx context.Context, tx Tx, userID uuid.UUID, settings json.RawMessage) error {
+	query := fmt.Sprintf(`
+		INSERT INTO %s (user_id, settings)
+		VALUES ($1, $2)
+		ON CONFLICT (user_id) DO UPDATE SET settings = EXCLUDED.settings`, Tables.NotificationSettings)
+
+	_, err := r.getExec(tx).Exec(ctx, query, userID, settings)
+	if err != nil {
+		return MapError(fmt.Errorf("failed to save notification settings: %w", err))
+	}
+	return nil
+}
+
+// GetRealmAdmins возвращает ID пользователей реалма с ролью admin или root.
+func (r *notificationRepository) GetRealmAdmins(ctx context.Context, realmID uuid.UUID) ([]uuid.UUID, error) {
+	query := fmt.Sprintf(`
+		SELECT ur.user_id
+		FROM %s ur
+		JOIN %s r ON ur.role_id = r.id
+		WHERE ur.realm_id = $1 AND ur.is_active = true AND r.is_active = true
+			AND r.slug IN ('admin', 'root')`, Tables.UserRealms, Tables.Roles)
+
+	rows, err := r.db.Query(ctx, query, realmID)
+	if err != nil {
+		return nil, MapError(fmt.Errorf("failed to get realm admins: %w", err))
+	}
+	defer rows.Close()
+
+	var data []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, MapError(fmt.Errorf("scan row error: %w", err))
+		}
+		data = append(data, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
+
+	return data, nil
 }

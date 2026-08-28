@@ -44,6 +44,8 @@ type Tickets interface {
 	Update(ctx context.Context, tx Tx, dto *models.TicketDTO) error
 	Delete(ctx context.Context, tx Tx, dto *models.DeleteTicketDTO) error
 	CloseResolved(ctx context.Context, cutoff time.Time) (int64, error)
+	CountNotClosedByGroup(ctx context.Context, groupID uuid.UUID) (int, error)
+	CountNotClosedByCategory(ctx context.Context, categoryID uuid.UUID) (int, error)
 }
 
 type nullableTicketAssoc struct {
@@ -458,4 +460,28 @@ func (r *TicketRepo) CloseResolved(ctx context.Context, cutoff time.Time) (int64
 		return 0, MapError(fmt.Errorf("failed to auto-close resolved tickets: %w", err))
 	}
 	return cmd.RowsAffected(), nil
+}
+
+// CountNotClosedByGroup возвращает количество незакрытых заявок в группе.
+func (r *TicketRepo) CountNotClosedByGroup(ctx context.Context, groupID uuid.UUID) (int, error) {
+	query := fmt.Sprintf(`SELECT COUNT(*) FROM %s
+		WHERE group_id = $1 AND status NOT IN ('closed', 'cancelled')`, Tables.Tickets)
+
+	var count int
+	if err := r.db.QueryRow(ctx, query, groupID).Scan(&count); err != nil {
+		return 0, MapError(fmt.Errorf("failed to count not closed tickets by group: %w", err))
+	}
+	return count, nil
+}
+
+// CountNotClosedByCategory возвращает количество незакрытых заявок в категории.
+func (r *TicketRepo) CountNotClosedByCategory(ctx context.Context, categoryID uuid.UUID) (int, error) {
+	query := fmt.Sprintf(`SELECT COUNT(*) FROM %s
+		WHERE category_id = $1 AND status NOT IN ('closed', 'cancelled')`, Tables.Tickets)
+
+	var count int
+	if err := r.db.QueryRow(ctx, query, categoryID).Scan(&count); err != nil {
+		return 0, MapError(fmt.Errorf("failed to count not closed tickets by category: %w", err))
+	}
+	return count, nil
 }

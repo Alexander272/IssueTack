@@ -1,8 +1,31 @@
 import { Box, Checkbox, FormControlLabel, Typography } from '@mui/material'
-import { useState } from 'react'
+import { BoxFallback } from '@/components/Fallback/BoxFallback'
+import {
+	useGetIsSubscribedQuery,
+	useSubscribeMutation,
+	useUnsubscribeMutation,
+} from '../../tasksApiSlice'
 
-export const Notifications = () => {
-	const [checked, setChecked] = useState(true)
+interface Props {
+	taskId: string
+}
+
+export const Notifications = ({ taskId }: Props) => {
+	const { data, isLoading } = useGetIsSubscribedQuery(taskId)
+	const [subscribe] = useSubscribeMutation()
+	const [unsubscribe] = useUnsubscribeMutation()
+
+	if (isLoading) return <BoxFallback />
+
+	const subscribed = data?.data?.subscribed ?? false
+
+	const handleChange = async (checked: boolean) => {
+		if (checked) {
+			await subscribe(taskId)
+		} else {
+			await unsubscribe(taskId)
+		}
+	}
 
 	return (
 		<Box sx={{ bgcolor: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
@@ -15,8 +38,8 @@ export const Notifications = () => {
 				<FormControlLabel
 					control={
 						<Checkbox
-							checked={checked}
-							onChange={e => setChecked(e.target.checked)}
+							checked={subscribed}
+							onChange={e => handleChange(e.target.checked)}
 							sx={{ '&.Mui-checked': { color: 'primary.main' } }}
 						/>
 					}

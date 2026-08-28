@@ -35,6 +35,7 @@ type Services struct {
 	Checklists
 	Comments
 	Notifications
+	Subscriptions
 	ActivityLog
 	UserRealms
 
@@ -100,19 +101,26 @@ func NewServices(deps *Deps) *Services {
 
 	// --- Кластер домена (группы, каталог, заявки) -----------------------
 	// Группы создаются здесь же: они нужны и session (доступ), и тикетам.
-	groups := NewGroupService(deps.Repo.Groups, transaction)
+	groups := NewGroupService(deps.Repo.Groups, deps.Repo.Tickets, transaction)
 	session := NewSessionService(deps.Keycloak, policies, userRealms, users, groups, cacheSvc)
 
 	access := NewTicketAccessService(deps.Repo.Tickets, groups, policies)
 
-	categories := NewCategoryService(deps.Repo.Categories)
+	categories := NewCategoryService(deps.Repo.Categories, deps.Repo.Tickets)
 	sites := NewSiteService(deps.Repo.Sites)
 	logs := NewActivityLogService(deps.Repo.ActivityLog, transaction)
 	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs, access)
-	attachments := NewAttachmentService(deps.Repo.Attachments, &deps.Conf.FileServer, access, deps.Repo.Subtasks)
+	notifications := NewNotificationService(deps.Hub, deps.Repo.Notifications, deps.Repo.Tickets, deps.Repo.TicketSubscriptions, transaction)
+	attachments := NewAttachmentService(deps.Repo.Attachments, &deps.Conf.FileServer, access, deps.Repo.Subtasks, notifications)
 	checklists := NewChecklistService(deps.Repo.Checklists, subtasks)
-	notifications := NewNotificationService(deps.Hub, deps.Repo.Notifications, deps.Repo.Tickets, transaction)
-	comments := NewCommentService(deps.Repo.Comments, access)
+	subscriptions := NewTicketSubscriptionService(deps.Repo.TicketSubscriptions, deps.Repo.Tickets, access)
+
+	mmMost := mattermost.NewMost(mattermost.MostConfig{
+		ServerURL: deps.Conf.Mattermost.URL,
+		BaseURL:   deps.Conf.Http.BaseURL,
+	})
+
+	comments := NewCommentService(deps.Repo.Comments, access, deps.Repo.Tickets, users, deps.Repo.Mattermost, mmMost, notifications)
 	tickets := NewTicketService(&TicketDeps{
 		Repo:          deps.Repo.Tickets,
 		TxManager:     transaction,
@@ -129,10 +137,6 @@ func NewServices(deps *Deps) *Services {
 	audit.StartListening(deps.Ctx, updatePolicyEvent)
 	scheduler := NewSchedulerService(&SchedulerDeps{Tickets: tickets})
 
-	mmMost := mattermost.NewMost(mattermost.MostConfig{
-		ServerURL: deps.Conf.Mattermost.URL,
-		BaseURL:   deps.Conf.Http.BaseURL,
-	})
 	mattermostSvc := NewMattermostService(&MattermostDeps{
 		Repo:        deps.Repo.Mattermost,
 		Users:       users,
@@ -143,6 +147,7 @@ func NewServices(deps *Deps) *Services {
 		Categories:  categories,
 		Sites:       sites,
 		Attachments: attachments,
+		Comments:    comments,
 		Most:        mmMost,
 		BaseURL:     deps.Conf.Http.BaseURL,
 	})
@@ -168,6 +173,7 @@ func NewServices(deps *Deps) *Services {
 		Checklists:    checklists,
 		Comments:      comments,
 		Notifications: notifications,
+		Subscriptions: subscriptions,
 		ActivityLog:   logs,
 		UserRealms:    userRealms,
 

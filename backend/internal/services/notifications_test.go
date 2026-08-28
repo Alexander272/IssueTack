@@ -14,13 +14,18 @@ import (
 func notificationServiceFixtures() (*MockNotificationsRepo, *MockTicketsRepo, *ws_hub.Hub, *NotificationService) {
 	mockRepo := new(MockNotificationsRepo)
 	mockTicketRepo := new(MockTicketsRepo)
+	mockSubs := new(MockTicketSubscriptionsRepo)
 	hub := ws_hub.NewWebsocketHub()
 
+	mockRepo.On("GetRealmAdmins", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
+	mockSubs.On("GetByTicket", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
+
 	svc := &NotificationService{
-		hub:        hub,
-		repo:       mockRepo,
-		ticketRepo: mockTicketRepo,
-		txManager:  &mockTransactionManager{},
+		hub:           hub,
+		repo:          mockRepo,
+		ticketRepo:    mockTicketRepo,
+		subscriptions: mockSubs,
+		txManager:     &mockTransactionManager{},
 	}
 	return mockRepo, mockTicketRepo, hub, svc
 }

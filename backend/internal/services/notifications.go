@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
@@ -10,24 +9,27 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/Alexander272/IssueTrack/backend/pkg/ws_hub"
+	json "github.com/goccy/go-json"
 	"github.com/google/uuid"
 )
 
 // NotificationService — сервис уведомлений пользователей (сохранение в БД и push через WebSocket-хаб).
 type NotificationService struct {
-	hub        *ws_hub.Hub
-	repo       repository.Notifications
-	ticketRepo repository.Tickets
-	txManager  TransactionManager
+	hub           *ws_hub.Hub
+	repo          repository.Notifications
+	ticketRepo    repository.Tickets
+	subscriptions repository.TicketSubscriptions
+	txManager     TransactionManager
 }
 
 // NewNotificationService создаёт NotificationService.
-func NewNotificationService(hub *ws_hub.Hub, repo repository.Notifications, ticketRepo repository.Tickets, txManager TransactionManager) *NotificationService {
+func NewNotificationService(hub *ws_hub.Hub, repo repository.Notifications, ticketRepo repository.Tickets, subscriptions repository.TicketSubscriptions, txManager TransactionManager) *NotificationService {
 	return &NotificationService{
-		hub:        hub,
-		repo:       repo,
-		ticketRepo: ticketRepo,
-		txManager:  txManager,
+		hub:           hub,
+		repo:          repo,
+		ticketRepo:    ticketRepo,
+		subscriptions: subscriptions,
+		txManager:     txManager,
 	}
 }
 
@@ -39,6 +41,14 @@ type Notifications interface {
 	TicketUpdated(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID, changes []*models.FieldChange) error
 	// TicketDeleted оповещает заинтересованных пользователей об удалении тикета.
 	TicketDeleted(ctx context.Context, ticket *models.Ticket) error
+	// TicketCommented оповещает исполнителя и подписанных о новом комментарии.
+	TicketCommented(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID) error
+	// AttachmentAdded оповещает исполнителя и подписанных о новом вложении.
+	AttachmentAdded(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID) error
+	// GetSettings возвращает персональные настройки уведомлений пользователя.
+	GetSettings(ctx context.Context, userID uuid.UUID) (*models.NotificationSettings, error)
+	// SaveSettings сохраняет персональные настройки уведомлений пользователя.
+	SaveSettings(ctx context.Context, userID uuid.UUID, settings json.RawMessage) error
 	// SendUnread отправляет клиенту непрочитанные уведомления.
 	SendUnread(ctx context.Context, client *ws_hub.Client) error
 }
@@ -57,6 +67,12 @@ func (s *NotificationService) TicketCreated(ctx context.Context, dto *models.Tic
 	}
 	for _, id := range responsible {
 		recipients[id] = struct{}{}
+	}
+
+	if dto.RealmID != nil {
+		if err := s.addRealmAdmins(ctx, *dto.RealmID, recipients); err != nil {
+			return err
+		}
 	}
 
 	data, err := json.Marshal(map[string]interface{}{
@@ -95,6 +111,20 @@ func (s *NotificationService) TicketUpdated(ctx context.Context, ticketID uuid.U
 
 	if ticket.Manager != nil {
 		recipients[ticket.Manager.ID] = struct{}{}
+	}
+
+	if ticket.RealmID != nil {
+		if err := s.addRealmAdmins(ctx, *ticket.RealmID, recipients); err != nil {
+			return err
+		}
+	}
+
+	subscribers, err := s.subscriptions.GetByTicket(ctx, ticketID)
+	if err != nil {
+		return fmt.Errorf("failed to get ticket subscribers: %w", err)
+	}
+	for _, id := range subscribers {
+		recipients[id] = struct{}{}
 	}
 
 	for _, change := range changes {
@@ -174,6 +204,12 @@ func (s *NotificationService) TicketDeleted(ctx context.Context, ticket *models.
 		recipients[id] = struct{}{}
 	}
 
+	if ticket.RealmID != nil {
+		if err := s.addRealmAdmins(ctx, *ticket.RealmID, recipients); err != nil {
+			return err
+		}
+	}
+
 	data, err := json.Marshal(map[string]interface{}{
 		"ticket_id": ticket.ID.String(),
 		"title":     ticket.Title,
@@ -196,6 +232,130 @@ func (s *NotificationService) TicketDeleted(ctx context.Context, ticket *models.
 		}
 	}
 
+	return nil
+}
+
+// TicketCommented оповещает исполнителя и подписанных о новом комментарии по заявке.
+// Самому автору комментария уведомление не отправляется.
+func (s *NotificationService) TicketCommented(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID) error {
+	ticket, err := s.ticketRepo.GetByID(ctx, &models.GetTicketByIdDTO{ID: ticketID})
+	if err != nil {
+		return fmt.Errorf("failed to get ticket for comment notification: %w", err)
+	}
+
+	recipients := make(map[uuid.UUID]struct{})
+
+	if ticket.Assignee != nil && ticket.Assignee.ID != actorID {
+		recipients[ticket.Assignee.ID] = struct{}{}
+	}
+
+	subscribers, err := s.subscriptions.GetByTicket(ctx, ticketID)
+	if err != nil {
+		return fmt.Errorf("failed to get ticket subscribers: %w", err)
+	}
+	for _, id := range subscribers {
+		if id != actorID {
+			recipients[id] = struct{}{}
+		}
+	}
+
+	delete(recipients, actorID)
+
+	data, err := json.Marshal(map[string]interface{}{
+		"ticket_id": ticket.ID.String(),
+		"title":     ticket.Title,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal notification data: %w", err)
+	}
+
+	for userID := range recipients {
+		dto := &models.CreateNotificationDTO{
+			UserID: userID,
+			Type:   string(models.NotificationTicketComment),
+			Title:  "Новый комментарий",
+			Body:   ticket.Title,
+			Data:   data,
+		}
+
+		if err := s.send(ctx, userID, dto); err != nil {
+			logger.Warn("failed to send notification", logger.StringAttr("user_id", userID.String()), logger.ErrAttr(err))
+		}
+	}
+
+	return nil
+}
+
+// AttachmentAdded оповещает исполнителя и подписанных о новом вложении по заявке.
+// Самому автору вложения уведомление не отправляется.
+func (s *NotificationService) AttachmentAdded(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID) error {
+	ticket, err := s.ticketRepo.GetByID(ctx, &models.GetTicketByIdDTO{ID: ticketID})
+	if err != nil {
+		return fmt.Errorf("failed to get ticket for attachment notification: %w", err)
+	}
+
+	recipients := make(map[uuid.UUID]struct{})
+
+	if ticket.Assignee != nil && ticket.Assignee.ID != actorID {
+		recipients[ticket.Assignee.ID] = struct{}{}
+	}
+
+	subscribers, err := s.subscriptions.GetByTicket(ctx, ticketID)
+	if err != nil {
+		return fmt.Errorf("failed to get ticket subscribers: %w", err)
+	}
+	for _, id := range subscribers {
+		if id != actorID {
+			recipients[id] = struct{}{}
+		}
+	}
+
+	delete(recipients, actorID)
+
+	data, err := json.Marshal(map[string]interface{}{
+		"ticket_id": ticket.ID.String(),
+		"title":     ticket.Title,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal notification data: %w", err)
+	}
+
+	for userID := range recipients {
+		dto := &models.CreateNotificationDTO{
+			UserID: userID,
+			Type:   string(models.NotificationTicketAttachment),
+			Title:  "Новое вложение",
+			Body:   ticket.Title,
+			Data:   data,
+		}
+
+		if err := s.send(ctx, userID, dto); err != nil {
+			logger.Warn("failed to send notification", logger.StringAttr("user_id", userID.String()), logger.ErrAttr(err))
+		}
+	}
+
+	return nil
+}
+
+// GetSettings возвращает персональные настройки уведомлений пользователя.
+func (s *NotificationService) GetSettings(ctx context.Context, userID uuid.UUID) (*models.NotificationSettings, error) {
+	return s.repo.GetSettings(ctx, userID)
+}
+
+// SaveSettings сохраняет персональные настройки уведомлений пользователя.
+func (s *NotificationService) SaveSettings(ctx context.Context, userID uuid.UUID, settings json.RawMessage) error {
+	return s.repo.SaveSettings(ctx, nil, userID, settings)
+}
+
+// addRealmAdmins добавляет в получателей админов и root-пользователей реалма.
+func (s *NotificationService) addRealmAdmins(ctx context.Context, realmID uuid.UUID, recipients map[uuid.UUID]struct{}) error {
+	admins, err := s.repo.GetRealmAdmins(ctx, realmID)
+	if err != nil {
+		return err
+	}
+	for _, id := range admins {
+		recipients[id] = struct{}{}
+	}
 	return nil
 }
 

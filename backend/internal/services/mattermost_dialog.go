@@ -230,6 +230,7 @@ func (s *MattermostService) sendTicketCreatedDM(settings *models.RealmMattermost
 	if s.baseURL != "" {
 		msg += fmt.Sprintf("\nОткрыть: %s/tasks/%s", s.baseURL, dto.ID.String())
 	}
+	msg += "\nОтправьте файлы следующим сообщением в течение 30 минут — они прикрепятся автоматически к этой заявке. Или можете указать номер заявки (например, №123) вместе с файлами."
 	if err := s.most.DM.Send(settings.BotToken, settings.BotUserID, mmUserID, msg); err != nil {
 		logger.Warn("failed to send ticket created DM", logger.ErrAttr(err))
 	}

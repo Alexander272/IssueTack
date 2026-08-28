@@ -7,17 +7,18 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/activity_log"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/attachments"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/audit_log"
-	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/mattermost"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/auth"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/categories"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/checklists"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/comments"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/groups"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/mattermost"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/notifications"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/permissions"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/realms"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/roles"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/sites"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/subscriptions"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/subtasks"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/tickets"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/users"
@@ -76,7 +77,8 @@ func (h *Handler) Init(group *gin.RouterGroup) {
 	realms.Register(secure, h.services.Realms, h.services.Mattermost, h.middleware)
 	users.Register(secure, h.services.Users, h.services.Session, h.middleware)
 
-	notifications.Register(secure, h.services.Notifications)
+	notifications.Register(secure, h.services.Notifications, h.middleware)
+	subscriptions.Register(secure, h.services.Subscriptions, h.middleware)
 	activity_log.Register(secure, h.services.ActivityLog, h.middleware)
 	audit_log.Register(secure, h.services.AuditLogs, h.middleware)
 

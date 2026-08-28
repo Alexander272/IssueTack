@@ -8,6 +8,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
 	"github.com/Alexander272/IssueTrack/backend/pkg/ws_hub"
+	json "github.com/goccy/go-json"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 )
@@ -242,6 +243,14 @@ func (m *MockTicketsRepo) CloseResolved(ctx context.Context, cutoff time.Time) (
 	args := m.Called(ctx, cutoff)
 	return args.Get(0).(int64), args.Error(1)
 }
+func (m *MockTicketsRepo) CountNotClosedByGroup(ctx context.Context, groupID uuid.UUID) (int, error) {
+	args := m.Called(ctx, groupID)
+	return args.Int(0), args.Error(1)
+}
+func (m *MockTicketsRepo) CountNotClosedByCategory(ctx context.Context, categoryID uuid.UUID) (int, error) {
+	args := m.Called(ctx, categoryID)
+	return args.Int(0), args.Error(1)
+}
 
 type MockGroupsRepo struct {
 	mock.Mock
@@ -302,6 +311,103 @@ func (m *MockGroupsRepo) AddMember(ctx context.Context, dto *models.GroupMemberD
 	return args.Error(0)
 }
 func (m *MockGroupsRepo) RemoveMember(ctx context.Context, dto *models.GroupMemberDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+
+type MockCategoriesRepo struct {
+	mock.Mock
+}
+
+func (m *MockCategoriesRepo) Get(ctx context.Context, req *models.GetCategoriesDTO) ([]*models.Category, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.Category), args.Error(1)
+}
+func (m *MockCategoriesRepo) GetByID(ctx context.Context, req *models.GetCategoryByIdDTO) (*models.Category, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Category), args.Error(1)
+}
+func (m *MockCategoriesRepo) Create(ctx context.Context, dto *models.CategoryDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+func (m *MockCategoriesRepo) Update(ctx context.Context, dto *models.CategoryDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+func (m *MockCategoriesRepo) Delete(ctx context.Context, dto *models.DelCategoryDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+
+type MockGroupRepo struct {
+	mock.Mock
+}
+
+func (m *MockGroupRepo) Get(ctx context.Context, req *models.GetGroupsDTO) ([]*models.Group, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.Group), args.Error(1)
+}
+func (m *MockGroupRepo) GetByID(ctx context.Context, req *models.GetGroupDTO) (*models.Group, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Group), args.Error(1)
+}
+func (m *MockGroupRepo) Create(ctx context.Context, tx postgres.Tx, dto *models.GroupDTO) error {
+	args := m.Called(ctx, tx, dto)
+	return args.Error(0)
+}
+func (m *MockGroupRepo) Update(ctx context.Context, tx postgres.Tx, dto *models.GroupDTO) error {
+	args := m.Called(ctx, tx, dto)
+	return args.Error(0)
+}
+func (m *MockGroupRepo) Delete(ctx context.Context, dto *models.DelGroupDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+func (m *MockGroupRepo) GetMembers(ctx context.Context, req *models.GetGroupDTO) ([]*models.UserShort, error) {
+	args := m.Called(ctx, req)
+	return args.Get(0).([]*models.UserShort), args.Error(1)
+}
+func (m *MockGroupRepo) GetMembersMap(ctx context.Context, groupIDs []uuid.UUID) (map[uuid.UUID][]*models.UserShort, error) {
+	args := m.Called(ctx, groupIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[uuid.UUID][]*models.UserShort), args.Error(1)
+}
+func (m *MockGroupRepo) GetMemberCount(ctx context.Context, groupID uuid.UUID) (int, error) {
+	args := m.Called(ctx, groupID)
+	return args.Int(0), args.Error(1)
+}
+func (m *MockGroupRepo) GetManagedGroups(ctx context.Context, userID uuid.UUID, realmID *uuid.UUID) ([]uuid.UUID, error) {
+	args := m.Called(ctx, userID, realmID)
+	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
+func (m *MockGroupRepo) GetMemberGroups(ctx context.Context, userID uuid.UUID, realmID *uuid.UUID) ([]uuid.UUID, error) {
+	args := m.Called(ctx, userID, realmID)
+	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
+func (m *MockGroupRepo) IsMember(ctx context.Context, groupID, userID uuid.UUID) (bool, error) {
+	args := m.Called(ctx, groupID, userID)
+	return args.Bool(0), args.Error(1)
+}
+func (m *MockGroupRepo) AddMember(ctx context.Context, dto *models.GroupMemberDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+func (m *MockGroupRepo) RemoveMember(ctx context.Context, dto *models.GroupMemberDTO) error {
 	args := m.Called(ctx, dto)
 	return args.Error(0)
 }
@@ -402,6 +508,25 @@ func (m *MockNotificationService) SendUnread(ctx context.Context, client *ws_hub
 	args := m.Called(ctx, client)
 	return args.Error(0)
 }
+func (m *MockNotificationService) TicketCommented(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID) error {
+	args := m.Called(ctx, ticketID, actorID)
+	return args.Error(0)
+}
+func (m *MockNotificationService) AttachmentAdded(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID) error {
+	args := m.Called(ctx, ticketID, actorID)
+	return args.Error(0)
+}
+func (m *MockNotificationService) GetSettings(ctx context.Context, userID uuid.UUID) (*models.NotificationSettings, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.NotificationSettings), args.Error(1)
+}
+func (m *MockNotificationService) SaveSettings(ctx context.Context, userID uuid.UUID, settings json.RawMessage) error {
+	args := m.Called(ctx, userID, settings)
+	return args.Error(0)
+}
 
 type MockUserService struct {
 	mock.Mock
@@ -425,8 +550,8 @@ func (m *MockUserService) GetByLogin(ctx context.Context, login string) (*models
 	}
 	return args.Get(0).(*models.UserData), args.Error(1)
 }
-func (m *MockUserService) GetAll(ctx context.Context) ([]*models.UserData, error) {
-	args := m.Called(ctx)
+func (m *MockUserService) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.UserData, error) {
+	args := m.Called(ctx, realmID)
 	return args.Get(0).([]*models.UserData), args.Error(1)
 }
 func (m *MockUserService) Sync(ctx context.Context, actor *models.Actor) error {
@@ -435,6 +560,112 @@ func (m *MockUserService) Sync(ctx context.Context, actor *models.Actor) error {
 }
 func (m *MockUserService) UpdateAccount(ctx context.Context, dto *models.UpdateAccountDTO) error {
 	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+func (m *MockUserService) GetByMattermostID(ctx context.Context, mattermostID string) (*models.UserData, error) {
+	args := m.Called(ctx, mattermostID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.UserData), args.Error(1)
+}
+func (m *MockUserService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserDataDTO) error {
+	args := m.Called(ctx, tx, dto)
+	return args.Error(0)
+}
+func (m *MockUserService) UpdateMMAndSite(ctx context.Context, tx postgres.Tx, dto *models.UserDataDTO) error {
+	args := m.Called(ctx, tx, dto)
+	return args.Error(0)
+}
+
+type MockMMSender struct {
+	mock.Mock
+}
+
+func (m *MockMMSender) Send(botToken, botUserID, targetUserID, message string) error {
+	args := m.Called(botToken, botUserID, targetUserID, message)
+	return args.Error(0)
+}
+
+type MockCommentsRepo struct {
+	mock.Mock
+}
+
+func (m *MockCommentsRepo) GetByTicket(ctx context.Context, ticketID uuid.UUID, userID uuid.UUID, showAllInternal bool) ([]*models.Comment, error) {
+	args := m.Called(ctx, ticketID, userID, showAllInternal)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.Comment), args.Error(1)
+}
+func (m *MockCommentsRepo) GetByID(ctx context.Context, id uuid.UUID) (*models.Comment, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Comment), args.Error(1)
+}
+func (m *MockCommentsRepo) Create(ctx context.Context, tx postgres.Tx, dto *models.Comment) error {
+	args := m.Called(ctx, tx, dto)
+	return args.Error(0)
+}
+func (m *MockCommentsRepo) Delete(ctx context.Context, tx postgres.Tx, id uuid.UUID) error {
+	args := m.Called(ctx, tx, id)
+	return args.Error(0)
+}
+
+type MockMattermostRepo struct {
+	mock.Mock
+}
+
+func (m *MockMattermostRepo) GetByRealm(ctx context.Context, realmID uuid.UUID) (*models.RealmMattermost, error) {
+	args := m.Called(ctx, realmID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.RealmMattermost), args.Error(1)
+}
+func (m *MockMattermostRepo) GetByBotUserID(ctx context.Context, botUserID string) (*models.RealmMattermost, error) {
+	args := m.Called(ctx, botUserID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.RealmMattermost), args.Error(1)
+}
+func (m *MockMattermostRepo) GetActive(ctx context.Context) ([]*models.RealmMattermost, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.RealmMattermost), args.Error(1)
+}
+func (m *MockMattermostRepo) GetByChannelID(ctx context.Context, channelID string) (*models.RealmMattermost, error) {
+	args := m.Called(ctx, channelID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.RealmMattermost), args.Error(1)
+}
+func (m *MockMattermostRepo) GetByUserID(ctx context.Context, userID uuid.UUID) (*models.RealmMattermost, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.RealmMattermost), args.Error(1)
+}
+func (m *MockMattermostRepo) GetByTicketID(ctx context.Context, ticketID uuid.UUID) (*models.RealmMattermost, error) {
+	args := m.Called(ctx, ticketID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.RealmMattermost), args.Error(1)
+}
+func (m *MockMattermostRepo) Upsert(ctx context.Context, tx postgres.Tx, dto *models.RealmMattermost) error {
+	args := m.Called(ctx, tx, dto)
+	return args.Error(0)
+}
+func (m *MockMattermostRepo) Delete(ctx context.Context, tx postgres.Tx, realmID uuid.UUID) error {
+	args := m.Called(ctx, tx, realmID)
 	return args.Error(0)
 }
 
@@ -624,6 +855,41 @@ func (m *MockNotificationsRepo) GetSettings(ctx context.Context, userID uuid.UUI
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*models.NotificationSettings), args.Error(1)
+}
+func (m *MockNotificationsRepo) SaveSettings(ctx context.Context, tx postgres.Tx, userID uuid.UUID, settings json.RawMessage) error {
+	args := m.Called(ctx, tx, userID, settings)
+	return args.Error(0)
+}
+func (m *MockNotificationsRepo) GetRealmAdmins(ctx context.Context, realmID uuid.UUID) ([]uuid.UUID, error) {
+	args := m.Called(ctx, realmID)
+	if args.Get(0) == nil {
+		return []uuid.UUID{}, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
+
+type MockTicketSubscriptionsRepo struct {
+	mock.Mock
+}
+
+func (m *MockTicketSubscriptionsRepo) Subscribe(ctx context.Context, tx postgres.Tx, ticketID uuid.UUID, userID uuid.UUID) error {
+	args := m.Called(ctx, tx, ticketID, userID)
+	return args.Error(0)
+}
+func (m *MockTicketSubscriptionsRepo) Unsubscribe(ctx context.Context, tx postgres.Tx, ticketID uuid.UUID, userID uuid.UUID) error {
+	args := m.Called(ctx, tx, ticketID, userID)
+	return args.Error(0)
+}
+func (m *MockTicketSubscriptionsRepo) Exists(ctx context.Context, ticketID uuid.UUID, userID uuid.UUID) (bool, error) {
+	args := m.Called(ctx, ticketID, userID)
+	return args.Bool(0), args.Error(1)
+}
+func (m *MockTicketSubscriptionsRepo) GetByTicket(ctx context.Context, ticketID uuid.UUID) ([]uuid.UUID, error) {
+	args := m.Called(ctx, ticketID)
+	if args.Get(0) == nil {
+		return []uuid.UUID{}, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
 }
 
 type MockChecklistsRepo struct {

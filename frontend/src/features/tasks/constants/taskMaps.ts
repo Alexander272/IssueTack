@@ -25,7 +25,7 @@ export const STATUS_MAP: Record<TicketStatus, StatusMapValue> = {
 	pending: { label: 'Ожидание', icon: ClockIcon, bgColor: '#FFFDE7', textColor: '#F57F17' },
 	on_hold: { label: 'Отложена', icon: PauseIcon, bgColor: '#F3E5F5', textColor: '#4A148C' },
 	resolved: { label: 'Решена', icon: CheckIcon, bgColor: '#E8F5E9', textColor: '#1B5E20' },
-	closed: { label: 'Закрыта', icon: LockIcon, bgColor: '#C8E6C9', textColor: '#0D47A1' },
+	closed: { label: 'Закрыта', icon: LockIcon, bgColor: '#C8E6C9', textColor: '#024a02' },
 	cancelled: { label: 'Отменена', icon: XCircleIcon, bgColor: '#FFEBEE', textColor: '#B71C1C' },
 }
 
@@ -61,34 +61,34 @@ export const STATUS_OPTIONS: { value: TicketStatus | 'all'; label: string }[] = 
 ]
 
 export const SORT_OPTIONS = [
-  { value: 'ticketNumber_asc', label: 'По номеру (возр.)' },
-  { value: 'ticketNumber_desc', label: 'По номеру (убыв.)' },
-  { value: 'title_asc', label: 'По теме (А-Я)' },
-  { value: 'title_desc', label: 'По теме (Я-А)' },
-  { value: 'dueDate_asc', label: 'По сроку (возр.)' },
-  { value: 'dueDate_desc', label: 'По сроку (убыв.)' },
-  { value: 'priority_asc', label: 'По приоритету (возр.)' },
-  { value: 'priority_desc', label: 'По приоритету (убыв.)' },
-  { value: 'status_asc', label: 'По статусу (А-Я)' },
-  { value: 'status_desc', label: 'По статусу (Я-А)' },
-  { value: 'owner_asc', label: 'По заказчику (А-Я)' },
-  { value: 'owner_desc', label: 'По заказчику (Я-А)' },
-  { value: 'category_asc', label: 'По категории (А-Я)' },
-  { value: 'category_desc', label: 'По категории (Я-А)' },
-  { value: 'assignee_asc', label: 'По назначению (А-Я)' },
-  { value: 'assignee_desc', label: 'По назначению (Я-А)' },
-  { value: 'closedAt_asc', label: 'По дате закрытия (возр.)' },
-  { value: 'closedAt_desc', label: 'По дате закрытия (убыв.)' },
+	{ value: 'ticketNumber_asc', label: 'По номеру (возр.)' },
+	{ value: 'ticketNumber_desc', label: 'По номеру (убыв.)' },
+	{ value: 'title_asc', label: 'По теме (А-Я)' },
+	{ value: 'title_desc', label: 'По теме (Я-А)' },
+	{ value: 'dueDate_asc', label: 'По сроку (возр.)' },
+	{ value: 'dueDate_desc', label: 'По сроку (убыв.)' },
+	{ value: 'priority_asc', label: 'По приоритету (возр.)' },
+	{ value: 'priority_desc', label: 'По приоритету (убыв.)' },
+	{ value: 'status_asc', label: 'По статусу (А-Я)' },
+	{ value: 'status_desc', label: 'По статусу (Я-А)' },
+	{ value: 'owner_asc', label: 'По заказчику (А-Я)' },
+	{ value: 'owner_desc', label: 'По заказчику (Я-А)' },
+	{ value: 'category_asc', label: 'По категории (А-Я)' },
+	{ value: 'category_desc', label: 'По категории (Я-А)' },
+	{ value: 'assignee_asc', label: 'По назначению (А-Я)' },
+	{ value: 'assignee_desc', label: 'По назначению (Я-А)' },
+	{ value: 'closedAt_asc', label: 'По дате закрытия (возр.)' },
+	{ value: 'closedAt_desc', label: 'По дате закрытия (убыв.)' },
 ] as const
 
 export const GROUP_BY_OPTIONS = [
-  { value: 'site', label: 'По площадке' },
-  { value: 'status', label: 'По статусу' },
-  { value: 'priority', label: 'По приоритету' },
-  { value: 'assignee', label: 'По назначению' },
-  { value: 'creator', label: 'По заказчику' },
-  { value: 'dueDate', label: 'По сроку (неделям)' },
-  { value: 'category', label: 'По категории' },
+	{ value: 'site', label: 'По площадке' },
+	{ value: 'status', label: 'По статусу' },
+	{ value: 'priority', label: 'По приоритету' },
+	{ value: 'assignee', label: 'По назначению' },
+	{ value: 'creator', label: 'По заказчику' },
+	{ value: 'dueDate', label: 'По сроку (неделям)' },
+	{ value: 'category', label: 'По категории' },
 ] as const
 
 export type GroupByField = (typeof GROUP_BY_OPTIONS)[number]['value']

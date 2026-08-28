@@ -51,6 +51,10 @@ var (
 	ErrSubtasksNotResolved   = NewDomainError(errors.New("ticket has unresolved subtasks"), http.StatusConflict, "TK001", "Нельзя отметить задачу решённой, пока не решены все её подзадачи")
 	ErrCloseRequiresResolved = NewDomainError(errors.New("cannot close ticket that is not resolved"), http.StatusConflict, "TK002", "Нельзя закрыть нерешённую задачу. Задачу можно только отменить")
 
+	// 409 Conflict (удаление справочников)
+	ErrGroupHasOpenTickets    = NewDomainError(errors.New("group has open tickets"), http.StatusConflict, "GR001", "Нельзя удалить группу, пока в ней есть незакрытые заявки")
+	ErrCategoryHasOpenTickets = NewDomainError(errors.New("category has open tickets"), http.StatusConflict, "CT001", "Нельзя удалить категорию, пока в ней есть незакрытые заявки")
+
 	// 400 Bad Request
 	ErrInvalidInput          = NewDomainError(errors.New("invalid input data"), http.StatusBadRequest, "BR001", "Переданы некорректные данные")
 	ErrRelatedRecordNotFound = NewDomainError(errors.New("related record not found"), http.StatusBadRequest, "BR002", "Указанный связанный ресурс не существует")

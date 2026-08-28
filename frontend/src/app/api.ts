@@ -52,6 +52,7 @@ export const API = {
 	tickets: {
 		base: '/tickets' as const,
 		byId: (id: string) => `/tickets/${id}` as const,
+		subscription: (id: string) => `/tickets/${id}/subscription` as const,
 	},
 	subtasks: {
 		byTicket: (ticketId: string) => `/tickets/${ticketId}/subtasks` as const,

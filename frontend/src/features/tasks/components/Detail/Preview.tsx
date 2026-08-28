@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type FC } from 'react'
+import { type FC } from 'react'
 import { Box, Dialog, IconButton, Typography } from '@mui/material'
 import { X, Download } from 'lucide-mui'
 
@@ -15,18 +15,13 @@ type ContentProps = {
 }
 
 function PreviewContent({ fileKey, fileName, fileSize, onClose }: ContentProps) {
-	const { data: blob } = useGetAttachmentContentQuery(fileKey)
-	const src = useMemo(() => (blob ? URL.createObjectURL(blob) : ''), [blob])
+	const { data } = useGetAttachmentContentQuery(fileKey)
+	const src = data?.url ?? ''
 
-	useEffect(() => {
-		return () => {
-			if (src) URL.revokeObjectURL(src)
-		}
-	}, [src])
-
-	const handleDownload = () => {
-		if (!blob) return
-		saveAs(blob, fileName)
+	const handleDownload = async () => {
+		if (!src) return
+		const res = await fetch(src)
+		saveAs(await res.blob(), fileName)
 	}
 
 	return (

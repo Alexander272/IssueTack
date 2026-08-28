@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Box, Typography, type SvgIconProps } from '@mui/material'
 import { Image, FileText, Paperclip } from 'lucide-mui'
 import { toast } from 'react-toastify'
@@ -34,14 +34,8 @@ const getFileIcon = (mimeType: string): { icon: ComponentType<SvgIconProps>; bg:
 }
 
 function ImageThumbnail({ file }: { file: IAttachment }) {
-	const { data: blob } = useGetAttachmentContentQuery(file.id)
-	const src = useMemo(() => (blob ? URL.createObjectURL(blob) : ''), [blob])
-
-	useEffect(() => {
-		return () => {
-			if (src) URL.revokeObjectURL(src)
-		}
-	}, [src])
+	const { data } = useGetAttachmentContentQuery(file.id)
+	const src = data?.url ?? ''
 
 	if (!src) {
 		const info = getFileIcon(file.mimeType)
@@ -84,8 +78,9 @@ export const Attachments = ({ attachments, canWork, taskId }: Props) => {
 	const handleDownload = useCallback(
 		async (file: IAttachment) => {
 			try {
-				const blob = await fetchContent(file.id).unwrap()
-				saveAs(blob, file.fileName)
+				const { url } = await fetchContent(file.id).unwrap()
+				const res = await fetch(url)
+				saveAs(await res.blob(), file.fileName)
 			} catch (error) {
 				const fetchError = error as IFetchError
 				toast.error(fetchError.data?.message || 'Ошибка скачивания файла')
@@ -102,8 +97,7 @@ export const Attachments = ({ attachments, canWork, taskId }: Props) => {
 			}
 			if (isPdf(file.mimeType) || isText(file.mimeType)) {
 				try {
-					const blob = await fetchContent(file.id).unwrap()
-					const url = URL.createObjectURL(blob)
+					const { url } = await fetchContent(file.id).unwrap()
 					window.open(url, '_blank')
 				} catch (error) {
 					const fetchError = error as IFetchError

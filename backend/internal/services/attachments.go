@@ -13,6 +13,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
+	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/google/uuid"
 )
 
@@ -23,19 +24,21 @@ var allowedEntityTypes = map[string]bool{
 
 // AttachmentService — сервис управления вложениями (загрузка, чтение, удаление) с проверкой доступа к сущности.
 type AttachmentService struct {
-	repo         repository.Attachments
-	conf         *config.FileServerConfig
-	ticketAccess TicketAccessChecker
-	subtaskRepo  repository.Subtasks
+	repo          repository.Attachments
+	conf          *config.FileServerConfig
+	ticketAccess  TicketAccessChecker
+	subtaskRepo   repository.Subtasks
+	notifications Notifications
 }
 
 // NewAttachmentService создаёт AttachmentService.
-func NewAttachmentService(repo repository.Attachments, conf *config.FileServerConfig, ticketAccess TicketAccessChecker, subtaskRepo repository.Subtasks) *AttachmentService {
+func NewAttachmentService(repo repository.Attachments, conf *config.FileServerConfig, ticketAccess TicketAccessChecker, subtaskRepo repository.Subtasks, notifications Notifications) *AttachmentService {
 	return &AttachmentService{
-		repo:         repo,
-		conf:         conf,
-		ticketAccess: ticketAccess,
-		subtaskRepo:  subtaskRepo,
+		repo:          repo,
+		conf:          conf,
+		ticketAccess:  ticketAccess,
+		subtaskRepo:   subtaskRepo,
+		notifications: notifications,
 	}
 }
 
@@ -174,7 +177,33 @@ func (s *AttachmentService) Upload(ctx context.Context, tx postgres.Tx, dto *mod
 		return nil, fmt.Errorf("failed to save attachment: %w", err)
 	}
 
+	if s.notifications != nil {
+		ticketID, err := s.resolveTicketID(dto.EntityType, dto.EntityID)
+		if err == nil && ticketID != uuid.Nil {
+			if err := s.notifications.AttachmentAdded(ctx, ticketID, dto.UploadedBy); err != nil {
+				logger.Warn("failed to notify about attachment", logger.StringAttr("entity_id", dto.EntityID.String()), logger.ErrAttr(err))
+			}
+		}
+	}
+
 	return att, nil
+}
+
+// resolveTicketID определяет ID родительского тикета для сущности вложения: для тикета — сам
+// entityID, для подзадачи — ticketID родительского тикета.
+func (s *AttachmentService) resolveTicketID(entityType string, entityID uuid.UUID) (uuid.UUID, error) {
+	switch entityType {
+	case "ticket":
+		return entityID, nil
+	case "subtask":
+		sub, err := s.subtaskRepo.GetByID(context.Background(), &models.GetSubtaskDTO{ID: entityID})
+		if err != nil {
+			return uuid.Nil, err
+		}
+		return sub.TicketID, nil
+	default:
+		return uuid.Nil, fmt.Errorf("unknown entity type: %s", entityType)
+	}
 }
 
 // Delete удаляет вложение (запись в БД и файл с диска) с проверкой права на запись.

@@ -85,6 +85,30 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 				}
 			},
 		}),
+
+		getIsSubscribed: builder.query<{ data: { subscribed: boolean } }, string>({
+			query: id => ({
+				url: API.tickets.subscription(id),
+				method: 'GET',
+			}),
+			providesTags: (_result, _error, id) => [{ type: 'Tasks', id: `sub:${id}` }],
+		}),
+
+		subscribe: builder.mutation<{ data: { message: string } }, string>({
+			query: id => ({
+				url: API.tickets.subscription(id),
+				method: 'POST',
+			}),
+			invalidatesTags: (_result, _error, id) => [{ type: 'Tasks', id: `sub:${id}` }],
+		}),
+
+		unsubscribe: builder.mutation<{ data: { message: string } }, string>({
+			query: id => ({
+				url: API.tickets.subscription(id),
+				method: 'DELETE',
+			}),
+			invalidatesTags: (_result, _error, id) => [{ type: 'Tasks', id: `sub:${id}` }],
+		}),
 	}),
 })
 
@@ -94,4 +118,7 @@ export const {
 	useCreateTaskMutation,
 	useUpdateTaskMutation,
 	useDeleteTaskMutation,
+	useGetIsSubscribedQuery,
+	useSubscribeMutation,
+	useUnsubscribeMutation,
 } = tasksApiSlice

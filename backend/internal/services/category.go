@@ -10,12 +10,13 @@ import (
 
 // CategoryService — сервис работы с категориями тикетов.
 type CategoryService struct {
-	repo repository.Categories
+	repo    repository.Categories
+	tickets repository.Tickets
 }
 
 // NewCategoryService создаёт CategoryService.
-func NewCategoryService(repo repository.Categories) *CategoryService {
-	return &CategoryService{repo: repo}
+func NewCategoryService(repo repository.Categories, tickets repository.Tickets) *CategoryService {
+	return &CategoryService{repo: repo, tickets: tickets}
 }
 
 // Categories — интерфейс работы с категориями.
@@ -68,7 +69,14 @@ func (s *CategoryService) Update(ctx context.Context, dto *models.CategoryDTO) e
 
 // Delete удаляет категорию.
 func (s *CategoryService) Delete(ctx context.Context, dto *models.DelCategoryDTO) error {
-	//TODO возможно надо проверить все ли тикеты в этой категории закрыты
+	count, err := s.tickets.CountNotClosedByCategory(ctx, dto.ID)
+	if err != nil {
+		return fmt.Errorf("failed to count not closed tickets in category: %w", err)
+	}
+	if count > 0 {
+		return models.ErrCategoryHasOpenTickets
+	}
+
 	if err := s.repo.Delete(ctx, dto); err != nil {
 		return fmt.Errorf("failed to delete category. error: %w", err)
 	}

@@ -7,6 +7,8 @@ import { useGetTaskByIdQuery, useUpdateTaskMutation } from '../tasksApiSlice'
 import { useUpdateSubtaskMutation } from '../modules/subtasks/subtasksApiSlice'
 import { useCreateCommentMutation } from '../modules/comments/commentsApiSlice'
 import { BoxFallback } from '@/components/Fallback/BoxFallback'
+import { useAppSelector } from '@/hooks/redux'
+import { getIsManager } from '@/features/user/userSlice'
 import { Header } from '../components/Detail/Header'
 import { InfoBar } from '../components/Detail/InfoBar'
 import { Description } from '../components/Detail/Description'
@@ -26,6 +28,7 @@ export const TaskDetailPage = () => {
 	const [updateSubtask] = useUpdateSubtaskMutation()
 	const [createComment] = useCreateCommentMutation()
 	const [editOpen, setEditOpen] = useState(false)
+	const isManager = useAppSelector(getIsManager)
 
 	if (isLoading) return <BoxFallback />
 	if (!data?.data) return <DetailNotFound />
@@ -94,7 +97,7 @@ export const TaskDetailPage = () => {
 						<Grid size={{ xs: 12, lg: 4 }} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
 							<Participants task={task} />
 							<Meta task={task} />
-							<Notifications />
+							{isManager && <Notifications taskId={task.id} />}
 						</Grid>
 					</Grid>
 				</Box>

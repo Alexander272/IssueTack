@@ -8,22 +8,39 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
+	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/google/uuid"
 )
 
 const commentDeleteWindow = 15 * time.Minute
 
+// mattermostSender — минимальный интерфейс отправки личного сообщения
+// Mattermost. Реализуется типом *mattermost.Most (через встраиваемый DM).
+type mattermostSender interface {
+	Send(botToken, botUserID, targetUserID, message string) error
+}
+
 // CommentService — сервис работы с комментариями к тикетам.
 type CommentService struct {
-	repo         repository.Comments
-	ticketAccess TicketAccessChecker
+	repo          repository.Comments
+	ticketAccess  TicketAccessChecker
+	tickets       repository.Tickets
+	users         Users
+	mmRepo        repository.Mattermost
+	mmSender      mattermostSender
+	notifications Notifications
 }
 
 // NewCommentService создаёт CommentService.
-func NewCommentService(repo repository.Comments, ticketAccess TicketAccessChecker) *CommentService {
+func NewCommentService(repo repository.Comments, ticketAccess TicketAccessChecker, tickets repository.Tickets, users Users, mmRepo repository.Mattermost, mmSender mattermostSender, notifications Notifications) *CommentService {
 	return &CommentService{
-		repo:         repo,
-		ticketAccess: ticketAccess,
+		repo:          repo,
+		ticketAccess:  ticketAccess,
+		tickets:       tickets,
+		users:         users,
+		mmRepo:        mmRepo,
+		mmSender:      mmSender,
+		notifications: notifications,
 	}
 }
 
@@ -82,7 +99,60 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 	if err := s.repo.Create(ctx, tx, comment); err != nil {
 		return nil, fmt.Errorf("failed to create comment: %w", err)
 	}
+	s.notifyOwnerViaMattermost(ctx, comment)
+	if s.notifications != nil {
+		if err := s.notifications.TicketCommented(ctx, comment.TicketID, comment.UserID); err != nil {
+			logger.Warn("failed to notify about comment", logger.StringAttr("ticket_id", comment.TicketID.String()), logger.ErrAttr(err))
+		}
+	}
 	return comment, nil
+}
+
+// notifyOwnerViaMattermost дублирует публичный (не внутренний) комментарий из
+// программы владельцу заявки в личном сообщении Mattermost. Сбои интеграции не
+// влияют на сам факт создания комментария — они только логируются.
+func (s *CommentService) notifyOwnerViaMattermost(ctx context.Context, comment *models.Comment) {
+	if comment.IsInternal {
+		return
+	}
+	if s.mmSender == nil || s.users == nil || s.mmRepo == nil {
+		return
+	}
+
+	ticket, err := s.tickets.GetByID(ctx, &models.GetTicketByIdDTO{ID: comment.TicketID})
+	if err != nil {
+		logger.Warn("failed to load ticket for mattermost comment notify", logger.StringAttr("ticket_id", comment.TicketID.String()), logger.ErrAttr(err))
+		return
+	}
+	if ticket.Owner == nil || ticket.RealmID == nil {
+		return
+	}
+	if ticket.Owner.ID == comment.UserID {
+		return
+	}
+
+	ownerUser, err := s.users.GetByID(ctx, ticket.Owner.ID)
+	if err != nil || ownerUser.MattermostID == nil || *ownerUser.MattermostID == "" {
+		return
+	}
+
+	settings, err := s.mmRepo.GetByRealm(ctx, *ticket.RealmID)
+	if err != nil || !settings.IsActive {
+		return
+	}
+
+	title := ticket.Title
+	var number string
+	if ticket.TicketNumber != nil {
+		number = fmt.Sprintf("№%d", *ticket.TicketNumber)
+	} else {
+		number = "заявка"
+	}
+
+	text := fmt.Sprintf("**%s: %s**\n\n%s", number, title, comment.Text)
+	if err := s.mmSender.Send(settings.BotToken, settings.BotUserID, *ownerUser.MattermostID, text); err != nil {
+		logger.Warn("failed to send mattermost comment notify", logger.StringAttr("ticket_id", comment.TicketID.String()), logger.ErrAttr(err))
+	}
 }
 
 // Delete удаляет комментарий; разрешено только автору в течение окна удаления.

@@ -22,10 +22,11 @@ func attachmentFixtures(t *testing.T) (*MockAttachmentsRepo, *MockSubtasksRepo, 
 	uploadDir := t.TempDir()
 
 	svc := &AttachmentService{
-		repo:         mockRepo,
-		conf:         &config.FileServerConfig{UploadDir: uploadDir},
-		ticketAccess: mockAccess,
-		subtaskRepo:  mockSubtasks,
+		repo:          mockRepo,
+		conf:          &config.FileServerConfig{UploadDir: uploadDir},
+		ticketAccess:  mockAccess,
+		subtaskRepo:   mockSubtasks,
+		notifications: nil,
 	}
 	return mockRepo, mockSubtasks, mockAccess, svc, uploadDir
 }

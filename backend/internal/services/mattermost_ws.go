@@ -173,8 +173,24 @@ func (s *MattermostService) handleWSEvent(ctx context.Context, realmID uuid.UUID
 	case attachCommands.MatchString(msg) && len(event.Post.FileIds) > 0:
 		parts := attachCommands.FindStringSubmatch(msg)
 		number, _ := strconv.Atoi(parts[1])
-		if err := s.handleAttachFiles(ctx, settings, userID, channelID, number, event.Post.FileIds); err != nil {
+		if err := s.handleAttachFiles(ctx, settings, userID, channelID, number, event.Post.FileIds, ""); err != nil {
 			logger.Error("failed to handle attach from WS",
+				logger.StringAttr("user_id", userID),
+				logger.ErrAttr(err),
+			)
+		}
+
+	case len(event.Post.FileIds) > 0 && !attachCommands.MatchString(msg):
+		if err := s.handleTextWithFiles(ctx, settings, userID, channelID, msg, event.Post.FileIds); err != nil {
+			logger.Error("failed to handle text with files from WS",
+				logger.StringAttr("user_id", userID),
+				logger.ErrAttr(err),
+			)
+		}
+
+	case commentCommands.MatchString(msg):
+		if err := s.handleComment(ctx, settings, userID, channelID, msg); err != nil {
+			logger.Error("failed to handle comment from WS",
 				logger.StringAttr("user_id", userID),
 				logger.ErrAttr(err),
 			)
@@ -182,7 +198,7 @@ func (s *MattermostService) handleWSEvent(ctx context.Context, realmID uuid.UUID
 
 	default:
 		if len(event.Post.FileIds) > 0 {
-			if err := s.handleAttachFiles(ctx, settings, userID, channelID, 0, event.Post.FileIds); err != nil {
+			if err := s.handleAttachFiles(ctx, settings, userID, channelID, 0, event.Post.FileIds, ""); err != nil {
 				logger.Error("failed to handle auto-attach from WS",
 					logger.StringAttr("user_id", userID),
 					logger.ErrAttr(err),
