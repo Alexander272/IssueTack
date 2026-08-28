@@ -27,7 +27,7 @@ export default function ErrorPage() {
 				direction={'row'}
 				divider={<Divider orientation='vertical' flexItem />}
 				spacing={4}
-				alignItems={'center'}
+				sx={{ alignItems: 'center' }}
 			>
 				<img width={148} height={148} src={logo} alt='logo' />
 				<Typography
@@ -43,12 +43,11 @@ export default function ErrorPage() {
 					{status}
 				</Typography>
 			</Stack>
-			<Typography mt={3} mb={1} sx={{ fontSize: '1.5rem', color: palette.error.main }}>
+			<Typography sx={{ fontSize: '1.5rem', color: palette.error.main, mt: 3, mb: 1 }}>
 				{status === 500 ? 'Внутренняя ошибка клиента' : `Ошибка ${status}`}
 			</Typography>
 			<Typography
-				mb={3}
-				sx={{ fontSize: '0.95rem', color: palette.text.secondary, maxWidth: 600, textAlign: 'center' }}
+				sx={{ fontSize: '0.95rem', color: palette.text.secondary, maxWidth: 600, textAlign: 'center', mb: 3 }}
 			>
 				{message}
 			</Typography>

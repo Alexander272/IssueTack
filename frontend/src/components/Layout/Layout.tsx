@@ -19,7 +19,10 @@ export const Layout = () => {
 	const [mobileOpen, setMobileOpen] = useState(false)
 
 	const filteredConfig = sidebarConfig
-		? { ...sidebarConfig, items: sidebarConfig.items.filter(item => isManager || !managerOnlyRoutes.has(item.path)) }
+		? {
+				...sidebarConfig,
+				items: sidebarConfig.items.filter(item => isManager || !managerOnlyRoutes.has(item.path as '/groups')),
+			}
 		: undefined
 
 	return (
