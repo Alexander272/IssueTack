@@ -30,6 +30,8 @@ type (
 		ResolvedToClosedAfter time.Duration `yaml:"resolved_to_closed_after" env:"TICKETS_RESOLVED_TO_CLOSED_AFTER" env-default:"0"`
 		// Расписание проверки (robfig/cron): "@daily", "@every 6h", "0 3 * * *"
 		AutoCloseSchedule string `yaml:"auto_close_schedule" env:"TICKETS_AUTO_CLOSE_SCHEDULE" env-default:"@daily"`
+		// Расписание проверки просроченных задач ("@hourly", "@every 30m", "" — отключено)
+		NotifyOverdueSchedule string `yaml:"notify_overdue_schedule" env:"TICKETS_NOTIFY_OVERDUE_SCHEDULE" env-default:"@hourly"`
 	}
 
 	FileServerConfig struct {

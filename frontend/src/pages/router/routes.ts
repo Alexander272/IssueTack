@@ -7,6 +7,7 @@ export const AppRoutes = Object.freeze({
 	Groups: '/groups' as const,
 	Sites: '/sites' as const,
 	Categories: '/categories' as const,
+	NotificationSettings: '/settings/notifications' as const,
 
 	Accesses: '/accesses' as const,
 	Realms: '/accesses/realms' as const,

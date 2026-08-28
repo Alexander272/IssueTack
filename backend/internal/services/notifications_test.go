@@ -19,6 +19,10 @@ func notificationServiceFixtures() (*MockNotificationsRepo, *MockTicketsRepo, *w
 
 	mockRepo.On("GetRealmAdmins", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
 	mockSubs.On("GetByTicket", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
+	mockRepo.On("GetCategoryEventSubscribers", mock.Anything, mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
+	mockRepo.On("GetGroupEventSubscribers", mock.Anything, mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
+	mockRepo.On("GetOverdueTicketIDs", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
+	mockRepo.On("HasNotification", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(false, nil).Maybe()
 
 	svc := &NotificationService{
 		hub:           hub,

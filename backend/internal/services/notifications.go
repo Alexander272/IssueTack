@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
@@ -45,12 +46,94 @@ type Notifications interface {
 	TicketCommented(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID) error
 	// AttachmentAdded оповещает исполнителя и подписанных о новом вложении.
 	AttachmentAdded(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID) error
+	// NotifyOverdue оповещает о просроченном тикете: исполнителя, менеджера, админов реалма,
+	// а также подписчиков категории/группы на событие «Просрочка».
+	NotifyOverdue(ctx context.Context, ticketID uuid.UUID) error
+	// GetOverdueTicketIDs возвращает ID активных тикетов с просроченным сроком.
+	// GetOverdueTicketIDs возвращает ID активных тикетов с просроченным сроком.
+	GetOverdueTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error)
 	// GetSettings возвращает персональные настройки уведомлений пользователя.
 	GetSettings(ctx context.Context, userID uuid.UUID) (*models.NotificationSettings, error)
 	// SaveSettings сохраняет персональные настройки уведомлений пользователя.
 	SaveSettings(ctx context.Context, userID uuid.UUID, settings json.RawMessage) error
+	// GetSettingsPayload возвращает типизированные настройки уведомлений пользователя.
+	GetSettingsPayload(ctx context.Context, userID uuid.UUID) (*models.NotificationSettingsPayload, error)
+	// SaveSettingsPayload сохраняет типизированные настройки уведомлений пользователя.
+	SaveSettingsPayload(ctx context.Context, userID uuid.UUID, settings *models.NotificationSettingsPayload) error
 	// SendUnread отправляет клиенту непрочитанные уведомления.
 	SendUnread(ctx context.Context, client *ws_hub.Client) error
+}
+
+// NotifyOverdue оповещает о просроченном тикете: исполнителя, менеджера, админов реалма и
+// подписчиков категории/группы на событие «Просрочка». Дедупликация — по уже существующему
+// уведомлению ticket.overdue для тикета (чтобы cron не спамил на каждом прогоне).
+func (s *NotificationService) NotifyOverdue(ctx context.Context, ticketID uuid.UUID) error {
+	ticket, err := s.ticketRepo.GetByID(ctx, &models.GetTicketByIdDTO{ID: ticketID})
+	if err != nil {
+		return fmt.Errorf("failed to get ticket for overdue notification: %w", err)
+	}
+
+	recipients := make(map[uuid.UUID]struct{})
+
+	if ticket.Assignee != nil {
+		recipients[ticket.Assignee.ID] = struct{}{}
+	}
+	if ticket.Manager != nil {
+		recipients[ticket.Manager.ID] = struct{}{}
+	}
+	if ticket.RealmID != nil {
+		if err := s.addRealmAdmins(ctx, *ticket.RealmID, recipients); err != nil {
+			return err
+		}
+	}
+	if ticket.Category != nil {
+		catSubs, err := s.repo.GetCategoryEventSubscribers(ctx, ticket.Category.ID, models.EventFieldName(models.EventOverdue))
+		if err != nil {
+			return fmt.Errorf("failed to get overdue category subscribers: %w", err)
+		}
+		for _, id := range catSubs {
+			recipients[id] = struct{}{}
+		}
+	}
+	if ticket.Group != nil {
+		grpSubs, err := s.repo.GetGroupEventSubscribers(ctx, ticket.Group.ID, models.EventFieldName(models.EventOverdue))
+		if err != nil {
+			return fmt.Errorf("failed to get overdue group subscribers: %w", err)
+		}
+		for _, id := range grpSubs {
+			recipients[id] = struct{}{}
+		}
+	}
+
+	data, err := json.Marshal(map[string]interface{}{
+		"ticket_id": ticket.ID.String(),
+		"title":     ticket.Title,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal overdue notification data: %w", err)
+	}
+
+	for userID := range recipients {
+		exists, err := s.repo.HasNotification(ctx, userID, ticketID, string(models.NotificationTicketOverdue))
+		if err != nil {
+			return fmt.Errorf("failed to check overdue notification: %w", err)
+		}
+		if exists {
+			continue
+		}
+		dto := &models.CreateNotificationDTO{
+			UserID: userID,
+			Type:   string(models.NotificationTicketOverdue),
+			Title:  "Задача просрочена",
+			Body:   ticket.Title,
+			Data:   data,
+		}
+		if err := s.send(ctx, userID, dto); err != nil {
+			logger.Warn("failed to send overdue notification", logger.StringAttr("user_id", userID.String()), logger.ErrAttr(err))
+		}
+	}
+
+	return nil
 }
 
 // TicketCreated оповещает менеджера и ответственных категории о создании нового тикета.
@@ -72,6 +155,26 @@ func (s *NotificationService) TicketCreated(ctx context.Context, dto *models.Tic
 	if dto.RealmID != nil {
 		if err := s.addRealmAdmins(ctx, *dto.RealmID, recipients); err != nil {
 			return err
+		}
+	}
+
+	// Пользователи, подписавшиеся на новые задачи в категории тикета (добровольная подписка).
+	subscribers, err := s.repo.GetCategoryEventSubscribers(ctx, dto.CategoryID, models.EventFieldName(models.EventNewTask))
+	if err != nil {
+		return fmt.Errorf("failed to get new-task subscribers by category: %w", err)
+	}
+	for _, id := range subscribers {
+		recipients[id] = struct{}{}
+	}
+
+	// Участники группы тикета, подписавшиеся на новые задачи этой группы.
+	if dto.GroupID != nil {
+		groupSubscribers, err := s.repo.GetGroupEventSubscribers(ctx, *dto.GroupID, models.EventFieldName(models.EventNewTask))
+		if err != nil {
+			return fmt.Errorf("failed to get new-task group subscribers: %w", err)
+		}
+		for _, id := range groupSubscribers {
+			recipients[id] = struct{}{}
 		}
 	}
 
@@ -155,6 +258,17 @@ func (s *NotificationService) TicketUpdated(ctx context.Context, ticketID uuid.U
 				continue
 			}
 			recipients[newAssigneeID] = struct{}{}
+		}
+	}
+
+	// Если изменён статус задачи — уведомляем подписчиков категории на событие «Изменение статуса».
+	if ticket.Category != nil && hasStatusChange(changes) {
+		statusSubscribers, err := s.repo.GetCategoryEventSubscribers(ctx, ticket.Category.ID, models.EventFieldName(models.EventStatus))
+		if err != nil {
+			return fmt.Errorf("failed to get status-change subscribers by category: %w", err)
+		}
+		for _, id := range statusSubscribers {
+			recipients[id] = struct{}{}
 		}
 	}
 
@@ -259,6 +373,17 @@ func (s *NotificationService) TicketCommented(ctx context.Context, ticketID uuid
 		}
 	}
 
+	// Подписчики категории на событие «Комментарий».
+	if ticket.Category != nil {
+		commentSubscribers, err := s.repo.GetCategoryEventSubscribers(ctx, ticket.Category.ID, models.EventFieldName(models.EventComment))
+		if err != nil {
+			return fmt.Errorf("failed to get comment subscribers by category: %w", err)
+		}
+		for _, id := range commentSubscribers {
+			recipients[id] = struct{}{}
+		}
+	}
+
 	delete(recipients, actorID)
 
 	data, err := json.Marshal(map[string]interface{}{
@@ -337,14 +462,63 @@ func (s *NotificationService) AttachmentAdded(ctx context.Context, ticketID uuid
 	return nil
 }
 
+// GetOverdueTicketIDs возвращает ID активных тикетов с просроченным сроком.
+func (s *NotificationService) GetOverdueTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error) {
+	return s.repo.GetOverdueTicketIDs(ctx, now)
+}
+
 // GetSettings возвращает персональные настройки уведомлений пользователя.
 func (s *NotificationService) GetSettings(ctx context.Context, userID uuid.UUID) (*models.NotificationSettings, error) {
 	return s.repo.GetSettings(ctx, userID)
 }
-
 // SaveSettings сохраняет персональные настройки уведомлений пользователя.
 func (s *NotificationService) SaveSettings(ctx context.Context, userID uuid.UUID, settings json.RawMessage) error {
 	return s.repo.SaveSettings(ctx, nil, userID, settings)
+}
+
+// GetSettingsPayload возвращает типизированные настройки уведомлений пользователя.
+// Пустые/отсутствующие настройки трактуются как значения по умолчанию.
+func (s *NotificationService) GetSettingsPayload(ctx context.Context, userID uuid.UUID) (*models.NotificationSettingsPayload, error) {
+	settings, err := s.repo.GetSettings(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	payload := models.DefaultNotificationSettings()
+	if len(settings.Settings) > 0 {
+		json.Unmarshal(settings.Settings, payload) // nolint:errcheck — при битых данных остаются дефолты
+	}
+	if payload.Categories == nil {
+		payload.Categories = []models.CategoryNotificationSetting{}
+	}
+	if payload.Groups == nil {
+		payload.Groups = []models.GroupNotificationSetting{}
+	}
+	return payload, nil
+}
+
+// SaveSettingsPayload сохраняет типизированные настройки уведомлений пользователя.
+func (s *NotificationService) SaveSettingsPayload(ctx context.Context, userID uuid.UUID, settings *models.NotificationSettingsPayload) error {
+	if settings.Categories == nil {
+		settings.Categories = []models.CategoryNotificationSetting{}
+	}
+	if settings.Groups == nil {
+		settings.Groups = []models.GroupNotificationSetting{}
+	}
+	raw, err := json.Marshal(settings)
+	if err != nil {
+		return fmt.Errorf("failed to marshal notification settings: %w", err)
+	}
+	return s.repo.SaveSettings(ctx, nil, userID, raw)
+}
+
+// hasStatusChange возвращает true, если среди изменений тикета есть смена статуса.
+func hasStatusChange(changes []*models.FieldChange) bool {
+	for _, ch := range changes {
+		if ch.Tag == models.ActionStatusChanged || ch.Tag == models.ActionClosed {
+			return true
+		}
+	}
+	return false
 }
 
 // addRealmAdmins добавляет в получателей админов и root-пользователей реалма.
@@ -393,7 +567,13 @@ func (s *NotificationService) send(ctx context.Context, userID uuid.UUID, dto *m
 
 	var prefs map[string]bool
 	if err := json.Unmarshal(settings.Settings, &prefs); err != nil {
-		prefs = map[string]bool{"push": true}
+		prefs = map[string]bool{}
+	}
+	// push не задан явно — считаем включённым (значение по умолчанию), чтобы уведомление
+	// доставлялось через WebSocket, если пользователь не отключил push.
+	push := true
+	if v, ok := prefs["push"]; ok {
+		push = v
 	}
 
 	return s.txManager.WithinTransaction(ctx, func(tx postgres.Tx) error {
@@ -401,7 +581,7 @@ func (s *NotificationService) send(ctx context.Context, userID uuid.UUID, dto *m
 			return fmt.Errorf("failed to create notification: %w", err)
 		}
 
-		if prefs["push"] {
+		if push {
 			eventData, err := json.Marshal(map[string]interface{}{
 				"type":  dto.Type,
 				"title": dto.Title,

@@ -3,7 +3,7 @@ import { TextField, Typography, Stack } from '@mui/material'
 import { Controller, type Control } from 'react-hook-form'
 
 import type { IRealmDTO } from '@/features/realms/types/realm'
-import { Switch } from '@/components/Switch/Switch'
+import { Switch } from '@/components/TextSwitch/Switch'
 
 type Props = {
 	control: Control<IRealmDTO>

@@ -516,6 +516,17 @@ func (m *MockNotificationService) AttachmentAdded(ctx context.Context, ticketID 
 	args := m.Called(ctx, ticketID, actorID)
 	return args.Error(0)
 }
+func (m *MockNotificationService) NotifyOverdue(ctx context.Context, ticketID uuid.UUID) error {
+	args := m.Called(ctx, ticketID)
+	return args.Error(0)
+}
+func (m *MockNotificationService) GetOverdueTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error) {
+	args := m.Called(ctx, now)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
 func (m *MockNotificationService) GetSettings(ctx context.Context, userID uuid.UUID) (*models.NotificationSettings, error) {
 	args := m.Called(ctx, userID)
 	if args.Get(0) == nil {
@@ -524,6 +535,17 @@ func (m *MockNotificationService) GetSettings(ctx context.Context, userID uuid.U
 	return args.Get(0).(*models.NotificationSettings), args.Error(1)
 }
 func (m *MockNotificationService) SaveSettings(ctx context.Context, userID uuid.UUID, settings json.RawMessage) error {
+	args := m.Called(ctx, userID, settings)
+	return args.Error(0)
+}
+func (m *MockNotificationService) GetSettingsPayload(ctx context.Context, userID uuid.UUID) (*models.NotificationSettingsPayload, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.NotificationSettingsPayload), args.Error(1)
+}
+func (m *MockNotificationService) SaveSettingsPayload(ctx context.Context, userID uuid.UUID, settings *models.NotificationSettingsPayload) error {
 	args := m.Called(ctx, userID, settings)
 	return args.Error(0)
 }
@@ -848,6 +870,31 @@ func (m *MockNotificationsRepo) MarkAllRead(ctx context.Context, tx postgres.Tx,
 func (m *MockNotificationsRepo) GetResponsibleByCategory(ctx context.Context, categoryID uuid.UUID) ([]uuid.UUID, error) {
 	args := m.Called(ctx, categoryID)
 	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
+func (m *MockNotificationsRepo) GetCategoryEventSubscribers(ctx context.Context, categoryID uuid.UUID, eventField string) ([]uuid.UUID, error) {
+	args := m.Called(ctx, categoryID, eventField)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
+func (m *MockNotificationsRepo) GetGroupEventSubscribers(ctx context.Context, groupID uuid.UUID, eventField string) ([]uuid.UUID, error) {
+	args := m.Called(ctx, groupID, eventField)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
+func (m *MockNotificationsRepo) GetOverdueTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error) {
+	args := m.Called(ctx, now)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
+func (m *MockNotificationsRepo) HasNotification(ctx context.Context, userID, ticketID uuid.UUID, notifType string) (bool, error) {
+	args := m.Called(ctx, userID, ticketID, notifType)
+	return args.Bool(0), args.Error(1)
 }
 func (m *MockNotificationsRepo) GetSettings(ctx context.Context, userID uuid.UUID) (*models.NotificationSettings, error) {
 	args := m.Called(ctx, userID)

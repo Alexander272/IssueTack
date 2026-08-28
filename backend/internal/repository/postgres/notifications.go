@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	json "github.com/goccy/go-json"
@@ -29,9 +30,21 @@ type Notifications interface {
 	MarkRead(ctx context.Context, tx Tx, id uuid.UUID) error
 	MarkAllRead(ctx context.Context, tx Tx, userID uuid.UUID) error
 	GetResponsibleByCategory(ctx context.Context, categoryID uuid.UUID) ([]uuid.UUID, error)
+	// GetCategoryEventSubscribers возвращает ID пользователей, у которых мастер-переключатель
+	// enabled включён и заданное событие (поле eventField в матрице «категория × событие»)
+	// включено для категории categoryID.
+	GetCategoryEventSubscribers(ctx context.Context, categoryID uuid.UUID, eventField string) ([]uuid.UUID, error)
+	// GetGroupEventSubscribers возвращает ID участников группы groupID, у которых включён
+	// мастер-переключатель enabled и заданное событие включено для этой группы.
+	GetGroupEventSubscribers(ctx context.Context, groupID uuid.UUID, eventField string) ([]uuid.UUID, error)
 	GetSettings(ctx context.Context, userID uuid.UUID) (*models.NotificationSettings, error)
 	SaveSettings(ctx context.Context, tx Tx, userID uuid.UUID, settings json.RawMessage) error
 	GetRealmAdmins(ctx context.Context, realmID uuid.UUID) ([]uuid.UUID, error)
+	// GetOverdueTicketIDs возвращает ID «активных» тикетов с просроченным сроком (due_date < now).
+	GetOverdueTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error)
+	// HasNotification возвращает true, если у пользователя уже есть уведомление заданного типа
+	// по конкретному тикету (по полю data.ticket_id) — используется для дедупликации просрочки.
+	HasNotification(ctx context.Context, userID, ticketID uuid.UUID, notifType string) (bool, error)
 }
 
 func (r *notificationRepository) Create(ctx context.Context, tx Tx, dto *models.CreateNotificationDTO) error {
@@ -116,6 +129,56 @@ func (r *notificationRepository) GetResponsibleByCategory(ctx context.Context, c
 	return data, nil
 }
 
+func (r *notificationRepository) GetCategoryEventSubscribers(ctx context.Context, categoryID uuid.UUID, eventField string) ([]uuid.UUID, error) {
+	query := fmt.Sprintf(`
+		SELECT user_id
+		FROM %s
+		WHERE settings->>'enabled' = 'true'
+			AND EXISTS (
+				SELECT 1 FROM jsonb_array_elements(settings->'categories') c
+				WHERE c->>'id' = $1 AND c->>$2 = 'true'
+			)`, Tables.NotificationSettings)
+
+	return r.querySubscribers(ctx, query, categoryID.String(), eventField, "failed to get category event subscribers")
+}
+
+func (r *notificationRepository) GetGroupEventSubscribers(ctx context.Context, groupID uuid.UUID, eventField string) ([]uuid.UUID, error) {
+	query := fmt.Sprintf(`
+		SELECT DISTINCT gm.user_id
+		FROM %s gm
+		JOIN %s uns ON uns.user_id = gm.user_id
+		WHERE gm.group_id = $1
+			AND uns.settings->>'enabled' = 'true'
+			AND EXISTS (
+				SELECT 1 FROM jsonb_array_elements(uns.settings->'groups') g
+				WHERE g->>'id' = $1 AND g->>$2 = 'true'
+			)`, Tables.GroupMembers, Tables.NotificationSettings)
+
+	return r.querySubscribers(ctx, query, groupID.String(), eventField, "failed to get group event subscribers")
+}
+
+func (r *notificationRepository) querySubscribers(ctx context.Context, query string, id, eventField string, errMsg string) ([]uuid.UUID, error) {
+	rows, err := r.db.Query(ctx, query, id, eventField)
+	if err != nil {
+		return nil, MapError(fmt.Errorf("%s: %w", errMsg, err))
+	}
+	defer rows.Close()
+
+	var data []uuid.UUID
+	for rows.Next() {
+		var uid uuid.UUID
+		if err := rows.Scan(&uid); err != nil {
+			return nil, MapError(fmt.Errorf("scan row error: %w", err))
+		}
+		data = append(data, uid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
+
+	return data, nil
+}
+
 func (r *notificationRepository) GetSettings(ctx context.Context, userID uuid.UUID) (*models.NotificationSettings, error) {
 	query := fmt.Sprintf(`SELECT user_id, settings FROM %s WHERE user_id = $1`, Tables.NotificationSettings)
 
@@ -125,7 +188,7 @@ func (r *notificationRepository) GetSettings(ctx context.Context, userID uuid.UU
 		if err == pgx.ErrNoRows {
 			return &models.NotificationSettings{
 				UserID:   userID,
-				Settings: []byte(`{"push":true}`),
+				Settings: []byte(`{"enabled":true,"categories":[],"groups":[]}`),
 			}, nil
 		}
 		return nil, MapError(fmt.Errorf("failed to get notification settings: %w", err))
@@ -175,4 +238,50 @@ func (r *notificationRepository) GetRealmAdmins(ctx context.Context, realmID uui
 	}
 
 	return data, nil
+}
+
+// GetOverdueTicketIDs возвращает ID активных тикетов с просроченным сроком (due_date < now).
+func (r *notificationRepository) GetOverdueTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error) {
+	query := fmt.Sprintf(`
+		SELECT id
+		FROM %s
+		WHERE due_date < $1
+			AND closed_at IS NULL
+			AND status IN ('open', 'in_progress', 'pending', 'on_hold')`, Tables.Tickets)
+
+	rows, err := r.db.Query(ctx, query, now)
+	if err != nil {
+		return nil, MapError(fmt.Errorf("failed to get overdue ticket ids: %w", err))
+	}
+	defer rows.Close()
+
+	var data []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, MapError(fmt.Errorf("scan row error: %w", err))
+		}
+		data = append(data, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
+
+	return data, nil
+}
+
+// HasNotification возвращает true, если у пользователя уже есть уведомление заданного типа
+// по конкретному тикету (по полю data.ticket_id).
+func (r *notificationRepository) HasNotification(ctx context.Context, userID, ticketID uuid.UUID, notifType string) (bool, error) {
+	query := fmt.Sprintf(`
+		SELECT EXISTS(
+			SELECT 1 FROM %s
+			WHERE user_id = $1 AND type = $2 AND data->>'ticket_id' = $3
+		)`, Tables.Notifications)
+
+	var exists bool
+	if err := r.db.QueryRow(ctx, query, userID, notifType, ticketID.String()).Scan(&exists); err != nil {
+		return false, MapError(fmt.Errorf("failed to check existing notification: %w", err))
+	}
+	return exists, nil
 }

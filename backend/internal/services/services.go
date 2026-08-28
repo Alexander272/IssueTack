@@ -135,7 +135,7 @@ func NewServices(deps *Deps) *Services {
 
 	// --- Кластер интеграций ---------------------------------------------
 	audit.StartListening(deps.Ctx, updatePolicyEvent)
-	scheduler := NewSchedulerService(&SchedulerDeps{Tickets: tickets})
+	scheduler := NewSchedulerService(&SchedulerDeps{Tickets: tickets, Notifications: notifications})
 
 	mattermostSvc := NewMattermostService(&MattermostDeps{
 		Repo:        deps.Repo.Mattermost,

@@ -73,7 +73,7 @@ export const SitesView: FC = () => {
 					sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 500, gap: 1 }}
 					onClick={openCreate}
 				>
-					<PlusIcon sx={{ color: palette.primary.main, fontSize: 16, mr: 1.5 }} />
+					<PlusIcon sx={{ color: palette.primary.main, fontSize: 16 }} />
 					Добавить площадку
 				</Button>
 			</Box>

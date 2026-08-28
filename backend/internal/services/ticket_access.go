@@ -141,19 +141,24 @@ func (s *TicketAccessService) CheckAccess(ctx context.Context, dto *models.Acces
 // CheckWorkAccess — "рабочий" доступ к тикету: либо write-доступ (по модели CheckAccess),
 // либо пользователь является исполнителем. Исполнителю разрешены операции ведения тикета —
 // смена статуса, подзадачи, вложения, комментарии — даже без прав создателя/менеджера.
-// Сначала пробуем CheckAccess(Write): если write уже есть, тикет повторно не загружаем.
+//
+// Тикет загружается один раз в начале метода, чтобы:
+//   - запретить любые "рабочие" операции (комментарии, вложения, подзадачи) для заявок
+//     в неактивном статусе (resolved/closed/cancelled) — независимо от прав пользователя;
+//   - затем проверить доступ по атрибутам загруженного тикета (write или исполнитель),
+//     не выполняя двойную загрузку.
 func (s *TicketAccessService) CheckWorkAccess(ctx context.Context, dto *models.AccessCheckDTO) error {
-	if err := s.CheckAccess(ctx, &models.AccessCheckDTO{
-		TicketID: dto.TicketID,
-		UserID:   dto.UserID,
-		Action:   string(access.Write),
-		Realm:    dto.Realm,
-	}); err == nil {
-		return nil
-	}
 	ticket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: dto.TicketID})
 	if err != nil {
 		return fmt.Errorf("failed to load ticket: %w", err)
+	}
+
+	if isTicketInactive(ticket.Status) {
+		return models.ErrTicketFrozen
+	}
+
+	if err := s.CheckAccessOnTicket(ctx, ticket, dto.UserID, string(access.Write), dto.Realm); err == nil {
+		return nil
 	}
 	if ticket.Assignee != nil && ticket.Assignee.ID == dto.UserID {
 		return nil

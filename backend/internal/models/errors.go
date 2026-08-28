@@ -50,6 +50,7 @@ var (
 	// 409 Conflict
 	ErrSubtasksNotResolved   = NewDomainError(errors.New("ticket has unresolved subtasks"), http.StatusConflict, "TK001", "Нельзя отметить задачу решённой, пока не решены все её подзадачи")
 	ErrCloseRequiresResolved = NewDomainError(errors.New("cannot close ticket that is not resolved"), http.StatusConflict, "TK002", "Нельзя закрыть нерешённую задачу. Задачу можно только отменить")
+	ErrTicketFrozen          = NewDomainError(errors.New("ticket is resolved/closed/cancelled"), http.StatusConflict, "TK003", "Заявка решена, закрыта или отменена — изменение данных недоступно")
 
 	// 409 Conflict (удаление справочников)
 	ErrGroupHasOpenTickets    = NewDomainError(errors.New("group has open tickets"), http.StatusConflict, "GR001", "Нельзя удалить группу, пока в ней есть незакрытые заявки")

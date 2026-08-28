@@ -1,7 +1,6 @@
 package notifications
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -42,7 +41,7 @@ func (h *Handler) getSettings(c *gin.Context) {
 		return
 	}
 
-	settings, err := h.service.GetSettings(c.Request.Context(), user.ID)
+	settings, err := h.service.GetSettingsPayload(c.Request.Context(), user.ID)
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -58,19 +57,13 @@ func (h *Handler) updateSettings(c *gin.Context) {
 		return
 	}
 
-	var body map[string]bool
+	var body models.NotificationSettingsPayload
 	if err := utils.BindJSON(c, &body); err != nil {
 		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
 		return
 	}
 
-	settings, err := json.Marshal(body)
-	if err != nil {
-		response.SendError(c, err)
-		return
-	}
-
-	if err := h.service.SaveSettings(c.Request.Context(), user.ID, settings); err != nil {
+	if err := h.service.SaveSettingsPayload(c.Request.Context(), user.ID, &body); err != nil {
 		response.SendError(c, err)
 		return
 	}

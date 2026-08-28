@@ -34,8 +34,11 @@ export const TaskDetailPage = () => {
 	if (!data?.data) return <DetailNotFound />
 
 	const task = data.data
-	const canEdit = task.status === 'open' && task.access?.canWrite
-	const canUploadAttachments = task.access?.canWork && task.status !== 'resolved'
+	// Неактивные (замороженные) статусы: решения, закрытые и отменённые заявки
+	// недоступны для изменения данных.
+	const isInactive = task.status === 'resolved' || task.status === 'closed' || task.status === 'cancelled'
+	const canEdit = !isInactive && task.access?.canWrite
+	const canUploadAttachments = !isInactive && task.access?.canWork
 
 	const handleStatusChange = async (taskId: string, status: TicketStatus, comment?: string) => {
 		try {

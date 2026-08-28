@@ -370,6 +370,17 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 
 		changes = dto.GetChanges(oldTicket)
 
+		// Неактивные статусы (resolved/closed/cancelled) — «замороженные»: менять
+		// разрешено только сам статус (resolved→closed, resolved→in_progress и т.п.).
+		// Все прочие поля (срок, приоритет, исполнитель, заголовок и др.) изменить нельзя.
+		if isTicketInactive(oldTicket.Status) {
+			for _, change := range changes {
+				if change.Tag != models.ActionStatusChanged && change.Tag != models.ActionClosed {
+					return models.ErrTicketFrozen
+				}
+			}
+		}
+
 		if assignedOnly {
 			for _, change := range changes {
 				if change.Tag != models.ActionStatusChanged && change.Tag != models.ActionClosed {
@@ -521,6 +532,18 @@ func (s *TicketService) ownerTransitionAllowed(ticket *models.Ticket, dto *model
 		return ticket.Status == models.StatusResolved
 	case models.StatusInProgress:
 		return ticket.Status == models.StatusResolved
+	default:
+		return false
+	}
+}
+
+// isTicketInactive возвращает true, если тикет находится в «замороженном»
+// (неактивном) статусе: resolved, closed или cancelled. Для таких тикетов
+// изменение данных (комментарии, вложения, подзадачи, поля) запрещено.
+func isTicketInactive(status models.TicketStatus) bool {
+	switch status {
+	case models.StatusResolved, models.StatusClosed, models.StatusCancelled:
+		return true
 	default:
 		return false
 	}

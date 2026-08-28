@@ -10,6 +10,7 @@ import { TaskDetail } from '@/pages/tasks/TaskDetailLazy'
 import { Sites } from '@/pages/sites/SitesLazy'
 import { Groups } from '@/pages/groups/GroupsLazy'
 import { Categories } from '@/pages/categories/CategoriesLazy'
+import { NotificationSettings } from '@/pages/settings/NotificationSettingsLazy'
 // import { Accesses } from '@/pages/accesses/AccessesLazy'
 import { Dashboard } from '@/pages/accesses/dashboard/DashboardLazy'
 import { Realms } from '@/pages/accesses/realms/RealmsLazy'
@@ -54,6 +55,10 @@ const config: RouteObject[] = [
 					{
 						path: AppRoutes.Categories,
 						element: <Categories />,
+					},
+					{
+						path: AppRoutes.NotificationSettings,
+						element: <NotificationSettings />,
 					},
 
 					{

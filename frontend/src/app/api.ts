@@ -73,4 +73,8 @@ export const API = {
 		base: '/sites' as const,
 		byId: (id: string) => `/sites/${id}` as const,
 	},
+	notifications: {
+		settings: '/notifications/settings',
+		getSettings: '/notifications',
+	},
 }

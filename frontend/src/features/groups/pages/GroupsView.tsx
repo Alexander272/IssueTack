@@ -1,15 +1,14 @@
 import { useCallback, useMemo, useState, type FC } from 'react'
 import { Box, Button, Typography, useTheme } from '@mui/material'
+import { SearchIcon, PlusIcon } from 'lucide-mui'
 
 import type { IGroup, IGroupDTO } from '../types/group'
 import { useGetAllGroupsQuery } from '../groupsApiSlice'
 import { useGetAvailableUsersQuery } from '@/features/user/usersApiSlice'
 import { useDebounce } from '@/hooks/useDebounce'
-import { PlusIcon } from 'lucide-mui'
 import { GroupCard } from '../components/GroupCard'
 import { GroupViewDialog } from '../components/GroupViewDialog'
 import { GroupDialog } from '../components/Dialogs/GroupDialog'
-import { SearchIcon } from 'lucide-mui'
 
 export const GroupsView: FC = () => {
 	const { palette } = useTheme()

@@ -5,7 +5,7 @@ import { Controller, type Control } from 'react-hook-form'
 import type { ICategoryDTO } from '../../types/category'
 import type { IGroup } from '@/features/groups/types/group'
 import { PRIORITY_MAP } from '@/features/tasks/constants/taskMaps'
-import { Switch } from '@/components/Switch/Switch'
+import { Switch } from '@/components/TextSwitch/Switch'
 
 type Props = {
 	control: Control<ICategoryDTO>
@@ -17,7 +17,10 @@ export const Form: FC<Props> = ({ control, groups }) => {
 		<Stack spacing={2}>
 			<Stack>
 				<Typography variant='caption' sx={{ fontWeight: 600, mb: 0.5, display: 'block' }}>
-					Название <Typography component='span' color='error'>*</Typography>
+					Название{' '}
+					<Typography component='span' color='error'>
+						*
+					</Typography>
 				</Typography>
 				<Controller
 					control={control}
@@ -47,16 +50,27 @@ export const Form: FC<Props> = ({ control, groups }) => {
 
 			<Stack>
 				<Typography variant='caption' sx={{ fontWeight: 600, mb: 0.5, display: 'block' }}>
-					Группа-владелец <Typography component='span' color='error'>*</Typography>
+					Группа-владелец{' '}
+					<Typography component='span' color='error'>
+						*
+					</Typography>
 				</Typography>
 				<Controller
 					control={control}
 					name='groupId'
 					rules={{ required: 'Обязательное поле' }}
 					render={({ field, fieldState }) => (
-						<TextField {...field} select fullWidth error={Boolean(fieldState.error)} helperText={fieldState.error?.message}>
+						<TextField
+							{...field}
+							select
+							fullWidth
+							error={Boolean(fieldState.error)}
+							helperText={fieldState.error?.message}
+						>
 							{groups.map(g => (
-								<MenuItem key={g.id} value={g.id}>{g.name}</MenuItem>
+								<MenuItem key={g.id} value={g.id}>
+									{g.name}
+								</MenuItem>
 							))}
 						</TextField>
 					)}
@@ -65,16 +79,27 @@ export const Form: FC<Props> = ({ control, groups }) => {
 
 			<Stack>
 				<Typography variant='caption' sx={{ fontWeight: 600, mb: 0.5, display: 'block' }}>
-					Приоритет по умолчанию <Typography component='span' color='error'>*</Typography>
+					Приоритет по умолчанию{' '}
+					<Typography component='span' color='error'>
+						*
+					</Typography>
 				</Typography>
 				<Controller
 					control={control}
 					name='priority'
 					rules={{ required: 'Обязательное поле' }}
 					render={({ field, fieldState }) => (
-						<TextField {...field} select fullWidth error={Boolean(fieldState.error)} helperText={fieldState.error?.message}>
+						<TextField
+							{...field}
+							select
+							fullWidth
+							error={Boolean(fieldState.error)}
+							helperText={fieldState.error?.message}
+						>
 							{Object.entries(PRIORITY_MAP).map(([value, info]) => (
-								<MenuItem key={value} value={value}>{info.label}</MenuItem>
+								<MenuItem key={value} value={value}>
+									{info.label}
+								</MenuItem>
 							))}
 						</TextField>
 					)}
