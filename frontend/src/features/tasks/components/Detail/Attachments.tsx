@@ -1,17 +1,20 @@
-import { Box, Dialog, IconButton, Typography, type SvgIconProps } from '@mui/material'
-import { X, Download, Image, FileText, Paperclip } from 'lucide-mui'
-import { toast } from 'react-toastify'
-import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ComponentType } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Box, Typography, type SvgIconProps } from '@mui/material'
+import { Image, FileText, Paperclip } from 'lucide-mui'
+import { toast } from 'react-toastify'
 
-import { API } from '@/app/api'
-import { useAppSelector } from '@/hooks/redux'
-import { getToken } from '@/features/user/userSlice'
-import { getRealm } from '@/features/realms/realmSlice'
 import type { IFetchError } from '@/app/types/error'
 import type { IAttachment } from '../../types/task'
-import { useUploadAttachmentMutation } from '../../modules/attachments/attachmentsApiSlice'
+import { formatSize } from '../../utils/size'
+import { saveAs } from '@/utils/saveAs'
+import {
+	useGetAttachmentContentQuery,
+	useLazyGetAttachmentContentQuery,
+	useUploadAttachmentMutation,
+} from '../../modules/attachments/attachmentsApiSlice'
 import { FileDropZone } from '../../modules/attachments/FileDropZone'
+import { PreviewDialog } from './Preview'
 
 interface Props {
 	attachments: IAttachment[] | undefined
@@ -30,53 +33,29 @@ const getFileIcon = (mimeType: string): { icon: ComponentType<SvgIconProps>; bg:
 	return { icon: Paperclip, bg: 'linear-gradient(135deg, #dbeafe, #bfdbfe)', color: '#2563eb' }
 }
 
-const formatSize = (bytes: number) => {
-	if (bytes < 1024) return `${bytes} Б`
-	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} КБ`
-	return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`
-}
-
-function useAuthFetch() {
-	const token = useAppSelector(getToken)
-	const realm = useAppSelector(getRealm)
-	return useCallback(async (url: string) => {
-		return fetch(url, {
-			headers: {
-				...(token ? { Authorization: `Bearer ${token}` } : {}),
-				...(realm ? { realm: realm.id } : {}),
-			},
-		})
-	}, [token, realm])
-}
-
-function ImageThumbnail({ file, authFetch }: { file: IAttachment; authFetch: (url: string) => Promise<Response> }) {
-	const [src, setSrc] = useState('')
-	const urlRef = useRef('')
+function ImageThumbnail({ file }: { file: IAttachment }) {
+	const { data: blob } = useGetAttachmentContentQuery(file.id)
+	const src = useMemo(() => (blob ? URL.createObjectURL(blob) : ''), [blob])
 
 	useEffect(() => {
-		let active = true
-		authFetch(API.attachments.content(file.id))
-			.then(res => (res.ok ? res.blob() : null))
-			.then(blob => {
-				if (!active || !blob) return
-				const url = URL.createObjectURL(blob)
-				urlRef.current = url
-				setSrc(url)
-			})
 		return () => {
-			active = false
-			if (urlRef.current) {
-				URL.revokeObjectURL(urlRef.current)
-				urlRef.current = ''
-			}
+			if (src) URL.revokeObjectURL(src)
 		}
-	}, [file.id, authFetch])
+	}, [src])
 
 	if (!src) {
 		const info = getFileIcon(file.mimeType)
 		const IconComponent = info.icon
 		return (
-			<Box sx={{ height: 80, background: info.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+			<Box
+				sx={{
+					height: 80,
+					background: info.bg,
+					display: 'flex',
+					alignItems: 'center',
+					justifyContent: 'center',
+				}}
+			>
 				<IconComponent sx={{ fontSize: 28, color: info.color }} />
 			</Box>
 		)
@@ -84,123 +63,58 @@ function ImageThumbnail({ file, authFetch }: { file: IAttachment; authFetch: (ur
 
 	return (
 		<Box sx={{ height: 80, overflow: 'hidden', bgcolor: '#f3f4f6' }}>
-			<Box component='img' src={src} alt={file.fileName} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+			<Box
+				component='img'
+				src={src}
+				alt={file.fileName}
+				sx={{ width: '100%', height: '100%', objectFit: 'contain' }}
+			/>
 		</Box>
-	)
-}
-
-function PreviewContent({ fileKey, fileName, fileSize, authFetch, onClose }: { fileKey: string; fileName: string; fileSize: number; authFetch: (url: string) => Promise<Response>; onClose: () => void }) {
-	const [src, setSrc] = useState('')
-	const urlRef = useRef('')
-
-	useEffect(() => {
-		let active = true
-		authFetch(API.attachments.content(fileKey))
-			.then(res => (res.ok ? res.blob() : null))
-			.then(blob => {
-				if (!active || !blob) return
-				const url = URL.createObjectURL(blob)
-				urlRef.current = url
-				setSrc(url)
-			})
-		return () => { active = false }
-	}, [fileKey, authFetch])
-
-	useEffect(() => {
-		return () => { if (urlRef.current) URL.revokeObjectURL(urlRef.current) }
-	}, [])
-
-	const handleDownload = () => {
-		if (!src) return
-		const a = document.createElement('a')
-		a.href = src
-		a.download = fileName
-		a.click()
-	}
-
-	return (
-		<>
-			<Box sx={{ position: 'relative', bgcolor: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300 }}>
-				<IconButton onClick={onClose} sx={{ position: 'absolute', top: 8, right: 8, color: 'white', zIndex: 1, bgcolor: 'rgba(0,0,0,0.4)', '&:hover': { bgcolor: 'rgba(0,0,0,0.6)' } }}>
-					<X sx={{ fontSize: 24 }} />
-				</IconButton>
-				{src
-					? <Box component='img' src={src} sx={{ maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain' }} />
-					: <Typography color='white'>Загрузка...</Typography>
-				}
-			</Box>
-			<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, py: 1.5, bgcolor: '#1f2937' }}>
-				<Box>
-					<Typography sx={{ color: 'white', fontWeight: 500, fontSize: '0.875rem' }}>{fileName}</Typography>
-					<Typography sx={{ color: '#9ca3af', fontSize: '0.75rem' }}>{formatSize(fileSize)}</Typography>
-				</Box>
-				<IconButton onClick={handleDownload} sx={{ color: 'white', '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' } }}>
-					<Download sx={{ fontSize: 20 }} />
-				</IconButton>
-			</Box>
-		</>
-	)
-}
-
-function PreviewDialog({ file, authFetch, onClose }: { file: IAttachment | null; authFetch: (url: string) => Promise<Response>; onClose: () => void }) {
-	return (
-		<Dialog open={!!file} onClose={onClose} maxWidth='lg' fullWidth PaperProps={{ sx: { bgcolor: 'transparent', boxShadow: 'none' } }}>
-			{file && <PreviewContent key={file.id} fileKey={file.id} fileName={file.fileName} fileSize={file.fileSize} authFetch={authFetch} onClose={onClose} />}
-		</Dialog>
 	)
 }
 
 export const Attachments = ({ attachments, canWork, taskId }: Props) => {
 	const [uploadAttachment] = useUploadAttachmentMutation()
-	const authFetch = useAuthFetch()
+	const [fetchContent] = useLazyGetAttachmentContentQuery()
 	const [previewFile, setPreviewFile] = useState<IAttachment | null>(null)
 
 	const files = attachments ?? []
 	const showUpload = canWork && taskId
 
-	const handleDownload = useCallback(async (file: IAttachment) => {
-		try {
-			const res = await authFetch(API.attachments.content(file.id))
-			if (!res.ok) {
-				const body = await res.json().catch(() => ({}))
-				throw body
-			}
-			const blob = await res.blob()
-			const url = URL.createObjectURL(blob)
-			const a = document.createElement('a')
-			a.href = url
-			a.download = file.fileName
-			a.click()
-			URL.revokeObjectURL(url)
-		} catch (error) {
-			const fetchError = error as IFetchError
-			toast.error(fetchError.data?.message || fetchError.message || 'Ошибка скачивания файла')
-		}
-	}, [authFetch])
-
-	const handleOpen = useCallback(async (file: IAttachment) => {
-		if (isImage(file.mimeType)) {
-			setPreviewFile(file)
-			return
-		}
-		if (isPdf(file.mimeType) || isText(file.mimeType)) {
+	const handleDownload = useCallback(
+		async (file: IAttachment) => {
 			try {
-				const res = await authFetch(API.attachments.content(file.id))
-				if (!res.ok) {
-					const body = await res.json().catch(() => ({}))
-					throw body
-				}
-				const blob = await res.blob()
-				const url = URL.createObjectURL(blob)
-				window.open(url, '_blank')
+				const blob = await fetchContent(file.id).unwrap()
+				saveAs(blob, file.fileName)
 			} catch (error) {
 				const fetchError = error as IFetchError
-				toast.error(fetchError.data?.message || fetchError.message || 'Ошибка открытия файла')
+				toast.error(fetchError.data?.message || 'Ошибка скачивания файла')
 			}
-			return
-		}
-		handleDownload(file)
-	}, [authFetch, handleDownload])
+		},
+		[fetchContent],
+	)
+
+	const handleOpen = useCallback(
+		async (file: IAttachment) => {
+			if (isImage(file.mimeType)) {
+				setPreviewFile(file)
+				return
+			}
+			if (isPdf(file.mimeType) || isText(file.mimeType)) {
+				try {
+					const blob = await fetchContent(file.id).unwrap()
+					const url = URL.createObjectURL(blob)
+					window.open(url, '_blank')
+				} catch (error) {
+					const fetchError = error as IFetchError
+					toast.error(fetchError.data?.message || 'Ошибка открытия файла')
+				}
+				return
+			}
+			handleDownload(file)
+		},
+		[fetchContent, handleDownload],
+	)
 
 	if (files.length === 0 && !showUpload) return null
 
@@ -208,7 +122,9 @@ export const Attachments = ({ attachments, canWork, taskId }: Props) => {
 		if (!taskId) return
 		try {
 			await Promise.all(
-				Array.from(list).map(file => uploadAttachment({ entityType: 'ticket', entityId: taskId, file }).unwrap())
+				Array.from(list).map(file =>
+					uploadAttachment({ entityType: 'ticket', entityId: taskId, file }).unwrap(),
+				),
 			)
 			if (list.length > 1) {
 				toast.success(`Загружено файлов: ${list.length}`)
@@ -222,12 +138,40 @@ export const Attachments = ({ attachments, canWork, taskId }: Props) => {
 	return (
 		<Box sx={{ bgcolor: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
 			{(files.length > 0 || showUpload) && (
-				<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2.5, py: 2, borderBottom: '1px solid #e5e7eb' }}>
-					<Typography sx={{ fontWeight: 700, color: '#1f2937', fontSize: '0.9375rem', display: 'flex', alignItems: 'center', gap: 1 }}>
+				<Box
+					sx={{
+						display: 'flex',
+						alignItems: 'center',
+						justifyContent: 'space-between',
+						px: 2.5,
+						py: 2,
+						borderBottom: '1px solid #e5e7eb',
+					}}
+				>
+					<Typography
+						sx={{
+							fontWeight: 700,
+							color: '#1f2937',
+							fontSize: '0.9375rem',
+							display: 'flex',
+							alignItems: 'center',
+							gap: 1,
+						}}
+					>
 						<Paperclip sx={{ fontSize: 16 }} />
 						Вложения
 						{files.length > 0 && (
-							<Typography component='span' sx={{ fontSize: '0.75rem', bgcolor: '#e5e7eb', color: '#374151', px: 1, py: 0.25, borderRadius: '999px' }}>
+							<Typography
+								component='span'
+								sx={{
+									fontSize: '0.75rem',
+									bgcolor: '#e5e7eb',
+									color: '#374151',
+									px: 1,
+									py: 0.25,
+									borderRadius: '999px',
+								}}
+							>
 								{files.length}
 							</Typography>
 						)}
@@ -236,7 +180,14 @@ export const Attachments = ({ attachments, canWork, taskId }: Props) => {
 			)}
 
 			{files.length > 0 && (
-				<Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 1.5, p: 2.5 }}>
+				<Box
+					sx={{
+						display: 'grid',
+						gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+						gap: 1.5,
+						p: 2.5,
+					}}
+				>
 					{files.map(file => {
 						const info = getFileIcon(file.mimeType)
 						const IconComponent = info.icon
@@ -260,7 +211,7 @@ export const Attachments = ({ attachments, canWork, taskId }: Props) => {
 								}}
 							>
 								{isImage(file.mimeType) ? (
-									<ImageThumbnail file={file} authFetch={authFetch} />
+									<ImageThumbnail file={file} />
 								) : (
 									<Box
 										sx={{
@@ -276,10 +227,21 @@ export const Attachments = ({ attachments, canWork, taskId }: Props) => {
 									</Box>
 								)}
 								<Box sx={{ p: 1.5 }}>
-									<Typography sx={{ fontSize: '0.75rem', fontWeight: 500, color: '#1f2937', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+									<Typography
+										sx={{
+											fontSize: '0.75rem',
+											fontWeight: 500,
+											color: '#1f2937',
+											overflow: 'hidden',
+											textOverflow: 'ellipsis',
+											whiteSpace: 'nowrap',
+										}}
+									>
 										{file.fileName}
 									</Typography>
-									<Typography sx={{ fontSize: '0.6875rem', color: '#9ca3af' }}>{formatSize(file.fileSize)}</Typography>
+									<Typography sx={{ fontSize: '0.6875rem', color: '#9ca3af' }}>
+										{formatSize(file.fileSize)}
+									</Typography>
 								</Box>
 							</Box>
 						)
@@ -293,7 +255,7 @@ export const Attachments = ({ attachments, canWork, taskId }: Props) => {
 				</Box>
 			)}
 
-			<PreviewDialog file={previewFile} authFetch={authFetch} onClose={() => setPreviewFile(null)} />
+			<PreviewDialog file={previewFile} onClose={() => setPreviewFile(null)} />
 		</Box>
 	)
 }

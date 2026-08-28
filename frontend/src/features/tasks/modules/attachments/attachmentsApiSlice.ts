@@ -19,7 +19,14 @@ const attachmentsApiSlice = apiSlice.injectEndpoints({
 				{ type: 'Tasks', id: 'LIST' },
 			],
 		}),
+		getAttachmentContent: builder.query<Blob, string>({
+			query: id => ({
+				url: API.attachments.content(id),
+				responseHandler: response => response.blob(),
+			}),
+		}),
 	}),
 })
 
-export const { useUploadAttachmentMutation } = attachmentsApiSlice
+export const { useUploadAttachmentMutation, useGetAttachmentContentQuery, useLazyGetAttachmentContentQuery } =
+	attachmentsApiSlice
