@@ -17,24 +17,20 @@ import (
 // username или ФИО) и при неудаче создаёт нового. Реализовано так, чтобы
 // внешний Mattermost-пользователь всегда мог создавать заявки без ручной
 // регистрации в системе.
-func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uuid.UUID, mmUserID string) (uuid.UUID, string, error) {
-	link, err := s.repo.GetUserLinkByMmUserID(ctx, mmUserID)
+func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uuid.UUID, mmUserID string, siteID *uuid.UUID) (uuid.UUID, string, error) {
+	existing, err := s.users.GetByMattermostID(ctx, mmUserID)
 	if err == nil {
-		ur, urErr := s.userRealms.GetByUserAndRealm(ctx, link.UserID, realmID)
+		ur, urErr := s.userRealms.GetByUserAndRealm(ctx, existing.ID, realmID)
 		if urErr != nil || ur == nil {
 			roleID, roleErr := s.roles.GetIDBySlug(ctx, realmID, "user")
 			if roleErr == nil {
 				_ = s.userRealms.CreateSeveral(ctx, nil, []*models.UserRealmDTO{
-					{UserID: link.UserID, RealmID: realmID, RoleID: &roleID, IsActive: true},
+					{UserID: existing.ID, RealmID: realmID, RoleID: &roleID, IsActive: true},
 				})
 			}
 		}
-		user, userErr := s.users.GetByID(ctx, link.UserID)
-		name := ""
-		if userErr == nil {
-			name = user.Username
-		}
-		return link.UserID, name, nil
+		s.ensureLinkAndRealm(ctx, realmID, existing.ID, mmUserID, siteID)
+		return existing.ID, existing.Username, nil
 	}
 
 	settings, err := s.repo.GetByRealm(ctx, realmID)
@@ -53,12 +49,12 @@ func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uui
 	}
 
 	if matched, userID, username := matchByEmail(sysUsers, mmUser.Email); matched {
-		s.ensureLinkAndRealm(ctx, realmID, userID, mmUser.Id)
+		s.ensureLinkAndRealm(ctx, realmID, userID, mmUser.Id, siteID)
 		return userID, username, nil
 	}
 
 	if matched, userID, username := matchByUsername(sysUsers, mmUser.Username); matched {
-		s.ensureLinkAndRealm(ctx, realmID, userID, mmUser.Id)
+		s.ensureLinkAndRealm(ctx, realmID, userID, mmUser.Id, siteID)
 		return userID, username, nil
 	}
 
@@ -66,7 +62,7 @@ func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uui
 	if mmFio != "" {
 		for _, sysU := range sysUsers {
 			if buildFIO(sysU.FirstName, sysU.LastName) == mmFio {
-				s.ensureLinkAndRealm(ctx, realmID, sysU.ID, mmUser.Id)
+				s.ensureLinkAndRealm(ctx, realmID, sysU.ID, mmUser.Id, siteID)
 				return sysU.ID, sysU.Username, nil
 			}
 		}
@@ -77,6 +73,7 @@ func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uui
 	userDTO := &models.UserDataDTO{
 		ID:           newUserID,
 		MattermostID: &mattermostID,
+		SiteID:       siteID,
 		Username:     mmUser.Username,
 		FirstName:    mmUser.FirstName,
 		LastName:     mmUser.LastName,
@@ -85,11 +82,6 @@ func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uui
 	}
 	if err := s.users.CreateSeveral(ctx, nil, []*models.UserDataDTO{userDTO}); err != nil {
 		return uuid.Nil, "", fmt.Errorf("failed to create user: %w", err)
-	}
-	if err := s.repo.UpsertUserLink(ctx, nil, &models.MattermostUserLink{
-		UserID: newUserID, MmUserID: mmUser.Id,
-	}); err != nil {
-		logger.Warn("failed to link mattermost id for new user", logger.ErrAttr(err))
 	}
 	roleID, roleErr := s.roles.GetIDBySlug(ctx, realmID, "user")
 	if roleErr == nil {
@@ -105,15 +97,19 @@ func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uui
 	return newUserID, mmUser.Username, nil
 }
 
-// ensureLinkAndRealm связывает найденного системного пользователя с его
-// Mattermost userID и добавляет его в realm с ролью «user», если он там ещё
-// не состоит. Ошибки некритичны (только логируются), чтобы не прерывать
-// основной поток сопоставления пользователя.
-func (s *MattermostService) ensureLinkAndRealm(ctx context.Context, realmID uuid.UUID, userID uuid.UUID, mmUserID string) {
-	if err := s.repo.UpsertUserLink(ctx, nil, &models.MattermostUserLink{
-		UserID: userID, MmUserID: mmUserID,
+// ensureLinkAndRealm привязывает системного пользователя к его Mattermost
+// userID (через users.mattermost_id) и добавляет его в realm с ролью «user»,
+// если он там ещё не состоит. Также обновляет site_id, если он передан.
+// Ошибки некритичны (только логируются), чтобы не прерывать основной поток
+// сопоставления пользователя.
+func (s *MattermostService) ensureLinkAndRealm(ctx context.Context, realmID uuid.UUID, userID uuid.UUID, mmUserID string, siteID *uuid.UUID) {
+	mmCopy := mmUserID
+	if err := s.users.UpdateMMAndSite(ctx, nil, &models.UserDataDTO{
+		ID:           userID,
+		MattermostID: &mmCopy,
+		SiteID:       siteID,
 	}); err != nil {
-		logger.Warn("failed to link mattermost id", logger.ErrAttr(err))
+		logger.Warn("failed to update mattermost id/site", logger.ErrAttr(err))
 	}
 	ur, urErr := s.userRealms.GetByUserAndRealm(ctx, userID, realmID)
 	if urErr != nil || ur == nil {
@@ -165,7 +161,7 @@ func buildFIO(firstName, lastName string) string {
 // администратору realm; необязательными аргументами можно ограничить синк
 // конкретными командами Mattermost.
 func (s *MattermostService) handleSync(ctx context.Context, settings *models.RealmMattermost, senderMmID string, message string) error {
-	senderID, _, err := s.resolveOrCreateUser(ctx, settings.RealmID, senderMmID)
+	senderID, _, err := s.resolveOrCreateUser(ctx, settings.RealmID, senderMmID, nil)
 	if err != nil {
 		return fmt.Errorf("failed to resolve sender: %w", err)
 	}
@@ -229,13 +225,13 @@ func (s *MattermostService) handleSync(ctx context.Context, settings *models.Rea
 		}
 		seen[mmU.Id] = struct{}{}
 
-		existingLink, linkErr := s.repo.GetUserLinkByMmUserID(ctx, mmU.Id)
-		if linkErr == nil {
-			ur, urErr := s.userRealms.GetByUserAndRealm(ctx, existingLink.UserID, settings.RealmID)
+		existing, existingErr := s.users.GetByMattermostID(ctx, mmU.Id)
+		if existingErr == nil {
+			ur, urErr := s.userRealms.GetByUserAndRealm(ctx, existing.ID, settings.RealmID)
 			if urErr != nil || ur == nil {
 				roleIDCopy := roleID
 				if err := s.userRealms.CreateSeveral(ctx, nil, []*models.UserRealmDTO{
-					{UserID: existingLink.UserID, RealmID: settings.RealmID, RoleID: &roleIDCopy, IsActive: true},
+					{UserID: existing.ID, RealmID: settings.RealmID, RoleID: &roleIDCopy, IsActive: true},
 				}); err != nil {
 					logger.Warn("failed to add user to realm",
 						logger.StringAttr("mm_user_id", mmU.Id),
@@ -252,7 +248,7 @@ func (s *MattermostService) handleSync(ctx context.Context, settings *models.Rea
 
 		if mmU.Email != "" {
 			if sysU, ok := sysByEmail[strings.ToLower(mmU.Email)]; ok {
-				s.ensureLinkAndRealm(ctx, settings.RealmID, sysU.ID, mmU.Id)
+				s.ensureLinkAndRealm(ctx, settings.RealmID, sysU.ID, mmU.Id, nil)
 				linked++
 				matched = true
 			}
@@ -260,7 +256,7 @@ func (s *MattermostService) handleSync(ctx context.Context, settings *models.Rea
 
 		if !matched && mmU.Username != "" {
 			if sysU, ok := sysByUsername[strings.ToLower(mmU.Username)]; ok {
-				s.ensureLinkAndRealm(ctx, settings.RealmID, sysU.ID, mmU.Id)
+				s.ensureLinkAndRealm(ctx, settings.RealmID, sysU.ID, mmU.Id, nil)
 				linked++
 				matched = true
 			}
@@ -269,7 +265,7 @@ func (s *MattermostService) handleSync(ctx context.Context, settings *models.Rea
 		if !matched {
 			if fio := buildFIO(mmU.FirstName, mmU.LastName); fio != "" {
 				if sysU, ok := sysByFIO[fio]; ok {
-					s.ensureLinkAndRealm(ctx, settings.RealmID, sysU.ID, mmU.Id)
+					s.ensureLinkAndRealm(ctx, settings.RealmID, sysU.ID, mmU.Id, nil)
 					linked++
 					matched = true
 				}
@@ -298,9 +294,6 @@ func (s *MattermostService) handleSync(ctx context.Context, settings *models.Rea
 			)
 			continue
 		}
-		_ = s.repo.UpsertUserLink(ctx, nil, &models.MattermostUserLink{
-			UserID: newUserID, MmUserID: mmU.Id,
-		})
 		roleIDCopy := roleID
 		_ = s.userRealms.CreateSeveral(ctx, nil, []*models.UserRealmDTO{
 			{UserID: newUserID, RealmID: settings.RealmID, RoleID: &roleIDCopy, IsActive: true},

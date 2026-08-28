@@ -21,12 +21,3 @@ type RealmMattermostDTO struct {
 	BotToken  string `json:"botToken" binding:"required"`
 	ChannelID string `json:"channelId"`
 }
-
-type MattermostUserLink struct {
-	UserID   uuid.UUID `json:"userId" db:"user_id"`
-	MmUserID string    `json:"mmUserId" db:"mm_user_id"`
-}
-
-type MattermostUserLinkDTO struct {
-	MmUserID string `json:"mmUserId" binding:"required"`
-}

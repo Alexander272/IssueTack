@@ -158,7 +158,7 @@ func (s *MattermostService) handleWSEvent(ctx context.Context, realmID uuid.UUID
 		}
 
 	case statusCommands.MatchString(msg):
-		resolvedUserID, _, err := s.resolveOrCreateUser(ctx, realmID, userID)
+		resolvedUserID, _, err := s.resolveOrCreateUser(ctx, realmID, userID, nil)
 		if err != nil {
 			logger.Warn("failed to resolve user for status command",
 				logger.StringAttr("mm_user_id", userID),

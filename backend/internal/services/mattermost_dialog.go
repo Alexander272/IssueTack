@@ -102,7 +102,18 @@ func (s *MattermostService) HandleDialogSubmission(ctx context.Context, submissi
 		return fmt.Errorf("invalid callback_id: %w", err)
 	}
 
-	creatorID, creatorName, err := s.resolveOrCreateUser(ctx, realmID, submission.UserId)
+	var (
+		creatorID   uuid.UUID
+		creatorName string
+		siteID      *uuid.UUID
+	)
+	if rawSite, ok := submission.Submission["siteId"].(string); ok && rawSite != "" {
+		if id, err := uuid.Parse(rawSite); err == nil {
+			siteID = &id
+		}
+	}
+
+	creatorID, creatorName, err = s.resolveOrCreateUser(ctx, realmID, submission.UserId, siteID)
 	if err != nil {
 		return fmt.Errorf("failed to resolve user: %w", err)
 	}
@@ -145,11 +156,8 @@ func (s *MattermostService) HandleDialogSubmission(ctx context.Context, submissi
 			}
 		}
 	}
-	if siteID, ok := submission.Submission["siteId"].(string); ok && siteID != "" {
-		id, err := uuid.Parse(siteID)
-		if err == nil {
-			dto.SiteID = id
-		}
+	if siteID != nil {
+		dto.SiteID = *siteID
 	}
 
 	err = s.tickets.Create(ctx, dto)
@@ -217,8 +225,8 @@ func (s *MattermostService) sendTicketCreatedDM(settings *models.RealmMattermost
 	if settings.BotToken == "" {
 		return
 	}
-	msg := fmt.Sprintf("Заявка #%s создана.\nЗаголовок: %s\nСтатус: %s",
-		dto.ID.String()[:8], dto.Title, dto.Status)
+	msg := fmt.Sprintf("Заявка №%d создана.\nЗаголовок: %s",
+		dto.TicketNumber, dto.Title)
 	if s.baseURL != "" {
 		msg += fmt.Sprintf("\nОткрыть: %s/tasks/%s", s.baseURL, dto.ID.String())
 	}

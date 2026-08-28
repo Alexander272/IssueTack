@@ -45,11 +45,12 @@ type Users interface {
 	LoadPolicy(ctx context.Context) ([]*models.UserRole, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*models.UserData, error)
 	GetByLogin(ctx context.Context, login string) (*models.UserData, error)
+	GetByMattermostID(ctx context.Context, mattermostID string) (*models.UserData, error)
 	GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.UserData, error)
 	CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserDataDTO) error
 	Sync(ctx context.Context, actor *models.Actor) error
 	UpdateAccount(ctx context.Context, dto *models.UpdateAccountDTO) error
-	UpdateMattermostIDs(ctx context.Context, tx postgres.Tx, dto []*models.MattermostUserLink) error
+	UpdateMMAndSite(ctx context.Context, tx postgres.Tx, dto *models.UserDataDTO) error
 }
 
 // LoadPolicy возвращает привязки пользователей к ролям для загрузки политик Casbin.
@@ -79,6 +80,15 @@ func (s *userService) GetByLogin(ctx context.Context, login string) (*models.Use
 	return data, nil
 }
 
+// GetByMattermostID возвращает данные пользователя по его Mattermost-идентификатору.
+func (s *userService) GetByMattermostID(ctx context.Context, mattermostID string) (*models.UserData, error) {
+	data, err := s.repo.GetByMattermostID(ctx, mattermostID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user by mattermost id. error: %w", err)
+	}
+	return data, nil
+}
+
 // GetAll возвращает список всех пользователей, опционально отфильтрованный по realm'у.
 func (s *userService) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.UserData, error) {
 	data, err := s.repo.GetAll(ctx, realmID)
@@ -88,7 +98,11 @@ func (s *userService) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models
 	return data, nil
 }
 
-// UpdateMattermostIDs обновляет Mattermost-идентификаторы пользователей.
-func (s *userService) UpdateMattermostIDs(ctx context.Context, tx postgres.Tx, dto []*models.MattermostUserLink) error {
-	return s.repo.UpdateMattermostIDs(ctx, tx, dto)
+// UpdateMMAndSite обновляет mattermost_id и site_id пользователя (nil не трогается).
+func (s *userService) UpdateMMAndSite(ctx context.Context, tx postgres.Tx, dto *models.UserDataDTO) error {
+	err := s.repo.UpdateMMAndSite(ctx, tx, dto)
+	if err != nil {
+		return fmt.Errorf("failed to update mattermost_id and site_id: %w", err)
+	}
+	return nil
 }

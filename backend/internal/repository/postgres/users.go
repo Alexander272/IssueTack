@@ -27,12 +27,13 @@ type Users interface {
 	LoadPolicy(ctx context.Context) ([]*models.UserRole, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*models.UserData, error)
 	GetByLogin(ctx context.Context, login string) (*models.UserData, error)
+	GetByMattermostID(ctx context.Context, mattermostID string) (*models.UserData, error)
 	GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.UserData, error)
 	CreateSeveral(ctx context.Context, tx Tx, dto []*models.UserDataDTO) error
 	Update(ctx context.Context, tx Tx, dto *models.UserDataDTO) error
 	UpdateSeveral(ctx context.Context, tx Tx, dto []*models.UserDataDTO) error
 	UpdateAccount(ctx context.Context, tx Tx, dto *models.UpdateAccountDTO) error
-	UpdateMattermostIDs(ctx context.Context, tx Tx, dto []*models.MattermostUserLink) error
+	UpdateMMAndSite(ctx context.Context, tx Tx, dto *models.UserDataDTO) error
 	DeleteSeveral(ctx context.Context, tx Tx, ids []uuid.UUID) error
 }
 
@@ -126,6 +127,43 @@ func (r *userRepo) GetByLogin(ctx context.Context, login string) (*models.UserDa
 	rows, err := r.db.Query(ctx, query, login)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to get user by login: %w", err))
+	}
+	defer rows.Close()
+
+	userRows, err := scanUserRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(userRows) == 0 {
+		return nil, models.ErrNotFound
+	}
+
+	data := mapUsersData(userRows)
+	return data[0], nil
+}
+
+func (r *userRepo) GetByMattermostID(ctx context.Context, mattermostID string) (*models.UserData, error) {
+	query := fmt.Sprintf(`SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.created_at,
+			u.is_active AS user_is_active,
+			u.is_system AS user_is_system,
+			u.internal_number AS internal_number,
+			ur.id AS ur_id, ur.is_active,
+			r.id AS role_id, r.name AS role_name, r.description AS role_description, r.level AS role_level,
+			r.is_active AS role_is_active, r.is_editable AS role_is_editable, r.slug AS role_slug,
+			rl.id AS realm_id, rl.name AS realm_name, rl.description AS realm_description,
+			rl.is_active AS realm_is_active,
+			ur.created_at AS realm_created_at
+		FROM %s u
+		LEFT JOIN %s ur ON u.id = ur.user_id
+		LEFT JOIN %s r ON ur.role_id = r.id
+		LEFT JOIN %s rl ON ur.realm_id = rl.id
+		WHERE u.mattermost_id = $1 AND u.mattermost_id <> ''`,
+		Tables.Users, Tables.UserRealms, Tables.Roles, Tables.Realms,
+	)
+
+	rows, err := r.db.Query(ctx, query, mattermostID)
+	if err != nil {
+		return nil, MapError(fmt.Errorf("failed to get user by mattermost id: %w", err))
 	}
 	defer rows.Close()
 
@@ -413,29 +451,19 @@ func (r *userRepo) UpdateAccount(ctx context.Context, tx Tx, dto *models.UpdateA
 	return nil
 }
 
-func (r *userRepo) UpdateMattermostIDs(ctx context.Context, tx Tx, dto []*models.MattermostUserLink) error {
-	if len(dto) == 0 {
-		return nil
-	}
-	n := len(dto)
-	userIDs := make([]uuid.UUID, n)
-	mmIDs := make([]string, n)
-	for i, v := range dto {
-		userIDs[i] = v.UserID
-		mmIDs[i] = v.MmUserID
-	}
+// UpdateMMAndSite обновляет mattermost_id и site_id пользователя. Переданные
+// nil-указатели не трогают соответствующие колонки (COALESCE к текущему значению).
+func (r *userRepo) UpdateMMAndSite(ctx context.Context, tx Tx, dto *models.UserDataDTO) error {
 	query := fmt.Sprintf(`
-		UPDATE %s AS t
-		SET mattermost_id = s.mm_user_id
-		FROM (
-			SELECT * FROM UNNEST($1::uuid[], $2::text[])
-			AS s(user_id, mm_user_id)
-		) AS s
-		WHERE t.id = s.user_id`,
+		UPDATE %s SET
+			mattermost_id = COALESCE($2, mattermost_id),
+			site_id = COALESCE($3, site_id),
+			updated_at = now()
+		WHERE id = $1`,
 		Tables.Users,
 	)
-	_, err := r.getExec(tx).Exec(ctx, query, userIDs, mmIDs)
-	return MapError(fmt.Errorf("failed to update mattermost ids: %w", err))
+	_, err := r.getExec(tx).Exec(ctx, query, dto.ID, dto.MattermostID, dto.SiteID)
+	return MapError(fmt.Errorf("failed to update mattermost id/site: %w", err))
 }
 
 func (r *userRepo) DeleteSeveral(ctx context.Context, tx Tx, ids []uuid.UUID) error {

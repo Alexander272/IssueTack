@@ -91,11 +91,6 @@ type Mattermost interface {
 	HandleDialogSubmission(ctx context.Context, submission *model.SubmitDialogRequest) error
 	HandleInteractiveAction(ctx context.Context, userID, channelID string, context map[string]string) (*model.Post, error)
 
-	SendDMToUser(ctx context.Context, userID uuid.UUID, message string) error
-
-	GetUserLinkByMmUserID(ctx context.Context, mmUserID string) (*models.MattermostUserLink, error)
-	UpsertUserLink(ctx context.Context, userID uuid.UUID, mmUserID string) error
-
 	StartWSForRealm(ctx context.Context, realmID uuid.UUID) error
 	StopWSForRealm(realmID uuid.UUID)
 	StopAllWS()
@@ -197,7 +192,7 @@ func (s *MattermostService) HandleDM(ctx context.Context, input *HandleDMInput) 
 		return s.sendHelpMessage(settings.BotToken, input.ChannelID, isAdmin)
 
 	case statusCommands.MatchString(msg):
-		userID, _, err := s.resolveOrCreateUser(ctx, settings.RealmID, input.MmUserID)
+		userID, _, err := s.resolveOrCreateUser(ctx, settings.RealmID, input.MmUserID, nil)
 		if err != nil {
 			return fmt.Errorf("failed to resolve user: %w", err)
 		}
@@ -251,10 +246,11 @@ func (s *MattermostService) sendHelpMessage(botToken, channelID string, isAdmin 
 		text += "\n• **синхронизировать [команда1,команда2]** — синхронизация пользователей"
 	}
 
-	if _, err := s.most.Post.Create(botToken, mattermost.CreatePostDTO{
+	_, err := s.most.Post.Create(botToken, mattermost.CreatePostDTO{
 		ChannelID: channelID,
 		Message:   text,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("failed to send help message: %w", err)
 	}
 	return nil
@@ -263,10 +259,11 @@ func (s *MattermostService) sendHelpMessage(botToken, channelID string, isAdmin 
 func (s *MattermostService) sendStatusMessage(_ context.Context, settings *models.RealmMattermost, _ uuid.UUID, channelID string) error {
 	text := "**Ваши активные заявки:**\n_(пока не реализовано)_"
 
-	if _, err := s.most.Post.Create(settings.BotToken, mattermost.CreatePostDTO{
+	_, err := s.most.Post.Create(settings.BotToken, mattermost.CreatePostDTO{
 		ChannelID: channelID,
 		Message:   text,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("failed to send status message: %w", err)
 	}
 	return nil
@@ -279,7 +276,7 @@ func (s *MattermostService) sendStatusMessage(_ context.Context, settings *model
 // прошло не более 30 минут, — так команды вида «#123 + файлы» и просто постинг
 // файлов после создания заявки работают единообразно.
 func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *models.RealmMattermost, mmUserID, channelID string, ticketNumber int, fileIDs []string) error {
-	userID, _, err := s.resolveOrCreateUser(ctx, settings.RealmID, mmUserID)
+	userID, _, err := s.resolveOrCreateUser(ctx, settings.RealmID, mmUserID, nil)
 	if err != nil {
 		return fmt.Errorf("failed to resolve user: %w", err)
 	}
@@ -361,55 +358,21 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *mod
 }
 
 func (s *MattermostService) sendDM(settings *models.RealmMattermost, mmUserID, message string) error {
-	return s.most.DM.Send(settings.BotToken, settings.BotUserID, mmUserID, message)
-}
-
-func (s *MattermostService) checkIsAdmin(ctx context.Context, realmID uuid.UUID, mmUserID string) bool {
-	link, err := s.repo.GetUserLinkByMmUserID(ctx, mmUserID)
+	err := s.most.DM.Send(settings.BotToken, settings.BotUserID, mmUserID, message)
 	if err != nil {
-		return false
-	}
-	ur, err := s.userRealms.GetByUserAndRealm(ctx, link.UserID, realmID)
-	if err != nil || ur == nil || ur.Role == nil {
-		return false
-	}
-	return ur.Role.Slug == "admin"
-}
-
-// SendDMToUser отправляет прямое сообщение пользователю системы по его userID.
-func (s *MattermostService) SendDMToUser(ctx context.Context, userID uuid.UUID, message string) error {
-	link, err := s.repo.GetUserLinkByUserID(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("failed to get mm user link: %w", err)
-	}
-
-	settings, err := s.repo.GetByUserID(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("failed to find mattermost settings: %w", err)
-	}
-
-	if err := s.most.DM.Send(settings.BotToken, settings.BotUserID, link.MmUserID, message); err != nil {
 		return fmt.Errorf("failed to send direct message: %w", err)
 	}
 	return nil
 }
 
-// GetUserLinkByMmUserID возвращает связку пользователя по его Mattermost userID.
-func (s *MattermostService) GetUserLinkByMmUserID(ctx context.Context, mmUserID string) (*models.MattermostUserLink, error) {
-	link, err := s.repo.GetUserLinkByMmUserID(ctx, mmUserID)
+func (s *MattermostService) checkIsAdmin(ctx context.Context, realmID uuid.UUID, mmUserID string) bool {
+	user, err := s.users.GetByMattermostID(ctx, mmUserID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user link by mm user id: %w", err)
+		return false
 	}
-	return link, nil
-}
-
-// UpsertUserLink создаёт или обновляет связку системного пользователя с Mattermost userID.
-func (s *MattermostService) UpsertUserLink(ctx context.Context, userID uuid.UUID, mmUserID string) error {
-	if err := s.repo.UpsertUserLink(ctx, nil, &models.MattermostUserLink{
-		UserID:   userID,
-		MmUserID: mmUserID,
-	}); err != nil {
-		return fmt.Errorf("failed to upsert user link: %w", err)
+	ur, err := s.userRealms.GetByUserAndRealm(ctx, user.ID, realmID)
+	if err != nil || ur == nil || ur.Role == nil {
+		return false
 	}
-	return nil
+	return ur.Role.Slug == "admin"
 }
