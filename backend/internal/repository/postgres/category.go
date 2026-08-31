@@ -28,7 +28,7 @@ type Categories interface {
 }
 
 func (r *CategoryRepo) Get(ctx context.Context, req *models.GetCategoriesDTO) ([]*models.Category, error) {
-	query := fmt.Sprintf(`SELECT id, name, description, group_id, def_priority, is_active, realm_id, created_at, updated_at FROM %s WHERE realm_id = $1`,
+	query := fmt.Sprintf(`SELECT id, name, description, group_id, def_priority, is_active, realm_id, created_at, updated_at FROM %s WHERE realm_id = $1 AND group_id IS NOT NULL`,
 		Tables.Categories,
 	)
 

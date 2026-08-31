@@ -129,6 +129,7 @@ func NewServices(deps *Deps) *Services {
 		Attachments:   attachments,
 		Notifications: notifications,
 		Groups:        groups,
+		Categories:    categories,
 		Policies:      policies,
 		Access:        access,
 	})
@@ -148,6 +149,7 @@ func NewServices(deps *Deps) *Services {
 		Sites:       sites,
 		Attachments: attachments,
 		Comments:    comments,
+		EventBus:    updatePolicyEvent,
 		Most:        mmMost,
 		BaseURL:     deps.Conf.Http.BaseURL,
 	})

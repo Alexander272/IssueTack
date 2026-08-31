@@ -147,7 +147,7 @@ func (r *notificationRepository) GetGroupEventSubscribers(ctx context.Context, g
 		SELECT DISTINCT gm.user_id
 		FROM %s gm
 		JOIN %s uns ON uns.user_id = gm.user_id
-		WHERE gm.group_id = $1
+		WHERE gm.group_id = $1::uuid
 			AND uns.settings->>'enabled' = 'true'
 			AND EXISTS (
 				SELECT 1 FROM jsonb_array_elements(uns.settings->'groups') g

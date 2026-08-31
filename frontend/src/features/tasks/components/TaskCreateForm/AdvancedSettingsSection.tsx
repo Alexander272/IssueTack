@@ -1,11 +1,14 @@
+import { useEffect, useMemo } from 'react'
 import { Autocomplete, Box, Stack, TextField, Typography } from '@mui/material'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import { Controller, useFormContext, useWatch } from 'react-hook-form'
 import dayjs from 'dayjs'
-import type { IGroup } from '@/features/groups/types/group'
-import type { IUserData, IUserShort } from '@/features/user/types/user'
 import type { Priority } from '../../types/task'
 import { PRIORITY_MAP } from '../../constants/taskMaps'
+import { useGetAllCategoriesQuery } from '@/features/categories/categoriesApiSlice'
+import { useGetAllGroupsQuery } from '@/features/groups/groupsApiSlice'
+import { useGetRealmUsersQuery } from '@/features/user/usersApiSlice'
+import { CustomerSelector } from './CustomerSelector'
 import { SectionCard } from './SectionCard'
 import { PriorityCard } from './PriorityCard'
 import { fieldLabelSx } from './styles'
@@ -13,15 +16,40 @@ import type { FormValues } from './types'
 import { DateTextField } from '@/components/DatePicker/DatePicker'
 
 type Props = {
-	groups: IGroup[]
-	users: IUserData[]
-	assigneeOptions: IUserShort[]
 	number?: number
+	autoAssign?: boolean
 }
 
-export const AdvancedSettingsSection = ({ groups, users, assigneeOptions, number = 3 }: Props) => {
-	const { control } = useFormContext<FormValues>()
-	const groupId = useWatch({ control, name: 'groupId' })
+export const AdvancedSettingsSection = ({ number = 3, autoAssign = true }: Props) => {
+	const { control, setValue } = useFormContext<FormValues>()
+	const { data: categoriesData } = useGetAllCategoriesQuery()
+	const { data: groupsData } = useGetAllGroupsQuery()
+	const { data: customersData } = useGetRealmUsersQuery('customers')
+	const { data: executorsData } = useGetRealmUsersQuery('executors')
+
+	const categories = useMemo(() => categoriesData?.data ?? [], [categoriesData])
+	const groups = useMemo(() => groupsData?.data ?? [], [groupsData])
+	const customers = useMemo(() => customersData?.data ?? [], [customersData])
+	const executors = useMemo(() => executorsData?.data ?? [], [executorsData])
+
+	const selectedCategoryId = useWatch({ control, name: 'categoryId' })
+	const selectedGroupId = useWatch({ control, name: 'groupId' })
+
+	useEffect(() => {
+		if (!autoAssign) return
+		const cat = categories.find(c => c.id === selectedCategoryId)
+		setValue('groupId', cat?.groupId ?? null)
+	}, [selectedCategoryId, categories, autoAssign, setValue])
+
+	useEffect(() => {
+		if (!autoAssign) return
+		if (!selectedGroupId) {
+			setValue('assigneeId', null)
+			return
+		}
+		const group = groups.find(g => g.id === selectedGroupId)
+		setValue('assigneeId', group?.defaultAssigneeId ?? null)
+	}, [selectedGroupId, groups, autoAssign, setValue])
 
 	return (
 		<SectionCard number={number} title='Расширенные настройки' subtitle='Доступно менеджерам'>
@@ -67,16 +95,7 @@ export const AdvancedSettingsSection = ({ groups, users, assigneeOptions, number
 							control={control}
 							name='ownerId'
 							render={({ field }) => (
-								<Autocomplete
-									options={users}
-									getOptionLabel={u => `${u.lastName} ${u.firstName} (${u.username})`}
-									value={users.find(u => u.id === field.value) ?? null}
-									onChange={(_, value) => field.onChange(value?.id ?? null)}
-									noOptionsText='Нет пользователей'
-									renderInput={params => (
-										<TextField {...params} size='small' placeholder='Не указан' />
-									)}
-								/>
+								<CustomerSelector options={customers} value={field.value} onChange={field.onChange} />
 							)}
 						/>
 					</Box>
@@ -111,16 +130,15 @@ export const AdvancedSettingsSection = ({ groups, users, assigneeOptions, number
 							control={control}
 							name='assigneeId'
 							render={({ field }) => (
-							<Autocomplete
-								options={assigneeOptions}
-								getOptionLabel={u => `${u.lastName} ${u.firstName} (${u.username})`}
-								value={assigneeOptions.find(u => u.id === field.value) ?? null}
-								onChange={(_, value) => field.onChange(value?.id ?? null)}
-								disabled={!groupId}
-								noOptionsText='Нет пользователей'
-								renderInput={params => (
-									<TextField {...params} size='small' placeholder={groupId ? 'Авто (по группе)' : 'Сначала выберите группу'} />
-								)}
+								<Autocomplete
+									options={executors}
+									getOptionLabel={u => `${u.lastName} ${u.firstName} (${u.username})`}
+									value={executors.find(u => u.id === field.value) ?? null}
+									onChange={(_, value) => field.onChange(value?.id ?? null)}
+									noOptionsText='Нет исполнителей'
+									renderInput={params => (
+										<TextField {...params} size='small' placeholder='Авто (по группе)' />
+									)}
 								/>
 							)}
 						/>

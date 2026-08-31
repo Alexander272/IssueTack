@@ -44,6 +44,8 @@ export const PRIORITY_MAP: Record<Priority, PriorityMapValue> = {
 	urgent: { label: 'Критичный', barCount: 4, barColor: '#dc2626', bgColor: '#fef2f2', textColor: '#991b1b' },
 }
 
+export const PRIORITY_ORDER: Priority[] = ['urgent', 'high', 'medium', 'low']
+
 export const QUEUE_OPTIONS = [
 	{ value: 'all', label: 'Все мои очереди' },
 	{ value: 'personal', label: '👤 Лично мне' },

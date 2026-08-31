@@ -29,6 +29,7 @@ type Users interface {
 	GetByLogin(ctx context.Context, login string) (*models.UserData, error)
 	GetByMattermostID(ctx context.Context, mattermostID string) (*models.UserData, error)
 	GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.UserData, error)
+	GetByMembership(ctx context.Context, realmID uuid.UUID, membership models.MembershipFilter) ([]*models.UserData, error)
 	CreateSeveral(ctx context.Context, tx Tx, dto []*models.UserDataDTO) error
 	Update(ctx context.Context, tx Tx, dto *models.UserDataDTO) error
 	UpdateSeveral(ctx context.Context, tx Tx, dto []*models.UserDataDTO) error
@@ -232,6 +233,57 @@ func (r *userRepo) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.Us
 		return nil, err
 	}
 	return data, nil
+}
+
+// GetByMembership возвращает пользователей realm, отфильтрованных по членству в группах:
+// MembershipCustomers — пользователи вне всех групп («заказчики»), MembershipExecutors —
+// пользователи хотя бы в одной группе («исполнители»).
+func (r *userRepo) GetByMembership(ctx context.Context, realmID uuid.UUID, membership models.MembershipFilter) ([]*models.UserData, error) {
+	var membershipClause string
+	switch membership {
+	case models.MembershipCustomers:
+		membershipClause = "NOT EXISTS"
+	case models.MembershipExecutors:
+		membershipClause = "EXISTS"
+	default:
+		membershipClause = "NOT EXISTS"
+	}
+
+	query := fmt.Sprintf(`SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.created_at,
+			u.is_active AS user_is_active,
+			u.is_system AS user_is_system,
+			u.internal_number AS internal_number,
+			ur.id AS ur_id, ur.is_active,
+			r.id AS role_id, r.name AS role_name, r.description AS role_description, r.level AS role_level,
+			r.is_active AS role_is_active, r.is_editable AS role_is_editable, r.slug AS role_slug,
+			rl.id AS realm_id, rl.name AS realm_name, rl.description AS realm_description,
+			rl.is_active AS realm_is_active,
+			ur.created_at AS realm_created_at
+		FROM %s u
+		LEFT JOIN %s ur ON u.id = ur.user_id
+		LEFT JOIN %s r ON ur.role_id = r.id
+		LEFT JOIN %s rl ON ur.realm_id = rl.id
+		WHERE ur.realm_id = $1
+			AND %s (
+				SELECT 1 FROM %s gm
+				JOIN %s g ON gm.group_id = g.id
+				WHERE gm.user_id = u.id AND g.realm_id = $1
+			)
+		ORDER BY u.first_name, u.last_name, u.username`,
+		Tables.Users, Tables.UserRealms, Tables.Roles, Tables.Realms, membershipClause, Tables.GroupMembers, Tables.Groups,
+	)
+
+	rows, err := r.db.Query(ctx, query, realmID)
+	if err != nil {
+		return nil, MapError(fmt.Errorf("failed to get users by membership: %w", err))
+	}
+	defer rows.Close()
+
+	userRows, err := scanUserRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	return mapUsersData(userRows)
 }
 
 func scanUserRows(rows pgx.Rows) ([]*pq_models.User, error) {
@@ -502,7 +554,10 @@ func (r *userRepo) UpdateMMAndSite(ctx context.Context, tx Tx, dto *models.UserD
 		Tables.Users,
 	)
 	_, err := r.getExec(tx).Exec(ctx, query, dto.ID, dto.MattermostID, dto.SiteID)
-	return MapError(fmt.Errorf("failed to update mattermost id/site: %w", err))
+	if err != nil {
+		return MapError(fmt.Errorf("failed to update mattermost id/site: %w", err))
+	}
+	return nil
 }
 
 func (r *userRepo) DeleteSeveral(ctx context.Context, tx Tx, ids []uuid.UUID) error {

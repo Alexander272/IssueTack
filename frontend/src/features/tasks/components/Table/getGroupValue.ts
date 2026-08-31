@@ -1,6 +1,6 @@
 import type { ITask } from '../../types/task'
 import type { GroupByField } from '../../constants/taskMaps'
-import { STATUS_MAP, PRIORITY_MAP } from '../../constants/taskMaps'
+import { STATUS_MAP, PRIORITY_MAP, PRIORITY_ORDER } from '../../constants/taskMaps'
 
 export function getGroupValue(task: ITask, groupBy: GroupByField): string {
 	switch (groupBy) {
@@ -30,4 +30,15 @@ export function getGroupValue(task: ITask, groupBy: GroupByField): string {
 		default:
 			return task.category.name
 	}
+}
+
+const priorityRankByLabel = new Map(PRIORITY_ORDER.map(p => [PRIORITY_MAP[p].label, p]))
+
+export function sortGroupKeys(keys: string[], groupBy: GroupByField): string[] {
+	if (groupBy !== 'priority') return [...keys].sort((a, b) => a.localeCompare(b))
+	const rank = (key: string) => {
+		const p = priorityRankByLabel.get(key)
+		return p === undefined ? PRIORITY_ORDER.length : PRIORITY_ORDER.indexOf(p)
+	}
+	return [...keys].sort((a, b) => rank(a) - rank(b))
 }

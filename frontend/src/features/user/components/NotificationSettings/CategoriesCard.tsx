@@ -1,34 +1,34 @@
 import { type FC, type ReactNode } from 'react'
-import { Box, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography, useTheme } from '@mui/material'
-import { CheckCheckIcon, LayersIcon, XIcon } from 'lucide-mui'
+import {
+	Box,
+	Table,
+	TableBody,
+	TableCell,
+	TableContainer,
+	TableHead,
+	TableRow,
+	Typography,
+	useTheme,
+} from '@mui/material'
+import { LayersIcon } from 'lucide-mui'
 import { useFormContext, useWatch } from 'react-hook-form'
-import { useGetAllCategoriesQuery } from '@/features/categories/categoriesApiSlice'
-import type { ICategoryNotificationSetting, INotificationSettings } from '../../notificationsApiSlice'
-import { BadgeCheckbox } from '@/components/BadgeCheckbox/BadgeCheckbox'
 
-import { NotificationSectionCard } from './NotificationSectionCard'
+import type { ICategoryNotificationSetting, INotificationSettings } from '../../notificationsApiSlice'
 import { CATEGORY_EVENTS, type CategoryEventKey } from './constants'
+import { useGetAllCategoriesQuery } from '@/features/categories/categoriesApiSlice'
+import { BadgeCheckbox } from '@/components/BadgeCheckbox/BadgeCheckbox'
+import { NotificationSectionCard } from './NotificationSectionCard'
+import { SelectButtons } from './SelectButtons'
 
 const EMPTY_SETTING = { newTask: false, status: false, comment: false, overdue: false }
-
-const Actions: FC<{ disabled: boolean; onSetAll: (value: boolean) => void }> = ({ disabled, onSetAll }) => (
-	<Box sx={{ display: 'flex', gap: 1 }}>
-		<Button disabled={disabled} onClick={() => onSetAll(true)} sx={{ textTransform: 'none' }}>
-			<CheckCheckIcon sx={{ fontSize: 18, color: 'primary', mr: 0.5 }} />
-			Включить всё
-		</Button>
-		<Button color='inherit' disabled={disabled} onClick={() => onSetAll(false)} sx={{ textTransform: 'none' }}>
-			<XIcon sx={{ fontSize: 18, color: 'inherit', mr: 0.5 }} />
-			Выключить всё
-		</Button>
-	</Box>
-)
 
 export const CategoriesCard: FC = () => {
 	const { palette } = useTheme()
 	const { data: categories } = useGetAllCategoriesQuery()
 	const { setValue } = useFormContext<INotificationSettings>()
-	const settings: ICategoryNotificationSetting[] = useWatch<INotificationSettings, 'categories'>({ name: 'categories' })
+	const settings: ICategoryNotificationSetting[] = useWatch<INotificationSettings, 'categories'>({
+		name: 'categories',
+	})
 	const enabled = useWatch<INotificationSettings, 'enabled'>({ name: 'enabled' })
 	const disabled = !enabled
 
@@ -70,7 +70,7 @@ export const CategoriesCard: FC = () => {
 			title='Подписки по категориям'
 			subtitle='Уведомления по задачам выбранной категории во всех группах'
 			icon={LayersIcon}
-			actions={<Actions disabled={disabled} onSetAll={setAllCategories} />}
+			actions={<SelectButtons disabled={disabled} onSetAll={setAllCategories} />}
 		>
 			<TableContainer>
 				<Table sx={{ minWidth: 640 }}>

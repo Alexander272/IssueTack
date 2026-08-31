@@ -58,8 +58,8 @@ _(нет незакоммиченных файлов)_
 ## Тех. долг (найденные TODO в коде)
 
 - [ ] `backend/internal/services/realms.go:54` — создать несколько системных ролей (вынести куда-нибудь)
-- [ ] `backend/internal/services/groups.go:154` — проверить, все ли тикеты в группе закрыты, перед удалением
-- [ ] `backend/internal/services/category.go:58` — проверить, все ли тикеты в категории закрыты, перед удалением
+- [x] `backend/internal/services/groups.go:154` — проверить, все ли тикеты в группе закрыты, перед удалением
+- [x] `backend/internal/services/category.go:58` — проверить, все ли тикеты в категории закрыты, перед удалением
 - [ ] `backend/internal/transport/middleware/identity.go:16` — забирать ключи из keycloak и проверять токен здесь
 - [ ] `backend/internal/repository/postgres/permissions.go:257` — добавить уровни для сортировки
 - [ ] `frontend/src/app/middlewares/resetStore.ts:16` — сброс состояний при logout

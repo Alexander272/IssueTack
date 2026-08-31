@@ -308,9 +308,10 @@ func (s *RoleService) Create(ctx context.Context, dto *models.RoleDTO) error {
 	}
 
 	entity := dto.Name
-	newValues, err := json.Marshal(dto)
-	if err != nil {
-		return fmt.Errorf("failed to marshal new values: %w", err)
+	newValues, marshalErr := json.Marshal(dto)
+	if marshalErr != nil {
+		bestEffortError("failed to marshal role new values after create", marshalErr,
+			map[string]string{"role_id": dto.ID.String(), "role": entity})
 	}
 	s.eventBus.Notify(events.PolicyEvent{
 		ChangedBy:     dto.Actor.ID,
@@ -532,9 +533,10 @@ func (s *RoleService) Delete(ctx context.Context, dto *models.DeleteRoleDTO) err
 	}
 
 	entity := role.Name
-	realmID, err := uuid.Parse(role.Realm)
-	if err != nil {
-		return fmt.Errorf("failed to parse realm id: %w", err)
+	realmID, parseErr := uuid.Parse(role.Realm)
+	if parseErr != nil {
+		bestEffortError("failed to parse realm id after role delete", parseErr,
+			map[string]string{"role_id": role.ID.String(), "role": entity, "realm": role.Realm})
 	}
 	s.eventBus.Notify(events.PolicyEvent{
 		ChangedBy:     dto.Actor.ID,

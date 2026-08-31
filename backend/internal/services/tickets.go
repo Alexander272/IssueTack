@@ -9,6 +9,8 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
+	"github.com/Alexander272/IssueTrack/backend/pkg/error_bot"
+	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/google/uuid"
 )
 
@@ -22,6 +24,7 @@ type TicketService struct {
 	attachments   Attachments
 	notifications Notifications
 	groups        Groups
+	categories    Categories
 	policies      AccessPolicies
 	access        TicketAccessChecker
 }
@@ -36,6 +39,7 @@ func NewTicketService(deps *TicketDeps) *TicketService {
 		attachments:   deps.Attachments,
 		notifications: deps.Notifications,
 		groups:        deps.Groups,
+		categories:    deps.Categories,
 		policies:      deps.Policies,
 		access:        deps.Access,
 	}
@@ -50,6 +54,7 @@ type TicketDeps struct {
 	Attachments   Attachments
 	Notifications Notifications
 	Groups        Groups
+	Categories    Categories
 	Policies      AccessPolicies
 	Access        TicketAccessChecker
 }
@@ -225,8 +230,21 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 	if err != nil {
 		return fmt.Errorf("policy check failed: %w", err)
 	}
+
 	if !ok {
-		return models.ErrPermissionDenied
+		// Исполнитель (участник хотя бы одной группы) может создать заявку
+		// с ограничениями: обязателен заказчик, а приоритет/группа/исполнитель/срок
+		// принудительно определяются системой.
+		member, err := s.groups.GetMemberGroups(ctx, dto.Actor.ID, dto.RealmID)
+		if err != nil {
+			return fmt.Errorf("failed to get member groups: %w", err)
+		}
+		if len(member) == 0 {
+			return models.ErrPermissionDenied
+		}
+		if err := s.applyExecutorCreateRestrictions(ctx, dto, member); err != nil {
+			return err
+		}
 	}
 
 	if dto.GroupID == nil {
@@ -270,9 +288,48 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 	}
 
 	if err := s.notifications.TicketCreated(ctx, dto); err != nil {
-		return fmt.Errorf("failed to send notification: %w", err)
+		s.notifyBestEffort(ctx, "create", *dto.ID, dto.Title, err)
 	}
 	return nil
+}
+
+// applyExecutorCreateRestrictions применяет ограничения при создании заявки исполнителем
+// (участником группы, не имеющим полных прав). Заказчик обязателен; группа и приоритет
+// принудительно берутся из категории, срок отсутствует. Если категория принадлежит одной
+// из групп исполнителя — заявку назначают на него, иначе исполнитель подбирается по умолчанию.
+func (s *TicketService) applyExecutorCreateRestrictions(ctx context.Context, dto *models.TicketDTO, memberGroups []uuid.UUID) error {
+	if dto.OwnerID == nil {
+		return models.ErrOwnerRequired
+	}
+	if dto.RealmID == nil {
+		return fmt.Errorf("realm is required")
+	}
+
+	category, err := s.categories.GetByID(ctx, &models.GetCategoryByIdDTO{ID: dto.CategoryID, RealmID: *dto.RealmID})
+	if err != nil {
+		return fmt.Errorf("failed to get category: %w", err)
+	}
+	if category.GroupID == uuid.Nil {
+		return fmt.Errorf("category has no group")
+	}
+
+	dto.GroupID = &category.GroupID
+	dto.Priority = category.Priority
+	dto.DueDate = nil
+
+	if containsUUID(memberGroups, category.GroupID) {
+		dto.AssigneeID = &dto.CreatorID
+	}
+	return nil
+}
+
+func containsUUID(values []uuid.UUID, target uuid.UUID) bool {
+	for _, v := range values {
+		if v == target {
+			return true
+		}
+	}
+	return false
 }
 
 // Update обновляет поля тикета с учётом прав доступа и правил переходов по статусам.
@@ -428,7 +485,7 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 
 	if len(changes) > 0 {
 		if err := s.notifications.TicketUpdated(ctx, *dto.ID, dto.Actor.ID, changes); err != nil {
-			return fmt.Errorf("failed to send notification: %w", err)
+			s.notifyBestEffort(ctx, "update", *dto.ID, dto.Title, err)
 		}
 	}
 	return nil
@@ -482,7 +539,7 @@ func (s *TicketService) Delete(ctx context.Context, dto *models.DeleteTicketDTO)
 	}
 
 	if err := s.notifications.TicketDeleted(ctx, ticket); err != nil {
-		return fmt.Errorf("failed to send notification: %w", err)
+		s.notifyBestEffort(ctx, "delete", ticket.ID, ticket.Title, err)
 	}
 
 	return nil
@@ -683,4 +740,22 @@ func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *mode
 	}
 
 	return allowed
+}
+
+// notifyBestEffort отправляет уведомление после фикса тикета. Ошибки
+// уведомления не должны превращать уже совершённую операцию в 500 для клиента,
+// но обязательно сигнализируются разработчику (error_bot) и в лог.
+func (s *TicketService) notifyBestEffort(ctx context.Context, action string, entityID uuid.UUID, entity string, notifyErr error) {
+	if notifyErr == nil {
+		return
+	}
+	errMsg := fmt.Sprintf("failed to send notification (%s): %v", action, notifyErr)
+	logger.Error(errMsg,
+		logger.StringAttr("entity_id", entityID.String()),
+		logger.StringAttr("entity", entity),
+	)
+	error_bot.Send(nil, errMsg, map[string]string{
+		action:      entity,
+		"entity_id": entityID.String(),
+	})
 }

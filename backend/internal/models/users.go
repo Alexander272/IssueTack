@@ -12,6 +12,18 @@ type UserCapabilities struct {
 	IsRealmAdmin    bool        `json:"isRealmAdmin"`
 }
 
+// MembershipFilter задаёт фильтр списка пользователей realm по членству в группах.
+type MembershipFilter string
+
+const (
+	// MembershipAll — все пользователи realm (без фильтра).
+	MembershipAll MembershipFilter = "all"
+	// MembershipCustomers — пользователи, не состоящие ни в одной группе («заказчики»).
+	MembershipCustomers MembershipFilter = "customers"
+	// MembershipExecutors — пользователи, состоящие хотя бы в одной группе («исполнители»).
+	MembershipExecutors MembershipFilter = "executors"
+)
+
 type User struct {
 	ID           uuid.UUID  `json:"id" db:"id"`
 	MattermostID *string    `json:"mattermostId" db:"mattermost_id"`

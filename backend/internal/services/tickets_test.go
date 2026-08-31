@@ -29,6 +29,7 @@ func ticketServiceFixtures() (*MockTicketsRepo, *MockActivityLogService, *MockSu
 		Attachments:   mockAttachments,
 		Notifications: mockNotifications,
 		Groups:        mockGroups,
+		Categories:    new(MockCategoriesRepo),
 		Policies:      mockPolicies,
 		Access:        NewTicketAccessService(mockRepo, mockGroups, mockPolicies),
 	})
@@ -194,6 +195,67 @@ func TestTicketService_Create_MissingGroup(t *testing.T) {
 
 	err := svc.Create(context.Background(), dto)
 	assert.Error(t, err)
+}
+
+func TestTicketService_Create_Executor_OwnerRequired(t *testing.T) {
+	mockRepo, _, _, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	realmID := uuid.New()
+	dto := &models.TicketDTO{
+		Actor:     &models.Actor{ID: actorID, Name: "test"},
+		Title:     "New Ticket",
+		RealmID:   &realmID,
+		CreatorID: actorID,
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, actorID, &realmID).Return([]uuid.UUID{uuid.New()}, nil)
+
+	err := svc.Create(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrOwnerRequired)
+	mockRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestTicketService_Create_Executor_OwnGroup(t *testing.T) {
+	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	realmID := uuid.New()
+	groupID := uuid.New()
+	categoryID := uuid.New()
+	ownerID := uuid.New()
+	id := uuid.New()
+	dto := &models.TicketDTO{
+		ID:         &id,
+		Actor:      &models.Actor{ID: actorID, Name: "test"},
+		Title:      "New Ticket",
+		RealmID:    &realmID,
+		CategoryID: categoryID,
+		OwnerID:    &ownerID,
+		CreatorID:  actorID,
+	}
+
+	mockCategories := new(MockCategoriesRepo)
+	svc.categories = mockCategories
+
+	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, actorID, &realmID).Return([]uuid.UUID{groupID}, nil)
+	mockCategories.On("GetByID", mock.Anything, &models.GetCategoryByIdDTO{ID: categoryID, RealmID: realmID}).Return(&models.Category{
+		ID:       categoryID,
+		GroupID:  groupID,
+		Priority: models.PriorityHigh,
+	}, nil)
+	mockRepo.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockNotifications.On("TicketCreated", mock.Anything, mock.Anything).Return(nil)
+
+	err := svc.Create(context.Background(), dto)
+	assert.NoError(t, err)
+	assert.Equal(t, groupID, *dto.GroupID)
+	assert.Equal(t, actorID, *dto.AssigneeID)
+	assert.Equal(t, models.PriorityHigh, dto.Priority)
+	assert.Nil(t, dto.DueDate)
 }
 
 func TestTicketService_Update_Success(t *testing.T) {

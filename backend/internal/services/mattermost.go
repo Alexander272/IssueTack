@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Alexander272/IssueTrack/backend/internal/events"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
@@ -39,6 +40,7 @@ type MattermostDeps struct {
 	Sites       Sites
 	Attachments Attachments
 	Comments    Comments
+	EventBus    *events.PolicyEventManager
 	Most        *mattermost.Most
 	BaseURL     string
 }
@@ -57,6 +59,7 @@ type MattermostService struct {
 	sites         Sites
 	attachments   Attachments
 	comments      Comments
+	eventBus      *events.PolicyEventManager
 	most          *mattermost.Most
 	baseURL       string
 	wsClients     map[string]*mattermost.WSClient
@@ -78,6 +81,7 @@ func NewMattermostService(deps *MattermostDeps) *MattermostService {
 		sites:       deps.Sites,
 		attachments: deps.Attachments,
 		comments:    deps.Comments,
+		eventBus:    deps.EventBus,
 		most:        deps.Most,
 		baseURL:     deps.BaseURL,
 		wsClients:   make(map[string]*mattermost.WSClient),
@@ -306,13 +310,15 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *mod
 			Actor:   &models.Actor{ID: userID},
 		})
 		if err != nil || len(tickets) == 0 {
-			return s.sendDM(settings, mmUserID, fmt.Sprintf("Заявка №%d не найдена", ticketNumber))
+			s.sendDMBestEffort(ctx, settings, mmUserID, fmt.Sprintf("Заявка №%d не найдена", ticketNumber))
+			return nil
 		}
 		ticket := tickets[0]
 		ticketID = ticket.ID
 		if ticket.Creator.ID != userID {
 			if commentText == "" {
-				return s.sendDM(settings, mmUserID, "Прикреплять файлы может только создатель заявки")
+				s.sendDMBestEffort(ctx, settings, mmUserID, "Прикреплять файлы может только создатель заявки")
+				return nil
 			}
 			return s.commentAndReply(ctx, settings, mmUserID, ticketID, commentText)
 		}
@@ -320,11 +326,13 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *mod
 	} else {
 		val, ok := s.recentTickets.Load(mmUserID + ":" + channelID)
 		if !ok {
-			return s.sendDM(settings, mmUserID, "Не найдена заявка для прикрепления файлов. Отправьте номер заявки (например, №123) вместе с файлами")
+			s.sendDMBestEffort(ctx, settings, mmUserID, "Не найдена заявка для прикрепления файлов. Отправьте номер заявки (например, №123) вместе с файлами")
+			return nil
 		}
 		rt := val.(*recentTicket)
 		if time.Since(rt.createdAt) > 30*time.Minute {
-			return s.sendDM(settings, mmUserID, "Прошло более 30 минут с создания заявки. Укажите номер заявки (например, №123) вместе с файлами")
+			s.sendDMBestEffort(ctx, settings, mmUserID, "Прошло более 30 минут с создания заявки. Укажите номер заявки (например, №123) вместе с файлами")
+			return nil
 		}
 		ticketID = rt.id
 	}
@@ -392,7 +400,8 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *mod
 			reply += "\nКомментарий добавлен"
 		}
 	}
-	return s.sendDM(settings, mmUserID, reply)
+	s.sendDMBestEffort(ctx, settings, mmUserID, reply)
+	return nil
 }
 
 // commentAndReply создаёт комментарий к тикету (work-доступ) и отправляет
@@ -415,11 +424,13 @@ func (s *MattermostService) commentAndReply(ctx context.Context, settings *model
 		Realm:      settings.RealmID.String(),
 	}); err != nil {
 		if errors.Is(err, models.ErrPermissionDenied) {
-			return s.sendDM(settings, mmUserID, "Нет прав комментировать эту заявку")
+			s.sendDMBestEffort(ctx, settings, mmUserID, "Нет прав комментировать эту заявку")
+			return nil
 		}
 		return fmt.Errorf("failed to create comment: %w", err)
 	}
-	return s.sendDM(settings, mmUserID, "Комментарий добавлен. Файлы может прикреплять только создатель заявки")
+	s.sendDMBestEffort(ctx, settings, mmUserID, "Комментарий добавлен. Файлы может прикреплять только создатель заявки")
+	return nil
 }
 
 // handleTextWithFiles обрабатывает сообщение с файлами и текстом: прикрепляет
@@ -457,7 +468,8 @@ func (s *MattermostService) handleComment(ctx context.Context, settings *models.
 		Actor:   &models.Actor{ID: userID},
 	})
 	if err != nil || len(tickets) == 0 {
-		return s.sendDM(settings, mmUserID, fmt.Sprintf("Заявка №%d не найдена", number))
+		s.sendDMBestEffort(ctx, settings, mmUserID, fmt.Sprintf("Заявка №%d не найдена", number))
+		return nil
 	}
 	ticket := tickets[0]
 
@@ -470,12 +482,14 @@ func (s *MattermostService) handleComment(ctx context.Context, settings *models.
 		Realm:      settings.RealmID.String(),
 	}); err != nil {
 		if errors.Is(err, models.ErrPermissionDenied) {
-			return s.sendDM(settings, mmUserID, fmt.Sprintf("Нет прав комментировать заявку №%d", number))
+			s.sendDMBestEffort(ctx, settings, mmUserID, fmt.Sprintf("Нет прав комментировать заявку №%d", number))
+			return nil
 		}
 		return fmt.Errorf("failed to create comment from mattermost: %w", err)
 	}
 
-	return s.sendDM(settings, mmUserID, fmt.Sprintf("Комментарий добавлен к заявке №%d", number))
+	s.sendDMBestEffort(ctx, settings, mmUserID, fmt.Sprintf("Комментарий добавлен к заявке №%d", number))
+	return nil
 }
 
 func (s *MattermostService) sendDM(settings *models.RealmMattermost, mmUserID, message string) error {
@@ -484,6 +498,16 @@ func (s *MattermostService) sendDM(settings *models.RealmMattermost, mmUserID, m
 		return fmt.Errorf("failed to send direct message: %w", err)
 	}
 	return nil
+}
+
+// sendDMBestEffort отправляет DM пользователю, но не является фатальной для
+// уже совершённой операции (комментарий/вложения/синк уже в БД). Ошибка
+// логируется и сигнализируется разработчику (error_bot), чтобы вебхук не
+// отдавал 500 и Mattermost не ретраил операцию (иначе были бы дубликаты).
+func (s *MattermostService) sendDMBestEffort(ctx context.Context, settings *models.RealmMattermost, mmUserID, message string) {
+	if err := s.sendDM(settings, mmUserID, message); err != nil {
+		bestEffortError("failed to send direct message", err, map[string]string{"mm_user_id": mmUserID})
+	}
 }
 
 func (s *MattermostService) checkIsAdmin(ctx context.Context, realmID uuid.UUID, mmUserID string) bool {

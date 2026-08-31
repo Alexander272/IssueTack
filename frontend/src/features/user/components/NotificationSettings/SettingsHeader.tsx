@@ -34,7 +34,7 @@ export const SettingsHeader: FC<SettingsHeaderProps> = ({ dirty, saving, onReset
 					type='submit'
 					variant='outlined'
 					disabled={!dirty || saving}
-					sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 500 }}
+					sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 500, background: '#fff' }}
 					startIcon={<SaveIcon sx={{ fontSize: 18 }} />}
 				>
 					Сохранить изменения
@@ -44,7 +44,7 @@ export const SettingsHeader: FC<SettingsHeaderProps> = ({ dirty, saving, onReset
 					color='inherit'
 					onClick={onReset}
 					disabled={!dirty}
-					sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 500 }}
+					sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 500, background: '#fff' }}
 				>
 					Отменить
 				</Button>

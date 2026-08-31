@@ -1,13 +1,14 @@
 import { type FC } from 'react'
-import { Box, Button, Typography, useTheme } from '@mui/material'
+import { Box, Typography, useTheme } from '@mui/material'
 import { UsersIcon } from 'lucide-mui'
 import { useFormContext, useWatch } from 'react-hook-form'
-import { useGetAllGroupsQuery } from '@/features/groups/groupsApiSlice'
-import type { IGroupNotificationSetting, INotificationSettings } from '../../notificationsApiSlice'
-import { BadgeCheckbox } from '@/components/BadgeCheckbox/BadgeCheckbox'
 
-import { NotificationSectionCard } from './NotificationSectionCard'
+import type { IGroupNotificationSetting, INotificationSettings } from '../../notificationsApiSlice'
 import { GROUP_EVENTS, type GroupEventKey } from './constants'
+import { useGetAllGroupsQuery } from '@/features/groups/groupsApiSlice'
+import { BadgeCheckbox } from '@/components/BadgeCheckbox/BadgeCheckbox'
+import { NotificationSectionCard } from './NotificationSectionCard'
+import { SelectButtons } from './SelectButtons'
 
 const EMPTY_SETTING = { newTask: false, overdue: false }
 
@@ -47,16 +48,7 @@ export const GroupsCard: FC = () => {
 			title='Подписки по группам'
 			subtitle='Дополнительные уведомления для задач конкретных групп'
 			icon={UsersIcon}
-			actions={
-				<Box sx={{ display: 'flex', gap: 1 }}>
-					<Button size='small' disabled={disabled} onClick={() => setAllGroups(true)}>
-						Включить всё
-					</Button>
-					<Button size='small' color='inherit' disabled={disabled} onClick={() => setAllGroups(false)}>
-						Выключить всё
-					</Button>
-				</Box>
-			}
+			actions={<SelectButtons disabled={disabled} onSetAll={setAllGroups} />}
 		>
 			<Box sx={{ p: 2 }}>
 				{(groups?.data ?? []).map(group => {

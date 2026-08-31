@@ -576,6 +576,10 @@ func (m *MockUserService) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*mo
 	args := m.Called(ctx, realmID)
 	return args.Get(0).([]*models.UserData), args.Error(1)
 }
+func (m *MockUserService) GetByMembership(ctx context.Context, realmID uuid.UUID, membership models.MembershipFilter) ([]*models.UserData, error) {
+	args := m.Called(ctx, realmID, membership)
+	return args.Get(0).([]*models.UserData), args.Error(1)
+}
 func (m *MockUserService) Sync(ctx context.Context, actor *models.Actor) error {
 	args := m.Called(ctx, actor)
 	return args.Error(0)

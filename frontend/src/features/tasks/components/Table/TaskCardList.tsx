@@ -4,7 +4,7 @@ import { ChevronDownIcon } from 'lucide-mui'
 
 import type { ITask } from '../../types/task'
 import type { GroupByField } from '../../constants/taskMaps'
-import { getGroupValue } from './getGroupValue'
+import { getGroupValue, sortGroupKeys } from './getGroupValue'
 import { TaskCard } from './TaskCard'
 
 interface Props {
@@ -49,7 +49,7 @@ export const TaskCardList = ({ tasks, groupBy, groupEnabled, onTaskClick }: Prop
 		groups[key].push(task)
 	})
 
-	const sortedKeys = Object.keys(groups).sort((a, b) => a.localeCompare(b))
+	const sortedKeys = sortGroupKeys(Object.keys(groups), groupBy)
 
 	return (
 		<>

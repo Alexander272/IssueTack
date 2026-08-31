@@ -47,6 +47,7 @@ type Users interface {
 	GetByLogin(ctx context.Context, login string) (*models.UserData, error)
 	GetByMattermostID(ctx context.Context, mattermostID string) (*models.UserData, error)
 	GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.UserData, error)
+	GetByMembership(ctx context.Context, realmID uuid.UUID, membership models.MembershipFilter) ([]*models.UserData, error)
 	CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserDataDTO) error
 	Sync(ctx context.Context, actor *models.Actor) error
 	UpdateAccount(ctx context.Context, dto *models.UpdateAccountDTO) error
@@ -94,6 +95,16 @@ func (s *userService) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models
 	data, err := s.repo.GetAll(ctx, realmID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get all users. error: %w", err)
+	}
+	return data, nil
+}
+
+// GetByMembership возвращает пользователей realm, отфильтрованных по членству в группах
+// (customers — вне групп, executors — хотя бы в одной группе).
+func (s *userService) GetByMembership(ctx context.Context, realmID uuid.UUID, membership models.MembershipFilter) ([]*models.UserData, error) {
+	data, err := s.repo.GetByMembership(ctx, realmID, membership)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get users by membership. error: %w", err)
 	}
 	return data, nil
 }

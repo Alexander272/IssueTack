@@ -52,6 +52,22 @@ func (h *Handler) getAll(c *gin.Context) {
 }
 
 func (h *Handler) getByRealm(c *gin.Context) {
+	membership := models.MembershipFilter(c.Query("membership"))
+
+	if membership == models.MembershipCustomers || membership == models.MembershipExecutors {
+		realmID, ok := utils.GetRealmUUID(c)
+		if !ok {
+			return
+		}
+		data, err := h.service.GetByMembership(c, realmID, membership)
+		if err != nil {
+			response.SendError(c, err)
+			return
+		}
+		response.SendData(c, data, len(data))
+		return
+	}
+
 	var realmID *uuid.UUID
 	if id, ok := utils.GetRealmUUID(c); ok {
 		realmID = &id

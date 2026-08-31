@@ -87,7 +87,7 @@ func (s *userService) UpdateAccount(ctx context.Context, dto *models.UpdateAccou
 		"internalNumber": candidate.InternalNumber,
 		"realms":         oldRealms,
 	}); err != nil {
-		return fmt.Errorf("failed to set old values: %w", err)
+		bestEffortError("failed to set audit old values after update account", err, map[string]string{"user_id": dto.ID.String()})
 	}
 
 	if err := event.SetNewValues(map[string]any{
@@ -96,7 +96,7 @@ func (s *userService) UpdateAccount(ctx context.Context, dto *models.UpdateAccou
 		"internalNumber": dto.InternalNumber,
 		"realms":         dto.Realms,
 	}); err != nil {
-		return fmt.Errorf("failed to set new values: %w", err)
+		bestEffortError("failed to set audit new values after update account", err, map[string]string{"user_id": dto.ID.String()})
 	}
 
 	s.eventBus.Notify(event)

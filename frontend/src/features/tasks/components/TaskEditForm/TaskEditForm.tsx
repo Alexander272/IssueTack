@@ -1,20 +1,16 @@
-import { useMemo } from 'react'
 import { Box, Button, Stack, TextField, Typography } from '@mui/material'
-import { Controller, FormProvider, useForm, useFormContext, useWatch } from 'react-hook-form'
+import { Controller, FormProvider, useForm, useFormContext } from 'react-hook-form'
 import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
 import type { ITask, ITaskDTO } from '../../types/task'
-import type { IUserShort } from '@/features/user/types/user'
+import type { FormValues } from './types'
 import { useAppSelector } from '@/hooks/redux'
 import { getIsManager } from '@/features/user/userSlice'
 import { useUpdateTaskMutation } from '../../tasksApiSlice'
-import { useGetAllGroupsQuery } from '@/features/groups/groupsApiSlice'
-import { useGetAvailableUsersQuery } from '@/features/user/usersApiSlice'
 import { AdvancedSettingsSection } from '../TaskCreateForm/AdvancedSettingsSection'
 import { SectionCard } from '../TaskCreateForm/SectionCard'
 import { fieldLabelSx } from '../TaskCreateForm/styles'
-import type { FormValues } from './types'
 
 type Props = {
 	task: ITask
@@ -66,9 +62,7 @@ const EditDescriptionSection = () => {
 				<Controller
 					control={control}
 					name='description'
-					render={({ field }) => (
-						<TextField {...field} fullWidth size='small' multiline minRows={6} />
-					)}
+					render={({ field }) => <TextField {...field} fullWidth size='small' multiline minRows={6} />}
 				/>
 			</Box>
 		</SectionCard>
@@ -79,11 +73,6 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded }: Props) => 
 	const isManager = useAppSelector(getIsManager)
 
 	const [updateTask, { isLoading }] = useUpdateTaskMutation()
-	const { data: groupsData } = useGetAllGroupsQuery()
-	const { data: usersData } = useGetAvailableUsersQuery()
-
-	const groups = useMemo(() => groupsData?.data ?? [], [groupsData])
-	const users = useMemo(() => usersData?.data ?? [], [usersData])
 
 	const methods = useForm<FormValues>({
 		defaultValues: {
@@ -98,13 +87,7 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded }: Props) => 
 			dueDate: task.dueDate ?? null,
 		},
 	})
-	const { control, handleSubmit, reset } = methods
-
-	const selectedGroupId = useWatch({ control, name: 'groupId' })
-	const selectedGroup = groups.find(g => g.id === selectedGroupId)
-	const assigneeOptions: IUserShort[] = selectedGroup?.members?.length
-		? selectedGroup.members
-		: users.map(({ id, username, firstName, lastName, email }) => ({ id, username, firstName, lastName, email }))
+	const { handleSubmit, reset } = methods
 
 	const onSubmit = handleSubmit(async data => {
 		const dto: Omit<ITaskDTO, 'id'> & { id: string } = {
@@ -150,7 +133,7 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded }: Props) => 
 					<Stack sx={{ gap: 3 }}>
 						<EditDescriptionSection />
 
-						{isManager && <AdvancedSettingsSection number={2} groups={groups} users={users} assigneeOptions={assigneeOptions} />}
+						{isManager && <AdvancedSettingsSection number={2} autoAssign={false} />}
 
 						<Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, pt: 1, pb: !embedded ? 2 : 0 }}>
 							<Button
@@ -161,7 +144,12 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded }: Props) => 
 							>
 								{embedded ? 'Отмена' : 'Сбросить'}
 							</Button>
-							<Button type='submit' variant='contained' disabled={isLoading} sx={{ textTransform: 'none', px: 3 }}>
+							<Button
+								type='submit'
+								variant='contained'
+								disabled={isLoading}
+								sx={{ textTransform: 'none', px: 3 }}
+							>
 								{isLoading ? 'Сохранение...' : 'Сохранить'}
 							</Button>
 						</Box>

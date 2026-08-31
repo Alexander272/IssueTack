@@ -5,6 +5,8 @@ import type { IUserData, IUserDataDTO, IUserCapabilities, IUserLogin } from './t
 import { API } from '@/app/api'
 import { apiSlice } from '@/app/apiSlice'
 
+export type MembershipFilter = 'all' | 'customers' | 'executors'
+
 export const usersApiSlice = apiSlice.injectEndpoints({
 	overrideExisting: false,
 	endpoints: builder => ({
@@ -50,6 +52,14 @@ export const usersApiSlice = apiSlice.injectEndpoints({
 			providesTags: [{ type: 'Users', id: 'available' }],
 		}),
 
+		getRealmUsers: builder.query<{ data: IUserData[] }, MembershipFilter | void>({
+			query: membership => {
+				const params = membership && membership !== 'all' ? { membership } : undefined
+				return { url: API.users.available, method: 'GET', params }
+			},
+			providesTags: [{ type: 'Users', id: 'available' }],
+		}),
+
 		getCapabilities: builder.query<{ data: Record<string, IUserCapabilities> }, void>({
 			query: () => ({
 				url: API.users.capabilities,
@@ -89,6 +99,7 @@ export const {
 	useGetUserByAccessQuery,
 	useGetUserLoginsQuery,
 	useGetAvailableUsersQuery,
+	useGetRealmUsersQuery,
 	useGetCapabilitiesQuery,
 	useSyncUsersMutation,
 	useUpdateUserMutation,
