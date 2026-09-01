@@ -29,6 +29,7 @@ const favoritesApiSlice = apiSlice.injectEndpoints({
 			invalidatesTags: (_result, _error, arg) => [
 				{ type: 'Favorites', id: 'LIST' },
 				{ type: 'Favorites', id: `state:${arg.id}` },
+				{ type: 'Tasks', id: 'LIST' },
 			],
 			onQueryStarted: async (_arg, api) => {
 				try {
@@ -48,6 +49,7 @@ const favoritesApiSlice = apiSlice.injectEndpoints({
 			invalidatesTags: (_result, _error, arg) => [
 				{ type: 'Favorites', id: 'LIST' },
 				{ type: 'Favorites', id: `state:${arg.id}` },
+				{ type: 'Tasks', id: 'LIST' },
 			],
 			onQueryStarted: async (_arg, api) => {
 				try {
@@ -61,8 +63,4 @@ const favoritesApiSlice = apiSlice.injectEndpoints({
 	}),
 })
 
-export const {
-	useGetFavoriteStateQuery,
-	useAddFavoriteMutation,
-	useRemoveFavoriteMutation,
-} = favoritesApiSlice
+export const { useGetFavoriteStateQuery, useAddFavoriteMutation, useRemoveFavoriteMutation } = favoritesApiSlice
