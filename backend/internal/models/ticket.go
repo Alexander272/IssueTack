@@ -48,6 +48,7 @@ type AccessFlags struct {
 	CanDelete       bool           `json:"canDelete"`
 	CanWork         bool           `json:"canWork"`
 	CanTake         bool           `json:"canTake"`
+	CanEditFields   bool           `json:"canEditFields"`
 	AllowedStatuses []TicketStatus `json:"allowedStatuses"`
 }
 
@@ -166,6 +167,15 @@ type TakeTicketDTO struct {
 	ID      uuid.UUID `json:"id" db:"id"`
 	Actor   *Actor    `json:"actor"`
 	RealmID string    `json:"realmId"`
+}
+
+// TransferTicketDTO описывает передачу заявки от текущего исполнителя другому
+// участнику той же группы. Меняется только исполнитель, статус не затрагивается.
+type TransferTicketDTO struct {
+	ID         *uuid.UUID `json:"id" db:"id"`
+	Actor      *Actor     `json:"actor"`
+	AssigneeID *uuid.UUID `json:"assigneeId" db:"assignee_id"`
+	RealmID    string     `json:"realmId"`
 }
 
 type AccessCheckDTO struct {

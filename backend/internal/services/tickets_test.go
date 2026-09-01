@@ -375,8 +375,9 @@ func TestTicketService_Update_Success(t *testing.T) {
 	}
 
 	oldTicket := &models.Ticket{
-		ID:    ticketID,
-		Title: "Original Ticket",
+		ID:      ticketID,
+		Title:   "Original Ticket",
+		Creator: models.UserShort{ID: actorID},
 	}
 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(true, nil)
@@ -387,6 +388,32 @@ func TestTicketService_Update_Success(t *testing.T) {
 
 	err := svc.Update(context.Background(), dto)
 	assert.NoError(t, err)
+}
+
+func TestTicketService_Update_FieldEdit_WriteNoRole_Denied(t *testing.T) {
+	mockRepo, _, _, _, _, _, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Title:    "Updated Ticket",
+		Provided: map[string]bool{"title": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:      ticketID,
+		Title:   "Original Ticket",
+		Creator: models.UserShort{ID: uuid.New()},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(true, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+	mockRepo.AssertNotCalled(t, "Update")
 }
 
 func TestTicketService_Update_ManagerIdDenied(t *testing.T) {
@@ -1129,4 +1156,228 @@ func TestTicketService_Take_InactiveStatus_Frozen(t *testing.T) {
 
 	err := svc.Take(context.Background(), dto)
 	assert.ErrorIs(t, err, models.ErrTicketFrozen)
+}
+
+func TestTicketService_Transfer_Success(t *testing.T) {
+	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, _, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	newAssigneeID := uuid.New()
+	groupID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TransferTicketDTO{
+		ID:         &ticketID,
+		Actor:      &models.Actor{ID: actorID, Name: "test"},
+		AssigneeID: &newAssigneeID,
+	}
+
+	oldTicket := &models.Ticket{
+		ID:       ticketID,
+		Title:    "Ticket",
+		Status:   models.StatusInProgress,
+		Creator:  models.UserShort{ID: uuid.New()},
+		Group:    &models.GroupShort{ID: groupID, Name: "Group"},
+		Assignee: &models.UserShort{ID: actorID},
+	}
+
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockGroups.On("IsMember", mock.Anything, groupID, newAssigneeID).Return(true, nil)
+	mockRepo.On("Update", mock.Anything, nil, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		dtoUpdate := args.Get(2).(*models.TicketDTO)
+		assert.Equal(t, &newAssigneeID, dtoUpdate.AssigneeID)
+		assert.True(t, dtoUpdate.HasField("assigneeId"))
+	})
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, ticketID, actorID, mock.Anything).Return(nil)
+
+	err := svc.Transfer(context.Background(), dto)
+	assert.NoError(t, err)
+}
+
+func TestTicketService_Transfer_NotAssignee_Denied(t *testing.T) {
+	mockRepo, _, _, _, _, _, _, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	otherID := uuid.New()
+	newAssigneeID := uuid.New()
+	groupID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TransferTicketDTO{
+		ID:         &ticketID,
+		Actor:      &models.Actor{ID: actorID, Name: "test"},
+		AssigneeID: &newAssigneeID,
+	}
+
+	oldTicket := &models.Ticket{
+		ID:       ticketID,
+		Title:    "Ticket",
+		Status:   models.StatusInProgress,
+		Creator:  models.UserShort{ID: uuid.New()},
+		Group:    &models.GroupShort{ID: groupID, Name: "Group"},
+		Assignee: &models.UserShort{ID: otherID},
+	}
+
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+
+	err := svc.Transfer(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+}
+
+func TestTicketService_Transfer_NotGroupMember_Denied(t *testing.T) {
+	mockRepo, _, _, _, _, mockGroups, _, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	newAssigneeID := uuid.New()
+	groupID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TransferTicketDTO{
+		ID:         &ticketID,
+		Actor:      &models.Actor{ID: actorID, Name: "test"},
+		AssigneeID: &newAssigneeID,
+	}
+
+	oldTicket := &models.Ticket{
+		ID:       ticketID,
+		Title:    "Ticket",
+		Status:   models.StatusInProgress,
+		Creator:  models.UserShort{ID: uuid.New()},
+		Group:    &models.GroupShort{ID: groupID, Name: "Group"},
+		Assignee: &models.UserShort{ID: actorID},
+	}
+
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockGroups.On("IsMember", mock.Anything, groupID, newAssigneeID).Return(false, nil)
+
+	err := svc.Transfer(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+}
+
+func TestTicketService_Transfer_Inactive_Frozen(t *testing.T) {
+	mockRepo, _, _, _, _, _, _, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	newAssigneeID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TransferTicketDTO{
+		ID:         &ticketID,
+		Actor:      &models.Actor{ID: actorID, Name: "test"},
+		AssigneeID: &newAssigneeID,
+	}
+
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(&models.Ticket{
+		ID:     ticketID,
+		Title:  "Ticket",
+		Status: models.StatusResolved,
+	}, nil)
+
+	err := svc.Transfer(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrTicketFrozen)
+}
+
+func TestTicketService_Update_Owner_EditInOpen_Success(t *testing.T) {
+	mockRepo, mockLogs, _, _, mockNotifications, _, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Title:    "Updated",
+		Provided: map[string]bool{"title": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:     ticketID,
+		Title:  "Original",
+		Status: models.StatusOpen,
+		Owner:  &models.UserShort{ID: actorID},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, ticketID, actorID, mock.Anything).Return(nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.NoError(t, err)
+}
+
+func TestTicketService_Update_Owner_EditNotOpen_Denied(t *testing.T) {
+	mockRepo, _, _, _, _, _, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Title:    "Updated",
+		Provided: map[string]bool{"title": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:      ticketID,
+		Title:   "Original",
+		Status:  models.StatusInProgress,
+		Owner:   &models.UserShort{ID: actorID},
+		Creator: models.UserShort{ID: uuid.New()},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+}
+
+func TestTicketService_Update_Assignee_EditFields_Denied(t *testing.T) {
+	mockRepo, _, _, _, _, _, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Title:    "Updated",
+		Provided: map[string]bool{"title": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:       ticketID,
+		Title:    "Original",
+		Status:   models.StatusInProgress,
+		Creator:  models.UserShort{ID: uuid.New()},
+		Assignee: &models.UserShort{ID: actorID},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+}
+
+func TestTicketService_GetAccessFlags_CanEditFields(t *testing.T) {
+	_, _, mockSubtasks, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	creatorID := uuid.New()
+	groupID := uuid.New()
+
+	mockPolicies.On("Enforce", creatorID.String(), mock.Anything, string(access.ResourceTicket), string(access.Write)).Return(true, nil)
+	mockPolicies.On("Enforce", creatorID.String(), mock.Anything, string(access.ResourceTicket), string(access.Delete)).Return(false, nil)
+	mockPolicies.On("Enforce", creatorID.String(), mock.Anything, string(access.ResourceTicket), string(access.Read)).Return(true, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, creatorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{groupID}, nil)
+	mockSubtasks.On("GetUnresolvedCount", mock.Anything, mock.Anything).Return(0, nil)
+
+	ticket := &models.Ticket{
+		ID:      uuid.New(),
+		Title:   "Ticket",
+		Status:  models.StatusOpen,
+		Creator: models.UserShort{ID: creatorID},
+		Group:   &models.GroupShort{ID: groupID, Name: "Group"},
+	}
+
+	flags, err := svc.GetAccessFlags(context.Background(), ticket, creatorID, "")
+	assert.NoError(t, err)
+	assert.True(t, flags.CanEditFields)
 }

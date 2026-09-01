@@ -19,6 +19,7 @@ import { Participants } from '../components/Detail/Participants'
 import { Meta } from '../components/Detail/Meta'
 import { Notifications } from '../components/Detail/Notifications'
 import { TaskEditModal } from '../components/TaskEditModal'
+import { TransferModal } from '../components/Detail/TransferModal'
 import DetailNotFound from './TaskDetailEmpty'
 
 export const TaskDetailPage = () => {
@@ -29,6 +30,7 @@ export const TaskDetailPage = () => {
 	const [updateSubtask] = useUpdateSubtaskMutation()
 	const [createComment] = useCreateCommentMutation()
 	const [editOpen, setEditOpen] = useState(false)
+	const [transferOpen, setTransferOpen] = useState(false)
 	const isManager = useAppSelector(getIsManager)
 
 	if (isLoading) return <BoxFallback />
@@ -38,7 +40,7 @@ export const TaskDetailPage = () => {
 	// Неактивные (замороженные) статусы: решения, закрытые и отменённые заявки
 	// недоступны для изменения данных.
 	const isInactive = task.status === 'resolved' || task.status === 'closed' || task.status === 'cancelled'
-	const canEdit = !isInactive && task.access?.canWrite
+	const canEdit = !isInactive && task.access?.canEditFields
 	const canUploadAttachments = !isInactive && task.access?.canWork
 
 	const handleStatusChange = async (taskId: string, status: TicketStatus, comment?: string) => {
@@ -81,7 +83,7 @@ export const TaskDetailPage = () => {
 							border: '1px solid #e5e7eb',
 						}}
 					>
-						<Header task={task} />
+						<Header task={task} onEdit={canEdit ? () => setEditOpen(true) : undefined} onTransfer={() => setTransferOpen(true)} />
 
 						<InfoBar task={task} onStatusChange={handleStatusChange} onTake={handleTake} />
 					</Box>
@@ -116,6 +118,7 @@ export const TaskDetailPage = () => {
 			</Box>
 
 			<TaskEditModal open={editOpen} onClose={() => setEditOpen(false)} task={task} />
+			<TransferModal open={transferOpen} onClose={() => setTransferOpen(false)} task={task} />
 		</>
 	)
 }

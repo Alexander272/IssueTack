@@ -27,6 +27,7 @@ export interface IAttachment {
 	fileSize: number
 	mimeType: string
 	uploadedBy: string
+	commentId?: string
 	createdAt: string
 }
 
@@ -36,6 +37,7 @@ export interface IAccessFlags {
 	canDelete: boolean
 	canWork: boolean
 	canTake: boolean
+	canEditFields: boolean
 	allowedStatuses: TicketStatus[]
 }
 

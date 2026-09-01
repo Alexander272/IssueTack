@@ -53,6 +53,7 @@ export const API = {
 		base: '/tickets' as const,
 		byId: (id: string) => `/tickets/${id}` as const,
 		take: (id: string) => `/tickets/${id}/take` as const,
+		transfer: (id: string) => `/tickets/${id}/transfer` as const,
 		subscription: (id: string) => `/tickets/${id}/subscription` as const,
 	},
 	favorites: {

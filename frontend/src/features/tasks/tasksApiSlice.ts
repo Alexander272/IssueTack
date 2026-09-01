@@ -89,6 +89,26 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 			},
 		}),
 
+		transferTask: builder.mutation<{ id: string; message: string }, { id: string; assigneeId: string }>({
+			query: ({ id, assigneeId }) => ({
+				url: API.tickets.transfer(id),
+				method: 'POST',
+				body: { assigneeId },
+			}),
+			invalidatesTags: (_result, _error, arg) => [
+				{ type: 'Tasks', id: 'LIST' },
+				{ type: 'Tasks', id: arg.id },
+			],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data.message, { autoClose: false })
+				}
+			},
+		}),
+
 		deleteTask: builder.mutation<void, string>({
 			query: id => ({
 				url: API.tickets.byId(id),
@@ -137,6 +157,7 @@ export const {
 	useCreateTaskMutation,
 	useUpdateTaskMutation,
 	useTakeTaskMutation,
+	useTransferTaskMutation,
 	useDeleteTaskMutation,
 	useGetIsSubscribedQuery,
 	useSubscribeMutation,

@@ -74,6 +74,9 @@ type Tickets interface {
 	// in_progress («взять в работу»). Доступно, если заявка активна и «забираема»:
 	// исполнителя нет, либо исполнитель — другой пользователь и статус открыт.
 	Take(ctx context.Context, dto *models.TakeTicketDTO) error
+	// Transfer передаёт заявку от текущего исполнителя другому участнику той же
+	// группы. Статус не меняется.
+	Transfer(ctx context.Context, dto *models.TransferTicketDTO) error
 	// Delete удаляет тикет.
 	Delete(ctx context.Context, dto *models.DeleteTicketDTO) error
 	// AutoCloseResolved закрывает resolved-тикеты по истечении задержки и возвращает их количество.
@@ -424,7 +427,7 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 			return models.ErrPermissionDenied
 		}
 
-		if ownerOnly && !s.ownerTransitionAllowed(oldTicket, dto) {
+		if ownerOnly && dto.HasField("status") && dto.Status != oldTicket.Status && !s.ownerTransitionAllowed(oldTicket, dto) {
 			return models.ErrPermissionDenied
 		}
 
@@ -504,9 +507,51 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 			}
 		}
 
-		if assignedOnly {
+		// Право правки полей (заголовок/описание/приоритет/срок/группа и т.п.)
+		// имеет только создатель, менеджер группы или владелец (в статусе open).
+		// Политика Casbin write сама по себе права правки полей не даёт — она
+		// остаётся источником «рабочего» доступа (комментарии/вложения/подзадачи/
+		// смена статуса). Пользователь лишь со «рабочим» доступом может менять
+		// только статус и передавать заявку исполнителю из своей группы (assigneeId).
+		if !assignedOnly && !ownerOnly {
+			canEdit, editErr := s.canEditFields(ctx, oldTicket, dto.Actor.ID)
+			if editErr != nil {
+				return editErr
+			}
+			if !canEdit {
+				assignedOnly = true
+			}
+		}
+
+		if assignedOnly && !ownerOnly {
 			for _, change := range changes {
-				if change.Tag != models.ActionStatusChanged && change.Tag != models.ActionClosed {
+				switch change.Tag {
+				case models.ActionStatusChanged, models.ActionClosed:
+					// допустимо: изменение статуса
+				case models.ActionAssigned, models.ActionAssignChanged:
+					// допустимо только как передача новому исполнителю из той же группы
+					if err := s.validateAssigneeForAssign(ctx, oldTicket, dto.AssigneeID); err != nil {
+						return err
+					}
+				default:
+					return models.ErrPermissionDenied
+				}
+			}
+		}
+
+		// Для владельца без write/work-доступа переходы по статусам уже проверены
+		// через ownerTransitionAllowed выше; здесь ограничиваем правку не-статусных
+		// полей: владелец может их менять только пока заявка ещё в статусе open.
+		if ownerOnly {
+			for _, change := range changes {
+				if change.Tag == models.ActionStatusChanged || change.Tag == models.ActionClosed {
+					continue
+				}
+				ownerEdit, editErr := s.canEditFields(ctx, oldTicket, dto.Actor.ID)
+				if editErr != nil {
+					return editErr
+				}
+				if !ownerEdit {
 					return models.ErrPermissionDenied
 				}
 			}
@@ -656,6 +701,99 @@ func (s *TicketService) Take(ctx context.Context, dto *models.TakeTicketDTO) err
 	return nil
 }
 
+// Transfer передаёт заявку от текущего исполнителя другому участнику той же
+// группы. Только текущий исполнитель (assignee) может передать заявку; статус
+// при передаче не меняется. Замороженные (resolved/closed/cancelled) заявки
+// передавать нельзя.
+func (s *TicketService) Transfer(ctx context.Context, dto *models.TransferTicketDTO) error {
+	ticket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
+	if err != nil {
+		return fmt.Errorf("failed to get ticket by id. error: %w", err)
+	}
+
+	if isTicketInactive(ticket.Status) {
+		return models.ErrTicketFrozen
+	}
+
+	// Передавать может только текущий исполнитель.
+	if ticket.Assignee == nil || ticket.Assignee.ID != dto.Actor.ID {
+		return models.ErrPermissionDenied
+	}
+
+	// Новый исполнитель обязан быть участником той же группы, что и тикет.
+	if err := s.validateAssigneeForAssign(ctx, ticket, dto.AssigneeID); err != nil {
+		return err
+	}
+
+	var realmID *uuid.UUID
+	if dto.RealmID != "" {
+		if rid, parseErr := uuid.Parse(dto.RealmID); parseErr == nil {
+			realmID = &rid
+		}
+	}
+
+	dtoUpdate := &models.TicketDTO{
+		ID:         dto.ID,
+		Actor:      dto.Actor,
+		RealmID:    realmID,
+		AssigneeID: dto.AssigneeID,
+	}
+	dtoUpdate.MarkProvided("assigneeId")
+
+	var changes []*models.FieldChange
+	err = s.tx.WithinTransaction(ctx, func(newTx postgres.Tx) error {
+		oldTicket, loadErr := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
+		if loadErr != nil {
+			return loadErr
+		}
+
+		changes = dtoUpdate.GetChanges(oldTicket)
+
+		if err := s.repo.Update(ctx, newTx, dtoUpdate); err != nil {
+			return fmt.Errorf("failed to update ticket. error: %w", err)
+		}
+
+		if len(changes) > 0 {
+			oldMap := make(map[string]string, len(changes))
+			newMap := make(map[string]string, len(changes))
+			for _, c := range changes {
+				oldMap[string(c.Tag)] = c.OldVal
+				newMap[string(c.Tag)] = c.NewVal
+			}
+
+			log := &models.ActivityLogDTO{
+				Action:        "updated",
+				ChangedBy:     dto.Actor.ID,
+				ChangedByName: dto.Actor.Name,
+				EntityType:    string(access.ResourceTicket),
+				EntityID:      *dto.ID,
+				Entity:        oldTicket.Title,
+			}
+			if err := log.SetOldValues(oldMap); err != nil {
+				return fmt.Errorf("set old values: %w", err)
+			}
+			if err := log.SetNewValues(newMap); err != nil {
+				return fmt.Errorf("set new values: %w", err)
+			}
+			if err := s.logs.Create(ctx, newTx, []*models.ActivityLogDTO{log}); err != nil {
+				return fmt.Errorf("store logs: %w", err)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	if len(changes) > 0 {
+		if err := s.notifications.TicketUpdated(ctx, *dto.ID, dto.Actor.ID, changes); err != nil {
+			s.notifyBestEffort(ctx, "transfer", *dto.ID, ticket.Title, err)
+		}
+	}
+	return nil
+}
+
 // Delete удаляет тикет: проверяет право на удаление, сохраняет снимок данных
 // в журнале и отправляет уведомление об удалении.
 func (s *TicketService) Delete(ctx context.Context, dto *models.DeleteTicketDTO) error {
@@ -737,6 +875,43 @@ func (s *TicketService) isOwner(ticket *models.Ticket, actorID uuid.UUID) bool {
 	return ticket.Owner != nil && ticket.Owner.ID == actorID
 }
 
+// canEditFields определяет, может ли пользователь править не-статусные поля тикета
+// (заголовок/описание/приоритет/срок/группа/исполнитель и т.п.): создатель или
+// менеджер группы — всегда; владелец — только пока заявка ещё в статусе open
+// (не взята в работу). Политика Casbin write сама право правки полей не даёт,
+// поэтому write-пользователи без роли здесь получают false.
+func (s *TicketService) canEditFields(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) (bool, error) {
+	creatorOrManager, err := s.isCreatorOrManager(ctx, ticket, actorID)
+	if err != nil {
+		return false, err
+	}
+	if creatorOrManager {
+		return true, nil
+	}
+	if s.isOwner(ticket, actorID) {
+		return ticket.Status == models.StatusOpen, nil
+	}
+	return false, nil
+}
+
+// validateAssigneeForAssign проверяет, что смена исполнителя для пользователя с
+// соответствующим (но не полным) доступом допустима: новый исполнитель должен быть
+// участником той же группы, что и тикет, иное запрещено. Используется при передаче
+// заявки исполнителем через Update и через Transfer.
+func (s *TicketService) validateAssigneeForAssign(ctx context.Context, ticket *models.Ticket, assigneeID *uuid.UUID) error {
+	if ticket.Group == nil || assigneeID == nil {
+		return models.ErrPermissionDenied
+	}
+	ok, err := s.groups.IsMember(ctx, ticket.Group.ID, *assigneeID)
+	if err != nil {
+		return fmt.Errorf("failed to check assignee membership: %w", err)
+	}
+	if !ok {
+		return models.ErrPermissionDenied
+	}
+	return nil
+}
+
 // ownerTransitionAllowed — допустимые переходы по статусам для «чистого» владельца (без
 // write/work-доступа). Владелец может только: активный статус → cancelled (отменить заявку),
 // resolved → closed (принять решение) и resolved → in_progress (вернуть в работу). Все прочие
@@ -811,6 +986,15 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 	flags.CanTake = !isTicketInactive(ticket.Status) &&
 		(ticket.Assignee == nil ||
 			(ticket.Assignee.ID != userID && ticket.Status == models.StatusOpen))
+
+	// CanEditFields — право правки не-статусных полей (заголовок/описание и т.п.):
+	// создатель или менеджер группы всегда, владелец — пока заявка в статусе open.
+	// Политика write сама по себе права правки полей не даёт.
+	canEdit, err := s.canEditFields(ctx, ticket, userID)
+	if err != nil {
+		return nil, err
+	}
+	flags.CanEditFields = canEdit
 
 	flags.AllowedStatuses = s.computeAllowedStatuses(ctx, ticket, userID, realm)
 

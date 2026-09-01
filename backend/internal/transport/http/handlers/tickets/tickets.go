@@ -32,6 +32,7 @@ func Register(api *gin.RouterGroup, service services.Tickets, middleware *middle
 		tickets.GET("", handlers.getAll)
 		tickets.GET("/:id", handlers.getByID)
 		tickets.POST("/:id/take", handlers.take)
+		tickets.POST("/:id/transfer", handlers.transfer)
 
 		tickets.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Write()))
 		tickets.POST("", handlers.create)
@@ -121,6 +122,41 @@ func (h *Handler) take(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, response.IdResponse{Id: id, Message: "Заявка взята в работу"})
+}
+
+func (h *Handler) transfer(c *gin.Context) {
+	strId := c.Param("id")
+	id, err := uuid.Parse(strId)
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	dto := &models.TransferTicketDTO{}
+	if err := c.BindJSON(dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	dto.ID = &id
+	if *dto.AssigneeID == uuid.Nil {
+		response.SendError(c, models.ErrInvalidInput)
+		return
+	}
+
+	realmIdStr := c.GetHeader("realm")
+	dto.RealmID = realmIdStr
+
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+	dto.Actor = actor
+
+	if err := h.service.Transfer(c, dto); err != nil {
+		response.SendError(c, err, dto)
+		return
+	}
+	c.JSON(http.StatusOK, response.IdResponse{Id: id, Message: "Заявка передана"})
 }
 
 func (h *Handler) create(c *gin.Context) {

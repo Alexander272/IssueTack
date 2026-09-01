@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Box, IconButton, Tooltip, Typography, Menu, MenuItem, ListItemIcon } from '@mui/material'
-import { Star, MoreVertical, ArrowLeftIcon, Pin } from 'lucide-mui'
+import { Star, MoreVertical, ArrowLeftIcon, Pin, Pencil, UserRound } from 'lucide-mui'
 import { useNavigate } from 'react-router'
 
 import type { ITask, TicketStatus } from '../../types/task'
@@ -9,16 +9,21 @@ import {
 	useAddFavoriteMutation,
 	useRemoveFavoriteMutation,
 } from '@/features/favorites/favoritesApiSlice'
+import { useAppSelector } from '@/hooks/redux'
+import { getUserId } from '@/features/user/userSlice'
 
 const INACTIVE_STATUSES: TicketStatus[] = ['resolved', 'closed', 'cancelled']
 
 interface Props {
 	task: ITask
+	onEdit?: () => void
+	onTransfer?: () => void
 }
 
-export const Header = ({ task }: Props) => {
+export const Header = ({ task, onEdit, onTransfer }: Props) => {
 	const navigate = useNavigate()
 	const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
+	const currentUserId = useAppSelector(getUserId)
 
 	const { data: favState } = useGetFavoriteStateQuery(task.id)
 	const [addFavorite] = useAddFavoriteMutation()
@@ -27,6 +32,8 @@ export const Header = ({ task }: Props) => {
 	const isInactive = INACTIVE_STATUSES.includes(task.status)
 	const pinned = favState?.data?.temporary ?? false
 	const starred = favState?.data?.permanent ?? false
+	const isAssignee = currentUserId != null && currentUserId === task.assignee?.id
+	const canTransfer = !isInactive && isAssignee
 
 	const handleMenuClose = () => setAnchorEl(null)
 
@@ -120,6 +127,32 @@ export const Header = ({ task }: Props) => {
 					</IconButton>
 				</Tooltip>
 				<Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
+					{onEdit && (
+						<MenuItem
+							onClick={() => {
+								handleMenuClose()
+								onEdit()
+							}}
+						>
+							<ListItemIcon>
+								<Pencil sx={{ fontSize: 18, color: '#9ca3af' }} />
+							</ListItemIcon>
+							Редактировать
+						</MenuItem>
+					)}
+					{onTransfer && canTransfer && (
+						<MenuItem
+							onClick={() => {
+								handleMenuClose()
+								onTransfer()
+							}}
+						>
+							<ListItemIcon>
+								<UserRound sx={{ fontSize: 18, color: '#9ca3af' }} />
+							</ListItemIcon>
+							Передать
+						</MenuItem>
+					)}
 					<MenuItem onClick={toggleStar}>
 						<ListItemIcon>
 							<Star sx={{ fontSize: 18, color: starred ? '#f59e0b' : '#9ca3af' }} />
