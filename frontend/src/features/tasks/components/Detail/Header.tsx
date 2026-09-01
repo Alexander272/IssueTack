@@ -3,12 +3,14 @@ import { Box, IconButton, Tooltip, Typography, Menu, MenuItem, ListItemIcon } fr
 import { Star, MoreVertical, ArrowLeftIcon, Pin } from 'lucide-mui'
 import { useNavigate } from 'react-router'
 
-import type { ITask } from '../../types/task'
+import type { ITask, TicketStatus } from '../../types/task'
 import {
 	useGetFavoriteStateQuery,
 	useAddFavoriteMutation,
 	useRemoveFavoriteMutation,
 } from '@/features/favorites/favoritesApiSlice'
+
+const INACTIVE_STATUSES: TicketStatus[] = ['resolved', 'closed', 'cancelled']
 
 interface Props {
 	task: ITask
@@ -22,6 +24,7 @@ export const Header = ({ task }: Props) => {
 	const [addFavorite] = useAddFavoriteMutation()
 	const [removeFavorite] = useRemoveFavoriteMutation()
 
+	const isInactive = INACTIVE_STATUSES.includes(task.status)
 	const pinned = favState?.data?.temporary ?? false
 	const starred = favState?.data?.permanent ?? false
 
@@ -94,18 +97,20 @@ export const Header = ({ task }: Props) => {
 			</Box>
 
 			<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
-				<Tooltip title={pinned ? 'Открепить' : 'Закрепить'}>
-					<IconButton
-						onClick={togglePin}
-						sx={{
-							color: pinned ? '#f59e0b' : '#9ca3af',
-							'&:hover': { color: '#f59e0b' },
-							fontSize: 20,
-						}}
-					>
-						<Pin sx={{ fontSize: 20 }} />
-					</IconButton>
-				</Tooltip>
+				{!isInactive && (
+					<Tooltip title={pinned ? 'Открепить' : 'Закрепить'}>
+						<IconButton
+							onClick={togglePin}
+							sx={{
+								color: pinned ? '#f59e0b' : '#9ca3af',
+								'&:hover': { color: '#f59e0b' },
+								fontSize: 20,
+							}}
+						>
+							<Pin sx={{ fontSize: 20 }} />
+						</IconButton>
+					</Tooltip>
+				)}
 				<Tooltip title='Ещё'>
 					<IconButton
 						onClick={e => setAnchorEl(e.currentTarget)}

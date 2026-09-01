@@ -47,6 +47,7 @@ type AccessFlags struct {
 	CanWrite        bool           `json:"canWrite"`
 	CanDelete       bool           `json:"canDelete"`
 	CanWork         bool           `json:"canWork"`
+	CanTake         bool           `json:"canTake"`
 	AllowedStatuses []TicketStatus `json:"allowedStatuses"`
 }
 
@@ -154,6 +155,14 @@ func (dto *TicketDTO) MarkProvided(key string) {
 }
 
 type DeleteTicketDTO struct {
+	ID      uuid.UUID `json:"id" db:"id"`
+	Actor   *Actor    `json:"actor"`
+	RealmID string    `json:"realmId"`
+}
+
+// TakeTicketDTO описывает «взятие заявки в работу»: пользователь назначает себя
+// исполнителем и переводит заявку в статус in_progress.
+type TakeTicketDTO struct {
 	ID      uuid.UUID `json:"id" db:"id"`
 	Actor   *Actor    `json:"actor"`
 	RealmID string    `json:"realmId"`

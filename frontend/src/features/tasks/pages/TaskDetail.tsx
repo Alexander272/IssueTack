@@ -3,7 +3,7 @@ import { Box, Grid } from '@mui/material'
 import { useParams } from 'react-router'
 
 import type { TicketStatus } from '../types/task'
-import { useGetTaskByIdQuery, useUpdateTaskMutation } from '../tasksApiSlice'
+import { useGetTaskByIdQuery, useUpdateTaskMutation, useTakeTaskMutation } from '../tasksApiSlice'
 import { useUpdateSubtaskMutation } from '../modules/subtasks/subtasksApiSlice'
 import { useCreateCommentMutation } from '../modules/comments/commentsApiSlice'
 import { BoxFallback } from '@/components/Fallback/BoxFallback'
@@ -25,6 +25,7 @@ export const TaskDetailPage = () => {
 	const { id } = useParams<{ id: string }>()
 	const { data, isLoading } = useGetTaskByIdQuery(id!)
 	const [updateTask] = useUpdateTaskMutation()
+	const [takeTask] = useTakeTaskMutation()
 	const [updateSubtask] = useUpdateSubtaskMutation()
 	const [createComment] = useCreateCommentMutation()
 	const [editOpen, setEditOpen] = useState(false)
@@ -46,6 +47,14 @@ export const TaskDetailPage = () => {
 			if (comment) {
 				await createComment({ ticketId: taskId, text: comment, isInternal: false, type: 'status_change' })
 			}
+		} catch {
+			// handled by toast in apiSlice
+		}
+	}
+
+	const handleTake = async () => {
+		try {
+			await takeTask(task.id)
 		} catch {
 			// handled by toast in apiSlice
 		}
@@ -74,7 +83,7 @@ export const TaskDetailPage = () => {
 					>
 						<Header task={task} />
 
-						<InfoBar task={task} onStatusChange={handleStatusChange} />
+						<InfoBar task={task} onStatusChange={handleStatusChange} onTake={handleTake} />
 					</Box>
 
 					<Grid container spacing={3} sx={{ mt: 2 }}>
@@ -94,7 +103,7 @@ export const TaskDetailPage = () => {
 								canWork={canUploadAttachments}
 								taskId={task.id}
 							/>
-							<Comments taskId={task.id} />
+							<Comments taskId={task.id} isInactive={isInactive} />
 						</Grid>
 
 						<Grid size={{ xs: 12, lg: 4 }} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

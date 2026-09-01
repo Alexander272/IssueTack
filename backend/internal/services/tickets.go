@@ -70,6 +70,10 @@ type Tickets interface {
 	Create(ctx context.Context, dto *models.TicketDTO) error
 	// Update изменяет поля тикета с соблюдением правил доступа и переходов по статусам.
 	Update(ctx context.Context, dto *models.TicketDTO) error
+	// Take назначает пользователя исполнителем заявки и переводит её в статус
+	// in_progress («взять в работу»). Доступно, если заявка активна и «забираема»:
+	// исполнителя нет, либо исполнитель — другой пользователь и статус открыт.
+	Take(ctx context.Context, dto *models.TakeTicketDTO) error
 	// Delete удаляет тикет.
 	Delete(ctx context.Context, dto *models.DeleteTicketDTO) error
 	// AutoCloseResolved закрывает resolved-тикеты по истечении задержки и возвращает их количество.
@@ -424,6 +428,13 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 			return models.ErrPermissionDenied
 		}
 
+		// Закрытая/отменённая заявка — терминальна: её статус изменить нельзя
+		// (resolved при этом допускает переходы →closed и →in_progress выше).
+		if dto.HasField("status") && oldTicket.Status != dto.Status &&
+			(oldTicket.Status == models.StatusClosed || oldTicket.Status == models.StatusCancelled) {
+			return models.ErrTicketFrozen
+		}
+
 		if dto.HasField("status") && dto.Status != oldTicket.Status &&
 			(dto.Status == models.StatusClosed || dto.Status == models.StatusCancelled) {
 			ok, err := s.isCreatorOrManager(ctx, oldTicket, dto.Actor.ID)
@@ -541,6 +552,105 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 	if len(changes) > 0 {
 		if err := s.notifications.TicketUpdated(ctx, *dto.ID, dto.Actor.ID, changes); err != nil {
 			s.notifyBestEffort(ctx, "update", *dto.ID, dto.Title, err)
+		}
+	}
+	return nil
+}
+
+// Take — «взять заявку в работу»: пользователь назначает себя исполнителем
+// (assignee) и переводит заявку в статус in_progress. Разрешено, если заявка
+// активна (не resolved/closed/cancelled), пользователь имеет read-доступ и заявка
+// «забираема» — не имеет исполнителя вовсе, либо исполнитель — другой пользователь,
+// а заявка ещё в статусе open. Если исполнитель уже является текущим пользователем —
+// отказ (нет смысла брать собственную заявку).
+func (s *TicketService) Take(ctx context.Context, dto *models.TakeTicketDTO) error {
+	ticket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: dto.ID})
+	if err != nil {
+		return fmt.Errorf("failed to get ticket by id. error: %w", err)
+	}
+
+	if isTicketInactive(ticket.Status) {
+		return models.ErrTicketFrozen
+	}
+
+	if err := s.access.CheckAccessOnTicket(ctx, ticket, dto.Actor.ID, string(access.Read), dto.RealmID); err != nil {
+		return err
+	}
+
+	if ticket.Assignee != nil {
+		if ticket.Assignee.ID == dto.Actor.ID {
+			return models.ErrPermissionDenied
+		}
+		if ticket.Status != models.StatusOpen {
+			return models.ErrPermissionDenied
+		}
+	}
+
+	var realmID *uuid.UUID
+	if dto.RealmID != "" {
+		if rid, parseErr := uuid.Parse(dto.RealmID); parseErr == nil {
+			realmID = &rid
+		}
+	}
+	dtoUpdate := &models.TicketDTO{
+		ID:         &dto.ID,
+		Actor:      dto.Actor,
+		RealmID:    realmID,
+		Status:     models.StatusInProgress,
+		AssigneeID: &dto.Actor.ID,
+	}
+	dtoUpdate.MarkProvided("status")
+	dtoUpdate.MarkProvided("assigneeId")
+
+	var changes []*models.FieldChange
+	err = s.tx.WithinTransaction(ctx, func(newTx postgres.Tx) error {
+		oldTicket, loadErr := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: dto.ID})
+		if loadErr != nil {
+			return loadErr
+		}
+
+		changes = dtoUpdate.GetChanges(oldTicket)
+
+		if err := s.repo.Update(ctx, newTx, dtoUpdate); err != nil {
+			return fmt.Errorf("failed to update ticket. error: %w", err)
+		}
+
+		if len(changes) > 0 {
+			oldMap := make(map[string]string, len(changes))
+			newMap := make(map[string]string, len(changes))
+			for _, c := range changes {
+				oldMap[string(c.Tag)] = c.OldVal
+				newMap[string(c.Tag)] = c.NewVal
+			}
+
+			log := &models.ActivityLogDTO{
+				Action:        "updated",
+				ChangedBy:     dto.Actor.ID,
+				ChangedByName: dto.Actor.Name,
+				EntityType:    string(access.ResourceTicket),
+				EntityID:      dto.ID,
+				Entity:        oldTicket.Title,
+			}
+			if err := log.SetOldValues(oldMap); err != nil {
+				return fmt.Errorf("set old values: %w", err)
+			}
+			if err := log.SetNewValues(newMap); err != nil {
+				return fmt.Errorf("set new values: %w", err)
+			}
+			if err := s.logs.Create(ctx, newTx, []*models.ActivityLogDTO{log}); err != nil {
+				return fmt.Errorf("store logs: %w", err)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	if len(changes) > 0 {
+		if err := s.notifications.TicketUpdated(ctx, dto.ID, dto.Actor.ID, changes); err != nil {
+			s.notifyBestEffort(ctx, "update", dto.ID, ticket.Title, err)
 		}
 	}
 	return nil
@@ -695,6 +805,13 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 
 	flags.CanWork = flags.CanWrite || (ticket.Assignee != nil && ticket.Assignee.ID == userID)
 
+	// CanTake — заявку можно «взять в работу»: она активна (не resolved/closed/cancelled)
+	// и «забираема» — исполнителя нет совсем, либо исполнитель — другой пользователь,
+	// а заявка ещё в статусе open (см. Take).
+	flags.CanTake = !isTicketInactive(ticket.Status) &&
+		(ticket.Assignee == nil ||
+			(ticket.Assignee.ID != userID && ticket.Status == models.StatusOpen))
+
 	flags.AllowedStatuses = s.computeAllowedStatuses(ctx, ticket, userID, realm)
 
 	return flags, nil
@@ -748,9 +865,9 @@ func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *mode
 
 	switch {
 	case current == models.StatusClosed || current == models.StatusCancelled:
-		if hasWrite || hasWork {
-			add(activeStatuses...)
-		}
+		// Закрытая/отменённая заявка — «замороженная»: вернуть её в активные статусы
+		// нельзя никому (даже исполнителю с work-доступом). Разрешён лишь взаимообмен
+		// closed⇄cancelled автору/менеджеру группы/владельцу.
 		if isCreatorOrMgr || isOwner {
 			if current == models.StatusClosed {
 				add(models.StatusCancelled)

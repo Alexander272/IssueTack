@@ -1,5 +1,5 @@
 import { Box, Button, Menu, MenuItem } from '@mui/material'
-import { ChevronDown, Check, Tag, Building2, CheckCircle2, RotateCcw, XCircle } from 'lucide-mui'
+import { ChevronDown, Check, Tag, Building2, CheckCircle2, RotateCcw, XCircle, Hand } from 'lucide-mui'
 import { useState } from 'react'
 
 import type { ITask, TicketStatus } from '../../types/task'
@@ -16,14 +16,18 @@ const COMMENT_REQUIRED_STATUSES: TicketStatus[] = ['in_progress', 'on_hold', 'pe
 interface Props {
 	task: ITask
 	onStatusChange: (taskId: string, status: TicketStatus, comment?: string) => void
+	onTake: () => void
 }
 
-export const InfoBar = ({ task, onStatusChange }: Props) => {
+export const InfoBar = ({ task, onStatusChange, onTake }: Props) => {
 	const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
 	const [pendingStatus, setPendingStatus] = useState<TicketStatus | null>(null)
 	const currentUserId = useAppSelector(getUserId)
 	const isOwner = currentUserId != null && currentUserId === task.owner?.id
-	const canUseMenu = task.access?.canWrite || task.access?.canWork
+	// Закрытая/отменённая заявка терминальна — меню «Изменить статус» не показываем.
+	const isTerminal = task.status === 'closed' || task.status === 'cancelled'
+	const canUseMenu = !isTerminal && (task.access?.canWrite || task.access?.canWork)
+	const canTake = Boolean(task.access?.canTake)
 	const allowedStatuses = task.access?.allowedStatuses
 	const canAccept = isOwner && task.status === 'resolved'
 	const canReturn = isOwner && task.status === 'resolved'
@@ -138,7 +142,18 @@ export const InfoBar = ({ task, onStatusChange }: Props) => {
 					</Button>
 				)}
 
-				{canUseMenu && (
+				{canTake && (
+					<Button
+						variant='outlined'
+						onClick={onTake}
+						startIcon={<Hand sx={{ fontSize: 16 }} />}
+						sx={{ textTransform: 'none', boxShadow: 'none', '&:hover': { boxShadow: 'none' } }}
+					>
+						Взять в работу
+					</Button>
+				)}
+
+				{!canTake && canUseMenu && (
 					<Button
 						variant='outlined'
 						onClick={e => setAnchorEl(e.currentTarget)}
@@ -153,7 +168,7 @@ export const InfoBar = ({ task, onStatusChange }: Props) => {
 					</Button>
 				)}
 
-				{canUseMenu && (
+				{!canTake && canUseMenu && (
 					<Menu
 						anchorEl={anchorEl}
 						open={Boolean(anchorEl)}

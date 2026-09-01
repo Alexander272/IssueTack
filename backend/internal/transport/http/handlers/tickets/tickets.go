@@ -31,6 +31,7 @@ func Register(api *gin.RouterGroup, service services.Tickets, middleware *middle
 	{
 		tickets.GET("", handlers.getAll)
 		tickets.GET("/:id", handlers.getByID)
+		tickets.POST("/:id/take", handlers.take)
 
 		tickets.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Write()))
 		tickets.POST("", handlers.create)
@@ -98,6 +99,28 @@ func (h *Handler) getByID(c *gin.Context) {
 		return
 	}
 	response.SendData(c, data)
+}
+
+func (h *Handler) take(c *gin.Context) {
+	strId := c.Param("id")
+	id, err := uuid.Parse(strId)
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+
+	realmIdStr := c.GetHeader("realm")
+
+	if err := h.service.Take(c, &models.TakeTicketDTO{ID: id, Actor: actor, RealmID: realmIdStr}); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, response.IdResponse{Id: id, Message: "Заявка взята в работу"})
 }
 
 func (h *Handler) create(c *gin.Context) {

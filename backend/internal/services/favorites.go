@@ -38,9 +38,15 @@ type TicketFavorites interface {
 }
 
 // Add добавляет заявку в избранное, предварительно проверив read-доступ пользователя.
+// «Закрепление» (temporary) заявок в «замороженных» статусах (resolved/closed/cancelled)
+// запрещено; permanent-избранное разрешено в любом статусе.
 func (s *TicketFavoritesService) Add(ctx context.Context, dto *models.FavoriteDTO) error {
-	if err := s.checkReadAccess(ctx, dto.TicketID, dto.ActorID); err != nil {
+	ticket, err := s.checkReadAccess(ctx, dto.TicketID, dto.ActorID)
+	if err != nil {
 		return err
+	}
+	if isTicketInactive(ticket.Status) && dto.Type == models.FavoriteTypeTemporary {
+		return models.ErrTicketFrozen
 	}
 	dto.UserID = dto.ActorID
 	return s.repo.Add(ctx, nil, dto)
@@ -48,7 +54,7 @@ func (s *TicketFavoritesService) Add(ctx context.Context, dto *models.FavoriteDT
 
 // Remove убирает заявку из избранного, предварительно проверив read-доступ пользователя.
 func (s *TicketFavoritesService) Remove(ctx context.Context, dto *models.FavoriteDTO) error {
-	if err := s.checkReadAccess(ctx, dto.TicketID, dto.ActorID); err != nil {
+	if _, err := s.checkReadAccess(ctx, dto.TicketID, dto.ActorID); err != nil {
 		return err
 	}
 	return s.repo.Remove(ctx, nil, dto.TicketID, dto.ActorID, dto.Type)
@@ -64,11 +70,11 @@ func (s *TicketFavoritesService) GetByUser(ctx context.Context, userID uuid.UUID
 	return s.repo.GetByUser(ctx, userID, favoriteType)
 }
 
-// checkReadAccess загружает тикет и проверяет у пользователя read-доступ.
-func (s *TicketFavoritesService) checkReadAccess(ctx context.Context, ticketID, userID uuid.UUID) error {
+// checkReadAccess загружает тикет, проверяет у пользователя read-доступ и возвращает тикет.
+func (s *TicketFavoritesService) checkReadAccess(ctx context.Context, ticketID, userID uuid.UUID) (*models.Ticket, error) {
 	ticket, err := s.ticketRepo.GetByID(ctx, &models.GetTicketByIdDTO{ID: ticketID})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	realm := ""
@@ -76,12 +82,15 @@ func (s *TicketFavoritesService) checkReadAccess(ctx context.Context, ticketID, 
 		realm = ticket.RealmID.String()
 	}
 
-	return s.ticketAccess.CheckAccess(ctx, &models.AccessCheckDTO{
+	if err := s.ticketAccess.CheckAccess(ctx, &models.AccessCheckDTO{
 		TicketID: ticketID,
 		UserID:   userID,
 		Action:   string(access.Read),
 		Realm:    realm,
-	})
+	}); err != nil {
+		return nil, err
+	}
+	return ticket, nil
 }
 
 // CleanupTemporary удаляет автоматически истёкшие «закреплённые» (temporary) избранные:

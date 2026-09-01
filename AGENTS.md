@@ -46,6 +46,7 @@
 | Delete   | только менеджер группы (создатель НЕ может удалять)                                                                         |
 
 - **`CheckWorkAccess`** = `CheckAccess(Write)` ИЛИ исполнитель тикета. Используется для: смены статуса (через `Update`), создания/изменения подзадач, загрузки/удаления вложений.
+- **«Взять в работу»** (`TicketService.Take`, `POST /tickets/:id/take`, флаг `canTake` в `AccessFlags`): пользователь назначает себя исполнителем и переводит заявку в `in_progress`. Разрешено при read-доступе и активном статусе, если исполнителя нет совсем (любой активный статус), либо исполнитель — другой пользователь и статус `open`. Во фронтенде (`InfoBar`) кнопка «Взять в работу» показывается в этих случаях **вместо** «Изменить статус»; если забирать нельзя и нет `canWrite`/`canWork`, у пользователя ничего не показывается.
 - `TicketService.Update`: если у пользователя только work-access, то разрешена смена только статуса (`ActionStatusChanged`, `ActionClosed`), остальные поля — запрет.
 - Статусы `closed`/`cancelled` может ставить **автор, владелец (owner) или менеджер группы** (`isCreatorOrManager` + проверка владельца, строгая проверка — Casbin `write`-права не спасают).
 - **Владелец (owner)** без write/work-доступа может делать в `Update` только три перехода (`ownerTransitionAllowed`): активный статус → `cancelled` (отменить заявку), `resolved` → `closed` (принять решение), `resolved` → `in_progress` (вернуть в работу). Все прочие смены статусов и изменение полей ему запрещены.
@@ -53,6 +54,9 @@
 - Переход в `resolved` проставляет `resolved_at`; тикеты со статусом `resolved` автоматически закрываются через `tickets.resolved_to_closed_after` в `config.yaml` (0 — отключено). `closed_at` при `resolved` не проставляется.
 - Переход в `resolved` возможен, только если нет подзадач в активном статусе (`open`/`in_progress`/`pending`/`on_hold`); подзадачи `resolved`/`closed`/`cancelled` не блокируют (`ErrSubtasksNotResolved`, подсчёт — `Subtasks.GetUnresolvedCount`).
 - Статус `closed` можно поставить **только из `resolved`** (`ErrCloseRequiresResolved`); нерешённую задачу можно только отменить (`cancelled`).
+- Закрытая/отменённая заявка **терминальна**: её статус изменить нельзя никому (в `Update` — `ErrTicketFrozen`; в `computeAllowedStatuses` для `closed`/`cancelled` разрешён лишь взаимообмен `closed⇄cancelled` автору/менеджеру/владельцу, исполнитель с work-доступом активные статусы не получает).
+- На «замороженных» заявках (resolved/closed/cancelled) **внешние комментарии запрещены** (`CommentService.Create` → `isTicketInactive`), допустимы только внутренние — от исполнителя/менеджера группы (`CheckInternalAssigneeAccess`). Во фронтенде (`Comments`) на закрытой заявке переключатель скрыт и коммент форсится внутренним.
+- **Закрепление (temporary)** нельзя оставлять на «замороженных» заявках (`TicketFavoritesService.Add` при inactive + `favoritesType=temporary` → `ErrTicketFrozen`; кнопка Pin скрыта в `Header`). **Избранное (permanent)** разрешено в любом статусе (кнопка «В избранное» всегда доступна).
 - Тикеты без группы: в списке показываются только те, где пользователь создатель или исполнитель (`IncludeUngroupedAssignedTo` в `TicketFilter`).
 - `realm` пробрасывается в сервисы подзадач/вложений (variadic `...string`), чтобы Casbin-проверка шла по правильному домену.
 

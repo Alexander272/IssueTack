@@ -35,6 +35,7 @@ export interface IAccessFlags {
 	canWrite: boolean
 	canDelete: boolean
 	canWork: boolean
+	canTake: boolean
 	allowedStatuses: TicketStatus[]
 }
 

@@ -81,19 +81,40 @@ func (s *CommentService) GetByTicket(ctx context.Context, ticketID uuid.UUID, us
 }
 
 // Create создаёт комментарий к тикету с проверкой work-доступа.
+// Для активных тикетов допускаются как внешние, так и внутренние комментарии
+// (при work-доступе). Для «замороженных» (resolved/closed/cancelled) внешние
+// комментарии запрещены — допустимы только внутренние, и только от исполнителя/
+// менеджера группы (CheckInternalAssigneeAccess).
 // Если транзакция не передана, открывает собственную (owner-tx), чтобы
 // запись комментария была атомарной; side-эффекты (Mattermost, уведомления)
 // выполняются уже после фикса транзакции.
 func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models.CreateCommentDTO) (*models.Comment, error) {
-	if err := s.ticketAccess.CheckWorkAccess(ctx, &models.AccessCheckDTO{
+	check := &models.AccessCheckDTO{
 		TicketID: dto.TicketID,
 		UserID:   dto.UserID,
 		Realm:    dto.Realm,
-	}); err != nil {
-		return nil, err
 	}
 
-	var err error
+	ticket, err := s.tickets.GetByID(ctx, &models.GetTicketByIdDTO{ID: dto.TicketID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load ticket for comment access: %w", err)
+	}
+
+	if isTicketInactive(ticket.Status) {
+		// «Замороженная» заявка: только внутренние комментарии, внешние запрещены.
+		if !dto.IsInternal {
+			return nil, models.ErrTicketFrozen
+		}
+		if err := s.ticketAccess.CheckInternalAssigneeAccess(ctx, check); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := s.ticketAccess.CheckWorkAccess(ctx, check); err != nil {
+			return nil, err
+		}
+	}
+
+	var createErr error
 	comment := &models.Comment{
 		Text:       dto.Text,
 		UserID:     dto.UserID,
@@ -103,14 +124,14 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 	}
 
 	if tx == nil {
-		err = s.txManager.WithinTransaction(ctx, func(newTx postgres.Tx) error {
+		createErr = s.txManager.WithinTransaction(ctx, func(newTx postgres.Tx) error {
 			return s.repo.Create(ctx, newTx, comment)
 		})
 	} else {
-		err = s.repo.Create(ctx, tx, comment)
+		createErr = s.repo.Create(ctx, tx, comment)
 	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to create comment: %w", err)
+	if createErr != nil {
+		return nil, fmt.Errorf("failed to create comment: %w", createErr)
 	}
 
 	// Side-эффекты выполняются только после фикса транзакции и не влияют на сам
