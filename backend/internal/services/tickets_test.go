@@ -124,6 +124,103 @@ func TestTicketService_Get_NoGroups_ReturnsEmpty(t *testing.T) {
 	assert.Equal(t, 0, total)
 }
 
+func TestTicketService_Get_Assigned_Regular(t *testing.T) {
+	mockRepo, _, _, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	managedID := uuid.New()
+	memberID := uuid.New()
+	mode := "assigned"
+	req := &models.TicketFilter{
+		Actor: &models.Actor{ID: actorID, Name: "test"},
+		Mode:  &mode,
+		Limit: 20, Offset: 0,
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{memberID}, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{managedID}, nil)
+
+	expected := []*models.Ticket{{ID: uuid.New(), Title: "Ticket 1"}}
+	expectedFilter := &models.TicketFilter{
+		Actor: &models.Actor{ID: actorID, Name: "test"},
+		Mode:  &mode,
+		Limit: 20, Offset: 0,
+		MyWork: &models.MyWorkFilter{UserID: actorID, GroupIDs: []uuid.UUID{managedID, memberID}},
+	}
+	mockRepo.On("Get", mock.Anything, expectedFilter).Return(expected, 0, nil)
+
+	got, total, err := svc.Get(context.Background(), req)
+	assert.NoError(t, err)
+	assert.Equal(t, expected, got)
+	assert.Equal(t, 0, total)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestTicketService_Get_Assigned_Supervisor(t *testing.T) {
+	mockRepo, _, _, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	memberID := uuid.New()
+	mode := "assigned"
+	req := &models.TicketFilter{
+		Actor: &models.Actor{ID: actorID, Name: "test"},
+		Mode:  &mode,
+		Limit: 20, Offset: 0,
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(true, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{memberID}, nil)
+
+	expected := []*models.Ticket{{ID: uuid.New(), Title: "Ticket 1"}}
+	expectedFilter := &models.TicketFilter{
+		Actor: &models.Actor{ID: actorID, Name: "test"},
+		Mode:  &mode,
+		Limit: 20, Offset: 0,
+		MyWork: &models.MyWorkFilter{UserID: actorID, GroupIDs: []uuid.UUID{memberID}},
+	}
+	mockRepo.On("Get", mock.Anything, expectedFilter).Return(expected, 0, nil)
+
+	got, total, err := svc.Get(context.Background(), req)
+	assert.NoError(t, err)
+	assert.Equal(t, expected, got)
+	assert.Equal(t, 0, total)
+	mockGroups.AssertNotCalled(t, "GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil))
+}
+
+func TestTicketService_Get_Created_Regular(t *testing.T) {
+	mockRepo, _, _, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	mode := "created"
+	req := &models.TicketFilter{
+		Actor: &models.Actor{ID: actorID, Name: "test"},
+		Mode:  &mode,
+		Limit: 20, Offset: 0,
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+
+	expected := []*models.Ticket{{ID: uuid.New(), Title: "Ticket 1"}}
+	expectedFilter := &models.TicketFilter{
+		Actor:      &models.Actor{ID: actorID, Name: "test"},
+		Mode:       &mode,
+		Limit:      20,
+		Offset:     0,
+		CreatorID:  &actorID,
+	}
+	mockRepo.On("Get", mock.Anything, expectedFilter).Return(expected, 0, nil)
+
+	got, total, err := svc.Get(context.Background(), req)
+	assert.NoError(t, err)
+	assert.Equal(t, expected, got)
+	assert.Equal(t, 0, total)
+}
+
 func TestTicketService_GetByID_Success(t *testing.T) {
 	mockRepo, _, mockSubtasks, mockAttachments, _, _, mockPolicies, svc := ticketServiceFixtures()
 

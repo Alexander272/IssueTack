@@ -100,7 +100,24 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 		return nil, 0, fmt.Errorf("realm supervisor check failed: %w", err)
 	}
 
-	if !canViewAll {
+	// «Мои задачи» (mode=assigned): лично назначенные ИЛИ задачи групп пользователя.
+	// Работает и для рядовых пользователей, и для супервайзеров: супервайзер видит
+	// в «Задачах» свои назначения и задачи групп, где состоит (а не все заявки реалма).
+	if req.Mode != nil && *req.Mode == "assigned" {
+		member, err := s.groups.GetMemberGroups(ctx, req.Actor.ID, nil)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to get member groups: %w", err)
+		}
+		groupIDs := member
+		if !canViewAll {
+			managed, err := s.groups.GetManagedGroups(ctx, req.Actor.ID, nil)
+			if err != nil {
+				return nil, 0, fmt.Errorf("failed to get managed groups: %w", err)
+			}
+			groupIDs = unionGroupIDs(managed, member)
+		}
+		req.MyWork = &models.MyWorkFilter{UserID: req.Actor.ID, GroupIDs: groupIDs}
+	} else if !canViewAll {
 		managed, err := s.groups.GetManagedGroups(ctx, req.Actor.ID, nil)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to get managed groups: %w", err)
@@ -110,35 +127,16 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 			return nil, 0, fmt.Errorf("failed to get member groups: %w", err)
 		}
 
-		seen := make(map[uuid.UUID]struct{})
-		var all []uuid.UUID
-		for _, gid := range managed {
-			if _, ok := seen[gid]; !ok {
-				seen[gid] = struct{}{}
-				all = append(all, gid)
-			}
-		}
-		for _, gid := range member {
-			if _, ok := seen[gid]; !ok {
-				seen[gid] = struct{}{}
-				all = append(all, gid)
-			}
-		}
-
-		if len(all) > 0 {
-			req.GroupIDs = all
-		}
-
-		req.IncludeUngroupedAssignedTo = &req.Actor.ID
-	}
-
-	// Handle mode filtering (realm supervisors see all realm tickets)
-	if req.Mode != nil && !canViewAll {
-		switch *req.Mode {
-		case "created":
+		// «Созданные вами заявки» (mode=created): только заявки, где пользователь автор,
+		// без ограничения группой — иначе теряются внегрупповые заявки автора.
+		if req.Mode != nil && *req.Mode == "created" {
 			req.CreatorID = &req.Actor.ID
-		case "assigned":
-			req.AssigneeID = &req.Actor.ID
+		} else {
+			// Обзор без mode: все заявки групп пользователя + внегрупповые, назначенные ему.
+			if groups := unionGroupIDs(managed, member); len(groups) > 0 {
+				req.GroupIDs = groups
+			}
+			req.IncludeUngroupedAssignedTo = &req.Actor.ID
 		}
 	}
 
@@ -147,6 +145,25 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 		return nil, 0, fmt.Errorf("failed to get tickets. error: %w", err)
 	}
 	return data, total, nil
+}
+
+// unionGroupIDs объединяет два списка групп без дубликатов (порядок: managed, затем member).
+func unionGroupIDs(managed, member []uuid.UUID) []uuid.UUID {
+	seen := make(map[uuid.UUID]struct{}, len(managed)+len(member))
+	out := make([]uuid.UUID, 0, len(managed)+len(member))
+	for _, gid := range managed {
+		if _, ok := seen[gid]; !ok {
+			seen[gid] = struct{}{}
+			out = append(out, gid)
+		}
+	}
+	for _, gid := range member {
+		if _, ok := seen[gid]; !ok {
+			seen[gid] = struct{}{}
+			out = append(out, gid)
+		}
+	}
+	return out
 }
 
 // isRealmSupervisor определяет, является ли пользователь «начальником области» в реалме:

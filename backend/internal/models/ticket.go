@@ -77,8 +77,18 @@ type TicketFilter struct {
 	Archived                   *bool          `form:"archived" json:"archived"`
 	FavoritesByUser            *uuid.UUID     `json:"-"`
 	FavoriteType               *FavoriteType  `json:"-"`
+	MyWork                     *MyWorkFilter  `json:"-"`
 	Limit                      int            `json:"limit" db:"limit"`
 	Offset                     int            `json:"offset" db:"offset"`
+}
+
+// MyWorkFilter описывает фильтр «Мои задачи»: тикеты, где пользователь является
+// исполнителем лично (assignee), ИЛИ где группа тикета входит в GroupIDs
+// (задачи групп). Используется страницей задач (mode=assigned), чтобы
+// исполнитель видел и свои назначения, и задачи своих групп.
+type MyWorkFilter struct {
+	UserID   uuid.UUID
+	GroupIDs []uuid.UUID
 }
 
 type TicketDTO struct {

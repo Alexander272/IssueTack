@@ -56,8 +56,8 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 	const isManager = useAppSelector(getIsManager)
 	const rowsPerPage = 20
 
-	const title = isManager ? (mode === 'created' ? 'Заявки' : 'Все заявки') : PAGE_TITLE[mode]
-	const desc = isManager ? 'Все доступные заявки' : PAGE_DESC[mode]
+	const title = PAGE_TITLE[mode]
+	const desc = isManager && mode === 'created' ? 'Все доступные заявки' : PAGE_DESC[mode]
 
 	const STORAGE_KEY = `@issueTrack/taskFilters_${mode}`
 

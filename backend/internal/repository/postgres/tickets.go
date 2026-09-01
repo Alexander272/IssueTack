@@ -201,6 +201,23 @@ func (w *whereBuilder) favorites(userID *uuid.UUID, typ *models.FavoriteType) {
 	w.idx++
 }
 
+// myWork добавляет "(t.assignee_id = $n OR t.group_id IN (...))" для страницы
+// «Мои задачи»: личные назначения пользователя ИЛИ задачи его групп.
+func (w *whereBuilder) myWork(f *models.MyWorkFilter) {
+	if f == nil {
+		return
+	}
+	disj := make([]string, 0, 2)
+	w.idx++
+	disj = append(disj, fmt.Sprintf("t.assignee_id = $%d", w.idx))
+	w.args = append(w.args, f.UserID)
+	if len(f.GroupIDs) > 0 {
+		disj = append(disj, "t.group_id IN ("+w.place(len(f.GroupIDs))+")")
+		w.args = append(w.args, toAny(f.GroupIDs)...)
+	}
+	w.add("(" + strings.Join(disj, " OR ") + ")")
+}
+
 // inList генерит "column IN ($1,$2,..)" и добавляет значения в аргументы.
 func inList[T any](w *whereBuilder, column string, values []T) {
 	if len(values) == 0 {
@@ -255,6 +272,7 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 	w.dueDate(req.DueDateFrom, req.DueDateTo)
 	w.priorities(req.Priorities)
 	w.statusMode(req.Archived)
+	w.myWork(req.MyWork)
 	w.favorites(req.FavoritesByUser, req.FavoriteType)
 
 	query := base
