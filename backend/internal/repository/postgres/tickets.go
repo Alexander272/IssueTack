@@ -89,6 +89,136 @@ var (
 	archiveStatuses = []models.TicketStatus{"closed", "cancelled"}
 )
 
+// whereBuilder аккумулирует WHERE-предложения с автонумерацией позиционных
+// аргументов, избавляя от ручного ведения argIdx/args в построителе запроса.
+type whereBuilder struct {
+	clauses []string
+	args    []interface{}
+	idx     int
+}
+
+func (w *whereBuilder) add(expr string) {
+	w.clauses = append(w.clauses, expr)
+}
+
+// place нумерует n плейсхолдеров (продвигая idx) и возвращает их через запятую.
+func (w *whereBuilder) place(n int) string {
+	parts := make([]string, n)
+	for i := range parts {
+		w.idx++
+		parts[i] = fmt.Sprintf("$%d", w.idx)
+	}
+	return strings.Join(parts, ",")
+}
+
+func (w *whereBuilder) sites(ids []string) {
+	inList(w, "t.site_id", ids)
+}
+
+func (w *whereBuilder) statuses(st *models.TicketStatus, many []models.TicketStatus) {
+	if st != nil {
+		w.idx++
+		w.add(fmt.Sprintf("t.status = $%d", w.idx))
+		w.args = append(w.args, *st)
+	} else if len(many) > 0 {
+		w.args = append(w.args, toAny(many)...)
+		w.add("t.status IN (" + w.place(len(many)) + ")")
+	}
+}
+
+func (w *whereBuilder) statusMode(archived *bool) {
+	list := activeStatuses
+	if archived != nil && *archived {
+		list = archiveStatuses
+	}
+	w.args = append(w.args, toAny(list)...)
+	w.add("t.status IN (" + w.place(len(list)) + ")")
+}
+
+// eq добавляет "column = $n" если val не nil (типизированный nil-указатель корректно отсекается).
+func eq[T any](w *whereBuilder, column string, val *T) {
+	if val == nil {
+		return
+	}
+	w.idx++
+	w.add(fmt.Sprintf("%s = $%d", column, w.idx))
+	w.args = append(w.args, *val)
+}
+
+func (w *whereBuilder) groups(ids []uuid.UUID, ungrouped *uuid.UUID) {
+	if len(ids) == 0 && ungrouped == nil {
+		return
+	}
+	var clauses []string
+	if len(ids) > 0 {
+		w.args = append(w.args, toAny(ids)...)
+		clauses = append(clauses, "t.group_id IN ("+w.place(len(ids))+")")
+	}
+	if ungrouped != nil {
+		w.idx++
+		clauses = append(clauses, fmt.Sprintf("(t.group_id IS NULL AND t.assignee_id = $%d)", w.idx))
+		w.args = append(w.args, *ungrouped)
+	}
+	w.add("(" + strings.Join(clauses, " OR ") + ")")
+}
+
+func (w *whereBuilder) search(s *string) {
+	if s == nil || *s == "" {
+		return
+	}
+	w.idx++
+	w.add(fmt.Sprintf("(LOWER(t.title) LIKE $%d OR t.ticket_number::text LIKE $%d)", w.idx, w.idx+1))
+	pattern := "%" + strings.ToLower(*s) + "%"
+	w.args = append(w.args, pattern, pattern)
+	w.idx++
+}
+
+func (w *whereBuilder) dueDate(from, to *time.Time) {
+	if from != nil {
+		w.idx++
+		w.add(fmt.Sprintf("t.due_date >= $%d", w.idx))
+		w.args = append(w.args, *from)
+	}
+	if to != nil {
+		w.idx++
+		w.add(fmt.Sprintf("t.due_date <= $%d", w.idx))
+		w.args = append(w.args, *to)
+	}
+}
+
+func (w *whereBuilder) priorities(ps []models.Priority) {
+	inList(w, "t.priority", ps)
+}
+
+func (w *whereBuilder) favorites(userID *uuid.UUID, typ *models.FavoriteType) {
+	if userID == nil || typ == nil {
+		return
+	}
+	w.idx++
+	w.add(fmt.Sprintf("EXISTS (SELECT 1 FROM %s fav WHERE fav.ticket_id = t.id AND fav.user_id = $%d AND fav.type = $%d)",
+		Tables.TicketFavorites, w.idx, w.idx+1))
+	w.args = append(w.args, *userID, *typ)
+	w.idx++
+}
+
+// inList генерит "column IN ($1,$2,..)" и добавляет значения в аргументы.
+func inList[T any](w *whereBuilder, column string, values []T) {
+	if len(values) == 0 {
+		return
+	}
+	w.args = append(w.args, toAny(values)...)
+	w.add(column + " IN (" + w.place(len(values)) + ")")
+}
+
+// toAny конвертирует типизированный срез в срез пустых интерфейсов.
+func toAny[T any](vals []T) []interface{} {
+	out := make([]interface{}, len(vals))
+	for i := range vals {
+		out[i] = vals[i]
+	}
+	return out
+}
+
 func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, int, error) {
 	base := fmt.Sprintf(`SELECT 
 			t.id, t.title, t.description, t.status, t.priority, t.ticket_number, t.realm_id, t.due_date, t.closed_at, t.resolved_at, t.created_at, t.updated_at,
@@ -112,131 +242,24 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 		Tables.Groups, Tables.Categories, Tables.Sites,
 	)
 
-	where := []string{}
-	args := []interface{}{}
-	argIdx := 1
-
-	if len(req.SiteIDs) > 0 {
-		ids := make([]string, len(req.SiteIDs))
-		for i, sid := range req.SiteIDs {
-			ids[i] = fmt.Sprintf("$%d", argIdx)
-			args = append(args, sid)
-			argIdx++
-		}
-		where = append(where, "t.site_id IN ("+strings.Join(ids, ",")+")")
-	}
-	if req.Status != nil {
-		where = append(where, fmt.Sprintf("t.status = $%d", argIdx))
-		args = append(args, *req.Status)
-		argIdx++
-	}
-	if len(req.Statuses) > 0 {
-		ids := make([]string, len(req.Statuses))
-		for i, st := range req.Statuses {
-			ids[i] = fmt.Sprintf("$%d", argIdx)
-			args = append(args, st)
-			argIdx++
-		}
-		where = append(where, "t.status IN ("+strings.Join(ids, ",")+")")
-	}
-	if req.OwnerID != nil {
-		where = append(where, fmt.Sprintf("t.owner_id = $%d", argIdx))
-		args = append(args, *req.OwnerID)
-		argIdx++
-	}
-	if req.AssigneeID != nil {
-		where = append(where, fmt.Sprintf("t.assignee_id = $%d", argIdx))
-		args = append(args, *req.AssigneeID)
-		argIdx++
-	}
-	if len(req.GroupIDs) > 0 || req.IncludeUngroupedAssignedTo != nil {
-		var clauses []string
-		if len(req.GroupIDs) > 0 {
-			ids := make([]string, len(req.GroupIDs))
-			for i, gid := range req.GroupIDs {
-				ids[i] = fmt.Sprintf("$%d", argIdx)
-				args = append(args, gid)
-				argIdx++
-			}
-			clauses = append(clauses, "t.group_id IN ("+strings.Join(ids, ",")+")")
-		}
-		if req.IncludeUngroupedAssignedTo != nil {
-			clauses = append(clauses, fmt.Sprintf("(t.group_id IS NULL AND t.assignee_id = $%d)", argIdx))
-			args = append(args, *req.IncludeUngroupedAssignedTo)
-			argIdx++
-		}
-		where = append(where, "("+strings.Join(clauses, " OR ")+")")
-	}
-	if req.CreatorID != nil {
-		where = append(where, fmt.Sprintf("t.creator_id = $%d", argIdx))
-		args = append(args, *req.CreatorID)
-		argIdx++
-	}
-	if req.Number != nil {
-		where = append(where, fmt.Sprintf("t.ticket_number = $%d", argIdx))
-		args = append(args, *req.Number)
-		argIdx++
-	}
-	if req.RealmID != nil {
-		where = append(where, fmt.Sprintf("t.realm_id = $%d", argIdx))
-		args = append(args, *req.RealmID)
-		argIdx++
-	}
-	if req.Search != nil && *req.Search != "" {
-		where = append(where, fmt.Sprintf("(LOWER(t.title) LIKE $%d OR t.ticket_number::text LIKE $%d)", argIdx, argIdx+1))
-		searchPattern := "%" + strings.ToLower(*req.Search) + "%"
-		args = append(args, searchPattern, searchPattern)
-		argIdx += 2
-	}
-	if req.DueDateFrom != nil {
-		where = append(where, fmt.Sprintf("t.due_date >= $%d", argIdx))
-		args = append(args, *req.DueDateFrom)
-		argIdx++
-	}
-	if req.DueDateTo != nil {
-		where = append(where, fmt.Sprintf("t.due_date <= $%d", argIdx))
-		args = append(args, *req.DueDateTo)
-		argIdx++
-	}
-	if len(req.Priorities) > 0 {
-		ids := make([]string, len(req.Priorities))
-		for i, p := range req.Priorities {
-			ids[i] = fmt.Sprintf("$%d", argIdx)
-			args = append(args, p)
-			argIdx++
-		}
-		where = append(where, "t.priority IN ("+strings.Join(ids, ",")+")")
-	}
-
-	if req.Archived != nil && *req.Archived {
-		ids := make([]string, len(archiveStatuses))
-		for i, st := range archiveStatuses {
-			ids[i] = fmt.Sprintf("$%d", argIdx)
-			args = append(args, st)
-			argIdx++
-		}
-		where = append(where, "t.status IN ("+strings.Join(ids, ",")+")")
-	} else {
-		ids := make([]string, len(activeStatuses))
-		for i, st := range activeStatuses {
-			ids[i] = fmt.Sprintf("$%d", argIdx)
-			args = append(args, st)
-			argIdx++
-		}
-		where = append(where, "t.status IN ("+strings.Join(ids, ",")+")")
-	}
-
-	if req.FavoritesByUser != nil && req.FavoriteType != nil {
-		where = append(where, fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM %s fav WHERE fav.ticket_id = t.id AND fav.user_id = $%d AND fav.type = $%d)",
-			Tables.TicketFavorites, argIdx, argIdx+1))
-		args = append(args, *req.FavoritesByUser, *req.FavoriteType)
-		argIdx += 2
-	}
+	w := &whereBuilder{}
+	w.sites(req.SiteIDs)
+	w.statuses(req.Status, req.Statuses)
+	eq(w, "t.owner_id", req.OwnerID)
+	eq(w, "t.assignee_id", req.AssigneeID)
+	w.groups(req.GroupIDs, req.IncludeUngroupedAssignedTo)
+	eq(w, "t.creator_id", req.CreatorID)
+	eq(w, "t.ticket_number", req.Number)
+	eq(w, "t.realm_id", req.RealmID)
+	w.search(req.Search)
+	w.dueDate(req.DueDateFrom, req.DueDateTo)
+	w.priorities(req.Priorities)
+	w.statusMode(req.Archived)
+	w.favorites(req.FavoritesByUser, req.FavoriteType)
 
 	query := base
-	if len(where) > 0 {
-		query += " WHERE " + strings.Join(where, " AND ")
+	if len(w.clauses) > 0 {
+		query += " WHERE " + strings.Join(w.clauses, " AND ")
 	}
 
 	if req.Sort != nil && *req.Sort != "" {
@@ -262,19 +285,20 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 		if limit <= 0 {
 			limit = 20
 		}
-		query += fmt.Sprintf(" LIMIT $%d", argIdx)
-		args = append(args, limit)
-		argIdx++
+		w.idx++
+		query += fmt.Sprintf(" LIMIT $%d", w.idx)
+		w.args = append(w.args, limit)
 
 		offset := req.Offset
 		if offset < 0 {
 			offset = 0
 		}
-		query += fmt.Sprintf(" OFFSET $%d", argIdx)
-		args = append(args, offset)
+		w.idx++
+		query += fmt.Sprintf(" OFFSET $%d", w.idx)
+		w.args = append(w.args, offset)
 	}
 
-	rows, err := r.db.Query(ctx, query, args...)
+	rows, err := r.db.Query(ctx, query, w.args...)
 	if err != nil {
 		return nil, 0, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
