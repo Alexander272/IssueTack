@@ -39,7 +39,6 @@ type Notifications interface {
 	GetGroupEventSubscribers(ctx context.Context, groupID uuid.UUID, eventField string) ([]uuid.UUID, error)
 	GetSettings(ctx context.Context, userID uuid.UUID) (*models.NotificationSettings, error)
 	SaveSettings(ctx context.Context, tx Tx, userID uuid.UUID, settings json.RawMessage) error
-	GetRealmAdmins(ctx context.Context, realmID uuid.UUID) ([]uuid.UUID, error)
 	// GetOverdueTicketIDs возвращает ID «активных» тикетов с просроченным сроком (due_date < now).
 	GetOverdueTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error)
 	// HasNotification возвращает true, если у пользователя уже есть уведомление заданного типа
@@ -147,7 +146,7 @@ func (r *notificationRepository) GetGroupEventSubscribers(ctx context.Context, g
 		SELECT DISTINCT gm.user_id
 		FROM %s gm
 		JOIN %s uns ON uns.user_id = gm.user_id
-		WHERE gm.group_id = $1::uuid
+		WHERE gm.group_id::text = $1
 			AND uns.settings->>'enabled' = 'true'
 			AND EXISTS (
 				SELECT 1 FROM jsonb_array_elements(uns.settings->'groups') g
@@ -208,36 +207,6 @@ func (r *notificationRepository) SaveSettings(ctx context.Context, tx Tx, userID
 		return MapError(fmt.Errorf("failed to save notification settings: %w", err))
 	}
 	return nil
-}
-
-// GetRealmAdmins возвращает ID пользователей реалма с ролью admin или root.
-func (r *notificationRepository) GetRealmAdmins(ctx context.Context, realmID uuid.UUID) ([]uuid.UUID, error) {
-	query := fmt.Sprintf(`
-		SELECT ur.user_id
-		FROM %s ur
-		JOIN %s r ON ur.role_id = r.id
-		WHERE ur.realm_id = $1 AND ur.is_active = true AND r.is_active = true
-			AND r.slug IN ('admin', 'root')`, Tables.UserRealms, Tables.Roles)
-
-	rows, err := r.db.Query(ctx, query, realmID)
-	if err != nil {
-		return nil, MapError(fmt.Errorf("failed to get realm admins: %w", err))
-	}
-	defer rows.Close()
-
-	var data []uuid.UUID
-	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			return nil, MapError(fmt.Errorf("scan row error: %w", err))
-		}
-		data = append(data, id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
-	}
-
-	return data, nil
 }
 
 // GetOverdueTicketIDs возвращает ID активных тикетов с просроченным сроком (due_date < now).

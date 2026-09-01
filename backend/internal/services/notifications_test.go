@@ -15,10 +15,14 @@ func notificationServiceFixtures() (*MockNotificationsRepo, *MockTicketsRepo, *w
 	mockRepo := new(MockNotificationsRepo)
 	mockTicketRepo := new(MockTicketsRepo)
 	mockSubs := new(MockTicketSubscriptionsRepo)
+	mockUserRealms := new(MockUserRealmsRepo)
+	mockGroups := new(MockGroupsRepo)
 	hub := ws_hub.NewWebsocketHub()
 
-	mockRepo.On("GetRealmAdmins", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
+	mockUserRealms.On("GetRealmSupervisors", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
 	mockSubs.On("GetByTicket", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
+	mockSubs.On("GetSubscribersByEvent", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
+	mockGroups.On("GetByID", mock.Anything, mock.Anything).Return(&models.Group{}, nil).Maybe()
 	mockRepo.On("GetCategoryEventSubscribers", mock.Anything, mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
 	mockRepo.On("GetGroupEventSubscribers", mock.Anything, mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
 	mockRepo.On("GetOverdueTicketIDs", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
@@ -29,6 +33,8 @@ func notificationServiceFixtures() (*MockNotificationsRepo, *MockTicketsRepo, *w
 		repo:          mockRepo,
 		ticketRepo:    mockTicketRepo,
 		subscriptions: mockSubs,
+		userRealms:    mockUserRealms,
+		groups:        mockGroups,
 		txManager:     &mockTransactionManager{},
 	}
 	return mockRepo, mockTicketRepo, hub, svc

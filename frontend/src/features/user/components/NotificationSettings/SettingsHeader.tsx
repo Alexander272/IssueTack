@@ -1,5 +1,5 @@
 import { type FC } from 'react'
-import { Box, Button, Typography, useTheme } from '@mui/material'
+import { Box, Button, Typography } from '@mui/material'
 import { SaveIcon } from 'lucide-mui'
 
 interface SettingsHeaderProps {
@@ -9,7 +9,6 @@ interface SettingsHeaderProps {
 }
 
 export const SettingsHeader: FC<SettingsHeaderProps> = ({ dirty, saving, onReset }) => {
-	const { palette } = useTheme()
 	return (
 		<Box
 			sx={{
@@ -22,10 +21,10 @@ export const SettingsHeader: FC<SettingsHeaderProps> = ({ dirty, saving, onReset
 			}}
 		>
 			<Box>
-				<Typography variant='h4' sx={{ fontWeight: 700, color: 'text.primary' }}>
+				<Typography variant='h5' sx={{ fontWeight: 700, color: '#1f2937' }}>
 					Настройки уведомлений
 				</Typography>
-				<Typography variant='body2' color={palette.text.secondary} sx={{ mt: 0.5 }}>
+				<Typography variant='body2' sx={{ color: '#6b7280', display: { xs: 'none', sm: 'block' } }}>
 					Настройте, по каким событиям и категориям вы хотите получать уведомления
 				</Typography>
 			</Box>

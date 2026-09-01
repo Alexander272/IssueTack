@@ -12,17 +12,19 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-func subscriptionServiceFixtures() (*MockTicketSubscriptionsRepo, *MockTicketsRepo, *MockTicketAccessChecker, *TicketSubscriptionService) {
+func subscriptionServiceFixtures() (*MockTicketSubscriptionsRepo, *MockTicketsRepo, *MockTicketAccessChecker, *MockAccessPolicies, *MockGroupsRepo, *TicketSubscriptionService) {
 	mockRepo := new(MockTicketSubscriptionsRepo)
 	mockTickets := new(MockTicketsRepo)
 	mockAccess := new(MockTicketAccessChecker)
+	mockPolicies := new(MockAccessPolicies)
+	mockGroups := new(MockGroupsRepo)
 
-	svc := NewTicketSubscriptionService(mockRepo, mockTickets, mockAccess)
-	return mockRepo, mockTickets, mockAccess, svc
+	svc := NewTicketSubscriptionService(mockRepo, mockTickets, mockAccess, mockPolicies, mockGroups)
+	return mockRepo, mockTickets, mockAccess, mockPolicies, mockGroups, svc
 }
 
 func TestSubscriptionService_Subscribe_Success(t *testing.T) {
-	mockRepo, mockTickets, mockAccess, svc := subscriptionServiceFixtures()
+	mockRepo, mockTickets, mockAccess, mockPolicies, _, svc := subscriptionServiceFixtures()
 
 	ticketID := uuid.New()
 	userID := uuid.New()
@@ -33,6 +35,7 @@ func TestSubscriptionService_Subscribe_Success(t *testing.T) {
 	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{
 		TicketID: ticketID, UserID: userID, Action: string(access.Read), Realm: realmID.String(),
 	}).Return(nil)
+	mockPolicies.On("Enforce", userID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(true, nil)
 	mockRepo.On("Subscribe", mock.Anything, nil, ticketID, userID).Return(nil)
 
 	err := svc.Subscribe(context.Background(), &models.SubscribeDTO{TicketID: ticketID, ActorID: userID})
@@ -41,7 +44,7 @@ func TestSubscriptionService_Subscribe_Success(t *testing.T) {
 }
 
 func TestSubscriptionService_Subscribe_Denied(t *testing.T) {
-	mockRepo, mockTickets, mockAccess, svc := subscriptionServiceFixtures()
+	mockRepo, mockTickets, mockAccess, _, _, svc := subscriptionServiceFixtures()
 
 	ticketID := uuid.New()
 	userID := uuid.New()
@@ -56,8 +59,28 @@ func TestSubscriptionService_Subscribe_Denied(t *testing.T) {
 	mockRepo.AssertNotCalled(t, "Subscribe", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
+func TestSubscriptionService_Subscribe_NotSupervisorDenied(t *testing.T) {
+	mockRepo, mockTickets, mockAccess, mockPolicies, _, svc := subscriptionServiceFixtures()
+
+	ticketID := uuid.New()
+	userID := uuid.New()
+	realmID := uuid.New()
+
+	mockTickets.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(
+		&models.Ticket{ID: ticketID, RealmID: &realmID}, nil)
+	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{
+		TicketID: ticketID, UserID: userID, Action: string(access.Read), Realm: realmID.String(),
+	}).Return(nil)
+	mockPolicies.On("Enforce", userID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", userID.String(), realmID.String(), string(access.ResourceSite), string(access.Write)).Return(false, nil)
+
+	err := svc.Subscribe(context.Background(), &models.SubscribeDTO{TicketID: ticketID, ActorID: userID})
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+	mockRepo.AssertNotCalled(t, "Subscribe", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
 func TestSubscriptionService_Unsubscribe_Success(t *testing.T) {
-	mockRepo, mockTickets, mockAccess, svc := subscriptionServiceFixtures()
+	mockRepo, mockTickets, mockAccess, mockPolicies, _, svc := subscriptionServiceFixtures()
 
 	ticketID := uuid.New()
 	userID := uuid.New()
@@ -67,6 +90,7 @@ func TestSubscriptionService_Unsubscribe_Success(t *testing.T) {
 	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{
 		TicketID: ticketID, UserID: userID, Action: string(access.Read), Realm: "",
 	}).Return(nil)
+	mockPolicies.On("Enforce", userID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(true, nil)
 	mockRepo.On("Unsubscribe", mock.Anything, nil, ticketID, userID).Return(nil)
 
 	err := svc.Unsubscribe(context.Background(), &models.SubscribeDTO{TicketID: ticketID, ActorID: userID})
@@ -75,7 +99,7 @@ func TestSubscriptionService_Unsubscribe_Success(t *testing.T) {
 }
 
 func TestSubscriptionService_IsSubscribed_Success(t *testing.T) {
-	mockRepo, mockTickets, mockAccess, svc := subscriptionServiceFixtures()
+	mockRepo, mockTickets, mockAccess, mockPolicies, _, svc := subscriptionServiceFixtures()
 
 	ticketID := uuid.New()
 	userID := uuid.New()
@@ -85,6 +109,7 @@ func TestSubscriptionService_IsSubscribed_Success(t *testing.T) {
 	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{
 		TicketID: ticketID, UserID: userID, Action: string(access.Read), Realm: "",
 	}).Return(nil)
+	mockPolicies.On("Enforce", userID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(true, nil)
 	mockRepo.On("Exists", mock.Anything, ticketID, userID).Return(true, nil)
 
 	ok, err := svc.IsSubscribed(context.Background(), &models.IsSubscribedDTO{TicketID: ticketID, ActorID: userID})
@@ -96,9 +121,10 @@ func TestNotificationService_TicketCommented_NotSelf(t *testing.T) {
 	mockRepo := new(MockNotificationsRepo)
 	mockTicketRepo := new(MockTicketsRepo)
 	mockSubs := new(MockTicketSubscriptionsRepo)
+	mockUserRealms := new(MockUserRealmsRepo)
 	hub := ws_hub.NewWebsocketHub()
 
-	mockRepo.On("GetRealmAdmins", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
+	mockUserRealms.On("GetRealmSupervisors", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
 	mockSubs.On("GetByTicket", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
 
 	svc := &NotificationService{
@@ -106,6 +132,7 @@ func TestNotificationService_TicketCommented_NotSelf(t *testing.T) {
 		repo:          mockRepo,
 		ticketRepo:    mockTicketRepo,
 		subscriptions: mockSubs,
+		userRealms:    mockUserRealms,
 		txManager:     &mockTransactionManager{},
 	}
 
@@ -132,9 +159,10 @@ func TestNotificationService_TicketCommented_SelfIsAssignee(t *testing.T) {
 	mockRepo := new(MockNotificationsRepo)
 	mockTicketRepo := new(MockTicketsRepo)
 	mockSubs := new(MockTicketSubscriptionsRepo)
+	mockUserRealms := new(MockUserRealmsRepo)
 	hub := ws_hub.NewWebsocketHub()
 
-	mockRepo.On("GetRealmAdmins", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
+	mockUserRealms.On("GetRealmSupervisors", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
 	mockSubs.On("GetByTicket", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
 
 	svc := &NotificationService{
@@ -142,6 +170,7 @@ func TestNotificationService_TicketCommented_SelfIsAssignee(t *testing.T) {
 		repo:          mockRepo,
 		ticketRepo:    mockTicketRepo,
 		subscriptions: mockSubs,
+		userRealms:    mockUserRealms,
 		txManager:     &mockTransactionManager{},
 	}
 
@@ -164,9 +193,10 @@ func TestNotificationService_AttachmentAdded_NotifiesAssignee(t *testing.T) {
 	mockRepo := new(MockNotificationsRepo)
 	mockTicketRepo := new(MockTicketsRepo)
 	mockSubs := new(MockTicketSubscriptionsRepo)
+	mockUserRealms := new(MockUserRealmsRepo)
 	hub := ws_hub.NewWebsocketHub()
 
-	mockRepo.On("GetRealmAdmins", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
+	mockUserRealms.On("GetRealmSupervisors", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
 	mockSubs.On("GetByTicket", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
 
 	svc := &NotificationService{
@@ -174,6 +204,7 @@ func TestNotificationService_AttachmentAdded_NotifiesAssignee(t *testing.T) {
 		repo:          mockRepo,
 		ticketRepo:    mockTicketRepo,
 		subscriptions: mockSubs,
+		userRealms:    mockUserRealms,
 		txManager:     &mockTransactionManager{},
 	}
 

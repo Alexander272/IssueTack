@@ -1,6 +1,7 @@
 import { TableRow, TableCell, Typography, Box, Tooltip, type SxProps, type Theme } from '@mui/material'
 
 import type { ITask } from '../../types/task'
+import { getShortDate } from '@/utils/date'
 import { TaskStatusBadge } from '../TaskStatusBadge'
 import { TaskPriorityBadge } from '../TaskPriorityBadge'
 import { TaskAssignmentChip } from '../TaskAssignmentChip'
@@ -21,8 +22,6 @@ export const TaskRow = ({ task, onClick, sx }: Props) => {
 			}
 		: { done: 0, total: 0 }
 
-	const deadlineFormatted = task.dueDate || '—'
-
 	return (
 		<TableRow
 			hover
@@ -36,9 +35,7 @@ export const TaskRow = ({ task, onClick, sx }: Props) => {
 			}}
 		>
 			<TableCell>
-				<Typography sx={{ fontWeight: 600, color: '#111827', fontSize: '0.875rem' }}>
-					{displayId}
-				</Typography>
+				<Typography sx={{ fontWeight: 600, color: '#111827', fontSize: '0.875rem' }}>{displayId}</Typography>
 			</TableCell>
 			<TableCell>
 				<Tooltip title={task.title} placement='top'>
@@ -99,9 +96,13 @@ export const TaskRow = ({ task, onClick, sx }: Props) => {
 			</TableCell>
 			<TableCell>
 				<Box sx={{ display: 'flex', flexDirection: 'column' }}>
-					<Typography sx={{ fontSize: '0.875rem', color: '#4b5563' }}>{deadlineFormatted}</Typography>
+					<Typography sx={{ fontSize: '0.875rem', color: '#4b5563' }}>
+						{getShortDate(task.dueDate)}
+					</Typography>
 					{task.closedAt && (
-						<Typography sx={{ fontSize: '0.75rem', color: '#059669' }}>Закрыта: {task.closedAt}</Typography>
+						<Typography sx={{ fontSize: '0.75rem', color: '#059669' }}>
+							Закрыта: {getShortDate(task.closedAt)}
+						</Typography>
 					)}
 				</Box>
 			</TableCell>

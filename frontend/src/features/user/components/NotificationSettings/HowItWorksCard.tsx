@@ -1,5 +1,5 @@
 import { type FC } from 'react'
-import { Box, Divider, Typography, useTheme } from '@mui/material'
+import { Box, Divider, Stack, Typography, useTheme } from '@mui/material'
 import { CircleCheckIcon, LightbulbIcon, TriangleAlertIcon } from 'lucide-mui'
 
 export const HowItWorksCard: FC = () => {
@@ -15,48 +15,32 @@ export const HowItWorksCard: FC = () => {
 			}}
 		>
 			<Box sx={{ display: 'flex', gap: 1.5 }}>
-				<LightbulbIcon sx={{ fontSize: 22, color: '#3b82f6', mt: 0.3 }} />
+				<LightbulbIcon sx={{ fontSize: 22, color: '#3b82f6' }} />
 				<Box sx={{ width: '100%' }}>
 					<Typography variant='subtitle2' sx={{ fontWeight: 700 }}>
 						Как работают уведомления
 					</Typography>
-					<Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-						<Box sx={{ display: 'flex', gap: 1 }}>
-							<CircleCheckIcon sx={{ fontSize: 18, color: '#10b981', mt: 0.3 }} />
+					<Stack sx={{ mt: 2, gap: 1.5 }}>
+						<Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+							<CircleCheckIcon sx={{ fontSize: 18, color: '#10b981' }} />
 							<Typography variant='body2' color={palette.text.secondary}>
-								<strong>Подписки по категориям</strong> работают глобально — вы получаете уведомления
-								по задачам этой категории во всех группах.
+								Каждая <strong>категория привязана к группе</strong>. Включая уведомления по категории,
+								вы подписываетесь на события по задачам этой категории в соответствующей группе.
 							</Typography>
 						</Box>
-						<Box sx={{ display: 'flex', gap: 1 }}>
-							<CircleCheckIcon sx={{ fontSize: 18, color: '#10b981', mt: 0.3 }} />
+						<Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+							<CircleCheckIcon sx={{ fontSize: 18, color: '#10b981' }} />
 							<Typography variant='body2' color={palette.text.secondary}>
-								<strong>Подписки по группам</strong> работают для всех задач в этой группе, независимо от
-								категории.
+								{/* <strong>Подписки по группам</strong> работают для всех задач в этой группе, независимо
+								от категории.  */}
+								Кнопки <strong>«Включить все» / «Выключить все»</strong> в заголовке группы позволяют
+								быстро подписаться на все категории группы или отписаться от них.
 							</Typography>
 						</Box>
-					</Box>
-					<Box
-						sx={{
-							mt: 1.5,
-							bgcolor: 'white',
-							borderRadius: '8px',
-							border: '1px solid rgba(59,130,246,0.3)',
-							p: 1.5,
-						}}
-					>
-						<Box sx={{ display: 'flex', gap: 1 }}>
-							<LightbulbIcon sx={{ fontSize: 18, color: '#f59e0b', mt: 0.3 }} />
-							<Typography variant='body2'>
-								<strong>Логика «ИЛИ»:</strong> если хотя бы одна подписка включена (в категории или в
-								группе) — уведомление придёт. Если обе включены — уведомление придёт один раз (без
-								дублирования).
-							</Typography>
-						</Box>
-					</Box>
+					</Stack>
 					<Divider sx={{ my: 1.5 }} />
-					<Box sx={{ display: 'flex', gap: 1 }}>
-						<TriangleAlertIcon sx={{ fontSize: 18, color: '#3b82f6', mt: 0.3 }} />
+					<Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+						<TriangleAlertIcon sx={{ fontSize: 18, color: '#3b82f6' }} />
 						<Typography variant='body2' color={palette.text.secondary}>
 							<strong>Важно:</strong> задачи, назначенные лично вам, всегда приходят в уведомлениях,
 							независимо от этих настроек.

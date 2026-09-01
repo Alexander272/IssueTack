@@ -911,13 +911,6 @@ func (m *MockNotificationsRepo) SaveSettings(ctx context.Context, tx postgres.Tx
 	args := m.Called(ctx, tx, userID, settings)
 	return args.Error(0)
 }
-func (m *MockNotificationsRepo) GetRealmAdmins(ctx context.Context, realmID uuid.UUID) ([]uuid.UUID, error) {
-	args := m.Called(ctx, realmID)
-	if args.Get(0) == nil {
-		return []uuid.UUID{}, args.Error(1)
-	}
-	return args.Get(0).([]uuid.UUID), args.Error(1)
-}
 
 type MockTicketSubscriptionsRepo struct {
 	mock.Mock
@@ -941,6 +934,48 @@ func (m *MockTicketSubscriptionsRepo) GetByTicket(ctx context.Context, ticketID 
 		return []uuid.UUID{}, args.Error(1)
 	}
 	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
+func (m *MockTicketSubscriptionsRepo) GetSubscribersByEvent(ctx context.Context, ticketID, categoryID uuid.UUID, eventField string) ([]uuid.UUID, error) {
+	args := m.Called(ctx, ticketID, categoryID, eventField)
+	if args.Get(0) == nil {
+		return []uuid.UUID{}, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
+
+type MockTicketFavoritesRepo struct {
+	mock.Mock
+}
+
+func (m *MockTicketFavoritesRepo) Add(ctx context.Context, tx postgres.Tx, dto *models.FavoriteDTO) error {
+	args := m.Called(ctx, tx, dto)
+	return args.Error(0)
+}
+func (m *MockTicketFavoritesRepo) Remove(ctx context.Context, tx postgres.Tx, ticketID uuid.UUID, userID uuid.UUID, favoriteType models.FavoriteType) error {
+	args := m.Called(ctx, tx, ticketID, userID, favoriteType)
+	return args.Error(0)
+}
+func (m *MockTicketFavoritesRepo) Exists(ctx context.Context, ticketID uuid.UUID, userID uuid.UUID, favoriteType models.FavoriteType) (bool, error) {
+	args := m.Called(ctx, ticketID, userID, favoriteType)
+	return args.Bool(0), args.Error(1)
+}
+func (m *MockTicketFavoritesRepo) GetByUser(ctx context.Context, userID uuid.UUID, favoriteType models.FavoriteType) ([]*models.TicketFavorite, error) {
+	args := m.Called(ctx, userID, favoriteType)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.TicketFavorite), args.Error(1)
+}
+func (m *MockTicketFavoritesRepo) GetTemporaryExpired(ctx context.Context) ([]*postgres.TempFavoriteView, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*postgres.TempFavoriteView), args.Error(1)
+}
+func (m *MockTicketFavoritesRepo) DeleteByIDs(ctx context.Context, tx postgres.Tx, ids []uuid.UUID) error {
+	args := m.Called(ctx, tx, ids)
+	return args.Error(0)
 }
 
 type MockChecklistsRepo struct {
@@ -1025,4 +1060,11 @@ func (m *MockUserRealmsRepo) DeleteByUserAndRealm(ctx context.Context, tx postgr
 func (m *MockUserRealmsRepo) DeleteSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserRealmDTO) error {
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
+}
+func (m *MockUserRealmsRepo) GetRealmSupervisors(ctx context.Context, realmID uuid.UUID) ([]uuid.UUID, error) {
+	args := m.Called(ctx, realmID)
+	if args.Get(0) == nil {
+		return []uuid.UUID{}, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
 }

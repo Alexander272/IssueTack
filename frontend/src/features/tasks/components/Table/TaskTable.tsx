@@ -33,11 +33,11 @@ const COLUMNS: readonly Column[] = [
 	{ field: 'ticketNumber', label: '№', sortable: true, width: 70 },
 	{ field: 'title', label: 'Тема', sortable: true },
 	{ field: 'owner', label: 'Заказчик', sortable: true, width: 200 },
-	{ field: 'site', label: 'Площадка', sortable: true, width: 160 },
-	{ field: 'dueDate', label: 'Срок', sortable: true, width: 120 },
+	{ field: 'site', label: 'Площадка', sortable: true, width: 140 },
+	{ field: 'dueDate', label: 'Срок', sortable: true, width: 160 },
 	{ field: 'priority', label: 'Приоритет', sortable: true, width: 130 },
 	{ field: 'assignee', label: 'Назначено', sortable: true, width: 200 },
-	{ field: 'status', label: 'Статус', sortable: true, width: 150 },
+	{ field: 'status', label: 'Статус', sortable: true, width: 130 },
 	{ field: 'subtasks', label: 'Подзадачи', sortable: false, width: 130 },
 ]
 

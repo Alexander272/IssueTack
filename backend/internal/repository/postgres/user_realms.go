@@ -34,6 +34,54 @@ type UserRealms interface {
 	Delete(ctx context.Context, tx Tx, id uuid.UUID) error
 	DeleteByUserAndRealm(ctx context.Context, tx Tx, userID, realmID uuid.UUID) error
 	DeleteSeveral(ctx context.Context, tx Tx, dto []*models.UserRealmDTO) error
+	GetRealmSupervisors(ctx context.Context, realmID uuid.UUID) ([]uuid.UUID, error)
+}
+
+// GetRealmSupervisors возвращает ID пользователей реалма, чья роль (прямо или через
+// наследование role_hierarchy) имеет realm-wide пермишен управления областью:
+// category:write или site:write. Это «начальники области», которые видят и получают
+// уведомления о заявках всего реалма. Критерий настраивается выдачей прав ролям в БД.
+func (r *UserRealmRepo) GetRealmSupervisors(ctx context.Context, realmID uuid.UUID) ([]uuid.UUID, error) {
+	query := fmt.Sprintf(`WITH RECURSIVE ancestors AS (
+			SELECT ur.user_id, ur.role_id
+			FROM %s ur
+			JOIN %s r ON r.id = ur.role_id
+			WHERE ur.realm_id = $1 AND ur.is_active = true AND r.is_active = true
+
+			UNION
+
+			SELECT a.user_id, rh.parent_role_id AS role_id
+			FROM ancestors a
+			JOIN %s rh ON rh.role_id = a.role_id
+		)
+		SELECT DISTINCT a.user_id
+		FROM ancestors a
+		JOIN %s rp ON rp.role_id = a.role_id
+		JOIN %s p ON p.id = rp.permission_id
+		WHERE (p.object = 'category' AND p.action = 'write')
+		   OR (p.object = 'site'      AND p.action = 'write')`,
+		Tables.UserRealms, Tables.Roles, Tables.RoleHierarchy, Tables.RolePermissions, Tables.Permissions,
+	)
+
+	rows, err := r.db.Query(ctx, query, realmID)
+	if err != nil {
+		return nil, MapError(fmt.Errorf("failed to get realm supervisors: %w", err))
+	}
+	defer rows.Close()
+
+	var data []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, MapError(fmt.Errorf("scan row error: %w", err))
+		}
+		data = append(data, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
+
+	return data, nil
 }
 
 func (r *UserRealmRepo) GetAll(ctx context.Context) ([]*models.UserRealm, error) {

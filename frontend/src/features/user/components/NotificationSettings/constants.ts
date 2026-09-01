@@ -7,10 +7,4 @@ export const CATEGORY_EVENTS = [
 	{ key: 'overdue', label: 'Просрочена', Icon: ClockIcon, color: '#ef4444' },
 ] as const
 
-export const GROUP_EVENTS = [
-	{ key: 'newTask', label: 'Новые задачи' },
-	{ key: 'overdue', label: 'Просроченные' },
-] as const
-
 export type CategoryEventKey = (typeof CATEGORY_EVENTS)[number]['key']
-export type GroupEventKey = (typeof GROUP_EVENTS)[number]['key']

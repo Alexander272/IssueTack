@@ -7,9 +7,25 @@ import 'dayjs/locale/ru'
 dayjs.extend(calendar)
 dayjs.locale('ru')
 
+export const getShortDate = (date: string | null) => {
+	if (!date) {
+		return '—'
+	}
+
+	return dayjs(date).format('D MMM')
+}
+
+export const getDate = (date: string) => {
+	if (!date) {
+		return '—'
+	}
+
+	return dayjs(date).format('DD.MM.YYYY')
+}
+
 export const getSmartDate = (date: string) => {
 	if (!date) {
-		return '-'
+		return '—'
 	}
 
 	// const now = dayjs()

@@ -38,9 +38,9 @@ export const GeneralChannelsCard: FC = () => {
 							<Typography variant='body1' sx={{ fontWeight: 600 }}>
 								Уведомления
 							</Typography>
-							<Typography variant='body2' color={palette.text.secondary}>
-								Получать подписки по категориям и группам. Уведомления о задачах, назначенных лично вам,
-								приходят всегда.
+							<Typography variant='body2' sx={{ color: '#6b7280' }}>
+								Получать уведомления по задачам во всех категориях. Уведомления о задачах, назначенных
+								лично вам, приходят всегда.
 							</Typography>
 						</Box>
 					</Box>

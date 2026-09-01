@@ -40,6 +40,7 @@ type MattermostDeps struct {
 	Sites       Sites
 	Attachments Attachments
 	Comments    Comments
+	Policies    AccessPolicies
 	EventBus    *events.PolicyEventManager
 	Most        *mattermost.Most
 	BaseURL     string
@@ -59,6 +60,7 @@ type MattermostService struct {
 	sites         Sites
 	attachments   Attachments
 	comments      Comments
+	policies      AccessPolicies
 	eventBus      *events.PolicyEventManager
 	most          *mattermost.Most
 	baseURL       string
@@ -81,6 +83,7 @@ func NewMattermostService(deps *MattermostDeps) *MattermostService {
 		sites:       deps.Sites,
 		attachments: deps.Attachments,
 		comments:    deps.Comments,
+		policies:    deps.Policies,
 		eventBus:    deps.EventBus,
 		most:        deps.Most,
 		baseURL:     deps.BaseURL,
@@ -515,9 +518,20 @@ func (s *MattermostService) checkIsAdmin(ctx context.Context, realmID uuid.UUID,
 	if err != nil {
 		return false
 	}
-	ur, err := s.userRealms.GetByUserAndRealm(ctx, user.ID, realmID)
-	if err != nil || ur == nil || ur.Role == nil {
+	return s.isRealmSupervisor(ctx, user.ID, realmID)
+}
+
+// isRealmSupervisor определяет, является ли системный пользователь «начальником области»
+// в реалме (realm-wide пермишены управления областью: category:write или site:write).
+func (s *MattermostService) isRealmSupervisor(ctx context.Context, userID uuid.UUID, realmID uuid.UUID) bool {
+	ok, err := isRealmSupervisor(s.policies, userID, realmID.String())
+	if err != nil {
+		logger.Error("failed to check realm supervisor",
+			logger.StringAttr("user_id", userID.String()),
+			logger.StringAttr("realm_id", realmID.String()),
+			logger.ErrAttr(err),
+		)
 		return false
 	}
-	return ur.Role.Slug == "admin"
+	return ok
 }

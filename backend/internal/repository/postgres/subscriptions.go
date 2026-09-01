@@ -25,6 +25,10 @@ type TicketSubscriptions interface {
 	Unsubscribe(ctx context.Context, tx Tx, ticketID uuid.UUID, userID uuid.UUID) error
 	Exists(ctx context.Context, ticketID uuid.UUID, userID uuid.UUID) (bool, error)
 	GetByTicket(ctx context.Context, ticketID uuid.UUID) ([]uuid.UUID, error)
+	// GetSubscribersByEvent возвращает подписанных на тикет пользователей, у которых включён
+	// мастер-переключатель уведомлений и событие eventField (в настройках категории тикета)
+	// для категории categoryID. categoryID должен быть non-nil.
+	GetSubscribersByEvent(ctx context.Context, ticketID, categoryID uuid.UUID, eventField string) ([]uuid.UUID, error)
 }
 
 func (r *subscriptionRepository) Subscribe(ctx context.Context, tx Tx, ticketID uuid.UUID, userID uuid.UUID) error {
@@ -66,6 +70,39 @@ func (r *subscriptionRepository) GetByTicket(ctx context.Context, ticketID uuid.
 	rows, err := r.db.Query(ctx, query, ticketID)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to get subscriptions: %w", err))
+	}
+	defer rows.Close()
+
+	var data []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, MapError(fmt.Errorf("scan row error: %w", err))
+		}
+		data = append(data, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
+
+	return data, nil
+}
+
+func (r *subscriptionRepository) GetSubscribersByEvent(ctx context.Context, ticketID, categoryID uuid.UUID, eventField string) ([]uuid.UUID, error) {
+	query := fmt.Sprintf(`
+		SELECT DISTINCT ts.user_id
+		FROM %s ts
+		JOIN %s uns ON uns.user_id = ts.user_id
+		WHERE ts.ticket_id = $1
+			AND uns.settings->>'enabled' = 'true'
+			AND EXISTS (
+				SELECT 1 FROM jsonb_array_elements(uns.settings->'categories') c
+				WHERE c->>'id' = $2 AND c->>$3 = 'true'
+			)`, Tables.TicketSubscriptions, Tables.NotificationSettings)
+
+	rows, err := r.db.Query(ctx, query, ticketID, categoryID.String(), eventField)
+	if err != nil {
+		return nil, MapError(fmt.Errorf("failed to get subscribers by event: %w", err))
 	}
 	defer rows.Close()
 

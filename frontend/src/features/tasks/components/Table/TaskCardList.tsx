@@ -64,7 +64,7 @@ export const TaskCardList = ({ tasks, groupBy, groupEnabled, onTaskClick }: Prop
 								display: 'flex',
 								alignItems: 'center',
 								gap: 1,
-								mb: 2,
+								mb: 1,
 								cursor: 'pointer',
 								bgcolor: '#f9fafb',
 								borderRadius: 2,

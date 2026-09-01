@@ -3,20 +3,13 @@ import { Box } from '@mui/material'
 import { FormProvider, useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
 
-import { Fallback } from '@/components/Fallback/Fallback'
 import {
 	useGetNotificationSettingsQuery,
 	useSaveNotificationSettingsMutation,
 	type INotificationSettings,
 } from '../notificationsApiSlice'
-
-import {
-	CategoriesCard,
-	GeneralChannelsCard,
-	GroupsCard,
-	HowItWorksCard,
-	SettingsHeader,
-} from '../components/NotificationSettings'
+import { Fallback } from '@/components/Fallback/Fallback'
+import { CategoriesCard, GeneralChannelsCard, HowItWorksCard, SettingsHeader } from '../components/NotificationSettings'
 
 const DEFAULT_SETTINGS: INotificationSettings = { enabled: true, categories: [], groups: [] }
 
@@ -58,7 +51,6 @@ export const NotificationSettings: FC = () => {
 
 				<GeneralChannelsCard />
 				<CategoriesCard />
-				<GroupsCard />
 				<HowItWorksCard />
 			</Box>
 		</FormProvider>

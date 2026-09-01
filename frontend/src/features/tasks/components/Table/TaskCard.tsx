@@ -2,6 +2,7 @@ import { Box, Typography, Stack } from '@mui/material'
 
 import type { ITask } from '../../types/task'
 import { PRIORITY_MAP } from '../../constants/taskMaps'
+import { getShortDate } from '@/utils/date'
 import { TaskStatusBadge } from '../TaskStatusBadge'
 import { TaskPriorityBadge } from '../TaskPriorityBadge'
 import { TaskAssignmentChip } from '../TaskAssignmentChip'
@@ -25,9 +26,6 @@ export const TaskCard = ({ task, onClick }: Props) => {
 		: null
 
 	// const createdDate = new Date(task.createdAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
-
-	const formatDate = (dateStr: string) =>
-		new Date(dateStr).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
 
 	const attachmentsCount = task.attachments?.length ?? 0
 	const commentsCount = (task as { comments?: unknown[] }).comments?.length ?? 0
@@ -62,7 +60,7 @@ export const TaskCard = ({ task, onClick }: Props) => {
 				}}
 			/>
 
-			<Box sx={{ p: 2.5, pl: 3.5 }}>
+			<Box sx={{ p: 1.5, pl: 2.5 }}>
 				<Stack direction='row' spacing={1} useFlexGap sx={{ alignItems: 'center', mb: 0.5, flexWrap: 'wrap' }}>
 					{displayId && (
 						<Typography sx={{ fontSize: '0.75rem', fontFamily: 'mono', color: '#4f5562', fontWeight: 500 }}>
@@ -154,11 +152,11 @@ export const TaskCard = ({ task, onClick }: Props) => {
 				<Stack
 					direction='row'
 					spacing={2}
-					sx={{ alignItems: 'center', pt: 1.5, borderTop: '1px solid #f3f4f6' }}
+					sx={{ alignItems: 'center', pt: 0.5, mt: 1, borderTop: '1px solid #f3f4f6' }}
 				>
 					<Typography sx={{ fontSize: '0.75rem', color: task.closedAt ? '#059669' : '#9ca3af' }}>
 						{task.closedAt ? 'Закрыта' : 'Срок'}:{' '}
-						{task.closedAt ? formatDate(task.closedAt) : task.dueDate ? formatDate(task.dueDate) : '—'}
+						{task.closedAt ? getShortDate(task.closedAt) : getShortDate(task.dueDate)}
 					</Typography>
 
 					{attachmentsCount > 0 && (

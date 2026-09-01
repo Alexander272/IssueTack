@@ -189,8 +189,7 @@ func (s *MattermostService) handleSync(ctx context.Context, settings *models.Rea
 		return fmt.Errorf("failed to resolve sender: %w", err)
 	}
 
-	senderRealm, err := s.userRealms.GetByUserAndRealm(ctx, senderID, settings.RealmID)
-	if err != nil || senderRealm.Role == nil || senderRealm.Role.Slug != "admin" {
+	if !s.isRealmSupervisor(ctx, senderID, settings.RealmID) {
 		if err := s.most.DM.Send(settings.BotToken, settings.BotUserID, senderMmID,
 			"Только администраторы могут синхронизировать пользователей"); err != nil {
 			return fmt.Errorf("failed to send no-permission message: %w", err)

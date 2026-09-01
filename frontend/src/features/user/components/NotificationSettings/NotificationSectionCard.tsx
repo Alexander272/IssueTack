@@ -1,5 +1,5 @@
 import { type FC, type ReactNode } from 'react'
-import { Box, Typography, useTheme } from '@mui/material'
+import { Box, Typography } from '@mui/material'
 import type { SvgIconProps } from '@mui/material'
 import type { ComponentType } from 'react'
 
@@ -20,11 +20,8 @@ export const NotificationSectionCard: FC<NotificationSectionCardProps> = ({
 	actions,
 	children,
 }) => {
-	const { palette } = useTheme()
 	return (
-		<Box
-			sx={{ bgcolor: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', overflow: 'hidden', mb: 3 }}
-		>
+		<Box sx={{ bgcolor: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', overflow: 'hidden', mb: 3 }}>
 			<Box sx={{ px: 3, py: 2, borderBottom: '1px solid #e5e7eb', bgcolor: '#f9fafb' }}>
 				<Box
 					sx={{
@@ -43,7 +40,7 @@ export const NotificationSectionCard: FC<NotificationSectionCardProps> = ({
 							<Icon sx={{ fontSize: 20, color: iconColor }} />
 							{title}
 						</Typography>
-						<Typography variant='body2' color={palette.text.secondary} sx={{ mt: 0.5 }}>
+						<Typography variant='body2' sx={{ color: '#6b7280' }}>
 							{subtitle}
 						</Typography>
 					</Box>

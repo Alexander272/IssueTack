@@ -110,7 +110,7 @@ func (s *SessionService) loadUserRealms(ctx context.Context, user *models.User) 
 }
 
 // loadUserCapabilities собирает для каждого realm'а пользователя список управляемых и членских групп,
-// а также признак того, что пользователь является администратором realm (роль с slug "admin").
+// а также признак того, что пользователь является администратором realm (realm-wide пермишены области).
 // Ошибки получения групп здесь не фатальны: при сбое группа считается пустой, чтобы вход пользователя
 // не падал из-за второстепенных данных.
 func (s *SessionService) loadUserCapabilities(ctx context.Context, user *models.User) {
@@ -131,7 +131,11 @@ func (s *SessionService) loadUserCapabilities(ctx context.Context, user *models.
 			memberGroups = nil
 		}
 
-		isRealmAdmin := r.Role != nil && r.Role.Slug == "admin"
+		isRealmAdmin, err := isRealmSupervisor(s.policies, user.ID, realmIDStr)
+		if err != nil {
+			log.Printf("WARN: failed to check realm supervisor for user %s realm %s: %v", user.ID, realmIDStr, err)
+			isRealmAdmin = false
+		}
 
 		caps[realmIDStr] = &models.UserCapabilities{
 			ManagedGroupIDs: managedGroups,
@@ -164,7 +168,10 @@ func (s *SessionService) GetAllCapabilities(ctx context.Context, userID uuid.UUI
 			return nil, fmt.Errorf("failed to get member groups for realm %s: %w", realmIDStr, err)
 		}
 
-		isRealmAdmin := r.Role != nil && r.Role.Slug == "admin"
+		isRealmAdmin, err := isRealmSupervisor(s.policies, userID, realmIDStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check realm supervisor for realm %s: %w", realmIDStr, err)
+		}
 
 		caps[realmIDStr] = &models.UserCapabilities{
 			ManagedGroupIDs: managedGroups,

@@ -20,16 +20,20 @@ type NotificationService struct {
 	repo          repository.Notifications
 	ticketRepo    repository.Tickets
 	subscriptions repository.TicketSubscriptions
+	userRealms    repository.UserRealms
+	groups        Groups
 	txManager     TransactionManager
 }
 
 // NewNotificationService создаёт NotificationService.
-func NewNotificationService(hub *ws_hub.Hub, repo repository.Notifications, ticketRepo repository.Tickets, subscriptions repository.TicketSubscriptions, txManager TransactionManager) *NotificationService {
+func NewNotificationService(hub *ws_hub.Hub, repo repository.Notifications, ticketRepo repository.Tickets, subscriptions repository.TicketSubscriptions, userRealms repository.UserRealms, groups Groups, txManager TransactionManager) *NotificationService {
 	return &NotificationService{
 		hub:           hub,
 		repo:          repo,
 		ticketRepo:    ticketRepo,
 		subscriptions: subscriptions,
+		userRealms:    userRealms,
+		groups:        groups,
 		txManager:     txManager,
 	}
 }
@@ -81,10 +85,13 @@ func (s *NotificationService) NotifyOverdue(ctx context.Context, ticketID uuid.U
 	if ticket.Manager != nil {
 		recipients[ticket.Manager.ID] = struct{}{}
 	}
-	if ticket.RealmID != nil {
-		if err := s.addRealmAdmins(ctx, *ticket.RealmID, recipients); err != nil {
-			return err
-		}
+	// Подписанные на заявку, у которых включено событие «Просрочка» для категории тикета.
+	overdueSubs, err := s.subscribersByEvent(ctx, ticket, models.EventOverdue)
+	if err != nil {
+		return err
+	}
+	for _, id := range overdueSubs {
+		recipients[id] = struct{}{}
 	}
 	if ticket.Category != nil {
 		catSubs, err := s.repo.GetCategoryEventSubscribers(ctx, ticket.Category.ID, models.EventFieldName(models.EventOverdue))
@@ -136,12 +143,18 @@ func (s *NotificationService) NotifyOverdue(ctx context.Context, ticketID uuid.U
 	return nil
 }
 
-// TicketCreated оповещает менеджера и ответственных категории о создании нового тикета.
+// TicketCreated оповещает менеджера, ответственных категории и исполнителя о создании тикета,
+// а также авто-подписывает на заявку надзителей реалма и менеджера группы (с включёнными
+// уведомлениями), чтобы они получали дальнейшие события через подписку.
 func (s *NotificationService) TicketCreated(ctx context.Context, dto *models.TicketDTO) error {
 	recipients := make(map[uuid.UUID]struct{})
 
 	if dto.ManagerID != nil {
 		recipients[*dto.ManagerID] = struct{}{}
+	}
+
+	if dto.AssigneeID != nil {
+		recipients[*dto.AssigneeID] = struct{}{}
 	}
 
 	responsible, err := s.repo.GetResponsibleByCategory(ctx, dto.CategoryID)
@@ -152,10 +165,13 @@ func (s *NotificationService) TicketCreated(ctx context.Context, dto *models.Tic
 		recipients[id] = struct{}{}
 	}
 
-	if dto.RealmID != nil {
-		if err := s.addRealmAdmins(ctx, *dto.RealmID, recipients); err != nil {
-			return err
-		}
+	// Авто-подписка на заявку: надзители реалма и менеджер группы с включёнными уведомлениями.
+	auto, err := s.autoSubscribeOnCreate(ctx, dto)
+	if err != nil {
+		return err
+	}
+	for _, id := range auto {
+		recipients[id] = struct{}{}
 	}
 
 	// Пользователи, подписавшиеся на новые задачи в категории тикета (добровольная подписка).
@@ -216,17 +232,12 @@ func (s *NotificationService) TicketUpdated(ctx context.Context, ticketID uuid.U
 		recipients[ticket.Manager.ID] = struct{}{}
 	}
 
-	if ticket.RealmID != nil {
-		if err := s.addRealmAdmins(ctx, *ticket.RealmID, recipients); err != nil {
-			return err
-		}
-	}
-
-	subscribers, err := s.subscriptions.GetByTicket(ctx, ticketID)
+	// Подписанные на заявку, у которых включено событие «Изменение статуса» для категории.
+	statusSubs, err := s.subscribersByEvent(ctx, ticket, models.EventStatus)
 	if err != nil {
-		return fmt.Errorf("failed to get ticket subscribers: %w", err)
+		return err
 	}
-	for _, id := range subscribers {
+	for _, id := range statusSubs {
 		recipients[id] = struct{}{}
 	}
 
@@ -259,6 +270,11 @@ func (s *NotificationService) TicketUpdated(ctx context.Context, ticketID uuid.U
 			}
 			recipients[newAssigneeID] = struct{}{}
 		}
+	}
+
+	// При смене статуса (в т.ч. отмена/возврат в работу) исполнитель уведомляется всегда.
+	if hasStatusChange(changes) && ticket.Assignee != nil {
+		recipients[ticket.Assignee.ID] = struct{}{}
 	}
 
 	// Если изменён статус задачи — уведомляем подписчиков категории на событие «Изменение статуса».
@@ -302,7 +318,7 @@ func (s *NotificationService) TicketUpdated(ctx context.Context, ticketID uuid.U
 	return nil
 }
 
-// TicketDeleted оповещает менеджера и ответственных категории об удалении тикета.
+// TicketDeleted оповещает менеджера, ответственных категории и подписанных об удалении тикета.
 func (s *NotificationService) TicketDeleted(ctx context.Context, ticket *models.Ticket) error {
 	recipients := make(map[uuid.UUID]struct{})
 
@@ -318,10 +334,12 @@ func (s *NotificationService) TicketDeleted(ctx context.Context, ticket *models.
 		recipients[id] = struct{}{}
 	}
 
-	if ticket.RealmID != nil {
-		if err := s.addRealmAdmins(ctx, *ticket.RealmID, recipients); err != nil {
-			return err
-		}
+	subscribers, err := s.subscriptions.GetByTicket(ctx, ticket.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get ticket subscribers: %w", err)
+	}
+	for _, id := range subscribers {
+		recipients[id] = struct{}{}
 	}
 
 	data, err := json.Marshal(map[string]interface{}{
@@ -363,11 +381,12 @@ func (s *NotificationService) TicketCommented(ctx context.Context, ticketID uuid
 		recipients[ticket.Assignee.ID] = struct{}{}
 	}
 
-	subscribers, err := s.subscriptions.GetByTicket(ctx, ticketID)
+	// Подписанные на заявку, у которых включено событие «Комментарий» для категории тикета.
+	commentSubs, err := s.subscribersByEvent(ctx, ticket, models.EventComment)
 	if err != nil {
-		return fmt.Errorf("failed to get ticket subscribers: %w", err)
+		return err
 	}
-	for _, id := range subscribers {
+	for _, id := range commentSubs {
 		if id != actorID {
 			recipients[id] = struct{}{}
 		}
@@ -425,11 +444,12 @@ func (s *NotificationService) AttachmentAdded(ctx context.Context, ticketID uuid
 		recipients[ticket.Assignee.ID] = struct{}{}
 	}
 
-	subscribers, err := s.subscriptions.GetByTicket(ctx, ticketID)
+	// Подписанные на заявку, у которых включено событие «Комментарий» для категории тикета.
+	commentSubs, err := s.subscribersByEvent(ctx, ticket, models.EventComment)
 	if err != nil {
-		return fmt.Errorf("failed to get ticket subscribers: %w", err)
+		return err
 	}
-	for _, id := range subscribers {
+	for _, id := range commentSubs {
 		if id != actorID {
 			recipients[id] = struct{}{}
 		}
@@ -471,6 +491,7 @@ func (s *NotificationService) GetOverdueTicketIDs(ctx context.Context, now time.
 func (s *NotificationService) GetSettings(ctx context.Context, userID uuid.UUID) (*models.NotificationSettings, error) {
 	return s.repo.GetSettings(ctx, userID)
 }
+
 // SaveSettings сохраняет персональные настройки уведомлений пользователя.
 func (s *NotificationService) SaveSettings(ctx context.Context, userID uuid.UUID, settings json.RawMessage) error {
 	return s.repo.SaveSettings(ctx, nil, userID, settings)
@@ -521,16 +542,70 @@ func hasStatusChange(changes []*models.FieldChange) bool {
 	return false
 }
 
-// addRealmAdmins добавляет в получателей админов и root-пользователей реалма.
-func (s *NotificationService) addRealmAdmins(ctx context.Context, realmID uuid.UUID, recipients map[uuid.UUID]struct{}) error {
-	admins, err := s.repo.GetRealmAdmins(ctx, realmID)
+// subscribersByEvent возвращает подписанных на заявку пользователей, у которых для категории
+// тикета включено событие event (status/comment/overdue). Если у тикета нет категории —
+// возвращает всех подписанных.
+func (s *NotificationService) subscribersByEvent(ctx context.Context, ticket *models.Ticket, event string) ([]uuid.UUID, error) {
+	if ticket.Category == nil {
+		return s.subscriptions.GetByTicket(ctx, ticket.ID)
+	}
+	return s.subscriptions.GetSubscribersByEvent(ctx, ticket.ID, ticket.Category.ID, models.EventFieldName(event))
+}
+
+// notifEnabled возвращает true, если у пользователя включён мастер-переключатель уведомлений
+// (settings.enabled). По умолчанию (нет настроек) — включён.
+func (s *NotificationService) notifEnabled(ctx context.Context, userID uuid.UUID) (bool, error) {
+	settings, err := s.repo.GetSettings(ctx, userID)
 	if err != nil {
-		return err
+		return false, err
 	}
-	for _, id := range admins {
-		recipients[id] = struct{}{}
+	var payload models.NotificationSettingsPayload
+	if len(settings.Settings) > 0 {
+		json.Unmarshal(settings.Settings, &payload) // nolint:errcheck — при битых данных остаётся дефолт
 	}
-	return nil
+	return payload.Enabled, nil
+}
+
+// autoSubscribeOnCreate подписывает на создаваемую заявку надзителей реалма и менеджера группы
+// (у кого включены уведомления) и возвращает их ID, чтобы они получили уведомление о создании.
+func (s *NotificationService) autoSubscribeOnCreate(ctx context.Context, dto *models.TicketDTO) ([]uuid.UUID, error) {
+	candidates := make(map[uuid.UUID]struct{})
+
+	if dto.RealmID != nil {
+		supervisors, err := s.userRealms.GetRealmSupervisors(ctx, *dto.RealmID)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range supervisors {
+			candidates[id] = struct{}{}
+		}
+	}
+
+	if dto.GroupID != nil {
+		group, err := s.groups.GetByID(ctx, &models.GetGroupDTO{ID: *dto.GroupID})
+		if err != nil {
+			return nil, err
+		}
+		if group.ManagerID != nil {
+			candidates[*group.ManagerID] = struct{}{}
+		}
+	}
+
+	var subscribed []uuid.UUID
+	for id := range candidates {
+		enabled, err := s.notifEnabled(ctx, id)
+		if err != nil {
+			continue
+		}
+		if !enabled {
+			continue
+		}
+		if err := s.subscriptions.Subscribe(ctx, nil, *dto.ID, id); err != nil {
+			return nil, err
+		}
+		subscribed = append(subscribed, id)
+	}
+	return subscribed, nil
 }
 
 // SendUnread отправляет клиенту непрочитанные уведомления и помечает их прочитанными.
