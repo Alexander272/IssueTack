@@ -7,14 +7,15 @@ import (
 )
 
 type Comment struct {
-	ID         uuid.UUID        `json:"id" db:"id"`
-	Text       string           `json:"text" db:"text"`
-	UserID     uuid.UUID        `json:"userId" db:"user_id"`
-	TicketID   uuid.UUID        `json:"ticketId" db:"ticket_id"`
-	IsInternal bool             `json:"isInternal" db:"is_internal"`
-	Type       string           `json:"type" db:"type"`
-	CreatedAt  time.Time        `json:"createdAt" db:"created_at"`
-	User       *UserShort       `json:"user"`
+	ID          uuid.UUID     `json:"id" db:"id"`
+	Text        string        `json:"text" db:"text"`
+	UserID      uuid.UUID     `json:"userId" db:"user_id"`
+	TicketID    uuid.UUID     `json:"ticketId" db:"ticket_id"`
+	IsInternal  bool          `json:"isInternal" db:"is_internal"`
+	Type        string        `json:"type" db:"type"`
+	CreatedAt   time.Time     `json:"createdAt" db:"created_at"`
+	User        *UserShort    `json:"user"`
+	Attachments []*Attachment `json:"attachments,omitempty"`
 }
 
 type CreateCommentDTO struct {
@@ -24,6 +25,8 @@ type CreateCommentDTO struct {
 	Type       string    `json:"type"`
 	UserID     uuid.UUID `json:"-"`
 	Realm      string    `json:"-"`
+	// Files — multipart-вложения, создаваемые атомарно вместе с комментарием.
+	Files []*UploadAttachmentDTO `json:"-"`
 }
 
 type DeleteCommentDTO struct {

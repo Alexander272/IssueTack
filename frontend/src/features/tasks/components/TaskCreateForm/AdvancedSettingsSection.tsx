@@ -53,7 +53,7 @@ export const AdvancedSettingsSection = ({ number = 3, autoAssign = true }: Props
 
 	return (
 		<SectionCard number={number} title='Расширенные настройки' subtitle='Доступно менеджерам'>
-			<Stack sx={{ gap: 3 }}>
+			<Stack sx={{ gap: 2 }}>
 				<Box>
 					<Typography variant='caption' sx={fieldLabelSx}>
 						Приоритет{' '}

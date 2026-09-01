@@ -10,15 +10,27 @@ const commentsApiSlice = apiSlice.injectEndpoints({
 			query: ticketId => API.comments.byTicket(ticketId),
 			providesTags: (_result, _error, ticketId) => [{ type: 'Comments' as const, id: ticketId }],
 		}),
-		createComment: builder.mutation<{ id: string; message: string }, { ticketId: string; text: string; isInternal: boolean; type?: string }>({
-			query: ({ ticketId, ...body }) => ({
-				url: API.comments.byTicket(ticketId),
-				method: 'POST',
-				body,
-			}),
+		createComment: builder.mutation<
+			{ id: string; message: string },
+			{ ticketId: string; text: string; isInternal: boolean; type?: string; files?: File[] }
+		>({
+			query: ({ ticketId, text, isInternal, type, files }) => {
+				const formData = new FormData()
+				formData.append('text', text)
+				formData.append('isInternal', String(isInternal))
+				if (type) formData.append('type', type)
+				files?.forEach(file => formData.append('files', file))
+				return {
+					url: API.comments.byTicket(ticketId),
+					method: 'POST',
+					body: formData,
+				}
+			},
 			invalidatesTags: (_result, _error, arg) => [
 				{ type: 'Comments' as const, id: arg.ticketId },
 				{ type: 'ActivityLogs' as const },
+				{ type: 'Tasks' as const, id: arg.ticketId },
+				{ type: 'Tasks' as const, id: 'LIST' },
 			],
 		}),
 		deleteComment: builder.mutation<void, { ticketId: string; commentId: string }>({

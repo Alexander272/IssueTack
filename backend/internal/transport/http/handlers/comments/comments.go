@@ -1,8 +1,11 @@
 package comments
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
@@ -74,17 +77,53 @@ func (h *Handler) create(c *gin.Context) {
 
 	realm := c.GetHeader("realm")
 
-	var dto models.CreateCommentDTO
-	if err := utils.BindJSON(c, &dto); err != nil {
+	if err := c.Request.ParseMultipartForm(32 << 20); err != nil && !errors.Is(err, http.ErrNotMultipart) {
 		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
 		return
 	}
 
-	dto.TicketID = ticketID
-	dto.UserID = user.ID
-	dto.Realm = realm
+	text := strings.TrimSpace(c.Request.FormValue("text"))
+	if text == "" {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, errors.New("поле text обязательно")))
+		return
+	}
 
-	comment, err := h.service.Create(c, nil, &dto)
+	isInternal, _ := strconv.ParseBool(c.Request.FormValue("isInternal"))
+	commentType := c.Request.FormValue("type")
+
+	dto := &models.CreateCommentDTO{
+		Text:       text,
+		TicketID:   ticketID,
+		IsInternal: isInternal,
+		Type:       commentType,
+		UserID:     user.ID,
+		Realm:      realm,
+		Files:      nil,
+	}
+
+	if files := c.Request.MultipartForm.File["files"]; len(files) > 0 {
+		dto.Files = make([]*models.UploadAttachmentDTO, 0, len(files))
+		for _, fh := range files {
+			f, openErr := fh.Open()
+			if openErr != nil {
+				response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, openErr))
+				return
+			}
+			defer f.Close()
+			dto.Files = append(dto.Files, &models.UploadAttachmentDTO{
+				EntityType: "ticket",
+				EntityID:   ticketID,
+				FileName:   fh.Filename,
+				FileSize:   fh.Size,
+				MimeType:   fh.Header.Get("Content-Type"),
+				File:       f,
+				UploadedBy: user.ID,
+				Realm:      realm,
+			})
+		}
+	}
+
+	comment, err := h.service.Create(c, nil, dto)
 	if err != nil {
 		response.SendError(c, err)
 		return

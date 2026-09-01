@@ -340,7 +340,10 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *mod
 		ticketID = rt.id
 	}
 
-	attached := 0
+	// В случае «файлы + текст» комментарий и файлы создаются атомарно и связываются
+	// (файлы привязываются к комментарию через comment_id). Без текста файлы просто
+	// прикрепляются к заявке.
+	fileDTOs := make([]*models.UploadAttachmentDTO, 0, len(fileIDs))
 	for _, fileID := range fileIDs {
 		data, err := s.most.Client.DownloadFile(settings.BotToken, fileID)
 		if err != nil {
@@ -356,7 +359,7 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *mod
 		if fileName == "" {
 			fileName = fileID
 		}
-		att, err := s.attachments.Upload(ctx, nil, &models.UploadAttachmentDTO{
+		fileDTOs = append(fileDTOs, &models.UploadAttachmentDTO{
 			EntityType: "ticket",
 			EntityID:   ticketID,
 			FileName:   fileName,
@@ -366,16 +369,46 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *mod
 			UploadedBy: userID,
 			Realm:      settings.RealmID.String(),
 		})
+	}
+
+	attached := 0
+	commentCreated := false
+
+	if commentText != "" {
+		_, err := s.comments.Create(ctx, nil, &models.CreateCommentDTO{
+			Text:       commentText,
+			TicketID:   ticketID,
+			IsInternal: false,
+			Type:       "",
+			UserID:     userID,
+			Realm:      settings.RealmID.String(),
+			Files:      fileDTOs,
+		})
 		if err != nil {
-			logger.Warn("failed to upload file as attachment", logger.StringAttr("file_id", fileID), logger.ErrAttr(err))
-			continue
+			if errors.Is(err, models.ErrPermissionDenied) {
+				s.sendDMBestEffort(ctx, settings, mmUserID, "Нет прав на комментарий к этой заявке")
+				return nil
+			}
+			logger.Warn("failed to create comment with files", logger.StringAttr("ticket_id", ticketID.String()), logger.ErrAttr(err))
+			s.sendDMBestEffort(ctx, settings, mmUserID, "Не удалось сохранить текст комментария")
+			return nil
 		}
-		logger.Info("file attached to ticket",
-			logger.StringAttr("ticket_id", ticketID.String()),
-			logger.StringAttr("attachment_id", att.ID.String()),
-			logger.StringAttr("file_name", fileName),
-		)
-		attached++
+		attached = len(fileDTOs)
+		commentCreated = true
+	} else {
+		for _, fileDTO := range fileDTOs {
+			att, err := s.attachments.Upload(ctx, nil, fileDTO)
+			if err != nil {
+				logger.Warn("failed to upload file as attachment", logger.StringAttr("ticket_id", ticketID.String()), logger.ErrAttr(err))
+				continue
+			}
+			logger.Info("file attached to ticket",
+				logger.StringAttr("ticket_id", ticketID.String()),
+				logger.StringAttr("attachment_id", att.ID.String()),
+				logger.StringAttr("file_name", fileDTO.FileName),
+			)
+			attached++
+		}
 	}
 
 	var reply string
@@ -384,24 +417,11 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *mod
 	} else {
 		reply = fmt.Sprintf("К заявке прикреплено файлов: %d", attached)
 	}
-	if commentText != "" {
-		if _, err := s.comments.Create(ctx, nil, &models.CreateCommentDTO{
-			Text:       commentText,
-			TicketID:   ticketID,
-			IsInternal: false,
-			Type:       "",
-			UserID:     userID,
-			Realm:      settings.RealmID.String(),
-		}); err != nil {
-			if errors.Is(err, models.ErrPermissionDenied) {
-				reply += "\nНет прав на комментарий к этой заявке"
-			} else {
-				logger.Warn("failed to create comment with files", logger.StringAttr("ticket_id", ticketID.String()), logger.ErrAttr(err))
-				reply += "\nНе удалось сохранить текст комментария"
-			}
-		} else {
-			reply += "\nКомментарий добавлен"
-		}
+	if commentCreated {
+		reply += "\nКомментарий добавлен"
+	}
+	if attached == 0 && len(fileDTOs) > 0 {
+		reply = "Файлы не удалось прикрепить к заявке"
 	}
 	s.sendDMBestEffort(ctx, settings, mmUserID, reply)
 	return nil

@@ -55,7 +55,7 @@ const EditDescriptionSection = () => {
 				/>
 			</Box>
 
-			<Box sx={{ mt: 3 }}>
+			<Box>
 				<Typography variant='caption' sx={fieldLabelSx}>
 					Подробное описание
 				</Typography>
@@ -130,7 +130,7 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded }: Props) => 
 
 			<FormProvider {...methods}>
 				<Box component='form' onSubmit={onSubmit}>
-					<Stack sx={{ gap: 3 }}>
+					<Stack sx={{ gap: 1 }}>
 						<EditDescriptionSection />
 
 						{isManager && <AdvancedSettingsSection number={2} autoAssign={false} />}

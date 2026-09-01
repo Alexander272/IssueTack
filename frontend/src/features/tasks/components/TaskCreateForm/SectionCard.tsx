@@ -31,7 +31,10 @@ export const SectionCard = ({ number, title, subtitle, children }: Props) => (
 			}}
 		>
 			<Box>
-				<Typography component='div' sx={{ fontWeight: 700, color: '#1f2937', display: 'flex', alignItems: 'center', gap: 1 }}>
+				<Typography
+					component='div'
+					sx={{ fontWeight: 700, color: '#1f2937', display: 'flex', alignItems: 'center', gap: 1 }}
+				>
 					<Box
 						sx={{
 							width: 24,
@@ -51,9 +54,11 @@ export const SectionCard = ({ number, title, subtitle, children }: Props) => (
 					</Box>
 					{title}
 				</Typography>
-				{subtitle && <Typography sx={{ fontSize: '0.75rem', color: '#6b7280', mt: 0.5 }}>{subtitle}</Typography>}
+				{subtitle && (
+					<Typography sx={{ fontSize: '0.75rem', color: '#6b7280', mt: 0.5 }}>{subtitle}</Typography>
+				)}
 			</Box>
 		</Box>
-		<Box sx={{ p: 2.5 }}>{children}</Box>
+		<Box sx={{ p: 2.5, pt: 1.5 }}>{children}</Box>
 	</Box>
 )

@@ -51,7 +51,7 @@ export const DescriptionSection = ({ files, onFilesChange }: Props) => {
 				/>
 			</Box>
 
-			<Box sx={{ mt: 3 }}>
+			<Box>
 				<Typography variant='caption' sx={fieldLabelSx}>
 					Подробное описание
 				</Typography>
@@ -71,7 +71,7 @@ export const DescriptionSection = ({ files, onFilesChange }: Props) => {
 				/>
 			</Box>
 
-			<Box sx={{ mt: 3 }}>
+			<Box sx={{ mt: 1.5 }}>
 				<Typography variant='caption' sx={fieldLabelSx}>
 					Вложения
 				</Typography>

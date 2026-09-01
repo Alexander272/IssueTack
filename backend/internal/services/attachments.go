@@ -79,9 +79,16 @@ type Attachments interface {
 	Upload(ctx context.Context, tx postgres.Tx, dto *models.UploadAttachmentDTO) (*models.Attachment, error)
 	// Delete удаляет вложение и связанный файл с диска.
 	Delete(ctx context.Context, tx postgres.Tx, dto *models.DeleteAttachmentDTO) error
+	// GetForComments возвращает вложения комментариев тикета, сгруппированные по
+	// comment_id. Ожидается, что вызов осуществляет CommentService, уже проверивший
+	// право чтения тикета и видимость внутренних комментариев.
+	GetForComments(ctx context.Context, ticketID uuid.UUID, showInternal bool) (map[uuid.UUID][]*models.Attachment, error)
 }
 
 // GetByEntity возвращает список вложений сущности (тикета/подзадачи) с проверкой доступа на чтение.
+// Для тикета вложения, привязанные к внутренним комментариям, скрываются от
+// пользователей, не имеющих доступа к внутренним комментариям. Файлы из публичных
+// комментариев и самостоятельные вложения видны всем, кому доступен тикет.
 func (s *AttachmentService) GetByEntity(ctx context.Context, dto *models.EntityAccessDTO) ([]*models.Attachment, error) {
 	if err := s.checkEntityAccess(ctx, dto, string(access.Read)); err != nil {
 		return nil, err
@@ -90,7 +97,56 @@ func (s *AttachmentService) GetByEntity(ctx context.Context, dto *models.EntityA
 	if err != nil {
 		return nil, fmt.Errorf("failed to get attachments: %w", err)
 	}
-	return data, nil
+	if dto.EntityType != "ticket" {
+		return data, nil
+	}
+
+	showInternal := s.ticketAccess.CheckInternalAssigneeAccess(ctx, &models.AccessCheckDTO{
+		TicketID: dto.EntityID,
+		UserID:   dto.ActorID,
+		Realm:    dto.Realm,
+	}) == nil
+	if showInternal {
+		return data, nil
+	}
+
+	internalCommentIDs, _, err := s.repo.GetByComments(ctx, dto.EntityID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get comment attachments: %w", err)
+	}
+
+	filtered := data[:0]
+	for _, att := range data {
+		if att.CommentID != nil && internalCommentIDs[*att.CommentID] {
+			continue
+		}
+		filtered = append(filtered, att)
+	}
+	if filtered == nil {
+		filtered = []*models.Attachment{}
+	}
+	return filtered, nil
+}
+
+// GetForComments возвращает вложения комментариев тикета, сгруппированные по
+// comment_id. Внутренние комментарии включаются только если showInternal.
+func (s *AttachmentService) GetForComments(ctx context.Context, ticketID uuid.UUID, showInternal bool) (map[uuid.UUID][]*models.Attachment, error) {
+	internalComments, atts, err := s.repo.GetByComments(ctx, ticketID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get comment attachments: %w", err)
+	}
+
+	result := map[uuid.UUID][]*models.Attachment{}
+	for _, att := range atts {
+		if att.CommentID == nil {
+			continue
+		}
+		if internalComments[*att.CommentID] && !showInternal {
+			continue
+		}
+		result[*att.CommentID] = append(result[*att.CommentID], att)
+	}
+	return result, nil
 }
 
 // GetContent возвращает вложение и поток чтения его файла с проверкой доступа на чтение.
@@ -170,6 +226,7 @@ func (s *AttachmentService) Upload(ctx context.Context, tx postgres.Tx, dto *mod
 		FileSize:   dto.FileSize,
 		MimeType:   mimeType,
 		UploadedBy: dto.UploadedBy,
+		CommentID:  dto.CommentID,
 	}
 
 	if err := s.repo.Create(ctx, tx, att); err != nil {

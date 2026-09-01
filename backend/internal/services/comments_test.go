@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
@@ -154,4 +155,67 @@ func TestCommentService_Create_OwnerWithoutMM_NoDM(t *testing.T) {
 	assert.NoError(t, err)
 	mockSender.AssertNotCalled(t, "Send", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	mockMMRepo.AssertNotCalled(t, "GetByRealm", mock.Anything, mock.Anything)
+}
+
+func TestCommentService_Create_WithFiles_BindsAttachments(t *testing.T) {
+	mockRepo, mockAccess, mockTickets, _, _, _, svc := commentServiceFixtures()
+	mockAttachments := new(MockAttachmentService)
+	svc.attachments = mockAttachments
+
+	prismID := uuid.New()
+	ticket := commentTicket(prismID, prismID)
+	fileDTO := &models.UploadAttachmentDTO{
+		EntityType: "ticket",
+		EntityID:   ticket.ID,
+		FileName:   "doc.pdf",
+		FileSize:   123,
+		MimeType:   "application/pdf",
+		File:       strings.NewReader("data"),
+		UploadedBy: prismID,
+		Realm:      "realm",
+	}
+
+	dto := &models.CreateCommentDTO{
+		Text:     "с файлом",
+		TicketID: ticket.ID,
+		UserID:   prismID,
+		Realm:    "realm",
+		Files:    []*models.UploadAttachmentDTO{fileDTO},
+	}
+
+	mockAccess.On("CheckWorkAccess", mock.Anything, mock.Anything).Return(nil)
+	mockTickets.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticket.ID}).Return(ticket, nil)
+	mockRepo.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(func(c *models.Comment) bool {
+		return c.Text == dto.Text && c.TicketID == ticket.ID
+	})).Return(nil)
+	mockAttachments.On("Upload", mock.Anything, mock.Anything, mock.MatchedBy(func(f *models.UploadAttachmentDTO) bool {
+		return f.FileName == "doc.pdf" && f.CommentID != nil && *f.CommentID != uuid.Nil
+	})).Return(&models.Attachment{ID: uuid.New(), FileName: "doc.pdf"}, nil)
+
+	comment, err := svc.Create(context.Background(), nil, dto)
+	assert.NoError(t, err)
+	assert.Equal(t, dto.Text, comment.Text)
+	mockAttachments.AssertExpectations(t)
+}
+
+func TestCommentService_GetByTicket_PopulatesAttachments(t *testing.T) {
+	mockRepo, mockAccess, _, _, _, _, svc := commentServiceFixtures()
+	mockAttachments := new(MockAttachmentService)
+	svc.attachments = mockAttachments
+
+	ticketID := uuid.New()
+	userID := uuid.New()
+	commentID := uuid.New()
+	att := &models.Attachment{ID: uuid.New(), FileName: "file.png", CommentID: &commentID}
+
+	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: userID, Action: "read", Realm: "realm"}).Return(nil)
+	mockAccess.On("CheckInternalAssigneeAccess", mock.Anything, mock.AnythingOfType("*models.AccessCheckDTO")).Return(nil)
+	mockRepo.On("GetByTicket", mock.Anything, ticketID, userID, true).Return([]*models.Comment{{ID: commentID, Text: "внутр"}}, nil)
+	mockAttachments.On("GetForComments", mock.Anything, ticketID, true).Return(map[uuid.UUID][]*models.Attachment{commentID: {att}}, nil)
+
+	comments, err := svc.GetByTicket(context.Background(), ticketID, userID, "realm")
+	assert.NoError(t, err)
+	assert.Len(t, comments, 1)
+	assert.Len(t, comments[0].Attachments, 1)
+	assert.Equal(t, "file.png", comments[0].Attachments[0].FileName)
 }

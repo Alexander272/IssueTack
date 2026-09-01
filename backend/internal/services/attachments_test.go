@@ -40,6 +40,7 @@ func TestAttachmentService_GetByEntity_Success(t *testing.T) {
 
 	dto := &models.EntityAccessDTO{EntityType: "ticket", EntityID: entityID, ActorID: actorID, Realm: ""}
 	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Action: string(access.Read), Realm: ""}).Return(nil)
+	mockAccess.On("CheckInternalAssigneeAccess", mock.Anything, mock.AnythingOfType("*models.AccessCheckDTO")).Return(nil)
 	mockRepo.On("GetByEntity", mock.Anything, "ticket", entityID).Return(expected, nil)
 
 	got, err := svc.GetByEntity(context.Background(), dto)
@@ -213,4 +214,82 @@ func TestAttachmentService_Upload_ReadFileContents(t *testing.T) {
 
 	os.RemoveAll(att.FilePath[:len(att.FilePath)-len("/check.txt")])
 	mockRepo.AssertExpectations(t)
+}
+
+func TestAttachmentService_GetForComments_GroupsAndFilters(t *testing.T) {
+	mockRepo, _, _, svc, _ := attachmentFixtures(t)
+
+	ticketID := uuid.New()
+	publicCommentID := uuid.New()
+	internalCommentID := uuid.New()
+
+	internal := map[uuid.UUID]bool{internalCommentID: true}
+	atts := []*models.Attachment{
+		{ID: uuid.New(), FileName: "public.txt", CommentID: &publicCommentID},
+		{ID: uuid.New(), FileName: "internal.txt", CommentID: &internalCommentID},
+		{ID: uuid.New(), FileName: "standalone.bin"},
+	}
+
+	mockRepo.On("GetByComments", mock.Anything, ticketID).Return(internal, atts, nil)
+
+	// Пользователь без доступа к внутренним комментариям не получает файл
+	// внутреннего комментария.
+	result, err := svc.GetForComments(context.Background(), ticketID, false)
+	assert.NoError(t, err)
+	assert.Len(t, result[publicCommentID], 1)
+	assert.Nil(t, result[internalCommentID])
+
+	// Пользователь с доступом к внутренним комментариям получает все.
+	result, err = svc.GetForComments(context.Background(), ticketID, true)
+	assert.NoError(t, err)
+	assert.Len(t, result[publicCommentID], 1)
+	assert.Len(t, result[internalCommentID], 1)
+}
+
+func TestAttachmentService_GetByEntity_HidesInternalCommentFiles(t *testing.T) {
+	mockRepo, _, mockAccess, svc, _ := attachmentFixtures(t)
+
+	entityID := uuid.New()
+	actorID := uuid.New()
+	internalCID := uuid.New()
+	publicCID := uuid.New()
+	expected := []*models.Attachment{
+		{ID: uuid.New(), FileName: "public.txt"},
+		{ID: uuid.New(), FileName: "internal_file.txt", CommentID: &internalCID},
+		{ID: uuid.New(), FileName: "public_comment.txt", CommentID: &publicCID},
+	}
+
+	dto := &models.EntityAccessDTO{EntityType: "ticket", EntityID: entityID, ActorID: actorID, Realm: ""}
+	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Action: string(access.Read), Realm: ""}).Return(nil)
+	mockAccess.On("CheckInternalAssigneeAccess", mock.Anything, mock.AnythingOfType("*models.AccessCheckDTO")).Return(models.ErrPermissionDenied)
+	mockRepo.On("GetByEntity", mock.Anything, "ticket", entityID).Return(expected, nil)
+	mockRepo.On("GetByComments", mock.Anything, entityID).Return(map[uuid.UUID]bool{internalCID: true}, nil, nil)
+
+	got, err := svc.GetByEntity(context.Background(), dto)
+	assert.NoError(t, err)
+	assert.Len(t, got, 2)
+	names := []string{got[0].FileName, got[1].FileName}
+	assert.ElementsMatch(t, []string{"public.txt", "public_comment.txt"}, names)
+}
+
+func TestAttachmentService_GetByEntity_ShowAllForInternalUser(t *testing.T) {
+	mockRepo, _, mockAccess, svc, _ := attachmentFixtures(t)
+
+	entityID := uuid.New()
+	actorID := uuid.New()
+	internalCID := uuid.New()
+	expected := []*models.Attachment{
+		{ID: uuid.New(), FileName: "public.txt"},
+		{ID: uuid.New(), FileName: "internal_file.txt", CommentID: &internalCID},
+	}
+
+	dto := &models.EntityAccessDTO{EntityType: "ticket", EntityID: entityID, ActorID: actorID, Realm: ""}
+	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Action: string(access.Read), Realm: ""}).Return(nil)
+	mockAccess.On("CheckInternalAssigneeAccess", mock.Anything, mock.AnythingOfType("*models.AccessCheckDTO")).Return(nil)
+	mockRepo.On("GetByEntity", mock.Anything, "ticket", entityID).Return(expected, nil)
+
+	got, err := svc.GetByEntity(context.Background(), dto)
+	assert.NoError(t, err)
+	assert.Len(t, got, 2)
+	mockRepo.AssertNotCalled(t, "GetByComments")
 }

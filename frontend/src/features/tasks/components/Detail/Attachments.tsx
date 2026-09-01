@@ -1,12 +1,12 @@
-import type { ComponentType } from 'react'
 import { useCallback, useState } from 'react'
-import { Box, Typography, type SvgIconProps } from '@mui/material'
-import { Image, FileText, Paperclip } from 'lucide-mui'
+import { Box, Typography } from '@mui/material'
+import { Paperclip } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
 import type { IAttachment } from '../../types/task'
 import { formatSize } from '../../utils/size'
+import { isImage, isPdf, isText, getFileIcon } from '../../utils/fileIcon'
 import { saveAs } from '@/utils/saveAs'
 import {
 	useGetAttachmentContentQuery,
@@ -20,17 +20,6 @@ interface Props {
 	attachments: IAttachment[] | undefined
 	canWork?: boolean
 	taskId?: string
-}
-
-const isImage = (m: string) => m.startsWith('image/')
-const isPdf = (m: string) => m === 'application/pdf'
-const isText = (m: string) => m.startsWith('text/')
-
-const getFileIcon = (mimeType: string): { icon: ComponentType<SvgIconProps>; bg: string; color: string } => {
-	if (isImage(mimeType)) return { icon: Image, bg: 'linear-gradient(135deg, #f3e8ff, #e9d5ff)', color: '#9333ea' }
-	if (isPdf(mimeType)) return { icon: FileText, bg: 'linear-gradient(135deg, #fee2e2, #fecaca)', color: '#dc2626' }
-	if (isText(mimeType)) return { icon: FileText, bg: 'linear-gradient(135deg, #f3f4f6, #e5e7eb)', color: '#6b7280' }
-	return { icon: Paperclip, bg: 'linear-gradient(135deg, #dbeafe, #bfdbfe)', color: '#2563eb' }
 }
 
 function ImageThumbnail({ file }: { file: IAttachment }) {

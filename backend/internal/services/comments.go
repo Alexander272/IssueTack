@@ -30,10 +30,11 @@ type CommentService struct {
 	mmSender      mattermostSender
 	notifications Notifications
 	txManager     TransactionManager
+	attachments   Attachments
 }
 
 // NewCommentService создаёт CommentService.
-func NewCommentService(repo repository.Comments, ticketAccess TicketAccessChecker, tickets repository.Tickets, users Users, mmRepo repository.Mattermost, mmSender mattermostSender, notifications Notifications, txManager TransactionManager) *CommentService {
+func NewCommentService(repo repository.Comments, ticketAccess TicketAccessChecker, tickets repository.Tickets, users Users, mmRepo repository.Mattermost, mmSender mattermostSender, notifications Notifications, txManager TransactionManager, attachments Attachments) *CommentService {
 	return &CommentService{
 		repo:          repo,
 		ticketAccess:  ticketAccess,
@@ -43,6 +44,7 @@ func NewCommentService(repo repository.Comments, ticketAccess TicketAccessChecke
 		mmSender:      mmSender,
 		notifications: notifications,
 		txManager:     txManager,
+		attachments:   attachments,
 	}
 }
 
@@ -76,6 +78,16 @@ func (s *CommentService) GetByTicket(ctx context.Context, ticketID uuid.UUID, us
 	data, err := s.repo.GetByTicket(ctx, ticketID, userID, showAllInternal)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get comments: %w", err)
+	}
+
+	if s.attachments != nil {
+		commentAtts, attsErr := s.attachments.GetForComments(ctx, ticketID, showAllInternal)
+		if attsErr != nil {
+			return nil, fmt.Errorf("failed to get comment attachments: %w", attsErr)
+		}
+		for _, c := range data {
+			c.Attachments = commentAtts[c.ID]
+		}
 	}
 	return data, nil
 }
@@ -114,8 +126,8 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 		}
 	}
 
-	var createErr error
 	comment := &models.Comment{
+		ID:         uuid.New(),
 		Text:       dto.Text,
 		UserID:     dto.UserID,
 		TicketID:   dto.TicketID,
@@ -123,13 +135,9 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 		Type:       dto.Type,
 	}
 
-	if tx == nil {
-		createErr = s.txManager.WithinTransaction(ctx, func(newTx postgres.Tx) error {
-			return s.repo.Create(ctx, newTx, comment)
-		})
-	} else {
-		createErr = s.repo.Create(ctx, tx, comment)
-	}
+	// Создание комментария и привязанных вложений выполняется атомарно в одной
+	// транзакции: либо сохраняются все файлы (с comment_id), либо никакие.
+	createErr := s.createWithAttachments(ctx, tx, comment, dto.Files)
 	if createErr != nil {
 		return nil, fmt.Errorf("failed to create comment: %w", createErr)
 	}
@@ -143,6 +151,36 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 		}
 	}
 	return comment, nil
+}
+
+// createWithAttachments создаёт комментарий и, если переданы dto.Files, привязанные
+// к нему вложения — атомарно в одной транзакции. Каждый файл создаётся через
+// AttachmentService.Upload с проставленным comment_id, так что комментарий и файлы
+// сохраняются вместе либо вовсе не сохраняются.
+func (s *CommentService) createWithAttachments(ctx context.Context, tx postgres.Tx, comment *models.Comment, files []*models.UploadAttachmentDTO) error {
+	if tx == nil {
+		return s.txManager.WithinTransaction(ctx, func(newTx postgres.Tx) error {
+			return s.persistCommentAndFiles(ctx, newTx, comment, files)
+		})
+	}
+	return s.persistCommentAndFiles(ctx, tx, comment, files)
+}
+
+func (s *CommentService) persistCommentAndFiles(ctx context.Context, tx postgres.Tx, comment *models.Comment, files []*models.UploadAttachmentDTO) error {
+	if err := s.repo.Create(ctx, tx, comment); err != nil {
+		return err
+	}
+	if len(files) == 0 || s.attachments == nil {
+		return nil
+	}
+	for _, file := range files {
+		commentID := comment.ID
+		file.CommentID = &commentID
+		if _, err := s.attachments.Upload(ctx, tx, file); err != nil {
+			return fmt.Errorf("failed to create attachment for comment: %w", err)
+		}
+	}
+	return nil
 }
 
 // notifyOwnerViaMattermost дублирует публичный (не внутренний) комментарий из

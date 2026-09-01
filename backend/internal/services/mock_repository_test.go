@@ -487,6 +487,14 @@ func (m *MockAttachmentService) Delete(ctx context.Context, tx postgres.Tx, dto 
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
 }
+func (m *MockAttachmentService) GetForComments(ctx context.Context, ticketID uuid.UUID, showInternal bool) (map[uuid.UUID][]*models.Attachment, error) {
+	args := m.Called(ctx, ticketID, showInternal)
+	var result map[uuid.UUID][]*models.Attachment
+	if v := args.Get(0); v != nil {
+		result = v.(map[uuid.UUID][]*models.Attachment)
+	}
+	return result, args.Error(1)
+}
 
 type MockNotificationService struct {
 	mock.Mock
@@ -849,6 +857,18 @@ func (m *MockAttachmentsRepo) Create(ctx context.Context, tx postgres.Tx, dto *m
 func (m *MockAttachmentsRepo) Delete(ctx context.Context, tx postgres.Tx, id uuid.UUID) error {
 	args := m.Called(ctx, tx, id)
 	return args.Error(0)
+}
+func (m *MockAttachmentsRepo) GetByComments(ctx context.Context, ticketID uuid.UUID) (map[uuid.UUID]bool, []*models.Attachment, error) {
+	args := m.Called(ctx, ticketID)
+	var internal map[uuid.UUID]bool
+	var data []*models.Attachment
+	if v := args.Get(0); v != nil {
+		internal = v.(map[uuid.UUID]bool)
+	}
+	if v := args.Get(1); v != nil {
+		data = v.([]*models.Attachment)
+	}
+	return internal, data, args.Error(2)
 }
 
 type MockNotificationsRepo struct {
