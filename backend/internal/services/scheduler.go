@@ -11,18 +11,20 @@ import (
 	"github.com/go-co-op/gocron/v2"
 )
 
-// SchedulerService управляет фоновыми cron-заданиями, в частности автозакрытием resolved-тикетов
-// и уведомлениями о просроченных задачах.
+// SchedulerService управляет фоновыми cron-заданиями, в частности автозакрытием resolved-тикетов,
+// уведомлениями о просроченных задачах и очисткой «закреплённых» (temporary) избранных.
 type SchedulerService struct {
 	cron          gocron.Scheduler
 	tickets       Tickets
 	notifications Notifications
+	favorites     TicketFavorites
 }
 
 // SchedulerDeps содержит зависимости для создания SchedulerService.
 type SchedulerDeps struct {
 	Tickets       Tickets
 	Notifications Notifications
+	Favorites     TicketFavorites
 }
 
 // Scheduler описывает сервис планировщика фоновых заданий.
@@ -44,6 +46,7 @@ func NewSchedulerService(deps *SchedulerDeps) *SchedulerService {
 		cron:          cron,
 		tickets:       deps.Tickets,
 		notifications: deps.Notifications,
+		favorites:     deps.Favorites,
 	}
 }
 
@@ -75,6 +78,18 @@ func (s *SchedulerService) Start(conf *config.TicketConfig) error {
 		}
 		registered = true
 		logger.Info("overdue-notify scheduler started, schedule: " + conf.NotifyOverdueSchedule)
+	}
+
+	if conf.FavoriteCleanupSchedule != "" {
+		_, err := s.cron.NewJob(
+			gocron.CronJob(conf.FavoriteCleanupSchedule, false),
+			gocron.NewTask(s.favoriteCleanupJob),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create favorite-cleanup job. error: %w", err)
+		}
+		registered = true
+		logger.Info("favorite-cleanup scheduler started, schedule: " + conf.FavoriteCleanupSchedule)
 	}
 
 	if registered {
@@ -119,5 +134,21 @@ func (s *SchedulerService) notifyOverdueJob(ctx context.Context) {
 	}
 	if len(ids) > 0 {
 		logger.Info(fmt.Sprintf("Notified overdue for %d tickets", len(ids)))
+	}
+}
+
+// favoriteCleanupJob — фоновая задача cron: удаляет автоматически истёкшие «закреплённые»
+// (temporary) избранные по правилам CleanupTemporary.
+func (s *SchedulerService) favoriteCleanupJob(ctx context.Context) {
+	if s.favorites == nil {
+		return
+	}
+	n, err := s.favorites.CleanupTemporary(ctx)
+	if err != nil {
+		logger.Error("failed to cleanup temporary favorites:", logger.ErrAttr(err))
+		return
+	}
+	if n > 0 {
+		logger.Info(fmt.Sprintf("Cleaned up %d temporary favorites", n))
 	}
 }

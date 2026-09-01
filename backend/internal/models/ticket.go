@@ -75,6 +75,8 @@ type TicketFilter struct {
 	Mode                       *string        `form:"mode" json:"mode"`
 	CreatorID                  *uuid.UUID     `json:"-"`
 	Archived                   *bool          `form:"archived" json:"archived"`
+	FavoritesByUser            *uuid.UUID     `json:"-"`
+	FavoriteType               *FavoriteType  `json:"-"`
 	Limit                      int            `json:"limit" db:"limit"`
 	Offset                     int            `json:"offset" db:"offset"`
 }

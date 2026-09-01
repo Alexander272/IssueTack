@@ -1,27 +1,17 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
-import { Box, Button, Typography, Tab, Tabs, useTheme } from '@mui/material'
+import { Box, Typography, Tab, Tabs } from '@mui/material'
 import { useNavigate } from 'react-router'
-import { ArchiveIcon, InboxIcon, PlusIcon } from 'lucide-mui'
+import { Pin, Star } from 'lucide-mui'
 
-import type { GroupByField } from '../constants/taskMaps'
-import type { FilterValues } from '../components/filters'
-import type { ITask, ITaskFilter } from '../types/task'
+import type { GroupByField } from '@/features/tasks/constants/taskMaps'
+import type { FilterValues } from '@/features/tasks/components/filters'
+import type { ITask, ITaskFilter } from '@/features/tasks/types/task'
 import { AppRoutes } from '@/pages/router/routes'
-import { PermRules } from '@/features/access/constants/permissions'
-import { useAppSelector } from '@/hooks/redux'
-import { useCan } from '@/features/access/utils/can'
-import { useGetTasksQuery } from '../tasksApiSlice'
-import { getIsManager } from '@/features/user/userSlice'
-import { TaskFilters } from '../components/filters'
-import { TaskListView } from '../components/Table'
-import { TaskCreateModal } from '../components/TaskCreateModal'
+import { useGetTasksQuery } from '@/features/tasks/tasksApiSlice'
+import { TaskFilters } from '@/features/tasks/components/filters'
+import { TaskListView } from '@/features/tasks/components/Table'
 
-type Mode = 'created' | 'assigned'
-type Tab = 'active' | 'archive'
-
-type Props = {
-	mode?: Mode
-}
+type FavoriteTab = 'temporary' | 'permanent'
 
 const DEFAULT_FILTERS: FilterValues = {
 	sort: 'dueDate_asc',
@@ -39,27 +29,11 @@ const DEFAULT_FILTERS: FilterValues = {
 	statuses: undefined,
 }
 
-const PAGE_TITLE: Record<Mode, string> = {
-	created: 'Заявки',
-	assigned: 'Мои задачи',
-}
-
-const PAGE_DESC: Record<Mode, string> = {
-	created: 'Созданные вами заявки',
-	assigned: 'Задачи, назначенные лично или группам',
-}
-
-export const TaskList = ({ mode = 'created' }: Props) => {
-	const { palette } = useTheme()
+export const FavoritesPage = () => {
 	const navigate = useNavigate()
-	const canCreate = useCan(PermRules.Tasks.Write)
-	const isManager = useAppSelector(getIsManager)
 	const rowsPerPage = 20
 
-	const title = isManager ? (mode === 'created' ? 'Заявки' : 'Все заявки') : PAGE_TITLE[mode]
-	const desc = isManager ? 'Все доступные заявки' : PAGE_DESC[mode]
-
-	const STORAGE_KEY = `@issueTrack/taskFilters_${mode}`
+	const STORAGE_KEY = '@issueTrack/favoritesFilters'
 
 	const loadFilters = (): FilterValues => {
 		try {
@@ -72,15 +46,14 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 	}
 
 	const [filters, setFilters] = useState<FilterValues>(loadFilters)
-	const [createOpen, setCreateOpen] = useState(false)
 	const [page, setPage] = useState(0)
-	const [tab, setTab] = useState<Tab>('active')
+	const [tab, setTab] = useState<FavoriteTab>('temporary')
 
 	useEffect(() => {
 		localStorage.setItem(STORAGE_KEY, JSON.stringify(filters))
 	}, [filters, STORAGE_KEY])
 
-	const isArchive = tab === 'archive'
+	const isArchive = tab === 'permanent'
 
 	const queryFilter: ITaskFilter = useMemo(
 		() => ({
@@ -94,12 +67,12 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 			dueDateTo: filters.dueDateTo || undefined,
 			search: filters.search || undefined,
 			sort: filters.sort,
-			mode,
+			favoritesType: tab,
 			archived: isArchive || undefined,
 			limit: isArchive ? rowsPerPage : undefined,
 			offset: isArchive ? page * rowsPerPage : undefined,
 		}),
-		[filters, mode, page, isArchive],
+		[filters, tab, page, isArchive],
 	)
 
 	const { data, isFetching } = useGetTasksQuery(queryFilter)
@@ -131,44 +104,18 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 
 	return (
 		<Box sx={{ p: 3 }}>
-			<Box
-				sx={{
-					display: 'flex',
-					flexDirection: { xs: 'column', sm: 'row' },
-					justifyContent: 'space-between',
-					alignItems: { xs: 'flex-start', sm: 'center' },
-					gap: { xs: 2, sm: 0 },
-					mb: 1,
-				}}
-			>
-				<Box>
-					<Typography variant='h5' sx={{ fontWeight: 700, color: '#1f2937' }}>
-						{title}
-					</Typography>
-					<Typography variant='body2' sx={{ color: '#6b7280', display: { xs: 'none', sm: 'block' } }}>
-						{desc}
-					</Typography>
-				</Box>
-				{mode === 'created' && canCreate && (
-					<Button
-						variant='outlined'
-						sx={{
-							borderRadius: '8px',
-							textTransform: 'none',
-							background: '#fff',
-							width: { xs: '100%', sm: 'auto' },
-						}}
-						onClick={() => setCreateOpen(true)}
-					>
-						<PlusIcon sx={{ color: palette.primary.main, fontSize: 16, mr: 1.5 }} />
-						Создать заявку
-					</Button>
-				)}
+			<Box sx={{ mb: 1 }}>
+				<Typography variant='h5' sx={{ fontWeight: 700, color: '#1f2937' }}>
+					Избранное
+				</Typography>
+				<Typography variant='body2' sx={{ color: '#6b7280', display: { xs: 'none', sm: 'block' } }}>
+					Закреплённые и отмеченные звёздочкой заявки
+				</Typography>
 			</Box>
 
 			<Tabs
 				value={tab}
-				onChange={(_, v: Tab) => {
+				onChange={(_, v: FavoriteTab) => {
 					setTab(v)
 					setPage(0)
 				}}
@@ -179,13 +126,8 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 					'& .MuiTab-root': { minHeight: 36, py: 0, textTransform: 'none' },
 				}}
 			>
-				<Tab
-					value='active'
-					label='Активные задачи'
-					iconPosition='start'
-					icon={<InboxIcon sx={{ fontSize: 14 }} />}
-				/>
-				<Tab value='archive' label='Архив' iconPosition='start' icon={<ArchiveIcon sx={{ fontSize: 14 }} />} />
+				<Tab value='temporary' label='Закреплённые' iconPosition='start' icon={<Pin sx={{ fontSize: 14 }} />} />
+				<Tab value='permanent' label='Избранные' iconPosition='start' icon={<Star sx={{ fontSize: 14 }} />} />
 			</Tabs>
 
 			<TaskFilters filters={filters} onChange={handleFilterChange} onReset={handleReset} hideGrouping={isArchive} />
@@ -204,8 +146,6 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 				totalPages={totalPages}
 				onPageChange={handlePageChange}
 			/>
-
-			<TaskCreateModal open={createOpen} onClose={() => setCreateOpen(false)} />
 		</Box>
 	)
 }

@@ -85,18 +85,22 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 		realmStr = req.RealmID.String()
 	}
 
-	elevated, err := s.policies.Enforce(req.Actor.ID.String(), realmStr, string(access.ResourceTicket), string(access.Write))
-	if err != nil {
-		return nil, 0, fmt.Errorf("policy check failed: %w", err)
-	}
-	if !elevated {
-		elevated, err = s.policies.Enforce(req.Actor.ID.String(), realmStr, string(access.ResourceTicket), string(access.Delete))
+	// Для страницы «Избранное» отдаём только избранные пользователя без ограничений по
+	// группам/режиму: пользователь уже имеет read-доступ к своим избранным заявкам.
+	if req.FavoritesByUser != nil {
+		data, total, err := s.repo.Get(ctx, req)
 		if err != nil {
-			return nil, 0, fmt.Errorf("policy check failed: %w", err)
+			return nil, 0, fmt.Errorf("failed to get tickets. error: %w", err)
 		}
+		return data, total, nil
 	}
 
-	if !elevated {
+	canViewAll, err := s.isRealmSupervisor(ctx, req.Actor.ID, realmStr)
+	if err != nil {
+		return nil, 0, fmt.Errorf("realm supervisor check failed: %w", err)
+	}
+
+	if !canViewAll {
 		managed, err := s.groups.GetManagedGroups(ctx, req.Actor.ID, nil)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to get managed groups: %w", err)
@@ -128,8 +132,8 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 		req.IncludeUngroupedAssignedTo = &req.Actor.ID
 	}
 
-	// Handle mode filtering
-	if req.Mode != nil {
+	// Handle mode filtering (realm supervisors see all realm tickets)
+	if req.Mode != nil && !canViewAll {
 		switch *req.Mode {
 		case "created":
 			req.CreatorID = &req.Actor.ID
@@ -145,33 +149,64 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 	return data, total, nil
 }
 
-// autoAssign назначает исполнителя при создании тикета, если исполнитель не указан явно:
-// приоритет — ответственный по умолчанию группы (DefaultAssigneeID), иначе — единственный
-// участник группы, чтобы тикет не остался без исполнителя. Если в группе несколько участников,
-// исполнитель не назначается — его указывают позже вручную.
+// isRealmSupervisor определяет, является ли пользователь «начальником области» в реалме:
+// ему выданы realm-wide пермишены управления областью (category:write или site:write).
+// Такие пользователи видят все заявки реалма в списке.
+func (s *TicketService) isRealmSupervisor(ctx context.Context, userID uuid.UUID, realmStr string) (bool, error) {
+	return isRealmSupervisor(s.policies, userID, realmStr)
+}
+
+// isRealmSupervisor проверяет, является ли пользователь «начальником области» в реалме:
+// ему выданы realm-wide пермишены управления областью (category:write или site:write).
+// Это ролево-настраиваемый критерий (через выдачу прав ролям в БД), без хардкода конкретных ролей.
+func isRealmSupervisor(policies AccessPolicies, userID uuid.UUID, realmStr string) (bool, error) {
+	ok, err := policies.Enforce(userID.String(), realmStr, string(access.ResourceCategory), string(access.Write))
+	if err != nil {
+		return false, fmt.Errorf("policy check failed: %w", err)
+	}
+	if ok {
+		return true, nil
+	}
+	ok, err = policies.Enforce(userID.String(), realmStr, string(access.ResourceSite), string(access.Write))
+	if err != nil {
+		return false, fmt.Errorf("policy check failed: %w", err)
+	}
+	return ok, nil
+}
+
+// autoAssign при создании тикета достраивает поля из группы:
+//   - исполнитель, если не указан явно: приоритет — ответственный по умолчанию группы
+//     (DefaultAssigneeID), иначе — единственный участник группы, чтобы тикет не остался без
+//     исполнителя. Если в группе несколько участников, исполнитель не назначается.
+//   - менеджер (ManagerID) — менеджером группы (ManagerID), если не задан явно.
 func (s *TicketService) autoAssign(ctx context.Context, dto *models.TicketDTO) error {
 	group, err := s.groups.GetByID(ctx, &models.GetGroupDTO{ID: *dto.GroupID})
 	if err != nil {
 		return fmt.Errorf("failed to get group: %w", err)
 	}
 
-	if group.DefaultAssigneeID != nil {
-		dto.AssigneeID = group.DefaultAssigneeID
-		return nil
+	if dto.AssigneeID == nil {
+		if group.DefaultAssigneeID != nil {
+			dto.AssigneeID = group.DefaultAssigneeID
+		} else {
+			count, err := s.groups.GetMemberCount(ctx, *dto.GroupID)
+			if err != nil {
+				return fmt.Errorf("failed to get member count: %w", err)
+			}
+			if count == 1 {
+				members, err := s.groups.GetMembers(ctx, &models.GetGroupDTO{ID: *dto.GroupID})
+				if err != nil {
+					return fmt.Errorf("failed to get members: %w", err)
+				}
+				if len(members) > 0 {
+					dto.AssigneeID = &members[0].ID
+				}
+			}
+		}
 	}
 
-	count, err := s.groups.GetMemberCount(ctx, *dto.GroupID)
-	if err != nil {
-		return fmt.Errorf("failed to get member count: %w", err)
-	}
-	if count == 1 {
-		members, err := s.groups.GetMembers(ctx, &models.GetGroupDTO{ID: *dto.GroupID})
-		if err != nil {
-			return fmt.Errorf("failed to get members: %w", err)
-		}
-		if len(members) > 0 {
-			dto.AssigneeID = &members[0].ID
-		}
+	if dto.ManagerID == nil && group.ManagerID != nil {
+		dto.ManagerID = group.ManagerID
 	}
 	return nil
 }
@@ -255,10 +290,8 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		dto.OwnerID = &dto.CreatorID
 	}
 
-	if dto.AssigneeID == nil {
-		if err := s.autoAssign(ctx, dto); err != nil {
-			return fmt.Errorf("auto-assign: %w", err)
-		}
+	if err := s.autoAssign(ctx, dto); err != nil {
+		return fmt.Errorf("auto-assign: %w", err)
 	}
 
 	err = s.tx.WithinTransaction(ctx, func(newTx postgres.Tx) error {
@@ -363,6 +396,11 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 		oldTicket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
 		if err != nil {
 			return err
+		}
+
+		// manager_id определяется менеджером группы автоматически; ручное изменение запрещено.
+		if dto.HasField("managerId") {
+			return models.ErrPermissionDenied
 		}
 
 		if ownerOnly && !s.ownerTransitionAllowed(oldTicket, dto) {

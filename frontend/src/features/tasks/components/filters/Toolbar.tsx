@@ -10,6 +10,7 @@ interface Props {
 	groupEnabled: boolean
 	groupBy: string
 	activeCount: number
+	hideGrouping?: boolean
 	onSearchChange: (value: string) => void
 	onGroupChange: (option?: GroupByField) => void
 	onOpenFilter: (e: React.MouseEvent<HTMLElement>) => void
@@ -21,6 +22,7 @@ export const Toolbar: FC<Props> = ({
 	groupEnabled,
 	groupBy,
 	activeCount,
+	hideGrouping = false,
 	onSearchChange,
 	onGroupChange,
 	onOpenFilter,
@@ -54,51 +56,53 @@ export const Toolbar: FC<Props> = ({
 				}}
 			/>
 
-			<Box sx={{ width: { xs: '100%', sm: 'auto' } }}>
-				<Button
-					variant='outlined'
-					color='inherit'
-					onClick={e => setGroupAnchorEl(e.currentTarget)}
-					fullWidth
-					sx={{
-						flexShrink: 0,
-						height: 40,
-						borderColor: '#c4c4c4',
-						textTransform: 'none',
-						// color: 'text.secondary',
-						whiteSpace: 'nowrap',
-						color: groupEnabled ? 'primary.main' : '#9ca3af',
-					}}
-				>
-					<LayersIcon sx={{ fontSize: 18, mr: 1 }} />
-					Группировка
-				</Button>
-				<Menu open={Boolean(groupAnchorEl)} anchorEl={groupAnchorEl} onClose={() => setGroupAnchorEl(null)}>
-					<MenuItem
-						value='none'
-						selected={!groupEnabled}
-						onClick={() => {
-							onGroupChange()
-							setGroupAnchorEl(null)
+			{!hideGrouping && (
+				<Box sx={{ width: { xs: '100%', sm: 'auto' } }}>
+					<Button
+						variant='outlined'
+						color='inherit'
+						onClick={e => setGroupAnchorEl(e.currentTarget)}
+						fullWidth
+						sx={{
+							flexShrink: 0,
+							height: 40,
+							borderColor: '#c4c4c4',
+							textTransform: 'none',
+							// color: 'text.secondary',
+							whiteSpace: 'nowrap',
+							color: groupEnabled ? 'primary.main' : '#9ca3af',
 						}}
 					>
-						Без группировки
-					</MenuItem>
-					{GROUP_BY_OPTIONS.map(opt => (
+						<LayersIcon sx={{ fontSize: 18, mr: 1 }} />
+						Группировка
+					</Button>
+					<Menu open={Boolean(groupAnchorEl)} anchorEl={groupAnchorEl} onClose={() => setGroupAnchorEl(null)}>
 						<MenuItem
-							key={opt.value}
-							value={opt.value}
-							selected={opt.value === groupBy && groupEnabled}
+							value='none'
+							selected={!groupEnabled}
 							onClick={() => {
-								onGroupChange(opt.value)
+								onGroupChange()
 								setGroupAnchorEl(null)
 							}}
 						>
-							{opt.label}
+							Без группировки
 						</MenuItem>
-					))}
-				</Menu>
-			</Box>
+						{GROUP_BY_OPTIONS.map(opt => (
+							<MenuItem
+								key={opt.value}
+								value={opt.value}
+								selected={opt.value === groupBy && groupEnabled}
+								onClick={() => {
+									onGroupChange(opt.value)
+									setGroupAnchorEl(null)
+								}}
+							>
+								{opt.label}
+							</MenuItem>
+						))}
+					</Menu>
+				</Box>
+			)}
 
 			<Button
 				variant='outlined'

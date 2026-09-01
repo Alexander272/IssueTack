@@ -226,6 +226,14 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 		where = append(where, "t.status IN ("+strings.Join(ids, ",")+")")
 	}
 
+	if req.FavoritesByUser != nil && req.FavoriteType != nil {
+		where = append(where, fmt.Sprintf(
+			"EXISTS (SELECT 1 FROM %s fav WHERE fav.ticket_id = t.id AND fav.user_id = $%d AND fav.type = $%d)",
+			Tables.TicketFavorites, argIdx, argIdx+1))
+		args = append(args, *req.FavoritesByUser, *req.FavoriteType)
+		argIdx += 2
+	}
+
 	query := base
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")

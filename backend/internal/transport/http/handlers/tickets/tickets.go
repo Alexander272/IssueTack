@@ -59,6 +59,16 @@ func (h *Handler) getAll(c *gin.Context) {
 	}
 	filter.Actor = actor
 
+	if favType := c.Query("favoritesType"); favType != "" {
+		ft := models.FavoriteType(favType)
+		if !ft.IsValid() {
+			response.SendError(c, fmt.Errorf("%w: invalid favoritesType", models.ErrInvalidInput))
+			return
+		}
+		filter.FavoritesByUser = &actor.ID
+		filter.FavoriteType = &ft
+	}
+
 	data, total, err := h.service.Get(c, filter)
 	if err != nil {
 		response.SendError(c, err, filter)

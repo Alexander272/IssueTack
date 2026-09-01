@@ -32,6 +32,8 @@ type (
 		AutoCloseSchedule string `yaml:"auto_close_schedule" env:"TICKETS_AUTO_CLOSE_SCHEDULE" env-default:"@daily"`
 		// Расписание проверки просроченных задач ("@hourly", "@every 30m", "" — отключено)
 		NotifyOverdueSchedule string `yaml:"notify_overdue_schedule" env:"TICKETS_NOTIFY_OVERDUE_SCHEDULE" env-default:"@hourly"`
+		// Расписание очистки «закреплённых» (temporary) избранных ("@daily", "" — отключено)
+		FavoriteCleanupSchedule string `yaml:"favorite_cleanup_schedule" env:"TICKETS_FAVORITE_CLEANUP_SCHEDULE" env-default:"@daily"`
 	}
 
 	FileServerConfig struct {

@@ -36,9 +36,9 @@ type Services struct {
 	Comments
 	Notifications
 	Subscriptions
+	TicketFavorites
 	ActivityLog
 	UserRealms
-
 	// Интеграции
 	Scheduler
 	Mattermost
@@ -110,10 +110,11 @@ func NewServices(deps *Deps) *Services {
 	sites := NewSiteService(deps.Repo.Sites)
 	logs := NewActivityLogService(deps.Repo.ActivityLog, transaction)
 	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs, access)
-	notifications := NewNotificationService(deps.Hub, deps.Repo.Notifications, deps.Repo.Tickets, deps.Repo.TicketSubscriptions, transaction)
+	notifications := NewNotificationService(deps.Hub, deps.Repo.Notifications, deps.Repo.Tickets, deps.Repo.TicketSubscriptions, deps.Repo.UserRealms, groups, transaction)
 	attachments := NewAttachmentService(deps.Repo.Attachments, &deps.Conf.FileServer, access, deps.Repo.Subtasks, notifications)
 	checklists := NewChecklistService(deps.Repo.Checklists, subtasks)
-	subscriptions := NewTicketSubscriptionService(deps.Repo.TicketSubscriptions, deps.Repo.Tickets, access)
+	subscriptions := NewTicketSubscriptionService(deps.Repo.TicketSubscriptions, deps.Repo.Tickets, access, policies, groups)
+	favorites := NewTicketFavoritesService(deps.Repo.TicketFavorites, deps.Repo.Tickets, access, policies)
 
 	mmMost := mattermost.NewMost(mattermost.MostConfig{
 		ServerURL: deps.Conf.Mattermost.URL,
@@ -136,7 +137,7 @@ func NewServices(deps *Deps) *Services {
 
 	// --- Кластер интеграций ---------------------------------------------
 	audit.StartListening(deps.Ctx, updatePolicyEvent)
-	scheduler := NewSchedulerService(&SchedulerDeps{Tickets: tickets, Notifications: notifications})
+	scheduler := NewSchedulerService(&SchedulerDeps{Tickets: tickets, Notifications: notifications, Favorites: favorites})
 
 	mattermostSvc := NewMattermostService(&MattermostDeps{
 		Repo:        deps.Repo.Mattermost,
@@ -149,6 +150,7 @@ func NewServices(deps *Deps) *Services {
 		Sites:       sites,
 		Attachments: attachments,
 		Comments:    comments,
+		Policies:    policies,
 		EventBus:    updatePolicyEvent,
 		Most:        mmMost,
 		BaseURL:     deps.Conf.Http.BaseURL,
@@ -166,18 +168,19 @@ func NewServices(deps *Deps) *Services {
 		Session:        session,
 
 		// Домен
-		Groups:        groups,
-		Categories:    categories,
-		Sites:         sites,
-		Tickets:       tickets,
-		Subtasks:      subtasks,
-		Attachments:   attachments,
-		Checklists:    checklists,
-		Comments:      comments,
-		Notifications: notifications,
-		Subscriptions: subscriptions,
-		ActivityLog:   logs,
-		UserRealms:    userRealms,
+		Groups:          groups,
+		Categories:      categories,
+		Sites:           sites,
+		Tickets:         tickets,
+		Subtasks:        subtasks,
+		Attachments:     attachments,
+		Checklists:      checklists,
+		Comments:        comments,
+		Notifications:   notifications,
+		Subscriptions:   subscriptions,
+		TicketFavorites: favorites,
+		ActivityLog:     logs,
+		UserRealms:      userRealms,
 
 		// Интеграции
 		Scheduler:  scheduler,

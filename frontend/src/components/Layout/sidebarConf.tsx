@@ -14,6 +14,7 @@ import {
 	BuildingIcon,
 	SendIcon,
 	SettingsIcon,
+	StarIcon,
 } from 'lucide-mui'
 
 export interface SidebarItem {
@@ -34,6 +35,7 @@ export interface SidebarRule {
 const homeItems: SidebarItem[] = [
 	{ path: AppRoutes.Home, label: 'Заявки', icon: <SendIcon sx={{ fontSize: 20 }} /> },
 	{ path: AppRoutes.Tasks, label: 'Задачи', icon: <InboxIcon sx={{ fontSize: 18 }} /> },
+	{ path: AppRoutes.Favorites, label: 'Избранное', icon: <StarIcon sx={{ fontSize: 18 }} /> },
 	{ path: AppRoutes.Groups, label: 'Группы', icon: <UsersIcon sx={{ fontSize: 18 }} /> },
 	{ path: AppRoutes.Categories, label: 'Категории', icon: <LayersIcon sx={{ fontSize: 18 }} /> },
 	{ path: AppRoutes.Sites, label: 'Площадки', icon: <BuildingIcon sx={{ fontSize: 18 }} /> },

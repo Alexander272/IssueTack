@@ -54,6 +54,10 @@ export const API = {
 		byId: (id: string) => `/tickets/${id}` as const,
 		subscription: (id: string) => `/tickets/${id}/subscription` as const,
 	},
+	favorites: {
+		base: '/favorites' as const,
+		byTicket: (id: string) => `/tickets/${id}/favorite` as const,
+	},
 	subtasks: {
 		byTicket: (ticketId: string) => `/tickets/${ticketId}/subtasks` as const,
 		byId: (ticketId: string, subtaskId: string) =>

@@ -4,6 +4,8 @@
 
 ## Сделано (текущая сессия)
 
+- [x] **Избранные заявки** (бэкенд + фронтенд): таблица `ticket_favorites` (миграция `20260901000001_...`, `user_id`/`ticket_id` FK CASCADE, `type permanent|temporary`, уникальный `(user_id,ticket_id,type)`). Модель `models/favorite.go`, репозиторий `postgres/favorites.go` (`Add/Remove/Exists/GetByUser/GetTemporaryExpired/DeleteByIDs`), сервис `services/favorites.go` (`Add/Remove/IsFavorite` с проверкой `CheckAccess(Read)`, `CleanupTemporary` — daily-джоб: `resolved`→исполнитель, `closed`→realm supervisor, `permanent` не трогается), scheduler `favoriteCleanupJob` + конфиг `favorite_cleanup_schedule` (`@daily`, пустой=выкл). Отдельный handler `handlers/favorites` (`GET/POST/DELETE /tickets/:id/favorite`, `GET /favorites`). Фильтр по избранному в `GET /tickets`: `TicketFilter.FavoritesByUser`+`FavoriteType`, `EXISTS` в `postgres/tickets.go`, ранний возврат в `TicketService.Get`, query-параметр `favoritesType` в `getAll`.
+- [x] **Страница «Избранное» как страница заявок** (фронтенд): переиспользуемый компонент `TaskListView` (`features/tasks/components/Table/`) — загрузка + `TaskTable` + футер с пагинацией; `TaskList` откачен к чистым заявкам и использует его; отдельная страница `features/favorites/pages/FavoritesPage.tsx` с вкладками «Закреплённые»(temporary)/«Избранные»(permanent) — temporary как активные (с группировкой), permanent как архив (без группировки, с пагинацией); обёртка `pages/favorites/Favorites.tsx` + `FavoritesLazy.tsx` (общий lazy-паттерн), маршрут `/favorites`, пункт меню «Избранное». Кнопка «Группировка» скрывается в архивном режиме (`hideGrouping` в `Toolbar`/`TaskFilters`/`types`). Вкладки/термины: `temporary` ↔ «закреплено», `permanent` ↔ «в избранном».
 - [x] **Фикс смены статуса (partial update)**: `TicketDTO`/`SubtaskDTO` получили presence-tracking (`Provided`, `UnmarshalJSON` на goccy/go-json), `GetChanges` и динамический `SET` в `postgres/{tickets,subtasks}.go` — частичное обновление не затирает незатронутые поля. Frontend: `updateTask`/`updateSubtask` принимают `Partial<DTO>`; убран `as any` в `TaskDetail.tsx`.
 - [x] **Статусы `closed`/`cancelled` — только автор тикета или менеджер группы**: проверка `isCreatorOrManager` в `TicketService.Update` (Casbin `write` не спасает; строгая). `resolved` по-прежнему может ставить исполнитель.
 - [x] **Авто-закрытие `resolved` → `closed`**: колонка `tickets.resolved_at` (миграция `20260813000001_...` + бэкафилл), проставляется при переходе в `resolved`; время ожидания — `tickets.resolved_to_closed_after` в `config.yaml` (168h = 7 дней, 0 — отключено).
@@ -27,7 +29,7 @@
 
 ## Незакоммичено (сейчас в git status)
 
-_(нет незакоммиченных файлов)_
+- Избранные заявки (см. «Сделано (текущая сессия)»).
 
 ## Фичи (планы в `.opencode/plans/`)
 
@@ -51,7 +53,7 @@ _(нет незакоммиченных файлов)_
     - `Update`: только admin может менять `groupId`; admin или group manager — `assigneeId`; `managerId` — всегда запрещён (auto-managed)
     - Хелпер `isManagerOfGroup(ctx, group, userID) bool` через `GetManagedGroups`
     - Фронт: `IAccessFlags` — `isAdmin`/`isManager`; `AdvancedSettingsSection` — `groupId disabled={!isAdmin}`, `assigneeId disabled={!isAdmin && !isManager}`
-- [ ] **Менеджер тикета**: `manager_id` не проставляется в `Create` (и не обновляется в `Update`) — заполнять менеджером группы.
+- [x] **Менеджер тикета**: `manager_id` не проставляется в `Create` (и не обновляется в `Update`) — заполнять менеджером группы.
     - `Create`: после проверки `GroupID != nil`, загрузить группу и проставить `dto.ManagerID = group.ManagerID` (объединить с `autoAssign`)
     - `Update`: auto-managed, ручное изменение запрещено
 

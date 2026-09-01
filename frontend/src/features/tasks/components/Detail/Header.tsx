@@ -1,8 +1,14 @@
-import { Box, IconButton, Tooltip, Typography } from '@mui/material'
-import { Star, MoreVertical, ArrowLeftIcon } from 'lucide-mui'
+import { useState } from 'react'
+import { Box, IconButton, Tooltip, Typography, Menu, MenuItem, ListItemIcon } from '@mui/material'
+import { Star, MoreVertical, ArrowLeftIcon, Pin } from 'lucide-mui'
 import { useNavigate } from 'react-router'
 
 import type { ITask } from '../../types/task'
+import {
+	useGetFavoriteStateQuery,
+	useAddFavoriteMutation,
+	useRemoveFavoriteMutation,
+} from '@/features/favorites/favoritesApiSlice'
 
 interface Props {
 	task: ITask
@@ -10,6 +16,33 @@ interface Props {
 
 export const Header = ({ task }: Props) => {
 	const navigate = useNavigate()
+	const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
+
+	const { data: favState } = useGetFavoriteStateQuery(task.id)
+	const [addFavorite] = useAddFavoriteMutation()
+	const [removeFavorite] = useRemoveFavoriteMutation()
+
+	const pinned = favState?.data?.temporary ?? false
+	const starred = favState?.data?.permanent ?? false
+
+	const handleMenuClose = () => setAnchorEl(null)
+
+	const togglePin = () => {
+		if (pinned) {
+			removeFavorite({ id: task.id, type: 'temporary' })
+		} else {
+			addFavorite({ id: task.id, type: 'temporary' })
+		}
+	}
+
+	const toggleStar = () => {
+		handleMenuClose()
+		if (starred) {
+			removeFavorite({ id: task.id, type: 'permanent' })
+		} else {
+			addFavorite({ id: task.id, type: 'permanent' })
+		}
+	}
 
 	return (
 		<Box
@@ -61,16 +94,34 @@ export const Header = ({ task }: Props) => {
 			</Box>
 
 			<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
-				<Tooltip title='В избранное'>
-					<IconButton sx={{ color: '#9ca3af', '&:hover': { color: '#f59e0b' }, fontSize: 20 }}>
-						<Star sx={{ fontSize: 20 }} />
+				<Tooltip title={pinned ? 'Открепить' : 'Закрепить'}>
+					<IconButton
+						onClick={togglePin}
+						sx={{
+							color: pinned ? '#f59e0b' : '#9ca3af',
+							'&:hover': { color: '#f59e0b' },
+							fontSize: 20,
+						}}
+					>
+						<Pin sx={{ fontSize: 20 }} />
 					</IconButton>
 				</Tooltip>
 				<Tooltip title='Ещё'>
-					<IconButton sx={{ color: '#9ca3af', '&:hover': { color: 'error.main' }, fontSize: 20 }}>
+					<IconButton
+						onClick={e => setAnchorEl(e.currentTarget)}
+						sx={{ color: '#9ca3af', '&:hover': { color: 'error.main' }, fontSize: 20 }}
+					>
 						<MoreVertical sx={{ fontSize: 20 }} />
 					</IconButton>
 				</Tooltip>
+				<Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
+					<MenuItem onClick={toggleStar}>
+						<ListItemIcon>
+							<Star sx={{ fontSize: 18, color: starred ? '#f59e0b' : '#9ca3af' }} />
+						</ListItemIcon>
+						{starred ? 'Убрать из избранного' : 'В избранное'}
+					</MenuItem>
+				</Menu>
 			</Box>
 		</Box>
 	)

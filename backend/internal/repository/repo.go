@@ -71,6 +71,9 @@ type Notifications interface {
 type TicketSubscriptions interface {
 	postgres.TicketSubscriptions
 }
+type TicketFavorites interface {
+	postgres.TicketFavorites
+}
 type Mattermost interface {
 	postgres.MattermostRepoInterface
 }
@@ -96,6 +99,7 @@ type Repository struct {
 	ActivityLog
 	Notifications
 	TicketSubscriptions
+	TicketFavorites
 	Mattermost
 }
 
@@ -125,6 +129,7 @@ func NewRepository(pool *pgxpool.Pool, memDB *redis.Client, conf config.AuthConf
 		ActivityLog:         postgres.NewActivityRepo(pool, transaction),
 		Notifications:       postgres.NewNotificationRepo(pool, transaction),
 		TicketSubscriptions: postgres.NewSubscriptionRepo(pool, transaction),
+		TicketFavorites:     postgres.NewFavoriteRepo(pool, transaction),
 		Mattermost:          postgres.NewMattermostRepo(pool, transaction),
 	}
 }

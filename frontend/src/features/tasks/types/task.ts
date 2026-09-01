@@ -75,6 +75,7 @@ export interface ITaskFilter {
 	dueDateTo?: string
 	sort?: string
 	archived?: boolean
+	favoritesType?: 'temporary' | 'permanent'
 	limit?: number
 	offset?: number
 	mode?: string

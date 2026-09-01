@@ -21,4 +21,5 @@ export interface TaskFiltersProps {
 	filters: FilterValues
 	onChange: (patch: Partial<FilterValues>) => void
 	onReset: () => void
+	hideGrouping?: boolean
 }

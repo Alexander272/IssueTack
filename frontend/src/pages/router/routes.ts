@@ -4,6 +4,7 @@ export const AppRoutes = Object.freeze({
 
 	Tasks: '/tasks' as const,
 	TaskDetail: '/tasks/:id' as const,
+	Favorites: '/favorites' as const,
 	Groups: '/groups' as const,
 	Sites: '/sites' as const,
 	Categories: '/categories' as const,

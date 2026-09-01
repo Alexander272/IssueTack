@@ -10,7 +10,7 @@ import type { FilterValues, TaskFiltersProps } from './types'
 export type { FilterValues }
 export type { TaskFiltersProps }
 
-export const TaskFilters: FC<TaskFiltersProps> = ({ filters, onChange, onReset }) => {
+export const TaskFilters: FC<TaskFiltersProps> = ({ filters, onChange, onReset, hideGrouping = false }) => {
 	const [filterAnchorEl, setFilterAnchorEl] = useState<HTMLElement | null>(null)
 
 	const { data: sitesData } = useGetAllSitesQuery()
@@ -41,6 +41,7 @@ export const TaskFilters: FC<TaskFiltersProps> = ({ filters, onChange, onReset }
 				groupEnabled={filters.groupEnabled}
 				groupBy={filters.groupBy}
 				activeCount={activeCount}
+				hideGrouping={hideGrouping}
 				onSearchChange={search => onChange({ search })}
 				onGroupChange={option =>
 					onChange({ groupBy: option ?? 'category', groupEnabled: option ? true : false })

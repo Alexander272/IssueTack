@@ -11,6 +11,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/categories"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/checklists"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/comments"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/favorites"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/groups"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/mattermost"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/notifications"
@@ -79,6 +80,7 @@ func (h *Handler) Init(group *gin.RouterGroup) {
 
 	notifications.Register(secure, h.services.Notifications, h.middleware)
 	subscriptions.Register(secure, h.services.Subscriptions, h.middleware)
+	favorites.Register(secure, h.services.TicketFavorites, h.middleware)
 	activity_log.Register(secure, h.services.ActivityLog, h.middleware)
 	audit_log.Register(secure, h.services.AuditLogs, h.middleware)
 
