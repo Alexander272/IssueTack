@@ -30,7 +30,6 @@ func ticketServiceFixtures() (*MockTicketsRepo, *MockActivityLogService, *MockSu
 		Notifications: mockNotifications,
 		Groups:        mockGroups,
 		Categories:    new(MockCategoriesRepo),
-		Policies:      mockPolicies,
 		Access:        NewTicketAccessService(mockRepo, mockGroups, mockPolicies),
 	})
 	return mockRepo, mockLogs, mockSubtasks, mockAttachments, mockNotifications, mockGroups, mockPolicies, svc
@@ -38,7 +37,6 @@ func ticketServiceFixtures() (*MockTicketsRepo, *MockActivityLogService, *MockSu
 
 func TestTicketService_Get_Elevated(t *testing.T) {
 	mockRepo, _, _, _, _, _, mockPolicies, svc := ticketServiceFixtures()
-	svc.policies = mockPolicies
 
 	actorID := uuid.New()
 	req := &models.TicketFilter{
@@ -97,7 +95,6 @@ func TestTicketService_Get_GroupFilter(t *testing.T) {
 func TestTicketService_Get_NoGroups_ReturnsEmpty(t *testing.T) {
 	mockRepo, _, _, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
 	svc.groups = mockGroups
-	svc.policies = mockPolicies
 
 	actorID := uuid.New()
 	req := &models.TicketFilter{
@@ -272,7 +269,8 @@ func TestTicketService_Create_Success(t *testing.T) {
 	}, nil)
 	mockRepo.On("Create", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
-	mockNotifications.On("TicketCreated", mock.Anything, dto).Return(nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: id}).Return(&models.Ticket{ID: id}, nil)
+	mockNotifications.On("TicketCreated", mock.Anything, mock.AnythingOfType("*models.Ticket")).Return(nil)
 
 	err := svc.Create(context.Background(), dto)
 	assert.NoError(t, err)
@@ -282,7 +280,6 @@ func TestTicketService_Create_Success(t *testing.T) {
 
 func TestTicketService_Create_MissingGroup(t *testing.T) {
 	_, _, _, _, _, _, mockPolicies, svc := ticketServiceFixtures()
-	svc.policies = mockPolicies
 
 	actorID := uuid.New()
 	id := uuid.New()
@@ -352,6 +349,7 @@ func TestTicketService_Create_Executor_OwnGroup(t *testing.T) {
 	}, nil)
 	mockRepo.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: id}).Return(&models.Ticket{ID: id}, nil)
 	mockNotifications.On("TicketCreated", mock.Anything, mock.Anything).Return(nil)
 
 	err := svc.Create(context.Background(), dto)
@@ -384,7 +382,7 @@ func TestTicketService_Update_Success(t *testing.T) {
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
-	mockNotifications.On("TicketUpdated", mock.Anything, ticketID, actorID, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
 
 	err := svc.Update(context.Background(), dto)
 	assert.NoError(t, err)
@@ -464,7 +462,7 @@ func TestTicketService_Update_StatusOnly_Assignee(t *testing.T) {
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
-	mockNotifications.On("TicketUpdated", mock.Anything, ticketID, actorID, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
 
 	err := svc.Update(context.Background(), dto)
 	assert.NoError(t, err)
@@ -498,7 +496,7 @@ func TestTicketService_Update_Assignee_SetResolved_Success(t *testing.T) {
 	mockSubtasks.On("GetUnresolvedCount", mock.Anything, ticketID).Return(0, nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
-	mockNotifications.On("TicketUpdated", mock.Anything, ticketID, actorID, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
 
 	err := svc.Update(context.Background(), dto)
 	assert.NoError(t, err)
@@ -563,7 +561,7 @@ func TestTicketService_Update_Resolve_CancelledSubtasks_Success(t *testing.T) {
 	mockSubtasks.On("GetUnresolvedCount", mock.Anything, ticketID).Return(0, nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
-	mockNotifications.On("TicketUpdated", mock.Anything, ticketID, actorID, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
 
 	err := svc.Update(context.Background(), dto)
 	assert.NoError(t, err)
@@ -654,7 +652,7 @@ func TestTicketService_Update_Creator_SetClosed_Success(t *testing.T) {
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
-	mockNotifications.On("TicketUpdated", mock.Anything, ticketID, actorID, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
 
 	err := svc.Update(context.Background(), dto)
 	assert.NoError(t, err)
@@ -718,7 +716,7 @@ func TestTicketService_Update_Manager_SetCancelled_Success(t *testing.T) {
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
-	mockNotifications.On("TicketUpdated", mock.Anything, ticketID, actorID, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
 
 	err := svc.Update(context.Background(), dto)
 	assert.NoError(t, err)
@@ -750,7 +748,7 @@ func TestTicketService_Update_Owner_Accept_FromResolved_Success(t *testing.T) {
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
-	mockNotifications.On("TicketUpdated", mock.Anything, ticketID, actorID, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
 
 	err := svc.Update(context.Background(), dto)
 	assert.NoError(t, err)
@@ -787,7 +785,7 @@ func TestTicketService_Update_Owner_ReturnToWork_FromResolved_Success(t *testing
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
-	mockNotifications.On("TicketUpdated", mock.Anything, ticketID, actorID, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
 
 	err := svc.Update(context.Background(), dto)
 	assert.NoError(t, err)
@@ -820,7 +818,7 @@ func TestTicketService_Update_Owner_Cancel_FromActive_Success(t *testing.T) {
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
-	mockNotifications.On("TicketUpdated", mock.Anything, ticketID, actorID, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
 
 	err := svc.Update(context.Background(), dto)
 	assert.NoError(t, err)
@@ -1063,7 +1061,7 @@ func TestTicketService_Take_NoAssignee_Success(t *testing.T) {
 		assert.True(t, dtoUpdate.HasField("assigneeId"))
 	})
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
-	mockNotifications.On("TicketUpdated", mock.Anything, ticketID, actorID, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
 
 	err := svc.Take(context.Background(), dto)
 	assert.NoError(t, err)
@@ -1090,7 +1088,7 @@ func TestTicketService_Take_OtherAssignee_Open_Success(t *testing.T) {
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 	mockRepo.On("Update", mock.Anything, nil, mock.Anything).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
-	mockNotifications.On("TicketUpdated", mock.Anything, ticketID, actorID, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
 
 	err := svc.Take(context.Background(), dto)
 	assert.NoError(t, err)
@@ -1188,7 +1186,7 @@ func TestTicketService_Transfer_Success(t *testing.T) {
 		assert.True(t, dtoUpdate.HasField("assigneeId"))
 	})
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
-	mockNotifications.On("TicketUpdated", mock.Anything, ticketID, actorID, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
 
 	err := svc.Transfer(context.Background(), dto)
 	assert.NoError(t, err)
@@ -1297,7 +1295,7 @@ func TestTicketService_Update_Owner_EditInOpen_Success(t *testing.T) {
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
-	mockNotifications.On("TicketUpdated", mock.Anything, ticketID, actorID, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
 
 	err := svc.Update(context.Background(), dto)
 	assert.NoError(t, err)
@@ -1380,4 +1378,32 @@ func TestTicketService_GetAccessFlags_CanEditFields(t *testing.T) {
 	flags, err := svc.GetAccessFlags(context.Background(), ticket, creatorID, "")
 	assert.NoError(t, err)
 	assert.True(t, flags.CanEditFields)
+}
+
+func TestTicketService_GetSummary(t *testing.T) {
+	mockRepo, _, _, _, _, _, _, svc := ticketServiceFixtures()
+
+	ticketID := uuid.New()
+	expected := &models.Ticket{
+		ID:      ticketID,
+		Title:   "Summary Ticket",
+		RealmID: func() *uuid.UUID { r := uuid.New(); return &r }(),
+	}
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(expected, nil)
+
+	got, err := svc.GetSummary(context.Background(), ticketID)
+	assert.NoError(t, err)
+	assert.Equal(t, expected, got)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestTicketService_GetSummary_NotFound(t *testing.T) {
+	mockRepo, _, _, _, _, _, _, svc := ticketServiceFixtures()
+
+	ticketID := uuid.New()
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(nil, models.ErrNoRows)
+
+	_, err := svc.GetSummary(context.Background(), ticketID)
+	assert.ErrorIs(t, err, models.ErrNoRows)
+	mockRepo.AssertExpectations(t)
 }

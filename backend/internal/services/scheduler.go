@@ -128,7 +128,12 @@ func (s *SchedulerService) notifyOverdueJob(ctx context.Context) {
 		return
 	}
 	for _, id := range ids {
-		if err := s.notifications.NotifyOverdue(ctx, id); err != nil {
+		ticket, err := s.tickets.GetSummary(ctx, id)
+		if err != nil {
+			logger.Error("failed to load overdue ticket", logger.StringAttr("ticket_id", id.String()), logger.ErrAttr(err))
+			continue
+		}
+		if err := s.notifications.NotifyOverdue(ctx, ticket); err != nil {
 			logger.Error("failed to notify overdue ticket:", logger.StringAttr("ticket_id", id.String()), logger.ErrAttr(err))
 		}
 	}

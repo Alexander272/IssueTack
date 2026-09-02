@@ -14,17 +14,15 @@ import (
 // заявки как «избранное» (permanent) или «закреплённые» (temporary, авто-очищаются джобом).
 type TicketFavoritesService struct {
 	repo         repository.TicketFavorites
-	ticketRepo   repository.Tickets
+	tickets      Tickets
 	ticketAccess TicketAccessChecker
-	policies     AccessPolicies
 }
 
-func NewTicketFavoritesService(repo repository.TicketFavorites, ticketRepo repository.Tickets, ticketAccess TicketAccessChecker, policies AccessPolicies) *TicketFavoritesService {
+func NewTicketFavoritesService(repo repository.TicketFavorites, tickets Tickets, ticketAccess TicketAccessChecker) *TicketFavoritesService {
 	return &TicketFavoritesService{
 		repo:         repo,
-		ticketRepo:   ticketRepo,
+		tickets:      tickets,
 		ticketAccess: ticketAccess,
-		policies:     policies,
 	}
 }
 
@@ -72,7 +70,7 @@ func (s *TicketFavoritesService) GetByUser(ctx context.Context, userID uuid.UUID
 
 // checkReadAccess загружает тикет, проверяет у пользователя read-доступ и возвращает тикет.
 func (s *TicketFavoritesService) checkReadAccess(ctx context.Context, ticketID, userID uuid.UUID) (*models.Ticket, error) {
-	ticket, err := s.ticketRepo.GetByID(ctx, &models.GetTicketByIdDTO{ID: ticketID})
+	ticket, err := s.tickets.GetSummary(ctx, ticketID)
 	if err != nil {
 		return nil, err
 	}
@@ -82,12 +80,7 @@ func (s *TicketFavoritesService) checkReadAccess(ctx context.Context, ticketID, 
 		realm = ticket.RealmID.String()
 	}
 
-	if err := s.ticketAccess.CheckAccess(ctx, &models.AccessCheckDTO{
-		TicketID: ticketID,
-		UserID:   userID,
-		Action:   string(access.Read),
-		Realm:    realm,
-	}); err != nil {
+	if err := s.ticketAccess.CheckAccessOnTicket(ctx, ticket, userID, string(access.Read), realm); err != nil {
 		return nil, err
 	}
 	return ticket, nil
@@ -139,7 +132,8 @@ func (s *TicketFavoritesService) CleanupTemporary(ctx context.Context) (int, err
 	return len(toDelete), nil
 }
 
-// isSupervisorCached определяет, является ли пользователь начальником области в реалме, кэшируя результат.
+// isSupervisorCached определяет, является ли пользователь начальником области в реалме, кэшируя результат
+// за один проход джоба (проверка делегируется единому объекту доступа — TicketAccessChecker).
 func (s *TicketFavoritesService) isSupervisorCached(ctx context.Context, userID uuid.UUID, realmID *uuid.UUID, cache map[string]bool) (bool, error) {
 	realm := ""
 	if realmID != nil {
@@ -151,7 +145,7 @@ func (s *TicketFavoritesService) isSupervisorCached(ctx context.Context, userID 
 		return v, nil
 	}
 
-	ok, err := isRealmSupervisor(s.policies, userID, realm)
+	ok, err := s.ticketAccess.IsRealmSupervisor(ctx, userID, realm)
 	if err != nil {
 		return false, err
 	}

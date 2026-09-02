@@ -15,22 +15,23 @@ import (
 )
 
 // NotificationService — сервис уведомлений пользователей (сохранение в БД и push через WebSocket-хаб).
+// Сервис не обращается к репозиторию тикетов напрямую: агрегат тикета приходит уже загруженным
+// от сервиса-владельца (TicketService) через параметры методов — так удаётся избежать цикла
+// зависимостей (tickets → notifications → tickets) и сохранить инкапсуляцию бизнес-правил.
 type NotificationService struct {
 	hub           *ws_hub.Hub
 	repo          repository.Notifications
-	ticketRepo    repository.Tickets
-	subscriptions repository.TicketSubscriptions
-	userRealms    repository.UserRealms
+	subscriptions TicketSubscriptionOps
+	userRealms    UserRealms
 	groups        Groups
 	txManager     TransactionManager
 }
 
 // NewNotificationService создаёт NotificationService.
-func NewNotificationService(hub *ws_hub.Hub, repo repository.Notifications, ticketRepo repository.Tickets, subscriptions repository.TicketSubscriptions, userRealms repository.UserRealms, groups Groups, txManager TransactionManager) *NotificationService {
+func NewNotificationService(hub *ws_hub.Hub, repo repository.Notifications, subscriptions TicketSubscriptionOps, userRealms UserRealms, groups Groups, txManager TransactionManager) *NotificationService {
 	return &NotificationService{
 		hub:           hub,
 		repo:          repo,
-		ticketRepo:    ticketRepo,
 		subscriptions: subscriptions,
 		userRealms:    userRealms,
 		groups:        groups,
@@ -41,19 +42,18 @@ func NewNotificationService(hub *ws_hub.Hub, repo repository.Notifications, tick
 // Notifications — интерфейс уведомлений о событиях тикетов.
 type Notifications interface {
 	// TicketCreated оповещает заинтересованных пользователей о создании тикета.
-	TicketCreated(ctx context.Context, dto *models.TicketDTO) error
+	TicketCreated(ctx context.Context, ticket *models.Ticket) error
 	// TicketUpdated оповещает заинтересованных пользователей об обновлении тикета.
-	TicketUpdated(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID, changes []*models.FieldChange) error
+	TicketUpdated(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID, changes []*models.FieldChange) error
 	// TicketDeleted оповещает заинтересованных пользователей об удалении тикета.
 	TicketDeleted(ctx context.Context, ticket *models.Ticket) error
 	// TicketCommented оповещает исполнителя и подписанных о новом комментарии.
-	TicketCommented(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID) error
+	TicketCommented(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) error
 	// AttachmentAdded оповещает исполнителя и подписанных о новом вложении.
-	AttachmentAdded(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID) error
+	AttachmentAdded(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) error
 	// NotifyOverdue оповещает о просроченном тикете: исполнителя, менеджера, админов реалма,
 	// а также подписчиков категории/группы на событие «Просрочка».
-	NotifyOverdue(ctx context.Context, ticketID uuid.UUID) error
-	// GetOverdueTicketIDs возвращает ID активных тикетов с просроченным сроком.
+	NotifyOverdue(ctx context.Context, ticket *models.Ticket) error
 	// GetOverdueTicketIDs возвращает ID активных тикетов с просроченным сроком.
 	GetOverdueTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error)
 	// GetSettings возвращает персональные настройки уведомлений пользователя.
@@ -71,11 +71,7 @@ type Notifications interface {
 // NotifyOverdue оповещает о просроченном тикете: исполнителя, менеджера, админов реалма и
 // подписчиков категории/группы на событие «Просрочка». Дедупликация — по уже существующему
 // уведомлению ticket.overdue для тикета (чтобы cron не спамил на каждом прогоне).
-func (s *NotificationService) NotifyOverdue(ctx context.Context, ticketID uuid.UUID) error {
-	ticket, err := s.ticketRepo.GetByID(ctx, &models.GetTicketByIdDTO{ID: ticketID})
-	if err != nil {
-		return fmt.Errorf("failed to get ticket for overdue notification: %w", err)
-	}
+func (s *NotificationService) NotifyOverdue(ctx context.Context, ticket *models.Ticket) error {
 
 	recipients := make(map[uuid.UUID]struct{})
 
@@ -121,7 +117,7 @@ func (s *NotificationService) NotifyOverdue(ctx context.Context, ticketID uuid.U
 	}
 
 	for userID := range recipients {
-		exists, err := s.repo.HasNotification(ctx, userID, ticketID, string(models.NotificationTicketOverdue))
+		exists, err := s.repo.HasNotification(ctx, userID, ticket.ID, string(models.NotificationTicketOverdue))
 		if err != nil {
 			return fmt.Errorf("failed to check overdue notification: %w", err)
 		}
@@ -146,27 +142,29 @@ func (s *NotificationService) NotifyOverdue(ctx context.Context, ticketID uuid.U
 // TicketCreated оповещает менеджера, ответственных категории и исполнителя о создании тикета,
 // а также авто-подписывает на заявку надзителей реалма и менеджера группы (с включёнными
 // уведомлениями), чтобы они получали дальнейшие события через подписку.
-func (s *NotificationService) TicketCreated(ctx context.Context, dto *models.TicketDTO) error {
+func (s *NotificationService) TicketCreated(ctx context.Context, ticket *models.Ticket) error {
 	recipients := make(map[uuid.UUID]struct{})
 
-	if dto.ManagerID != nil {
-		recipients[*dto.ManagerID] = struct{}{}
+	if ticket.Manager != nil {
+		recipients[ticket.Manager.ID] = struct{}{}
 	}
 
-	if dto.AssigneeID != nil {
-		recipients[*dto.AssigneeID] = struct{}{}
+	if ticket.Assignee != nil {
+		recipients[ticket.Assignee.ID] = struct{}{}
 	}
 
-	responsible, err := s.repo.GetResponsibleByCategory(ctx, dto.CategoryID)
-	if err != nil {
-		return fmt.Errorf("failed to get responsible by category: %w", err)
-	}
-	for _, id := range responsible {
-		recipients[id] = struct{}{}
+	if ticket.Category != nil {
+		responsible, err := s.repo.GetResponsibleByCategory(ctx, ticket.Category.ID)
+		if err != nil {
+			return fmt.Errorf("failed to get responsible by category: %w", err)
+		}
+		for _, id := range responsible {
+			recipients[id] = struct{}{}
+		}
 	}
 
 	// Авто-подписка на заявку: надзители реалма и менеджер группы с включёнными уведомлениями.
-	auto, err := s.autoSubscribeOnCreate(ctx, dto)
+	auto, err := s.autoSubscribeOnCreate(ctx, ticket)
 	if err != nil {
 		return err
 	}
@@ -175,17 +173,19 @@ func (s *NotificationService) TicketCreated(ctx context.Context, dto *models.Tic
 	}
 
 	// Пользователи, подписавшиеся на новые задачи в категории тикета (добровольная подписка).
-	subscribers, err := s.repo.GetCategoryEventSubscribers(ctx, dto.CategoryID, models.EventFieldName(models.EventNewTask))
-	if err != nil {
-		return fmt.Errorf("failed to get new-task subscribers by category: %w", err)
-	}
-	for _, id := range subscribers {
-		recipients[id] = struct{}{}
+	if ticket.Category != nil {
+		subscribers, err := s.repo.GetCategoryEventSubscribers(ctx, ticket.Category.ID, models.EventFieldName(models.EventNewTask))
+		if err != nil {
+			return fmt.Errorf("failed to get new-task subscribers by category: %w", err)
+		}
+		for _, id := range subscribers {
+			recipients[id] = struct{}{}
+		}
 	}
 
 	// Участники группы тикета, подписавшиеся на новые задачи этой группы.
-	if dto.GroupID != nil {
-		groupSubscribers, err := s.repo.GetGroupEventSubscribers(ctx, *dto.GroupID, models.EventFieldName(models.EventNewTask))
+	if ticket.Group != nil {
+		groupSubscribers, err := s.repo.GetGroupEventSubscribers(ctx, ticket.Group.ID, models.EventFieldName(models.EventNewTask))
 		if err != nil {
 			return fmt.Errorf("failed to get new-task group subscribers: %w", err)
 		}
@@ -195,8 +195,8 @@ func (s *NotificationService) TicketCreated(ctx context.Context, dto *models.Tic
 	}
 
 	data, err := json.Marshal(map[string]interface{}{
-		"ticket_id": dto.ID.String(),
-		"title":     dto.Title,
+		"ticket_id": ticket.ID.String(),
+		"title":     ticket.Title,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to marshal notification data: %w", err)
@@ -207,7 +207,7 @@ func (s *NotificationService) TicketCreated(ctx context.Context, dto *models.Tic
 			UserID: userID,
 			Type:   "ticket.created",
 			Title:  "Новая задача",
-			Body:   dto.Title,
+			Body:   ticket.Title,
 			Data:   data,
 		}
 
@@ -220,12 +220,7 @@ func (s *NotificationService) TicketCreated(ctx context.Context, dto *models.Tic
 }
 
 // TicketUpdated оповещает менеджера и новых исполнителей об обновлении тикета.
-func (s *NotificationService) TicketUpdated(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID, changes []*models.FieldChange) error {
-	ticket, err := s.ticketRepo.GetByID(ctx, &models.GetTicketByIdDTO{ID: ticketID})
-	if err != nil {
-		return fmt.Errorf("failed to get ticket for notification: %w", err)
-	}
-
+func (s *NotificationService) TicketUpdated(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID, changes []*models.FieldChange) error {
 	recipients := make(map[uuid.UUID]struct{})
 
 	if ticket.Manager != nil {
@@ -369,12 +364,7 @@ func (s *NotificationService) TicketDeleted(ctx context.Context, ticket *models.
 
 // TicketCommented оповещает исполнителя и подписанных о новом комментарии по заявке.
 // Самому автору комментария уведомление не отправляется.
-func (s *NotificationService) TicketCommented(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID) error {
-	ticket, err := s.ticketRepo.GetByID(ctx, &models.GetTicketByIdDTO{ID: ticketID})
-	if err != nil {
-		return fmt.Errorf("failed to get ticket for comment notification: %w", err)
-	}
-
+func (s *NotificationService) TicketCommented(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) error {
 	recipients := make(map[uuid.UUID]struct{})
 
 	if ticket.Assignee != nil && ticket.Assignee.ID != actorID {
@@ -432,12 +422,7 @@ func (s *NotificationService) TicketCommented(ctx context.Context, ticketID uuid
 
 // AttachmentAdded оповещает исполнителя и подписанных о новом вложении по заявке.
 // Самому автору вложения уведомление не отправляется.
-func (s *NotificationService) AttachmentAdded(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID) error {
-	ticket, err := s.ticketRepo.GetByID(ctx, &models.GetTicketByIdDTO{ID: ticketID})
-	if err != nil {
-		return fmt.Errorf("failed to get ticket for attachment notification: %w", err)
-	}
-
+func (s *NotificationService) AttachmentAdded(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) error {
 	recipients := make(map[uuid.UUID]struct{})
 
 	if ticket.Assignee != nil && ticket.Assignee.ID != actorID {
@@ -568,11 +553,11 @@ func (s *NotificationService) notifEnabled(ctx context.Context, userID uuid.UUID
 
 // autoSubscribeOnCreate подписывает на создаваемую заявку надзителей реалма и менеджера группы
 // (у кого включены уведомления) и возвращает их ID, чтобы они получили уведомление о создании.
-func (s *NotificationService) autoSubscribeOnCreate(ctx context.Context, dto *models.TicketDTO) ([]uuid.UUID, error) {
+func (s *NotificationService) autoSubscribeOnCreate(ctx context.Context, ticket *models.Ticket) ([]uuid.UUID, error) {
 	candidates := make(map[uuid.UUID]struct{})
 
-	if dto.RealmID != nil {
-		supervisors, err := s.userRealms.GetRealmSupervisors(ctx, *dto.RealmID)
+	if ticket.RealmID != nil {
+		supervisors, err := s.userRealms.GetRealmSupervisors(ctx, *ticket.RealmID)
 		if err != nil {
 			return nil, err
 		}
@@ -581,8 +566,8 @@ func (s *NotificationService) autoSubscribeOnCreate(ctx context.Context, dto *mo
 		}
 	}
 
-	if dto.GroupID != nil {
-		group, err := s.groups.GetByID(ctx, &models.GetGroupDTO{ID: *dto.GroupID})
+	if ticket.Group != nil {
+		group, err := s.groups.GetByID(ctx, &models.GetGroupDTO{ID: ticket.Group.ID})
 		if err != nil {
 			return nil, err
 		}
@@ -600,7 +585,7 @@ func (s *NotificationService) autoSubscribeOnCreate(ctx context.Context, dto *mo
 		if !enabled {
 			continue
 		}
-		if err := s.subscriptions.Subscribe(ctx, nil, *dto.ID, id); err != nil {
+		if err := s.subscriptions.SubscribeInternal(ctx, ticket.ID, id); err != nil {
 			return nil, err
 		}
 		subscribed = append(subscribed, id)

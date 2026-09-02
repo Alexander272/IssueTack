@@ -102,26 +102,24 @@ func NewServices(deps *Deps) *Services {
 	// --- Кластер домена (группы, каталог, заявки) -----------------------
 	// Группы создаются здесь же: они нужны и session (доступ), и тикетам.
 	groups := NewGroupService(deps.Repo.Groups, deps.Repo.Tickets, transaction)
-	session := NewSessionService(deps.Keycloak, policies, userRealms, users, groups, cacheSvc)
 
+	// Объект доступа к тикетам — единственный держатель Casbin-политик среди домена;
+	// все проверки прав (включая realm-supervisor и «управление») идут через него.
 	access := NewTicketAccessService(deps.Repo.Tickets, groups, policies)
+
+	session := NewSessionService(deps.Keycloak, policies, userRealms, users, groups, access, cacheSvc)
 
 	categories := NewCategoryService(deps.Repo.Categories, deps.Repo.Tickets)
 	sites := NewSiteService(deps.Repo.Sites)
 	logs := NewActivityLogService(deps.Repo.ActivityLog, transaction)
 	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs, access)
-	notifications := NewNotificationService(deps.Hub, deps.Repo.Notifications, deps.Repo.Tickets, deps.Repo.TicketSubscriptions, deps.Repo.UserRealms, groups, transaction)
-	attachments := NewAttachmentService(deps.Repo.Attachments, &deps.Conf.FileServer, access, deps.Repo.Subtasks, notifications)
+	subscriptionOps := NewTicketSubscriptionOpsService(deps.Repo.TicketSubscriptions)
+	notifications := NewNotificationService(deps.Hub, deps.Repo.Notifications, subscriptionOps, userRealms, groups, transaction)
+	attachments := NewAttachmentService(deps.Repo.Attachments, &deps.Conf.FileServer, access, subtasks)
 	checklists := NewChecklistService(deps.Repo.Checklists, subtasks)
-	subscriptions := NewTicketSubscriptionService(deps.Repo.TicketSubscriptions, deps.Repo.Tickets, access, policies, groups)
-	favorites := NewTicketFavoritesService(deps.Repo.TicketFavorites, deps.Repo.Tickets, access, policies)
 
-	mmMost := mattermost.NewMost(mattermost.MostConfig{
-		ServerURL: deps.Conf.Mattermost.URL,
-		BaseURL:   deps.Conf.Http.BaseURL,
-	})
-
-	comments := NewCommentService(deps.Repo.Comments, access, deps.Repo.Tickets, users, deps.Repo.Mattermost, mmMost, notifications, transaction, attachments)
+	// Тикеты собираются до своих потребителей (comments/subscriptions/favorites),
+	// чтобы те зависели от сервиса — владельца агрегата тикетов, а не от репозитория.
 	tickets := NewTicketService(&TicketDeps{
 		Repo:          deps.Repo.Tickets,
 		TxManager:     transaction,
@@ -131,9 +129,21 @@ func NewServices(deps *Deps) *Services {
 		Notifications: notifications,
 		Groups:        groups,
 		Categories:    categories,
-		Policies:      policies,
 		Access:        access,
 	})
+
+	// Цикл tickets → attachments разорван: уведомление о вложении рассылает сам
+	// TicketService (UploadAttachment), поэтому attachments не зависят от тикетов
+	// и позднее связывание не требуется.
+	subscriptions := NewTicketSubscriptionService(deps.Repo.TicketSubscriptions, tickets, access)
+	favorites := NewTicketFavoritesService(deps.Repo.TicketFavorites, tickets, access)
+
+	mmMost := mattermost.NewMost(mattermost.MostConfig{
+		ServerURL: deps.Conf.Mattermost.URL,
+		BaseURL:   deps.Conf.Http.BaseURL,
+	})
+
+	comments := NewCommentService(deps.Repo.Comments, access, tickets, users, deps.Repo.Mattermost, mmMost, notifications, transaction, attachments)
 
 	// --- Кластер интеграций ---------------------------------------------
 	audit.StartListening(deps.Ctx, updatePolicyEvent)
@@ -150,7 +160,7 @@ func NewServices(deps *Deps) *Services {
 		Sites:       sites,
 		Attachments: attachments,
 		Comments:    comments,
-		Policies:    policies,
+		Access:      access,
 		EventBus:    updatePolicyEvent,
 		Most:        mmMost,
 		BaseURL:     deps.Conf.Http.BaseURL,

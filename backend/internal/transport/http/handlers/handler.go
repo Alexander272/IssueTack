@@ -65,7 +65,7 @@ func (h *Handler) Init(group *gin.RouterGroup) {
 
 	tickets.Register(secure, h.services.Tickets, h.middleware)
 	subtasks.Register(secure, h.services.Subtasks, h.middleware)
-	attachments.Register(secure, h.services.Attachments, h.middleware)
+	attachments.Register(secure, h.services.Attachments, h.services.Tickets, h.middleware)
 	checklists.Register(secure, h.services.Checklists, h.middleware)
 	comments.Register(secure, h.services.Comments, h.middleware)
 

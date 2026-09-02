@@ -17,17 +17,19 @@ type SessionService struct {
 	user      Users
 	groups    Groups
 	policies  AccessPolicies
+	access    TicketAccessChecker
 	cache     SessionCacher
 }
 
 // NewSessionService создаёт сервис сессий с заданными зависимостями.
-func NewSessionService(keycloak *auth.KeycloakClient, policies AccessPolicies, userRealm UserRealms, user Users, groups Groups, cache SessionCacher) *SessionService {
+func NewSessionService(keycloak *auth.KeycloakClient, policies AccessPolicies, userRealm UserRealms, user Users, groups Groups, access TicketAccessChecker, cache SessionCacher) *SessionService {
 	return &SessionService{
 		keycloak:  keycloak,
 		policies:  policies,
 		userRealm: userRealm,
 		user:      user,
 		groups:    groups,
+		access:    access,
 		cache:     cache,
 	}
 }
@@ -109,6 +111,27 @@ func (s *SessionService) loadUserRealms(ctx context.Context, user *models.User) 
 	return nil
 }
 
+// capabilitiesForRealm собирает для одного realm'а пользователя список управляемых и
+// членских групп и признак того, является ли пользователь администратором realm.
+func (s *SessionService) capabilitiesForRealm(ctx context.Context, userID uuid.UUID, realmID uuid.UUID) ([]uuid.UUID, []uuid.UUID, bool, error) {
+	managedGroups, err := s.groups.GetManagedGroups(ctx, userID, &realmID)
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	memberGroups, err := s.groups.GetMemberGroups(ctx, userID, &realmID)
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	isRealmAdmin, err := s.access.IsRealmSupervisor(ctx, userID, realmID.String())
+	if err != nil {
+		return nil, nil, false, err
+	}
+
+	return managedGroups, memberGroups, isRealmAdmin, nil
+}
+
 // loadUserCapabilities собирает для каждого realm'а пользователя список управляемых и членских групп,
 // а также признак того, что пользователь является администратором realm (realm-wide пермишены области).
 // Ошибки получения групп здесь не фатальны: при сбое группа считается пустой, чтобы вход пользователя
@@ -119,22 +142,10 @@ func (s *SessionService) loadUserCapabilities(ctx context.Context, user *models.
 		realmID := r.RealmID
 		realmIDStr := realmID.String()
 
-		managedGroups, err := s.groups.GetManagedGroups(ctx, user.ID, &realmID)
+		managedGroups, memberGroups, isRealmAdmin, err := s.capabilitiesForRealm(ctx, user.ID, realmID)
 		if err != nil {
-			log.Printf("WARN: failed to get managed groups for user %s realm %s: %v", user.ID, realmIDStr, err)
-			managedGroups = nil
-		}
-
-		memberGroups, err := s.groups.GetMemberGroups(ctx, user.ID, &realmID)
-		if err != nil {
-			log.Printf("WARN: failed to get member groups for user %s realm %s: %v", user.ID, realmIDStr, err)
-			memberGroups = nil
-		}
-
-		isRealmAdmin, err := isRealmSupervisor(s.policies, user.ID, realmIDStr)
-		if err != nil {
-			log.Printf("WARN: failed to check realm supervisor for user %s realm %s: %v", user.ID, realmIDStr, err)
-			isRealmAdmin = false
+			log.Printf("WARN: failed to get capabilities for user %s realm %s: %v", user.ID, realmIDStr, err)
+			managedGroups, memberGroups, isRealmAdmin = nil, nil, false
 		}
 
 		caps[realmIDStr] = &models.UserCapabilities{
@@ -158,19 +169,9 @@ func (s *SessionService) GetAllCapabilities(ctx context.Context, userID uuid.UUI
 		realmID := r.RealmID
 		realmIDStr := realmID.String()
 
-		managedGroups, err := s.groups.GetManagedGroups(ctx, userID, &realmID)
+		managedGroups, memberGroups, isRealmAdmin, err := s.capabilitiesForRealm(ctx, userID, realmID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get managed groups for realm %s: %w", realmIDStr, err)
-		}
-
-		memberGroups, err := s.groups.GetMemberGroups(ctx, userID, &realmID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get member groups for realm %s: %w", realmIDStr, err)
-		}
-
-		isRealmAdmin, err := isRealmSupervisor(s.policies, userID, realmIDStr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to check realm supervisor for realm %s: %w", realmIDStr, err)
+			return nil, fmt.Errorf("failed to get capabilities for realm %s: %w", realmIDStr, err)
 		}
 
 		caps[realmIDStr] = &models.UserCapabilities{

@@ -12,27 +12,24 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-func favoriteServiceFixtures() (*MockTicketFavoritesRepo, *MockTicketsRepo, *MockTicketAccessChecker, *MockAccessPolicies, *TicketFavoritesService) {
+func favoriteServiceFixtures() (*MockTicketFavoritesRepo, *MockTicketsService, *MockTicketAccessChecker, *TicketFavoritesService) {
 	mockRepo := new(MockTicketFavoritesRepo)
-	mockTickets := new(MockTicketsRepo)
+	mockTickets := new(MockTicketsService)
 	mockAccess := new(MockTicketAccessChecker)
-	mockPolicies := new(MockAccessPolicies)
 
-	svc := NewTicketFavoritesService(mockRepo, mockTickets, mockAccess, mockPolicies)
-	return mockRepo, mockTickets, mockAccess, mockPolicies, svc
+	svc := NewTicketFavoritesService(mockRepo, mockTickets, mockAccess)
+	return mockRepo, mockTickets, mockAccess, svc
 }
 
 func TestFavoriteService_Add_Success(t *testing.T) {
-	mockRepo, mockTickets, mockAccess, _, svc := favoriteServiceFixtures()
+	mockRepo, mockTickets, mockAccess, svc := favoriteServiceFixtures()
 
 	ticketID := uuid.New()
 	userID := uuid.New()
 
-	mockTickets.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(
+	mockTickets.On("GetSummary", mock.Anything, ticketID).Return(
 		&models.Ticket{ID: ticketID}, nil)
-	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{
-		TicketID: ticketID, UserID: userID, Action: string(access.Read), Realm: "",
-	}).Return(nil)
+	mockAccess.On("CheckAccessOnTicket", mock.Anything, &models.Ticket{ID: ticketID}, userID, string(access.Read), "").Return(nil)
 	mockRepo.On("Add", mock.Anything, nil, mock.Anything).Return(nil)
 
 	err := svc.Add(context.Background(), &models.FavoriteDTO{
@@ -43,14 +40,14 @@ func TestFavoriteService_Add_Success(t *testing.T) {
 }
 
 func TestFavoriteService_Add_Denied(t *testing.T) {
-	mockRepo, mockTickets, mockAccess, _, svc := favoriteServiceFixtures()
+	mockRepo, mockTickets, mockAccess, svc := favoriteServiceFixtures()
 
 	ticketID := uuid.New()
 	userID := uuid.New()
 
-	mockTickets.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(
+	mockTickets.On("GetSummary", mock.Anything, ticketID).Return(
 		&models.Ticket{ID: ticketID}, nil)
-	mockAccess.On("CheckAccess", mock.Anything, mock.Anything).Return(models.ErrPermissionDenied)
+	mockAccess.On("CheckAccessOnTicket", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(models.ErrPermissionDenied)
 
 	err := svc.Add(context.Background(), &models.FavoriteDTO{
 		TicketID: ticketID, ActorID: userID, Type: models.FavoriteTypePermanent,
@@ -60,17 +57,15 @@ func TestFavoriteService_Add_Denied(t *testing.T) {
 }
 
 func TestFavoriteService_Remove_Success(t *testing.T) {
-	mockRepo, mockTickets, mockAccess, _, svc := favoriteServiceFixtures()
+	mockRepo, mockTickets, mockAccess, svc := favoriteServiceFixtures()
 
 	ticketID := uuid.New()
 	userID := uuid.New()
 	realmID := uuid.New()
 
-	mockTickets.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(
+	mockTickets.On("GetSummary", mock.Anything, ticketID).Return(
 		&models.Ticket{ID: ticketID, RealmID: &realmID}, nil)
-	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{
-		TicketID: ticketID, UserID: userID, Action: string(access.Read), Realm: realmID.String(),
-	}).Return(nil)
+	mockAccess.On("CheckAccessOnTicket", mock.Anything, &models.Ticket{ID: ticketID, RealmID: &realmID}, userID, string(access.Read), realmID.String()).Return(nil)
 	mockRepo.On("Remove", mock.Anything, nil, ticketID, userID, models.FavoriteTypeTemporary).Return(nil)
 
 	err := svc.Remove(context.Background(), &models.FavoriteDTO{
@@ -81,7 +76,7 @@ func TestFavoriteService_Remove_Success(t *testing.T) {
 }
 
 func TestFavoriteService_IsFavorite(t *testing.T) {
-	mockRepo, _, _, _, svc := favoriteServiceFixtures()
+	mockRepo, _, _, svc := favoriteServiceFixtures()
 
 	ticketID := uuid.New()
 	userID := uuid.New()
@@ -94,7 +89,7 @@ func TestFavoriteService_IsFavorite(t *testing.T) {
 }
 
 func TestFavoriteService_CleanupTemporary_ResolvedAssignee(t *testing.T) {
-	mockRepo, _, _, _, svc := favoriteServiceFixtures()
+	mockRepo, _, _, svc := favoriteServiceFixtures()
 
 	assigneeID := uuid.New()
 	favID := uuid.New()
@@ -112,7 +107,7 @@ func TestFavoriteService_CleanupTemporary_ResolvedAssignee(t *testing.T) {
 }
 
 func TestFavoriteService_CleanupTemporary_ClosedSupervisor(t *testing.T) {
-	mockRepo, _, _, mockPolicies, svc := favoriteServiceFixtures()
+	mockRepo, _, mockAccess, svc := favoriteServiceFixtures()
 
 	supervisorID := uuid.New()
 	realmID := uuid.New()
@@ -122,7 +117,7 @@ func TestFavoriteService_CleanupTemporary_ClosedSupervisor(t *testing.T) {
 		Status: models.StatusClosed, RealmID: &realmID,
 	}
 	mockRepo.On("GetTemporaryExpired", mock.Anything).Return([]*postgres.TempFavoriteView{v}, nil)
-	mockPolicies.On("Enforce", supervisorID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(true, nil)
+	mockAccess.On("IsRealmSupervisor", mock.Anything, supervisorID, realmID.String()).Return(true, nil)
 	mockRepo.On("DeleteByIDs", mock.Anything, nil, []uuid.UUID{favID}).Return(nil)
 
 	n, err := svc.CleanupTemporary(context.Background())
@@ -132,7 +127,7 @@ func TestFavoriteService_CleanupTemporary_ClosedSupervisor(t *testing.T) {
 }
 
 func TestFavoriteService_CleanupTemporary_ClosedNotSupervisor(t *testing.T) {
-	mockRepo, _, _, mockPolicies, svc := favoriteServiceFixtures()
+	mockRepo, _, mockAccess, svc := favoriteServiceFixtures()
 
 	userID := uuid.New()
 	realmID := uuid.New()
@@ -141,8 +136,7 @@ func TestFavoriteService_CleanupTemporary_ClosedNotSupervisor(t *testing.T) {
 		Status: models.StatusClosed, RealmID: &realmID,
 	}
 	mockRepo.On("GetTemporaryExpired", mock.Anything).Return([]*postgres.TempFavoriteView{v}, nil)
-	mockPolicies.On("Enforce", userID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(false, nil)
-	mockPolicies.On("Enforce", userID.String(), realmID.String(), string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	mockAccess.On("IsRealmSupervisor", mock.Anything, userID, realmID.String()).Return(false, nil)
 
 	n, err := svc.CleanupTemporary(context.Background())
 	assert.NoError(t, err)
@@ -152,7 +146,7 @@ func TestFavoriteService_CleanupTemporary_ClosedNotSupervisor(t *testing.T) {
 }
 
 func TestFavoriteService_CleanupTemporary_ResolvedNotAssignee(t *testing.T) {
-	mockRepo, _, _, _, svc := favoriteServiceFixtures()
+	mockRepo, _, _, svc := favoriteServiceFixtures()
 
 	assigneeID := uuid.New()
 	otherID := uuid.New()
@@ -170,7 +164,7 @@ func TestFavoriteService_CleanupTemporary_ResolvedNotAssignee(t *testing.T) {
 }
 
 func TestFavoriteService_CleanupTemporary_None(t *testing.T) {
-	mockRepo, _, _, _, svc := favoriteServiceFixtures()
+	mockRepo, _, _, svc := favoriteServiceFixtures()
 
 	mockRepo.On("GetTemporaryExpired", mock.Anything).Return([]*postgres.TempFavoriteView{}, nil)
 

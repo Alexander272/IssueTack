@@ -17,18 +17,23 @@ import (
 	"github.com/google/uuid"
 )
 
+// Handler — обработчики вложений. Чтение и удаление идут через Attachments-сервис,
+// а загрузка — через Tickets (сервис-владелец агрегата тикета), чтобы уведомление о
+// новом вложении рассылалось на стороне домена, а не в транспортном слое.
 type Handler struct {
-	service services.Attachments
+	service    services.Attachments
+	attachment services.Tickets
 }
 
-func NewHandler(service services.Attachments) *Handler {
+func NewHandler(service services.Attachments, attachment services.Tickets) *Handler {
 	return &Handler{
-		service: service,
+		service:    service,
+		attachment: attachment,
 	}
 }
 
-func Register(api *gin.RouterGroup, service services.Attachments, middleware *middleware.Middleware) {
-	handlers := NewHandler(service)
+func Register(api *gin.RouterGroup, service services.Attachments, attachment services.Tickets, middleware *middleware.Middleware) {
+	handlers := NewHandler(service, attachment)
 
 	attachments := api.Group("/attachments", middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Read()))
 	{
@@ -152,7 +157,7 @@ func (h *Handler) upload(c *gin.Context) {
 		Realm:      realmIdStr,
 	}
 
-	att, err := h.service.Upload(c, nil, dto)
+	att, err := h.attachment.UploadAttachment(c, nil, dto)
 	if err != nil {
 		response.SendError(c, err)
 		return

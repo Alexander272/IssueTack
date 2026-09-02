@@ -25,6 +25,17 @@ type TicketAccessChecker interface {
 	// CheckAccessOnTicket выполняет проверку доступа по уже загруженному тикету —
 	// общая основа для CheckAccess и логики статусов.
 	CheckAccessOnTicket(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, action string, realm string) error
+	// IsRealmSupervisor определяет, является ли пользователь «начальником области» в реалме:
+	// ему выданы realm-wide пермишены управления областью (category:write или site:write).
+	// Единственная точка владения этой проверкой — через policies.enforcer.
+	IsRealmSupervisor(ctx context.Context, userID uuid.UUID, realm string) (bool, error)
+	// CanManage проверяет, может ли пользователь «управлять» тикетом: является ли он
+	// начальником области (realm supervisor) или менеджером группы, к которой относится
+	// тикет. Используется для админских операций поверх тикета (подписки и т.п.).
+	CanManage(ctx context.Context, userID uuid.UUID, ticket *models.Ticket) (bool, error)
+	// CanCreateTicket проверяет наличие realm-wide write-политики на ресурс тикетов —
+	// достаточно ли прав создать заявку напрямую (без ограничений «рабочего» режима).
+	CanCreateTicket(ctx context.Context, userID uuid.UUID, realm string) (bool, error)
 }
 
 // TicketAccessService реализует проверку прав доступа к тикетам.
@@ -194,4 +205,61 @@ func (s *TicketAccessService) CheckInternalAssigneeAccess(ctx context.Context, d
 	}
 
 	return models.ErrPermissionDenied
+}
+
+// IsRealmSupervisor определяет, является ли пользователь «начальником области» в реалме:
+// ему выданы realm-wide пермишены управления областью (category:write или site:write).
+// Это ролево-настраиваемый критерий (через выдачу прав ролям в БД), без хардкода конкретных ролей.
+func (s *TicketAccessService) IsRealmSupervisor(ctx context.Context, userID uuid.UUID, realm string) (bool, error) {
+	ok, err := s.policies.Enforce(userID.String(), realm, string(access.ResourceCategory), string(access.Write))
+	if err != nil {
+		return false, fmt.Errorf("policy check failed: %w", err)
+	}
+	if ok {
+		return true, nil
+	}
+	ok, err = s.policies.Enforce(userID.String(), realm, string(access.ResourceSite), string(access.Write))
+	if err != nil {
+		return false, fmt.Errorf("policy check failed: %w", err)
+	}
+	return ok, nil
+}
+
+// CanManage проверяет, может ли пользователь «управлять» тикетом: начальник области
+// (realm supervisor) или менеджер группы, к которой относится тикет.
+func (s *TicketAccessService) CanManage(ctx context.Context, userID uuid.UUID, ticket *models.Ticket) (bool, error) {
+	realm := ""
+	if ticket.RealmID != nil {
+		realm = ticket.RealmID.String()
+	}
+
+	supervisor, err := s.IsRealmSupervisor(ctx, userID, realm)
+	if err != nil {
+		return false, err
+	}
+	if supervisor {
+		return true, nil
+	}
+
+	if ticket.Group != nil {
+		managed, err := s.groups.GetManagedGroups(ctx, userID, ticket.RealmID)
+		if err != nil {
+			return false, err
+		}
+		for _, gid := range managed {
+			if gid == ticket.Group.ID {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// CanCreateTicket проверяет наличие realm-wide write-политики на ресурс тикетов.
+func (s *TicketAccessService) CanCreateTicket(ctx context.Context, userID uuid.UUID, realm string) (bool, error) {
+	ok, err := s.policies.Enforce(userID.String(), realm, string(access.ResourceTicket), string(access.Write))
+	if err != nil {
+		return false, fmt.Errorf("policy check failed: %w", err)
+	}
+	return ok, nil
 }

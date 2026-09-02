@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-func commentServiceFixtures() (*MockCommentsRepo, *MockTicketAccessChecker, *MockTicketsRepo, *MockUserService, *MockMattermostRepo, *MockMMSender, *CommentService) {
+func commentServiceFixtures() (*MockCommentsRepo, *MockTicketAccessChecker, *MockTicketsService, *MockUserService, *MockMattermostRepo, *MockMMSender, *CommentService) {
 	mockRepo := new(MockCommentsRepo)
 	mockAccess := new(MockTicketAccessChecker)
-	mockTickets := new(MockTicketsRepo)
+	mockTickets := new(MockTicketsService)
 	mockUsers := new(MockUserService)
 	mockMMRepo := new(MockMattermostRepo)
 	mockSender := new(MockMMSender)
@@ -66,7 +66,7 @@ func TestCommentService_Create_SendsDMToOwner(t *testing.T) {
 	mockRepo.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(func(c *models.Comment) bool {
 		return c.Text == dto.Text && c.UserID == prismID && c.TicketID == ticket.ID && !c.IsInternal
 	})).Return(nil)
-	mockTickets.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticket.ID}).Return(ticket, nil)
+	mockTickets.On("GetSummary", mock.Anything, ticket.ID).Return(ticket, nil)
 	mockUsers.On("GetByID", mock.Anything, ownerID).Return(&models.UserData{ID: ownerID, MattermostID: &ownerMM}, nil)
 	mockMMRepo.On("GetByRealm", mock.Anything, realmID).Return(&models.RealmMattermost{RealmID: realmID, BotToken: "bt", BotUserID: "bb", IsActive: true}, nil)
 	mockSender.On("Send", "bt", "bb", ownerMM, mock.Anything).Return(nil)
@@ -98,7 +98,7 @@ func TestCommentService_Create_AuthorIsOwner_NoDM(t *testing.T) {
 
 	mockAccess.On("CheckWorkAccess", mock.Anything, mock.Anything).Return(nil)
 	mockRepo.On("Create", mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	mockTickets.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticket.ID}).Return(ticket, nil)
+	mockTickets.On("GetSummary", mock.Anything, ticket.ID).Return(ticket, nil)
 
 	_, err := svc.Create(context.Background(), nil, dto)
 	assert.NoError(t, err)
@@ -124,7 +124,7 @@ func TestCommentService_Create_Internal_NoDM(t *testing.T) {
 
 	mockAccess.On("CheckWorkAccess", mock.Anything, mock.Anything).Return(nil)
 	mockRepo.On("Create", mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	mockTickets.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticket.ID}).Return(ticket, nil)
+	mockTickets.On("GetSummary", mock.Anything, ticket.ID).Return(ticket, nil)
 
 	_, err := svc.Create(context.Background(), nil, dto)
 	assert.NoError(t, err)
@@ -148,7 +148,7 @@ func TestCommentService_Create_OwnerWithoutMM_NoDM(t *testing.T) {
 
 	mockAccess.On("CheckWorkAccess", mock.Anything, mock.Anything).Return(nil)
 	mockRepo.On("Create", mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	mockTickets.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticket.ID}).Return(ticket, nil)
+	mockTickets.On("GetSummary", mock.Anything, ticket.ID).Return(ticket, nil)
 	mockUsers.On("GetByID", mock.Anything, ownerID).Return(&models.UserData{ID: ownerID, MattermostID: nil}, nil)
 
 	_, err := svc.Create(context.Background(), nil, dto)
@@ -184,7 +184,7 @@ func TestCommentService_Create_WithFiles_BindsAttachments(t *testing.T) {
 	}
 
 	mockAccess.On("CheckWorkAccess", mock.Anything, mock.Anything).Return(nil)
-	mockTickets.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticket.ID}).Return(ticket, nil)
+	mockTickets.On("GetSummary", mock.Anything, ticket.ID).Return(ticket, nil)
 	mockRepo.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(func(c *models.Comment) bool {
 		return c.Text == dto.Text && c.TicketID == ticket.ID
 	})).Return(nil)

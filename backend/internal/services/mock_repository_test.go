@@ -252,6 +252,140 @@ func (m *MockTicketsRepo) CountNotClosedByCategory(ctx context.Context, category
 	return args.Int(0), args.Error(1)
 }
 
+// MockTicketsService — мок сервисного интерфейса Tickets (владельца агрегата тикетов).
+// Используется тестами зависимости сервисов-потребителей (comments/subscriptions/favorites).
+type MockTicketsService struct {
+	mock.Mock
+}
+
+func (m *MockTicketsService) Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, int, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Int(1), args.Error(2)
+	}
+	return args.Get(0).([]*models.Ticket), args.Int(1), args.Error(2)
+}
+func (m *MockTicketsService) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) (*models.Ticket, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Ticket), args.Error(1)
+}
+func (m *MockTicketsService) GetSummary(ctx context.Context, id uuid.UUID) (*models.Ticket, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Ticket), args.Error(1)
+}
+func (m *MockTicketsService) Create(ctx context.Context, dto *models.TicketDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+func (m *MockTicketsService) Update(ctx context.Context, dto *models.TicketDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+func (m *MockTicketsService) Take(ctx context.Context, dto *models.TakeTicketDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+func (m *MockTicketsService) Transfer(ctx context.Context, dto *models.TransferTicketDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+func (m *MockTicketsService) Delete(ctx context.Context, dto *models.DeleteTicketDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+func (m *MockTicketsService) AutoCloseResolved(ctx context.Context, delay time.Duration) (int64, error) {
+	args := m.Called(ctx, delay)
+	return args.Get(0).(int64), args.Error(1)
+}
+func (m *MockTicketsService) UploadAttachment(ctx context.Context, tx postgres.Tx, dto *models.UploadAttachmentDTO) (*models.Attachment, error) {
+	args := m.Called(ctx, tx, dto)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Attachment), args.Error(1)
+}
+
+type MockTicketSubscriptionOps struct {
+	mock.Mock
+}
+
+func (m *MockTicketSubscriptionOps) GetByTicket(ctx context.Context, ticketID uuid.UUID) ([]uuid.UUID, error) {
+	args := m.Called(ctx, ticketID)
+	if args.Get(0) == nil {
+		return []uuid.UUID{}, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
+func (m *MockTicketSubscriptionOps) GetSubscribersByEvent(ctx context.Context, ticketID, categoryID uuid.UUID, eventField string) ([]uuid.UUID, error) {
+	args := m.Called(ctx, ticketID, categoryID, eventField)
+	if args.Get(0) == nil {
+		return []uuid.UUID{}, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
+func (m *MockTicketSubscriptionOps) SubscribeInternal(ctx context.Context, ticketID, userID uuid.UUID) error {
+	args := m.Called(ctx, ticketID, userID)
+	return args.Error(0)
+}
+
+// MockUserRealmsService — мок сервисного интерфейса UserRealms (не репозитория).
+type MockUserRealmsService struct {
+	mock.Mock
+}
+
+func (m *MockUserRealmsService) GetAll(ctx context.Context) ([]*models.UserRealm, error) {
+	args := m.Called(ctx)
+	return args.Get(0).([]*models.UserRealm), args.Error(1)
+}
+func (m *MockUserRealmsService) GetByUserID(ctx context.Context, userID uuid.UUID) ([]*models.UserRealm, error) {
+	args := m.Called(ctx, userID)
+	return args.Get(0).([]*models.UserRealm), args.Error(1)
+}
+func (m *MockUserRealmsService) GetByUserAndRealm(ctx context.Context, userID, realmID uuid.UUID) (*models.UserRealm, error) {
+	args := m.Called(ctx, userID, realmID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.UserRealm), args.Error(1)
+}
+func (m *MockUserRealmsService) Create(ctx context.Context, tx postgres.Tx, dto *models.UserRealmDTO) error {
+	args := m.Called(ctx, tx, dto)
+	return args.Error(0)
+}
+func (m *MockUserRealmsService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserRealmDTO) error {
+	args := m.Called(ctx, tx, dto)
+	return args.Error(0)
+}
+func (m *MockUserRealmsService) Update(ctx context.Context, tx postgres.Tx, dto *models.UserRealmDTO) error {
+	args := m.Called(ctx, tx, dto)
+	return args.Error(0)
+}
+func (m *MockUserRealmsService) UpdateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserRealmDTO) error {
+	args := m.Called(ctx, tx, dto)
+	return args.Error(0)
+}
+func (m *MockUserRealmsService) Delete(ctx context.Context, tx postgres.Tx, userID, realmID uuid.UUID) error {
+	args := m.Called(ctx, tx, userID, realmID)
+	return args.Error(0)
+}
+func (m *MockUserRealmsService) DeleteSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserRealmDTO) error {
+	args := m.Called(ctx, tx, dto)
+	return args.Error(0)
+}
+func (m *MockUserRealmsService) GetRealmSupervisors(ctx context.Context, realmID uuid.UUID) ([]uuid.UUID, error) {
+	args := m.Called(ctx, realmID)
+	if args.Get(0) == nil {
+		return []uuid.UUID{}, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
+
 type MockGroupsRepo struct {
 	mock.Mock
 }
@@ -440,6 +574,13 @@ func (m *MockSubtaskService) GetByID(ctx context.Context, req *models.GetSubtask
 	}
 	return args.Get(0).(*models.Subtask), args.Error(1)
 }
+func (m *MockSubtaskService) GetRawByID(ctx context.Context, req *models.GetSubtaskDTO) (*models.Subtask, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Subtask), args.Error(1)
+}
 func (m *MockSubtaskService) GetUnresolvedCount(ctx context.Context, ticketID uuid.UUID) (int, error) {
 	args := m.Called(ctx, ticketID)
 	return args.Int(0), args.Error(1)
@@ -500,12 +641,12 @@ type MockNotificationService struct {
 	mock.Mock
 }
 
-func (m *MockNotificationService) TicketCreated(ctx context.Context, dto *models.TicketDTO) error {
-	args := m.Called(ctx, dto)
+func (m *MockNotificationService) TicketCreated(ctx context.Context, ticket *models.Ticket) error {
+	args := m.Called(ctx, ticket)
 	return args.Error(0)
 }
-func (m *MockNotificationService) TicketUpdated(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID, changes []*models.FieldChange) error {
-	args := m.Called(ctx, ticketID, actorID, changes)
+func (m *MockNotificationService) TicketUpdated(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID, changes []*models.FieldChange) error {
+	args := m.Called(ctx, ticket, actorID, changes)
 	return args.Error(0)
 }
 func (m *MockNotificationService) TicketDeleted(ctx context.Context, ticket *models.Ticket) error {
@@ -516,16 +657,16 @@ func (m *MockNotificationService) SendUnread(ctx context.Context, client *ws_hub
 	args := m.Called(ctx, client)
 	return args.Error(0)
 }
-func (m *MockNotificationService) TicketCommented(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID) error {
-	args := m.Called(ctx, ticketID, actorID)
+func (m *MockNotificationService) TicketCommented(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) error {
+	args := m.Called(ctx, ticket, actorID)
 	return args.Error(0)
 }
-func (m *MockNotificationService) AttachmentAdded(ctx context.Context, ticketID uuid.UUID, actorID uuid.UUID) error {
-	args := m.Called(ctx, ticketID, actorID)
+func (m *MockNotificationService) AttachmentAdded(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) error {
+	args := m.Called(ctx, ticket, actorID)
 	return args.Error(0)
 }
-func (m *MockNotificationService) NotifyOverdue(ctx context.Context, ticketID uuid.UUID) error {
-	args := m.Called(ctx, ticketID)
+func (m *MockNotificationService) NotifyOverdue(ctx context.Context, ticket *models.Ticket) error {
+	args := m.Called(ctx, ticket)
 	return args.Error(0)
 }
 func (m *MockNotificationService) GetOverdueTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error) {
@@ -788,6 +929,21 @@ func (m *MockTicketAccessChecker) CheckInternalAssigneeAccess(ctx context.Contex
 func (m *MockTicketAccessChecker) CheckAccessOnTicket(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, action string, realm string) error {
 	args := m.Called(ctx, ticket, userID, action, realm)
 	return args.Error(0)
+}
+
+func (m *MockTicketAccessChecker) IsRealmSupervisor(ctx context.Context, userID uuid.UUID, realm string) (bool, error) {
+	args := m.Called(ctx, userID, realm)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockTicketAccessChecker) CanManage(ctx context.Context, userID uuid.UUID, ticket *models.Ticket) (bool, error) {
+	args := m.Called(ctx, userID, ticket)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockTicketAccessChecker) CanCreateTicket(ctx context.Context, userID uuid.UUID, realm string) (bool, error) {
+	args := m.Called(ctx, userID, realm)
+	return args.Bool(0), args.Error(1)
 }
 
 type MockActivityLogRepo struct {

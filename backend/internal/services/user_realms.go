@@ -35,6 +35,8 @@ type UserRealms interface {
 	UpdateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserRealmDTO) error
 	Delete(ctx context.Context, tx postgres.Tx, userID, realmID uuid.UUID) error
 	DeleteSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserRealmDTO) error
+	// GetRealmSupervisors возвращает ID пользователей-«начальников области» реалма.
+	GetRealmSupervisors(ctx context.Context, realmID uuid.UUID) ([]uuid.UUID, error)
 }
 
 // GetAll возвращает все привязки пользователей к realm'ам.
@@ -164,4 +166,13 @@ func (s *UserRealmService) DeleteSeveral(ctx context.Context, tx postgres.Tx, dt
 		}
 		return nil
 	})
+}
+
+// GetRealmSupervisors возвращает ID пользователей-«начальников области» реалма.
+func (s *UserRealmService) GetRealmSupervisors(ctx context.Context, realmID uuid.UUID) ([]uuid.UUID, error) {
+	data, err := s.repo.GetRealmSupervisors(ctx, realmID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get realm supervisors. error: %w", err)
+	}
+	return data, nil
 }

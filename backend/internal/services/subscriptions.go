@@ -13,19 +13,15 @@ import (
 // на уведомления по конкретной заявке. Подписаться могут только надзители реалма и менеджеры групп.
 type TicketSubscriptionService struct {
 	repo         repository.TicketSubscriptions
-	ticketRepo   repository.Tickets
+	tickets      Tickets
 	ticketAccess TicketAccessChecker
-	policies     AccessPolicies
-	groups       Groups
 }
 
-func NewTicketSubscriptionService(repo repository.TicketSubscriptions, ticketRepo repository.Tickets, ticketAccess TicketAccessChecker, policies AccessPolicies, groups Groups) *TicketSubscriptionService {
+func NewTicketSubscriptionService(repo repository.TicketSubscriptions, tickets Tickets, ticketAccess TicketAccessChecker) *TicketSubscriptionService {
 	return &TicketSubscriptionService{
 		repo:         repo,
-		ticketRepo:   ticketRepo,
+		tickets:      tickets,
 		ticketAccess: ticketAccess,
-		policies:     policies,
-		groups:       groups,
 	}
 }
 
@@ -63,7 +59,7 @@ func (s *TicketSubscriptionService) IsSubscribed(ctx context.Context, dto *model
 // getTicketWithSubscribeAccess загружает тикет, проверяет у пользователя read-доступ и право
 // подписки (надзитель реалма или менеджер группы заявки). Возвращает тикет для дальнейших действий.
 func (s *TicketSubscriptionService) getTicketWithSubscribeAccess(ctx context.Context, ticketID, userID uuid.UUID) (*models.Ticket, error) {
-	ticket, err := s.ticketRepo.GetByID(ctx, &models.GetTicketByIdDTO{ID: ticketID})
+	ticket, err := s.tickets.GetSummary(ctx, ticketID)
 	if err != nil {
 		return nil, err
 	}
@@ -73,16 +69,11 @@ func (s *TicketSubscriptionService) getTicketWithSubscribeAccess(ctx context.Con
 		realm = ticket.RealmID.String()
 	}
 
-	if err := s.ticketAccess.CheckAccess(ctx, &models.AccessCheckDTO{
-		TicketID: ticketID,
-		UserID:   userID,
-		Action:   string(access.Read),
-		Realm:    realm,
-	}); err != nil {
+	if err := s.ticketAccess.CheckAccessOnTicket(ctx, ticket, userID, string(access.Read), realm); err != nil {
 		return nil, err
 	}
 
-	allowed, err := s.subscribeAllowed(ctx, ticket, userID)
+	allowed, err := s.ticketAccess.CanManage(ctx, userID, ticket)
 	if err != nil {
 		return nil, err
 	}
@@ -92,32 +83,46 @@ func (s *TicketSubscriptionService) getTicketWithSubscribeAccess(ctx context.Con
 	return ticket, nil
 }
 
-// subscribeAllowed возвращает true, если пользователь — надзитель реалма (category:write/site:write)
-// или менеджер группы, к которой относится заявка.
-func (s *TicketSubscriptionService) subscribeAllowed(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) (bool, error) {
-	realm := ""
-	if ticket.RealmID != nil {
-		realm = ticket.RealmID.String()
-	}
+// TicketSubscriptionOps — операции с подписками на заявки, нужные сервисам без
+// зависимости от тикетов. Отдельный тонкий сервис используется NotificationService,
+// которому нужны выборки подписчиков и служебная авто-подписка без проверки прав
+// (надзители реалма и менеджеры групп подписываются на создаваемую заявку без
+// прохождения полного доступа).
+type TicketSubscriptionOps interface {
+	// GetByTicket возвращает ID всех подписанных на заявку пользователей.
+	GetByTicket(ctx context.Context, ticketID uuid.UUID) ([]uuid.UUID, error)
+	// GetSubscribersByEvent возвращает подписанных на заявку пользователей, у которых
+	// включено событие eventField для категории categoryID тикета.
+	GetSubscribersByEvent(ctx context.Context, ticketID, categoryID uuid.UUID, eventField string) ([]uuid.UUID, error)
+	// SubscribeInternal подписывает пользователя на заявку без проверки прав —
+	// единственный write-порт, используется только для служебной авто-подписки
+	// при создании заявки (autoSubscribeOnCreate).
+	SubscribeInternal(ctx context.Context, ticketID, userID uuid.UUID) error
+}
 
-	supervisor, err := isRealmSupervisor(s.policies, userID, realm)
-	if err != nil {
-		return false, err
-	}
-	if supervisor {
-		return true, nil
-	}
+// TicketSubscriptionOpsService — тонкий сервис операций с подписками поверх репозитория.
+// Не содержит бизнес-правил проверки доступа: для действий с подписками (subscribe/отписка)
+// используется TicketSubscriptionService.
+type TicketSubscriptionOpsService struct {
+	repo repository.TicketSubscriptions
+}
 
-	if ticket.Group != nil {
-		managed, err := s.groups.GetManagedGroups(ctx, userID, ticket.RealmID)
-		if err != nil {
-			return false, err
-		}
-		for _, gid := range managed {
-			if gid == ticket.Group.ID {
-				return true, nil
-			}
-		}
-	}
-	return false, nil
+// NewTicketSubscriptionOpsService создаёт TicketSubscriptionOpsService.
+func NewTicketSubscriptionOpsService(repo repository.TicketSubscriptions) *TicketSubscriptionOpsService {
+	return &TicketSubscriptionOpsService{repo: repo}
+}
+
+// GetByTicket возвращает ID всех подписанных на заявку пользователей.
+func (s *TicketSubscriptionOpsService) GetByTicket(ctx context.Context, ticketID uuid.UUID) ([]uuid.UUID, error) {
+	return s.repo.GetByTicket(ctx, ticketID)
+}
+
+// GetSubscribersByEvent возвращает подписанных на заявку пользователей с включённым событием.
+func (s *TicketSubscriptionOpsService) GetSubscribersByEvent(ctx context.Context, ticketID, categoryID uuid.UUID, eventField string) ([]uuid.UUID, error) {
+	return s.repo.GetSubscribersByEvent(ctx, ticketID, categoryID, eventField)
+}
+
+// SubscribeInternal подписывает пользователя на заявку без проверки прав.
+func (s *TicketSubscriptionOpsService) SubscribeInternal(ctx context.Context, ticketID, userID uuid.UUID) error {
+	return s.repo.Subscribe(ctx, nil, ticketID, userID)
 }

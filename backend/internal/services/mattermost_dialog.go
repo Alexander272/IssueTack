@@ -299,7 +299,7 @@ func (s *MattermostService) processPendingFiles(ctx context.Context, botToken st
 			fileName = fileID
 		}
 
-		att, err := s.attachments.Upload(ctx, nil, &models.UploadAttachmentDTO{
+		att, err := s.tickets.UploadAttachment(ctx, nil, &models.UploadAttachmentDTO{
 			EntityType: "ticket",
 			EntityID:   *dto.ID,
 			FileName:   fileName,

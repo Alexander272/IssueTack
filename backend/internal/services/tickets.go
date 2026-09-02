@@ -25,7 +25,6 @@ type TicketService struct {
 	notifications Notifications
 	groups        Groups
 	categories    Categories
-	policies      AccessPolicies
 	access        TicketAccessChecker
 }
 
@@ -40,7 +39,6 @@ func NewTicketService(deps *TicketDeps) *TicketService {
 		notifications: deps.Notifications,
 		groups:        deps.Groups,
 		categories:    deps.Categories,
-		policies:      deps.Policies,
 		access:        deps.Access,
 	}
 }
@@ -55,7 +53,6 @@ type TicketDeps struct {
 	Notifications Notifications
 	Groups        Groups
 	Categories    Categories
-	Policies      AccessPolicies
 	Access        TicketAccessChecker
 }
 
@@ -66,6 +63,10 @@ type Tickets interface {
 	Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, int, error)
 	// GetByID возвращает тикет по идентификатору вместе с подзадачами, вложениями и флагами доступа.
 	GetByID(ctx context.Context, req *models.GetTicketByIdDTO) (*models.Ticket, error)
+	// GetSummary возвращает «сырой» тикет по идентификатору — без подзадач, вложений,
+	// флагов доступа и без проверки прав. Используется внутренними сервисами, которым
+	// нужен сам тикет (статус, исполнитель, группа и т.п.), а не полный портрет с правами.
+	GetSummary(ctx context.Context, id uuid.UUID) (*models.Ticket, error)
 	// Create создаёт новый тикет.
 	Create(ctx context.Context, dto *models.TicketDTO) error
 	// Update изменяет поля тикета с соблюдением правил доступа и переходов по статусам.
@@ -79,6 +80,10 @@ type Tickets interface {
 	Transfer(ctx context.Context, dto *models.TransferTicketDTO) error
 	// Delete удаляет тикет.
 	Delete(ctx context.Context, dto *models.DeleteTicketDTO) error
+	// UploadAttachment сохраняет вложение и рассылает уведомление о новом вложении
+	// подписанным и исполнителю (для standalone-вложений без комментария; вложения,
+	// привязанные к комментарию, уведомлением не дублируют TicketCommented).
+	UploadAttachment(ctx context.Context, tx postgres.Tx, dto *models.UploadAttachmentDTO) (*models.Attachment, error)
 	// AutoCloseResolved закрывает resolved-тикеты по истечении задержки и возвращает их количество.
 	AutoCloseResolved(ctx context.Context, delay time.Duration) (int64, error)
 }
@@ -102,7 +107,7 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 		return data, total, nil
 	}
 
-	canViewAll, err := s.isRealmSupervisor(ctx, req.Actor.ID, realmStr)
+	canViewAll, err := s.access.IsRealmSupervisor(ctx, req.Actor.ID, realmStr)
 	if err != nil {
 		return nil, 0, fmt.Errorf("realm supervisor check failed: %w", err)
 	}
@@ -173,31 +178,6 @@ func unionGroupIDs(managed, member []uuid.UUID) []uuid.UUID {
 	return out
 }
 
-// isRealmSupervisor определяет, является ли пользователь «начальником области» в реалме:
-// ему выданы realm-wide пермишены управления областью (category:write или site:write).
-// Такие пользователи видят все заявки реалма в списке.
-func (s *TicketService) isRealmSupervisor(ctx context.Context, userID uuid.UUID, realmStr string) (bool, error) {
-	return isRealmSupervisor(s.policies, userID, realmStr)
-}
-
-// isRealmSupervisor проверяет, является ли пользователь «начальником области» в реалме:
-// ему выданы realm-wide пермишены управления областью (category:write или site:write).
-// Это ролево-настраиваемый критерий (через выдачу прав ролям в БД), без хардкода конкретных ролей.
-func isRealmSupervisor(policies AccessPolicies, userID uuid.UUID, realmStr string) (bool, error) {
-	ok, err := policies.Enforce(userID.String(), realmStr, string(access.ResourceCategory), string(access.Write))
-	if err != nil {
-		return false, fmt.Errorf("policy check failed: %w", err)
-	}
-	if ok {
-		return true, nil
-	}
-	ok, err = policies.Enforce(userID.String(), realmStr, string(access.ResourceSite), string(access.Write))
-	if err != nil {
-		return false, fmt.Errorf("policy check failed: %w", err)
-	}
-	return ok, nil
-}
-
 // autoAssign при создании тикета достраивает поля из группы:
 //   - исполнитель, если не указан явно: приоритет — ответственный по умолчанию группы
 //     (DefaultAssigneeID), иначе — единственный участник группы, чтобы тикет не остался без
@@ -233,6 +213,66 @@ func (s *TicketService) autoAssign(ctx context.Context, dto *models.TicketDTO) e
 		dto.ManagerID = group.ManagerID
 	}
 	return nil
+}
+
+// GetSummary возвращает «сырой» тикет по идентификатору для внутренних сервисов
+// (без подзадач, вложений, флагов доступа и проверки прав). Используется там, где
+// нужен сам агрегат, а не полный портрет с правами: проверка статуса/исполнителя,
+// сбор сведений для уведомлений и т.п.
+func (s *TicketService) GetSummary(ctx context.Context, id uuid.UUID) (*models.Ticket, error) {
+	data, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: id})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ticket summary: %w", err)
+	}
+	return data, nil
+}
+
+// UploadAttachment сохраняет вложение через AttachmentService и, если вложение не
+// привязано к комментарию (CommentID == nil), рассылает уведомление «Новое вложение»
+// исполнителю и подписанным. Файлы из комментариев отдельно не уведомляют — они уже
+// покрываются TicketCommented. Уведомление выполняется best-effort: его сбой не
+// превращает успешную загрузку файла в ошибку, но сигнализируется в лог.
+func (s *TicketService) UploadAttachment(ctx context.Context, tx postgres.Tx, dto *models.UploadAttachmentDTO) (*models.Attachment, error) {
+	att, err := s.attachments.Upload(ctx, tx, dto)
+	if err != nil {
+		return nil, err
+	}
+	if dto.CommentID != nil {
+		return att, nil
+	}
+
+	ticketID, err := s.attachmentTicketID(dto.EntityType, dto.EntityID)
+	if err != nil {
+		return att, nil // доступа к тикету нет — уведомление всё равно некому рассылать
+	}
+	ticket, err := s.GetSummary(ctx, ticketID)
+	if err != nil {
+		logger.Warn("failed to load ticket for attachment notification",
+			logger.StringAttr("entity_id", dto.EntityID.String()), logger.ErrAttr(err))
+		return att, nil
+	}
+	if err := s.notifications.AttachmentAdded(ctx, ticket, dto.UploadedBy); err != nil {
+		logger.Warn("failed to notify about attachment",
+			logger.StringAttr("entity_id", dto.EntityID.String()), logger.ErrAttr(err))
+	}
+	return att, nil
+}
+
+// attachmentTicketID определяет ID родительского тикета сущности вложения: для тикета —
+// сам entityID, для подзадачи — ticketID родительского тикета.
+func (s *TicketService) attachmentTicketID(entityType string, entityID uuid.UUID) (uuid.UUID, error) {
+	switch entityType {
+	case "ticket":
+		return entityID, nil
+	case "subtask":
+		sub, err := s.subtasks.GetRawByID(context.Background(), &models.GetSubtaskDTO{ID: entityID})
+		if err != nil {
+			return uuid.Nil, err
+		}
+		return sub.TicketID, nil
+	default:
+		return uuid.Nil, fmt.Errorf("unknown entity type: %s", entityType)
+	}
 }
 
 // GetByID возвращает тикет по идентификатору с проверкой права чтения,
@@ -285,7 +325,7 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		realmStr = dto.RealmID.String()
 	}
 
-	ok, err := s.policies.Enforce(dto.Actor.ID.String(), realmStr, string(access.ResourceTicket), string(access.Write))
+	ok, err := s.access.CanCreateTicket(ctx, dto.Actor.ID, realmStr)
 	if err != nil {
 		return fmt.Errorf("policy check failed: %w", err)
 	}
@@ -344,7 +384,11 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		return err
 	}
 
-	if err := s.notifications.TicketCreated(ctx, dto); err != nil {
+	created, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
+	if err != nil {
+		return fmt.Errorf("failed to load created ticket for notification: %w", err)
+	}
+	if err := s.notifications.TicketCreated(ctx, created); err != nil {
 		s.notifyBestEffort(ctx, "create", *dto.ID, dto.Title, err)
 	}
 	return nil
@@ -595,7 +639,10 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 	}
 
 	if len(changes) > 0 {
-		if err := s.notifications.TicketUpdated(ctx, *dto.ID, dto.Actor.ID, changes); err != nil {
+		updated, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
+		if err != nil {
+			s.notifyBestEffort(ctx, "update", *dto.ID, dto.Title, err)
+		} else if err := s.notifications.TicketUpdated(ctx, updated, dto.Actor.ID, changes); err != nil {
 			s.notifyBestEffort(ctx, "update", *dto.ID, dto.Title, err)
 		}
 	}
@@ -694,7 +741,10 @@ func (s *TicketService) Take(ctx context.Context, dto *models.TakeTicketDTO) err
 	}
 
 	if len(changes) > 0 {
-		if err := s.notifications.TicketUpdated(ctx, dto.ID, dto.Actor.ID, changes); err != nil {
+		updated, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: dto.ID})
+		if err != nil {
+			s.notifyBestEffort(ctx, "update", dto.ID, ticket.Title, err)
+		} else if err := s.notifications.TicketUpdated(ctx, updated, dto.Actor.ID, changes); err != nil {
 			s.notifyBestEffort(ctx, "update", dto.ID, ticket.Title, err)
 		}
 	}
@@ -787,7 +837,10 @@ func (s *TicketService) Transfer(ctx context.Context, dto *models.TransferTicket
 	}
 
 	if len(changes) > 0 {
-		if err := s.notifications.TicketUpdated(ctx, *dto.ID, dto.Actor.ID, changes); err != nil {
+		updated, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
+		if err != nil {
+			s.notifyBestEffort(ctx, "transfer", *dto.ID, ticket.Title, err)
+		} else if err := s.notifications.TicketUpdated(ctx, updated, dto.Actor.ID, changes); err != nil {
 			s.notifyBestEffort(ctx, "transfer", *dto.ID, ticket.Title, err)
 		}
 	}

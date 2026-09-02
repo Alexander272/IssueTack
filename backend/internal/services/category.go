@@ -9,13 +9,15 @@ import (
 )
 
 // CategoryService — сервис работы с категориями тикетов.
+// Для подсчёта незакрытых заявок использует узкий TicketCounter (см. groups.go),
+// т.к. CategoryService — зависимость TicketService, и внедрить сервис тикетов нельзя.
 type CategoryService struct {
 	repo    repository.Categories
-	tickets repository.Tickets
+	tickets TicketCounter
 }
 
 // NewCategoryService создаёт CategoryService.
-func NewCategoryService(repo repository.Categories, tickets repository.Tickets) *CategoryService {
+func NewCategoryService(repo repository.Categories, tickets TicketCounter) *CategoryService {
 	return &CategoryService{repo: repo, tickets: tickets}
 }
 

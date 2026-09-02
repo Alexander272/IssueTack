@@ -33,6 +33,10 @@ type Subtasks interface {
 	GetByTicketID(ctx context.Context, ticketID, actorID uuid.UUID, realm string) ([]*models.Subtask, error)
 	// GetByID возвращает подзадачу по идентификатору.
 	GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID, realm string) (*models.Subtask, error)
+	// GetRawByID возвращает подзадачу по идентификатору без проверки доступа —
+	// для внутренних сервисов, которым нужен только сам агрегат (например,
+	// разрешение родительского тикета вложений).
+	GetRawByID(ctx context.Context, req *models.GetSubtaskDTO) (*models.Subtask, error)
 	// GetUnresolvedCount возвращает количество нерешённых подзадач тикета.
 	GetUnresolvedCount(ctx context.Context, ticketID uuid.UUID) (int, error)
 	// Create создаёт подзадачу.
@@ -60,7 +64,17 @@ func (s *SubtaskService) GetByTicketID(ctx context.Context, ticketID, actorID uu
 	return data, nil
 }
 
-// GetByID возвращает подзадачу по идентификатору с проверкой доступа на чтение.
+// GetRawByID возвращает подзадачу по идентификатору без проверки доступа.
+func (s *SubtaskService) GetRawByID(ctx context.Context, req *models.GetSubtaskDTO) (*models.Subtask, error) {
+	data, err := s.repo.GetByID(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get subtask: %w", err)
+	}
+	return data, nil
+}
+
+// GetByID возвращает подзадачу по идентификатору с проверкой права чтения
+// родительского тикета.
 func (s *SubtaskService) GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID, realm string) (*models.Subtask, error) {
 	data, err := s.repo.GetByID(ctx, req)
 	if err != nil {

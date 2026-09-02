@@ -24,7 +24,7 @@ type mattermostSender interface {
 type CommentService struct {
 	repo          repository.Comments
 	ticketAccess  TicketAccessChecker
-	tickets       repository.Tickets
+	tickets       Tickets
 	users         Users
 	mmRepo        repository.Mattermost
 	mmSender      mattermostSender
@@ -34,7 +34,7 @@ type CommentService struct {
 }
 
 // NewCommentService создаёт CommentService.
-func NewCommentService(repo repository.Comments, ticketAccess TicketAccessChecker, tickets repository.Tickets, users Users, mmRepo repository.Mattermost, mmSender mattermostSender, notifications Notifications, txManager TransactionManager, attachments Attachments) *CommentService {
+func NewCommentService(repo repository.Comments, ticketAccess TicketAccessChecker, tickets Tickets, users Users, mmRepo repository.Mattermost, mmSender mattermostSender, notifications Notifications, txManager TransactionManager, attachments Attachments) *CommentService {
 	return &CommentService{
 		repo:          repo,
 		ticketAccess:  ticketAccess,
@@ -107,7 +107,7 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 		Realm:    dto.Realm,
 	}
 
-	ticket, err := s.tickets.GetByID(ctx, &models.GetTicketByIdDTO{ID: dto.TicketID})
+	ticket, err := s.tickets.GetSummary(ctx, dto.TicketID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load ticket for comment access: %w", err)
 	}
@@ -146,7 +146,7 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 	// факт создания комментария — их сбои только логируются.
 	s.notifyOwnerViaMattermost(ctx, comment)
 	if s.notifications != nil {
-		if err := s.notifications.TicketCommented(ctx, comment.TicketID, comment.UserID); err != nil {
+		if err := s.notifications.TicketCommented(ctx, ticket, comment.UserID); err != nil {
 			logger.Warn("failed to notify about comment", logger.StringAttr("ticket_id", comment.TicketID.String()), logger.ErrAttr(err))
 		}
 	}
@@ -194,7 +194,7 @@ func (s *CommentService) notifyOwnerViaMattermost(ctx context.Context, comment *
 		return
 	}
 
-	ticket, err := s.tickets.GetByID(ctx, &models.GetTicketByIdDTO{ID: comment.TicketID})
+	ticket, err := s.tickets.GetSummary(ctx, comment.TicketID)
 	if err != nil {
 		logger.Warn("failed to load ticket for mattermost comment notify", logger.StringAttr("ticket_id", comment.TicketID.String()), logger.ErrAttr(err))
 		return

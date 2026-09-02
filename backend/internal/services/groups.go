@@ -10,15 +10,23 @@ import (
 	"github.com/google/uuid"
 )
 
+// TicketCounter — узкий read-only доступ к агрегату тикетов для подсчёта незакрытых
+// заявок. Groups/Categories являются зависимостями TicketService (цикл: tickets → groups),
+// поэтому внедрить сам сервис тикетов нельзя — оставляем минимальный счётчик-интерфейс.
+type TicketCounter interface {
+	CountNotClosedByGroup(ctx context.Context, groupID uuid.UUID) (int, error)
+	CountNotClosedByCategory(ctx context.Context, categoryID uuid.UUID) (int, error)
+}
+
 // GroupService — сервис работы с группами и их участниками.
 type GroupService struct {
 	repo      repository.Groups
-	tickets   repository.Tickets
+	tickets   TicketCounter
 	txManager TransactionManager
 }
 
 // NewGroupService создаёт GroupService.
-func NewGroupService(repo repository.Groups, tickets repository.Tickets, txManager TransactionManager) *GroupService {
+func NewGroupService(repo repository.Groups, tickets TicketCounter, txManager TransactionManager) *GroupService {
 	return &GroupService{repo: repo, tickets: tickets, txManager: txManager}
 }
 

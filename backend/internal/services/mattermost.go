@@ -40,7 +40,7 @@ type MattermostDeps struct {
 	Sites       Sites
 	Attachments Attachments
 	Comments    Comments
-	Policies    AccessPolicies
+	Access      TicketAccessChecker
 	EventBus    *events.PolicyEventManager
 	Most        *mattermost.Most
 	BaseURL     string
@@ -60,7 +60,7 @@ type MattermostService struct {
 	sites         Sites
 	attachments   Attachments
 	comments      Comments
-	policies      AccessPolicies
+	access        TicketAccessChecker
 	eventBus      *events.PolicyEventManager
 	most          *mattermost.Most
 	baseURL       string
@@ -83,7 +83,7 @@ func NewMattermostService(deps *MattermostDeps) *MattermostService {
 		sites:       deps.Sites,
 		attachments: deps.Attachments,
 		comments:    deps.Comments,
-		policies:    deps.Policies,
+		access:      deps.Access,
 		eventBus:    deps.EventBus,
 		most:        deps.Most,
 		baseURL:     deps.BaseURL,
@@ -397,7 +397,7 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, settings *mod
 		commentCreated = true
 	} else {
 		for _, fileDTO := range fileDTOs {
-			att, err := s.attachments.Upload(ctx, nil, fileDTO)
+			att, err := s.tickets.UploadAttachment(ctx, nil, fileDTO)
 			if err != nil {
 				logger.Warn("failed to upload file as attachment", logger.StringAttr("ticket_id", ticketID.String()), logger.ErrAttr(err))
 				continue
@@ -542,9 +542,9 @@ func (s *MattermostService) checkIsAdmin(ctx context.Context, realmID uuid.UUID,
 }
 
 // isRealmSupervisor определяет, является ли системный пользователь «начальником области»
-// в реалме (realm-wide пермишены управления областью: category:write или site:write).
+// в реалме (realm-wide пермишены управления областью). Делегируется единому объекту доступа.
 func (s *MattermostService) isRealmSupervisor(ctx context.Context, userID uuid.UUID, realmID uuid.UUID) bool {
-	ok, err := isRealmSupervisor(s.policies, userID, realmID.String())
+	ok, err := s.access.IsRealmSupervisor(ctx, userID, realmID.String())
 	if err != nil {
 		logger.Error("failed to check realm supervisor",
 			logger.StringAttr("user_id", userID.String()),

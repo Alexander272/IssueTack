@@ -14,19 +14,18 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-func attachmentFixtures(t *testing.T) (*MockAttachmentsRepo, *MockSubtasksRepo, *MockTicketAccessChecker, *AttachmentService, string) {
+func attachmentFixtures(t *testing.T) (*MockAttachmentsRepo, *MockSubtaskService, *MockTicketAccessChecker, *AttachmentService, string) {
 	t.Helper()
 	mockRepo := new(MockAttachmentsRepo)
-	mockSubtasks := new(MockSubtasksRepo)
+	mockSubtasks := new(MockSubtaskService)
 	mockAccess := new(MockTicketAccessChecker)
 	uploadDir := t.TempDir()
 
 	svc := &AttachmentService{
-		repo:          mockRepo,
-		conf:          &config.FileServerConfig{UploadDir: uploadDir},
-		ticketAccess:  mockAccess,
-		subtaskRepo:   mockSubtasks,
-		notifications: nil,
+		repo:         mockRepo,
+		conf:         &config.FileServerConfig{UploadDir: uploadDir},
+		ticketAccess: mockAccess,
+		subtasks:     mockSubtasks,
 	}
 	return mockRepo, mockSubtasks, mockAccess, svc, uploadDir
 }
@@ -78,7 +77,7 @@ func TestAttachmentService_GetByEntity_Subtask(t *testing.T) {
 	actorID := uuid.New()
 	expected := []*models.Attachment{{ID: uuid.New(), FileName: "file.pdf"}}
 
-	mockSubtasks.On("GetByID", mock.Anything, &models.GetSubtaskDTO{ID: subtaskID}).Return(&models.Subtask{
+	mockSubtasks.On("GetRawByID", mock.Anything, &models.GetSubtaskDTO{ID: subtaskID}).Return(&models.Subtask{
 		ID: subtaskID, TicketID: ticketID,
 	}, nil)
 	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read), Realm: ""}).Return(nil)
