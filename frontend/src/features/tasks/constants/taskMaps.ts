@@ -1,7 +1,19 @@
 import type { FC } from 'react'
 import type { SvgIconProps } from '@mui/material'
 import type { TicketStatus, Priority } from '../types/task'
-import { PlayIcon, ClockIcon, PauseIcon, CheckIcon, LockIcon, XCircleIcon, AlertTriangleIcon } from 'lucide-mui'
+import type { DueDateTone } from '@/utils/date'
+import {
+	PlayIcon,
+	ClockIcon,
+	PauseIcon,
+	CheckIcon,
+	LockIcon,
+	XCircleIcon,
+	AlertTriangleIcon,
+	CalendarIcon,
+	CalendarClockIcon,
+	AlarmClockIcon,
+} from 'lucide-mui'
 
 export interface StatusMapValue {
 	label: string
@@ -28,6 +40,22 @@ export const STATUS_MAP: Record<TicketStatus, StatusMapValue> = {
 	closed: { label: 'Закрыта', icon: LockIcon, bgColor: '#C8E6C9', textColor: '#024a02' },
 	cancelled: { label: 'Отменена', icon: XCircleIcon, bgColor: '#FFEBEE', textColor: '#B71C1C' },
 }
+
+export const ACTIVE_STATUSES: TicketStatus[] = ['open', 'in_progress', 'pending', 'on_hold']
+
+export const DUE_DATE_COLORS: Record<Exclude<DueDateTone, null>, string> = {
+	overdue: '#dc2626',
+	today: '#ea580c',
+	soon: '#d97706',
+}
+
+export const DUE_DATE_ICONS: Record<Exclude<DueDateTone, null>, FC<SvgIconProps>> = {
+	overdue: AlertTriangleIcon,
+	today: AlarmClockIcon,
+	soon: CalendarClockIcon,
+}
+
+export const DUE_DATE_DEFAULT_ICON = CalendarIcon
 
 export interface PriorityMapValue {
 	label: string

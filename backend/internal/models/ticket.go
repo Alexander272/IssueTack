@@ -49,6 +49,8 @@ type AccessFlags struct {
 	CanWork         bool           `json:"canWork"`
 	CanTake         bool           `json:"canTake"`
 	CanEditFields   bool           `json:"canEditFields"`
+	IsAdmin         bool           `json:"isAdmin"`
+	IsManager       bool           `json:"isManager"`
 	AllowedStatuses []TicketStatus `json:"allowedStatuses"`
 }
 
@@ -256,6 +258,18 @@ func (dto *TicketDTO) GetChanges(old *Ticket) []*FieldChange {
 			}
 		} else if dto.GroupID == nil && old.Group != nil {
 			changes = append(changes, &FieldChange{ActionGroupChanged, old.Group.ID.String(), "none"})
+		}
+	}
+
+	if dto.HasField("managerId") {
+		if dto.ManagerID != nil && (old.Manager == nil || *dto.ManagerID != old.Manager.ID) {
+			oldVal := "none"
+			if old.Manager != nil {
+				oldVal = old.Manager.ID.String()
+			}
+			changes = append(changes, &FieldChange{ActionManagerChanged, oldVal, dto.ManagerID.String()})
+		} else if dto.ManagerID == nil && old.Manager != nil {
+			changes = append(changes, &FieldChange{ActionManagerChanged, old.Manager.ID.String(), "none"})
 		}
 	}
 

@@ -7,6 +7,8 @@ import 'dayjs/locale/ru'
 dayjs.extend(calendar)
 dayjs.locale('ru')
 
+export type DueDateTone = 'overdue' | 'today' | 'soon' | null
+
 export const getShortDate = (date: string | null) => {
 	if (!date) {
 		return '—'
@@ -21,6 +23,19 @@ export const getDate = (date: string) => {
 	}
 
 	return dayjs(date).format('DD.MM.YYYY')
+}
+
+export const getDueDateTone = (dueDate: string | null): DueDateTone => {
+	if (!dueDate) return null
+
+	const target = dayjs(dueDate).startOf('day')
+	const now = dayjs().startOf('day')
+	const diff = target.diff(now, 'day')
+
+	if (diff < 0) return 'overdue'
+	if (diff === 0) return 'today'
+	if (diff <= 3) return 'soon'
+	return null
 }
 
 export const getSmartDate = (date: string) => {

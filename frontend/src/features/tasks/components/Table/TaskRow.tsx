@@ -1,7 +1,8 @@
 import { TableRow, TableCell, Typography, Box, Tooltip, type SxProps, type Theme } from '@mui/material'
 
 import type { ITask } from '../../types/task'
-import { getShortDate } from '@/utils/date'
+import { ACTIVE_STATUSES, DUE_DATE_COLORS, DUE_DATE_ICONS, DUE_DATE_DEFAULT_ICON } from '../../constants/taskMaps'
+import { getDueDateTone, getShortDate } from '@/utils/date'
 import { TaskStatusBadge } from '../TaskStatusBadge'
 import { TaskPriorityBadge } from '../TaskPriorityBadge'
 import { TaskAssignmentChip } from '../TaskAssignmentChip'
@@ -15,6 +16,9 @@ interface Props {
 
 export const TaskRow = ({ task, onClick, sx }: Props) => {
 	const displayId = task.ticketNumber || '—'
+	const dueTone = ACTIVE_STATUSES.includes(task.status) ? getDueDateTone(task.dueDate) : null
+	const DueDateIcon = dueTone ? DUE_DATE_ICONS[dueTone] : DUE_DATE_DEFAULT_ICON
+	const dueDateColor = dueTone ? DUE_DATE_COLORS[dueTone] : '#4b5563'
 	const subtaskProgress = task.subtasks
 		? {
 				done: task.subtasks.filter(s => s.status === 'closed' || s.status === 'resolved').length,
@@ -96,9 +100,26 @@ export const TaskRow = ({ task, onClick, sx }: Props) => {
 			</TableCell>
 			<TableCell>
 				<Box sx={{ display: 'flex', flexDirection: 'column' }}>
-					<Typography sx={{ fontSize: '0.875rem', color: '#4b5563' }}>
-						{getShortDate(task.dueDate)}
-					</Typography>
+					<Box
+						sx={{
+							display: 'inline-flex',
+							alignItems: 'center',
+							gap: 0.5,
+							color: dueDateColor,
+						}}
+					>
+						<DueDateIcon sx={{ fontSize: 14, color: dueDateColor }} />
+						<Typography
+							component='span'
+							sx={{
+								fontSize: '0.875rem',
+								fontWeight: dueTone && dueTone !== 'soon' ? 700 : 400,
+								lineHeight: 1,
+							}}
+						>
+							{getShortDate(task.dueDate)}
+						</Typography>
+					</Box>
 					{task.closedAt && (
 						<Typography sx={{ fontSize: '0.75rem', color: '#059669' }}>
 							Закрыта: {getShortDate(task.closedAt)}

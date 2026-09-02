@@ -21,6 +21,7 @@ const FIELD_LABELS: Record<string, string> = {
 	owner_changed: 'Владелец',
 	group_changed: 'Группа',
 	group_assigned: 'Группа',
+	manager_changed: 'Менеджер',
 	due_date_changed: 'Срок',
 	site_changed: 'Площадка',
 	category_changed: 'Категория',

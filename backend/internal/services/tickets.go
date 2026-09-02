@@ -466,11 +466,6 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 			return err
 		}
 
-		// manager_id определяется менеджером группы автоматически; ручное изменение запрещено.
-		if dto.HasField("managerId") {
-			return models.ErrPermissionDenied
-		}
-
 		if ownerOnly && dto.HasField("status") && dto.Status != oldTicket.Status && !s.ownerTransitionAllowed(oldTicket, dto) {
 			return models.ErrPermissionDenied
 		}
@@ -551,12 +546,47 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 			}
 		}
 
+		// Тонкие права операций: смена группы заявки доступна только администратору
+		// реалма (Casbin write на тикеты), смена исполнителя — администратору или
+		// менеджеру группы тикета. Менеджер (manager_id) определяется менеджером
+		// группы автоматически — ручное изменение запрещено всем. Эти ограничения
+		// действуют поверх прочих прав — независимо от assignedOnly/ownerOnly и права
+		// правки полей (canEditFields). Эхо текущего значения (фронт передаёт его в
+		// каждом запросе) не создаёт change и проходит беспрепятственно.
+		isAdmin, err := s.access.CanCreateTicket(ctx, dto.Actor.ID, realmStr)
+		if err != nil {
+			return fmt.Errorf("failed to check admin access: %w", err)
+		}
+		for _, change := range changes {
+			switch change.Tag {
+			case models.ActionGroupChanged, models.ActionGroupAssigned:
+				if !isAdmin {
+					return models.ErrPermissionDenied
+				}
+			case models.ActionAssigned, models.ActionAssignChanged:
+				if isAdmin {
+					continue
+				}
+				isManager, mgrErr := s.isManagerOfGroup(ctx, oldTicket.Group, dto.Actor.ID)
+				if mgrErr != nil {
+					return mgrErr
+				}
+				if !isManager {
+					return models.ErrPermissionDenied
+				}
+			case models.ActionManagerChanged:
+				return models.ErrPermissionDenied
+			}
+		}
+
 		// Право правки полей (заголовок/описание/приоритет/срок/группа и т.п.)
 		// имеет только создатель, менеджер группы или владелец (в статусе open).
 		// Политика Casbin write сама по себе права правки полей не даёт — она
 		// остаётся источником «рабочего» доступа (комментарии/вложения/подзадачи/
-		// смена статуса). Пользователь лишь со «рабочим» доступом может менять
-		// только статус и передавать заявку исполнителю из своей группы (assigneeId).
+		// смена статуса). Пользователь лишь со «рабочим» доступом (assignedOnly)
+		// может менять только статус; передача исполнителя выполняется через
+		// отдельный эндпоинт Transfer (см. выше), а смена assignee via Update
+		// доступна только админу/менеджеру группы (проверено в «тонких правах»).
 		if !assignedOnly && !ownerOnly {
 			canEdit, editErr := s.canEditFields(ctx, oldTicket, dto.Actor.ID)
 			if editErr != nil {
@@ -572,11 +602,12 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 				switch change.Tag {
 				case models.ActionStatusChanged, models.ActionClosed:
 					// допустимо: изменение статуса
+				case models.ActionGroupChanged, models.ActionGroupAssigned:
+					// допустимо только для админа: авторизация проведена в «тонких правах» выше
 				case models.ActionAssigned, models.ActionAssignChanged:
-					// допустимо только как передача новому исполнителю из той же группы
-					if err := s.validateAssigneeForAssign(ctx, oldTicket, dto.AssigneeID); err != nil {
-						return err
-					}
+					// допустимо только для админа/менеджера группы: авторизация
+					// проведена в «тонких правах» выше (исполнитель с work-доступом
+					// сюда не попадает — его передача идёт через Transfer)
 				default:
 					return models.ErrPermissionDenied
 				}
@@ -908,7 +939,13 @@ func (s *TicketService) isCreatorOrManager(ctx context.Context, ticket *models.T
 	if ticket.Creator.ID == actorID {
 		return true, nil
 	}
-	if ticket.Group == nil {
+	return s.isManagerOfGroup(ctx, ticket.Group, actorID)
+}
+
+// isManagerOfGroup проверяет, является ли пользователь менеджером указанной группы тикета.
+// Для тикета без группы всегда возвращает false. Определение менеджера — через GetManagedGroups.
+func (s *TicketService) isManagerOfGroup(ctx context.Context, group *models.GroupShort, actorID uuid.UUID) (bool, error) {
+	if group == nil {
 		return false, nil
 	}
 
@@ -917,7 +954,7 @@ func (s *TicketService) isCreatorOrManager(ctx context.Context, ticket *models.T
 		return false, fmt.Errorf("failed to get managed groups: %w", err)
 	}
 	for _, gid := range managed {
-		if gid == ticket.Group.ID {
+		if gid == group.ID {
 			return true, nil
 		}
 	}
@@ -1048,6 +1085,22 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 		return nil, err
 	}
 	flags.CanEditFields = canEdit
+
+	// IsAdmin — администратор реалма: наличие realm-wide write-политики (Casbin write)
+	// на ресурс тикетов. Такому пользователю разрешена смена группы заявки.
+	isAdmin, err := s.access.CanCreateTicket(ctx, userID, realm)
+	if err != nil {
+		return nil, err
+	}
+	flags.IsAdmin = isAdmin
+
+	// IsManager — менеджер группы, к которой относится тикет (across-check never fails
+	// для тикета без группы — false). Такому пользователю разрешена смена исполнителя.
+	isManager, err := s.isManagerOfGroup(ctx, ticket.Group, userID)
+	if err != nil {
+		return nil, err
+	}
+	flags.IsManager = isManager
 
 	flags.AllowedStatuses = s.computeAllowedStatuses(ctx, ticket, userID, realm)
 

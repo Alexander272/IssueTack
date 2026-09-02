@@ -43,6 +43,7 @@ const (
 	ActionOwnerChanged       ActivityType = "owner_changed"    // Изменен владелец
 	ActionGroupChanged       ActivityType = "group_changed"    // Изменена группа
 	ActionGroupAssigned      ActivityType = "group_assigned"   // Назначена группа
+	ActionManagerChanged     ActivityType = "manager_changed"  // Изменен начальник (manager)
 	ActionDueDateChanged     ActivityType = "due_date_changed" // Изменен срок
 	ActionSiteChanged        ActivityType = "site_changed"     // Изменена площадка
 	ActionCategoryChanged    ActivityType = "category_changed" // Изменена категория
@@ -53,7 +54,8 @@ func (a ActivityType) IsValid() bool {
 	switch a {
 	case ActionCreated, ActionClosed, ActionTitleChanged, ActionDescriptionChanged, ActionStatusChanged,
 		ActionPriorityChanged, ActionAssigned, ActionAssignChanged, ActionOwnerChanged, ActionGroupChanged,
-		ActionGroupAssigned, ActionDueDateChanged, ActionSiteChanged, ActionCategoryChanged, ActionCommentAdded:
+		ActionGroupAssigned, ActionManagerChanged, ActionDueDateChanged, ActionSiteChanged, ActionCategoryChanged,
+		ActionCommentAdded:
 		return true
 	}
 	return false

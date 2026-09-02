@@ -38,6 +38,8 @@ export interface IAccessFlags {
 	canWork: boolean
 	canTake: boolean
 	canEditFields: boolean
+	isAdmin: boolean
+	isManager: boolean
 	allowedStatuses: TicketStatus[]
 }
 

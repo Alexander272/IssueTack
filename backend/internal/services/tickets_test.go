@@ -437,6 +437,45 @@ func TestTicketService_Update_ManagerIdDenied(t *testing.T) {
 	mockRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything, mock.Anything)
 }
 
+func TestTicketService_Update_ManagerIdEcho_Allowed(t *testing.T) {
+	mockRepo, mockLogs, _, _, mockNotifications, _, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	managerID := uuid.New()
+	groupID := uuid.New()
+	ticketID := uuid.New()
+	dueDate := time.Now().Add(48 * time.Hour)
+	dto := &models.TicketDTO{
+		ID:          &ticketID,
+		Actor:       &models.Actor{ID: actorID, Name: "test"},
+		Description: "Updated description",
+		ManagerID:   &managerID,
+		DueDate:     &dueDate,
+		Provided:    map[string]bool{"description": true, "managerId": true, "dueDate": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:          ticketID,
+		Title:       "Original Ticket",
+		Description: "Original description",
+		Status:      models.StatusOpen,
+		Creator:     models.UserShort{ID: actorID},
+		Group:       &models.GroupShort{ID: groupID, Name: "Test Group"},
+		Manager:     &models.UserShort{ID: managerID},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockLogs.AssertExpectations(t)
+}
+
 func TestTicketService_Update_StatusOnly_Assignee(t *testing.T) {
 	mockRepo, mockLogs, _, _, mockNotifications, _, mockPolicies, svc := ticketServiceFixtures()
 
@@ -944,6 +983,135 @@ func TestTicketService_Update_PolicyWrite_NotManager_SetClosed_Denied(t *testing
 	mockRepo.AssertNotCalled(t, "Update")
 }
 
+func TestTicketService_Update_Group_NonAdmin_Denied(t *testing.T) {
+	mockRepo, _, _, _, _, _, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	groupID := uuid.New()
+	newGroupID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		GroupID:  &newGroupID,
+		Provided: map[string]bool{"groupId": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:      ticketID,
+		Title:   "Original Ticket",
+		Creator: models.UserShort{ID: actorID},
+		Group:   &models.GroupShort{ID: groupID, Name: "Test Group"},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+	mockRepo.AssertNotCalled(t, "Update")
+}
+
+func TestTicketService_Update_Group_Admin_Success(t *testing.T) {
+	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	groupID := uuid.New()
+	newGroupID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		GroupID:  &newGroupID,
+		Provided: map[string]bool{"groupId": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:      ticketID,
+		Title:   "Original Ticket",
+		Creator: models.UserShort{ID: uuid.New()},
+		Group:   &models.GroupShort{ID: groupID, Name: "Test Group"},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(true, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockLogs.AssertExpectations(t)
+}
+
+func TestTicketService_Update_Assignee_NonAdmin_NonManager_Denied(t *testing.T) {
+	mockRepo, _, _, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	groupID := uuid.New()
+	newAssigneeID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:         &ticketID,
+		Actor:      &models.Actor{ID: actorID, Name: "test"},
+		AssigneeID: &newAssigneeID,
+		Provided:   map[string]bool{"assigneeId": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:       ticketID,
+		Title:    "Original Ticket",
+		Creator:  models.UserShort{ID: actorID},
+		Group:    &models.GroupShort{ID: groupID, Name: "Test Group"},
+		Assignee: &models.UserShort{ID: uuid.New()},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+	mockRepo.AssertNotCalled(t, "Update")
+}
+
+func TestTicketService_Update_Assignee_GroupManager_Success(t *testing.T) {
+	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	groupID := uuid.New()
+	newAssigneeID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:         &ticketID,
+		Actor:      &models.Actor{ID: actorID, Name: "test"},
+		AssigneeID: &newAssigneeID,
+		Provided:   map[string]bool{"assigneeId": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:       ticketID,
+		Title:    "Original Ticket",
+		Creator:  models.UserShort{ID: uuid.New()},
+		Group:    &models.GroupShort{ID: groupID, Name: "Test Group"},
+		Assignee: &models.UserShort{ID: uuid.New()},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{groupID}, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockLogs.AssertExpectations(t)
+}
+
 func TestTicketService_AutoCloseResolved_Disabled(t *testing.T) {
 	mockRepo, _, _, _, _, _, _, svc := ticketServiceFixtures()
 
@@ -1378,6 +1546,81 @@ func TestTicketService_GetAccessFlags_CanEditFields(t *testing.T) {
 	flags, err := svc.GetAccessFlags(context.Background(), ticket, creatorID, "")
 	assert.NoError(t, err)
 	assert.True(t, flags.CanEditFields)
+}
+
+func TestTicketService_GetAccessFlags_IsAdmin(t *testing.T) {
+	_, _, mockSubtasks, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	adminID := uuid.New()
+	groupID := uuid.New()
+
+	mockPolicies.On("Enforce", adminID.String(), mock.Anything, string(access.ResourceTicket), string(access.Write)).Return(true, nil)
+	mockPolicies.On("Enforce", adminID.String(), mock.Anything, string(access.ResourceTicket), string(access.Delete)).Return(false, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, adminID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockSubtasks.On("GetUnresolvedCount", mock.Anything, mock.Anything).Return(0, nil)
+
+	ticket := &models.Ticket{
+		ID:      uuid.New(),
+		Title:   "Ticket",
+		Status:  models.StatusOpen,
+		Creator: models.UserShort{ID: uuid.New()},
+		Group:   &models.GroupShort{ID: groupID, Name: "Group"},
+	}
+
+	flags, err := svc.GetAccessFlags(context.Background(), ticket, adminID, "")
+	assert.NoError(t, err)
+	assert.True(t, flags.IsAdmin)
+	assert.False(t, flags.IsManager)
+}
+
+func TestTicketService_GetAccessFlags_IsManager(t *testing.T) {
+	_, _, mockSubtasks, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	managerID := uuid.New()
+	groupID := uuid.New()
+
+	mockPolicies.On("Enforce", managerID.String(), mock.Anything, string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", managerID.String(), mock.Anything, string(access.ResourceTicket), string(access.Delete)).Return(false, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, managerID, (*uuid.UUID)(nil)).Return([]uuid.UUID{groupID}, nil)
+	mockSubtasks.On("GetUnresolvedCount", mock.Anything, mock.Anything).Return(0, nil)
+
+	ticket := &models.Ticket{
+		ID:      uuid.New(),
+		Title:   "Ticket",
+		Status:  models.StatusOpen,
+		Creator: models.UserShort{ID: uuid.New()},
+		Group:   &models.GroupShort{ID: groupID, Name: "Group"},
+	}
+
+	flags, err := svc.GetAccessFlags(context.Background(), ticket, managerID, "")
+	assert.NoError(t, err)
+	assert.False(t, flags.IsAdmin)
+	assert.True(t, flags.IsManager)
+}
+
+func TestTicketService_GetAccessFlags_NoRoles(t *testing.T) {
+	_, _, mockSubtasks, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	userID := uuid.New()
+	groupID := uuid.New()
+
+	mockPolicies.On("Enforce", userID.String(), mock.Anything, string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", userID.String(), mock.Anything, string(access.ResourceTicket), string(access.Delete)).Return(false, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, userID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockSubtasks.On("GetUnresolvedCount", mock.Anything, mock.Anything).Return(0, nil)
+
+	ticket := &models.Ticket{
+		ID:      uuid.New(),
+		Title:   "Ticket",
+		Status:  models.StatusOpen,
+		Creator: models.UserShort{ID: uuid.New()},
+		Group:   &models.GroupShort{ID: groupID, Name: "Group"},
+	}
+
+	flags, err := svc.GetAccessFlags(context.Background(), ticket, userID, "")
+	assert.NoError(t, err)
+	assert.False(t, flags.IsAdmin)
+	assert.False(t, flags.IsManager)
 }
 
 func TestTicketService_GetSummary(t *testing.T) {

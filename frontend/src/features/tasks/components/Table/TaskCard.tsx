@@ -1,8 +1,14 @@
 import { Box, Typography, Stack } from '@mui/material'
 
 import type { ITask } from '../../types/task'
-import { PRIORITY_MAP } from '../../constants/taskMaps'
-import { getShortDate } from '@/utils/date'
+import {
+	PRIORITY_MAP,
+	ACTIVE_STATUSES,
+	DUE_DATE_COLORS,
+	DUE_DATE_ICONS,
+	DUE_DATE_DEFAULT_ICON,
+} from '../../constants/taskMaps'
+import { getDueDateTone, getShortDate } from '@/utils/date'
 import { TaskStatusBadge } from '../TaskStatusBadge'
 import { TaskPriorityBadge } from '../TaskPriorityBadge'
 import { TaskAssignmentChip } from '../TaskAssignmentChip'
@@ -15,6 +21,8 @@ interface Props {
 
 export const TaskCard = ({ task, onClick }: Props) => {
 	const priorityColor = PRIORITY_MAP[task.priority]?.barColor ?? '#6b7280'
+	const dueTone = ACTIVE_STATUSES.includes(task.status) ? getDueDateTone(task.dueDate) : null
+	const DueDateIcon = dueTone ? DUE_DATE_ICONS[dueTone] : DUE_DATE_DEFAULT_ICON
 
 	const displayId = task.ticketNumber ? `№${task.ticketNumber}` : null
 
@@ -149,15 +157,27 @@ export const TaskCard = ({ task, onClick }: Props) => {
 					</Box>
 				)}
 
-				<Stack
+<Stack
 					direction='row'
 					spacing={2}
 					sx={{ alignItems: 'center', pt: 0.5, mt: 1, borderTop: '1px solid #f3f4f6' }}
 				>
-					<Typography sx={{ fontSize: '0.75rem', color: task.closedAt ? '#059669' : '#9ca3af' }}>
-						{task.closedAt ? 'Закрыта' : 'Срок'}:{' '}
-						{task.closedAt ? getShortDate(task.closedAt) : getShortDate(task.dueDate)}
-					</Typography>
+					<Box
+						sx={{
+							display: 'inline-flex',
+							alignItems: 'center',
+							gap: 0.5,
+							fontSize: '0.75rem',
+							color: task.closedAt ? '#059669' : dueTone ? DUE_DATE_COLORS[dueTone] : '#9ca3af',
+							fontWeight: task.closedAt || (dueTone && dueTone !== 'soon') ? 600 : 400,
+						}}
+					>
+						{!task.closedAt && <DueDateIcon sx={{ fontSize: 14 }} />}
+						<Typography component='span' sx={{ fontSize: '0.75rem', lineHeight: 1 }}>
+							{task.closedAt ? 'Закрыта' : 'Срок'}:{' '}
+							{task.closedAt ? getShortDate(task.closedAt) : getShortDate(task.dueDate)}
+						</Typography>
+					</Box>
 
 					{attachmentsCount > 0 && (
 						<Typography

@@ -2,7 +2,6 @@ import { Box, Button, Stack, TextField, Typography } from '@mui/material'
 import { Controller, FormProvider, useForm, useFormContext } from 'react-hook-form'
 import { toast } from 'react-toastify'
 
-import type { IFetchError } from '@/app/types/error'
 import type { ITask, ITaskDTO } from '../../types/task'
 import type { FormValues } from './types'
 import { useAppSelector } from '@/hooks/redux'
@@ -112,9 +111,8 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded }: Props) => 
 			toast.success('Задача обновлена')
 			reset()
 			onSuccess?.()
-		} catch (error) {
-			const fetchError = error as IFetchError
-			toast.error(fetchError.data?.message || 'Ошибка при обновлении задачи', { autoClose: false })
+		} catch {
+			// ошибка уже показана тостом в tasksApiSlice (updateTask.onQueryStarted)
 		}
 	})
 
@@ -133,7 +131,14 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded }: Props) => 
 					<Stack sx={{ gap: 1 }}>
 						<EditDescriptionSection />
 
-						{isManager && <AdvancedSettingsSection number={2} autoAssign={false} />}
+						{isManager && (
+							<AdvancedSettingsSection
+								number={2}
+								autoAssign={false}
+								isAdmin={task.access?.isAdmin ?? false}
+								isManager={task.access?.isManager ?? false}
+							/>
+						)}
 
 						<Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, pt: 1, pb: !embedded ? 2 : 0 }}>
 							<Button

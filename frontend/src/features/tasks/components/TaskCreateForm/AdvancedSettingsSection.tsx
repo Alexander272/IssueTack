@@ -18,9 +18,11 @@ import { DateTextField } from '@/components/DatePicker/DatePicker'
 type Props = {
 	number?: number
 	autoAssign?: boolean
+	isAdmin?: boolean
+	isManager?: boolean
 }
 
-export const AdvancedSettingsSection = ({ number = 3, autoAssign = true }: Props) => {
+export const AdvancedSettingsSection = ({ number = 3, autoAssign = true, isAdmin = true, isManager = true }: Props) => {
 	const { control, setValue } = useFormContext<FormValues>()
 	const { data: categoriesData } = useGetAllCategoriesQuery()
 	const { data: groupsData } = useGetAllGroupsQuery()
@@ -113,6 +115,7 @@ export const AdvancedSettingsSection = ({ number = 3, autoAssign = true }: Props
 									getOptionLabel={o => o.name}
 									value={groups.find(g => g.id === field.value) ?? null}
 									onChange={(_, value) => field.onChange(value?.id ?? null)}
+									disabled={!isAdmin}
 									noOptionsText='Нет групп'
 									renderInput={params => (
 										<TextField {...params} size='small' placeholder='Авто (по категории)' />
@@ -135,6 +138,7 @@ export const AdvancedSettingsSection = ({ number = 3, autoAssign = true }: Props
 									getOptionLabel={u => `${u.lastName} ${u.firstName} (${u.username})`}
 									value={executors.find(u => u.id === field.value) ?? null}
 									onChange={(_, value) => field.onChange(value?.id ?? null)}
+									disabled={!isAdmin && !isManager}
 									noOptionsText='Нет исполнителей'
 									renderInput={params => (
 										<TextField {...params} size='small' placeholder='Авто (по группе)' />
