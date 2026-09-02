@@ -19,6 +19,7 @@ import { Users } from '@/pages/accesses/users/UsersLazy'
 import { Role } from '@/pages/accesses/role/RoleLazy'
 import { Permissions } from '@/pages/accesses/permissions/PermsLazy'
 import PrivateRoute from './PrivateRoute'
+import RoleRoute from './RoleRoute'
 
 const config: RouteObject[] = [
 	{
@@ -51,43 +52,80 @@ const config: RouteObject[] = [
 					},
 					{
 						path: AppRoutes.Sites,
-						element: <Sites />,
+						element: <RoleRoute manager />,
+						children: [
+							{
+								index: true,
+								element: <Sites />,
+							},
+						],
 					},
 					{
 						path: AppRoutes.Groups,
-						element: <Groups />,
+						element: <RoleRoute manager />,
+						children: [
+							{
+								index: true,
+								element: <Groups />,
+							},
+						],
 					},
 					{
 						path: AppRoutes.Categories,
-						element: <Categories />,
+						element: <RoleRoute manager />,
+						children: [
+							{
+								index: true,
+								element: <Categories />,
+							},
+						],
 					},
 					{
 						path: AppRoutes.NotificationSettings,
-						element: <NotificationSettings />,
+						element: <RoleRoute manager />,
+						children: [
+							{
+								index: true,
+								element: <NotificationSettings />,
+							},
+						],
 					},
 
 					{
 						path: AppRoutes.Accesses,
 						children: [
 							{
-								index: true,
-								element: <Dashboard />,
-							},
-						{
-							path: AppRoutes.Realms,
-							element: <Realms />,
-						},
-						{
-								path: AppRoutes.UserAccess,
-								element: <Users />,
-							},
-							{
-								path: AppRoutes.RoleAccess,
-								element: <Role />,
-							},
-							{
-								path: AppRoutes.Permissions,
-								element: <Permissions />,
+								element: (
+									<RoleRoute
+										anyOfPermissions={['user:write', 'role:write', 'realm:write', 'permission:write']}
+									/>
+								),
+								children: [
+									{
+										index: true,
+										element: <Dashboard />,
+									},
+									{
+										path: AppRoutes.Realms,
+										element: <RoleRoute permission='realm:write' />,
+										children: [{ index: true, element: <Realms /> }],
+									},
+									{
+										path: AppRoutes.UserAccess,
+										element: <RoleRoute permission='user:write' />,
+										children: [{ index: true, element: <Users /> }],
+									},
+									{
+										path: AppRoutes.RoleAccess,
+										element: <RoleRoute permission='role:write' />,
+										children: [{ index: true, element: <Role /> }],
+									},
+									{
+										path: AppRoutes.Permissions,
+										element: <RoleRoute permission='permission:write' />,
+										children: [{ index: true, element: <Permissions /> }],
+									},
+								],
 							},
 						],
 					},
