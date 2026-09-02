@@ -11,7 +11,7 @@ import { TaskPriorityBadge } from '../TaskPriorityBadge'
 import { StatusChangeDialog } from './StatusChangeDialog'
 
 const ACTIVE_STATUSES: TicketStatus[] = ['open', 'in_progress', 'pending', 'on_hold']
-const COMMENT_REQUIRED_STATUSES: TicketStatus[] = ['in_progress', 'on_hold', 'pending']
+const COMMENT_REQUIRED_STATUSES: TicketStatus[] = ['on_hold', 'pending']
 
 interface Props {
 	task: ITask
@@ -35,7 +35,11 @@ export const InfoBar = ({ task, onStatusChange, onTake }: Props) => {
 
 	const changeStatus = (status: TicketStatus) => {
 		setAnchorEl(null)
-		if (COMMENT_REQUIRED_STATUSES.includes(status)) {
+		// Комментарий при переходе в «В работе» требуется только при возврате из «Решена»,
+		// во всех остальных случаях — нет. Для «Ожидание»/«Отложена» — всегда.
+		const requiresComment =
+			status === 'in_progress' ? task.status === 'resolved' : COMMENT_REQUIRED_STATUSES.includes(status)
+		if (requiresComment) {
 			setPendingStatus(status)
 		} else {
 			onStatusChange(task.id, status)
