@@ -270,7 +270,7 @@ func TestTicketService_Create_Success(t *testing.T) {
 	mockRepo.On("Create", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: id}).Return(&models.Ticket{ID: id}, nil)
-	mockNotifications.On("TicketCreated", mock.Anything, mock.AnythingOfType("*models.Ticket")).Return(nil)
+	mockNotifications.On("TicketCreated", mock.Anything, mock.AnythingOfType("*models.Ticket"), mock.AnythingOfType("uuid.UUID")).Return(nil)
 
 	err := svc.Create(context.Background(), dto)
 	assert.NoError(t, err)
@@ -350,7 +350,7 @@ func TestTicketService_Create_Executor_OwnGroup(t *testing.T) {
 	mockRepo.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: id}).Return(&models.Ticket{ID: id}, nil)
-	mockNotifications.On("TicketCreated", mock.Anything, mock.Anything).Return(nil)
+	mockNotifications.On("TicketCreated", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	err := svc.Create(context.Background(), dto)
 	assert.NoError(t, err)

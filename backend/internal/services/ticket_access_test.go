@@ -11,16 +11,16 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-func accessServiceFixtures() (*MockTicketsRepo, *MockGroupsRepo, *MockAccessPolicies, *TicketAccessService) {
+func accessServiceFixtures() (*MockGroupsRepo, *MockAccessPolicies, *TicketAccessService) {
 	mockRepo := new(MockTicketsRepo)
 	mockGroups := new(MockGroupsRepo)
 	mockPolicies := new(MockAccessPolicies)
 	svc := NewTicketAccessService(mockRepo, mockGroups, mockPolicies)
-	return mockRepo, mockGroups, mockPolicies, svc
+	return mockGroups, mockPolicies, svc
 }
 
 func TestTicketAccessService_IsRealmSupervisor_CategoryWrite(t *testing.T) {
-	_, _, mockPolicies, svc := accessServiceFixtures()
+	_, mockPolicies, svc := accessServiceFixtures()
 
 	userID := uuid.New()
 	realm := uuid.New().String()
@@ -33,7 +33,7 @@ func TestTicketAccessService_IsRealmSupervisor_CategoryWrite(t *testing.T) {
 }
 
 func TestTicketAccessService_IsRealmSupervisor_SiteWrite(t *testing.T) {
-	_, _, mockPolicies, svc := accessServiceFixtures()
+	_, mockPolicies, svc := accessServiceFixtures()
 
 	userID := uuid.New()
 	realm := uuid.New().String()
@@ -46,7 +46,7 @@ func TestTicketAccessService_IsRealmSupervisor_SiteWrite(t *testing.T) {
 }
 
 func TestTicketAccessService_IsRealmSupervisor_NoRights(t *testing.T) {
-	_, _, mockPolicies, svc := accessServiceFixtures()
+	_, mockPolicies, svc := accessServiceFixtures()
 
 	userID := uuid.New()
 	realm := uuid.New().String()
@@ -60,7 +60,7 @@ func TestTicketAccessService_IsRealmSupervisor_NoRights(t *testing.T) {
 }
 
 func TestTicketAccessService_CanManage_Supervisor(t *testing.T) {
-	_, mockGroups, mockPolicies, svc := accessServiceFixtures()
+	mockGroups, mockPolicies, svc := accessServiceFixtures()
 
 	userID := uuid.New()
 	realmID := uuid.New()
@@ -79,7 +79,7 @@ func TestTicketAccessService_CanManage_Supervisor(t *testing.T) {
 }
 
 func TestTicketAccessService_CanManage_GroupManager(t *testing.T) {
-	_, mockGroups, mockPolicies, svc := accessServiceFixtures()
+	mockGroups, mockPolicies, svc := accessServiceFixtures()
 
 	userID := uuid.New()
 	realmID := uuid.New()
@@ -99,7 +99,7 @@ func TestTicketAccessService_CanManage_GroupManager(t *testing.T) {
 }
 
 func TestTicketAccessService_CanManage_OtherGroupManager(t *testing.T) {
-	_, mockGroups, mockPolicies, svc := accessServiceFixtures()
+	mockGroups, mockPolicies, svc := accessServiceFixtures()
 
 	userID := uuid.New()
 	realmID := uuid.New()
@@ -119,7 +119,7 @@ func TestTicketAccessService_CanManage_OtherGroupManager(t *testing.T) {
 }
 
 func TestTicketAccessService_CanManage_GrouplessTicket(t *testing.T) {
-	_, mockGroups, mockPolicies, svc := accessServiceFixtures()
+	mockGroups, mockPolicies, svc := accessServiceFixtures()
 
 	userID := uuid.New()
 	ticket := &models.Ticket{
@@ -137,7 +137,7 @@ func TestTicketAccessService_CanManage_GrouplessTicket(t *testing.T) {
 }
 
 func TestTicketAccessService_CanCreateTicket(t *testing.T) {
-	_, _, mockPolicies, svc := accessServiceFixtures()
+	_, mockPolicies, svc := accessServiceFixtures()
 
 	userID := uuid.New()
 	realm := uuid.New().String()
@@ -150,7 +150,7 @@ func TestTicketAccessService_CanCreateTicket(t *testing.T) {
 }
 
 func TestTicketAccessService_CanCreateTicket_Denied(t *testing.T) {
-	_, _, mockPolicies, svc := accessServiceFixtures()
+	_, mockPolicies, svc := accessServiceFixtures()
 
 	userID := uuid.New()
 	realm := uuid.New().String()

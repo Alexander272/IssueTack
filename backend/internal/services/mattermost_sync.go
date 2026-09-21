@@ -183,14 +183,14 @@ func buildFIO(firstName, lastName string) string {
 // недостающих локальных пользователей в указанном realm. Доступна только
 // администратору realm; необязательными аргументами можно ограничить синк
 // конкретными командами Mattermost.
-func (s *MattermostService) handleSync(ctx context.Context, settings *models.RealmMattermost, senderMmID string, message string) error {
-	senderID, senderName, err := s.resolveOrCreateUser(ctx, settings.RealmID, senderMmID, nil)
+func (s *MattermostService) handleSync(ctx context.Context, ch *mmChannel, message string) error {
+	senderID, senderName, err := s.resolveOrCreateUser(ctx, ch.Settings.RealmID, ch.MmUserID, nil)
 	if err != nil {
 		return fmt.Errorf("failed to resolve sender: %w", err)
 	}
 
-	if !s.isRealmSupervisor(ctx, senderID, settings.RealmID) {
-		if err := s.most.DM.Send(settings.BotToken, settings.BotUserID, senderMmID,
+	if !s.isRealmSupervisor(ctx, senderID, ch.Settings.RealmID) {
+		if err := s.most.DM.Send(ch.Settings.BotToken, ch.Settings.BotUserID, ch.MmUserID,
 			"Только администраторы могут синхронизировать пользователей"); err != nil {
 			return fmt.Errorf("failed to send no-permission message: %w", err)
 		}
@@ -207,7 +207,7 @@ func (s *MattermostService) handleSync(ctx context.Context, settings *models.Rea
 		}
 	}
 
-	mmUsers, err := s.fetchMMUsers(settings.BotToken, teamNames)
+	mmUsers, err := s.fetchMMUsers(ch.Settings.BotToken, teamNames)
 	if err != nil {
 		return err
 	}
@@ -244,7 +244,7 @@ func (s *MattermostService) handleSync(ctx context.Context, settings *models.Rea
 
 		existing, existingErr := s.users.GetByMattermostID(ctx, mmU.Id)
 		if existingErr == nil {
-			if err := s.ensureRealmMembership(ctx, existing.ID, settings.RealmID, senderID, senderName); err != nil {
+			if err := s.ensureRealmMembership(ctx, existing.ID, ch.Settings.RealmID, senderID, senderName); err != nil {
 				logger.Warn("failed to add user to realm",
 					logger.StringAttr("mm_user_id", mmU.Id),
 					logger.ErrAttr(err),
@@ -259,7 +259,7 @@ func (s *MattermostService) handleSync(ctx context.Context, settings *models.Rea
 
 		if mmU.Email != "" {
 			if sysU, ok := sysByEmail[strings.ToLower(mmU.Email)]; ok {
-				s.ensureLinkAndRealm(ctx, settings.RealmID, sysU.ID, mmU.Id, nil, senderID, senderName)
+				s.ensureLinkAndRealm(ctx, ch.Settings.RealmID, sysU.ID, mmU.Id, nil, senderID, senderName)
 				linked++
 				matched = true
 			}
@@ -267,7 +267,7 @@ func (s *MattermostService) handleSync(ctx context.Context, settings *models.Rea
 
 		if !matched && mmU.Username != "" {
 			if sysU, ok := sysByUsername[strings.ToLower(mmU.Username)]; ok {
-				s.ensureLinkAndRealm(ctx, settings.RealmID, sysU.ID, mmU.Id, nil, senderID, senderName)
+				s.ensureLinkAndRealm(ctx, ch.Settings.RealmID, sysU.ID, mmU.Id, nil, senderID, senderName)
 				linked++
 				matched = true
 			}
@@ -276,7 +276,7 @@ func (s *MattermostService) handleSync(ctx context.Context, settings *models.Rea
 		if !matched {
 			if fio := buildFIO(mmU.FirstName, mmU.LastName); fio != "" {
 				if sysU, ok := sysByFIO[fio]; ok {
-					s.ensureLinkAndRealm(ctx, settings.RealmID, sysU.ID, mmU.Id, nil, senderID, senderName)
+					s.ensureLinkAndRealm(ctx, ch.Settings.RealmID, sysU.ID, mmU.Id, nil, senderID, senderName)
 					linked++
 					matched = true
 				}
@@ -305,7 +305,7 @@ func (s *MattermostService) handleSync(ctx context.Context, settings *models.Rea
 			)
 			continue
 		}
-		if err := s.ensureRealmMembership(ctx, newUserID, settings.RealmID, senderID, senderName); err != nil {
+		if err := s.ensureRealmMembership(ctx, newUserID, ch.Settings.RealmID, senderID, senderName); err != nil {
 			logger.Warn("failed to add user to realm",
 				logger.StringAttr("mm_user_id", mmU.Id),
 				logger.ErrAttr(err),
@@ -315,8 +315,8 @@ func (s *MattermostService) handleSync(ctx context.Context, settings *models.Rea
 	}
 
 	msg := fmt.Sprintf("Синхронизация завершена. Создано: %d, привязано: %d", created, linked)
-	if err := s.most.DM.Send(settings.BotToken, settings.BotUserID, senderMmID, msg); err != nil {
-		bestEffortError("failed to send sync result", err, map[string]string{"mm_user_id": senderMmID})
+	if err := s.most.DM.Send(ch.Settings.BotToken, ch.Settings.BotUserID, ch.MmUserID, msg); err != nil {
+		bestEffortError("failed to send sync result", err, map[string]string{"mm_user_id": ch.MmUserID})
 	}
 	return nil
 }

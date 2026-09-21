@@ -388,8 +388,8 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 	if err != nil {
 		return fmt.Errorf("failed to load created ticket for notification: %w", err)
 	}
-	if err := s.notifications.TicketCreated(ctx, created); err != nil {
-		s.notifyBestEffort(ctx, "create", *dto.ID, dto.Title, err)
+	if err := s.notifications.TicketCreated(ctx, created, dto.Actor.ID); err != nil {
+		s.notifyBestEffort("create", *dto.ID, dto.Title, err)
 	}
 	return nil
 }
@@ -672,9 +672,9 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 	if len(changes) > 0 {
 		updated, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
 		if err != nil {
-			s.notifyBestEffort(ctx, "update", *dto.ID, dto.Title, err)
+			s.notifyBestEffort("update", *dto.ID, dto.Title, err)
 		} else if err := s.notifications.TicketUpdated(ctx, updated, dto.Actor.ID, changes); err != nil {
-			s.notifyBestEffort(ctx, "update", *dto.ID, dto.Title, err)
+			s.notifyBestEffort("update", *dto.ID, dto.Title, err)
 		}
 	}
 	return nil
@@ -774,9 +774,9 @@ func (s *TicketService) Take(ctx context.Context, dto *models.TakeTicketDTO) err
 	if len(changes) > 0 {
 		updated, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: dto.ID})
 		if err != nil {
-			s.notifyBestEffort(ctx, "update", dto.ID, ticket.Title, err)
+			s.notifyBestEffort("update", dto.ID, ticket.Title, err)
 		} else if err := s.notifications.TicketUpdated(ctx, updated, dto.Actor.ID, changes); err != nil {
-			s.notifyBestEffort(ctx, "update", dto.ID, ticket.Title, err)
+			s.notifyBestEffort("update", dto.ID, ticket.Title, err)
 		}
 	}
 	return nil
@@ -870,9 +870,9 @@ func (s *TicketService) Transfer(ctx context.Context, dto *models.TransferTicket
 	if len(changes) > 0 {
 		updated, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
 		if err != nil {
-			s.notifyBestEffort(ctx, "transfer", *dto.ID, ticket.Title, err)
+			s.notifyBestEffort("transfer", *dto.ID, ticket.Title, err)
 		} else if err := s.notifications.TicketUpdated(ctx, updated, dto.Actor.ID, changes); err != nil {
-			s.notifyBestEffort(ctx, "transfer", *dto.ID, ticket.Title, err)
+			s.notifyBestEffort("transfer", *dto.ID, ticket.Title, err)
 		}
 	}
 	return nil
@@ -926,7 +926,7 @@ func (s *TicketService) Delete(ctx context.Context, dto *models.DeleteTicketDTO)
 	}
 
 	if err := s.notifications.TicketDeleted(ctx, ticket); err != nil {
-		s.notifyBestEffort(ctx, "delete", ticket.ID, ticket.Title, err)
+		s.notifyBestEffort("delete", ticket.ID, ticket.Title, err)
 	}
 
 	return nil
@@ -1207,7 +1207,7 @@ func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *mode
 // notifyBestEffort отправляет уведомление после фикса тикета. Ошибки
 // уведомления не должны превращать уже совершённую операцию в 500 для клиента,
 // но обязательно сигнализируются разработчику (error_bot) и в лог.
-func (s *TicketService) notifyBestEffort(ctx context.Context, action string, entityID uuid.UUID, entity string, notifyErr error) {
+func (s *TicketService) notifyBestEffort(action string, entityID uuid.UUID, entity string, notifyErr error) {
 	if notifyErr == nil {
 		return
 	}

@@ -131,9 +131,15 @@ func (s *MattermostService) handleWSEvent(ctx context.Context, realmID uuid.UUID
 
 	msg := strings.TrimSpace(message)
 
+	ch := &mmChannel{
+		Settings:  settings,
+		MmUserID:  userID,
+		ChannelID: channelID,
+	}
+
 	switch {
 	case syncCommands.MatchString(msg):
-		if err := s.handleSync(ctx, settings, userID, msg); err != nil {
+		if err := s.handleSync(ctx, ch, msg); err != nil {
 			logger.Error("failed to handle sync from WS",
 				logger.StringAttr("user_id", userID),
 				logger.ErrAttr(err),
@@ -158,22 +164,21 @@ func (s *MattermostService) handleWSEvent(ctx context.Context, realmID uuid.UUID
 		}
 
 	case statusCommands.MatchString(msg):
-		resolvedUserID, _, err := s.resolveOrCreateUser(ctx, realmID, userID, nil)
-		if err != nil {
+		if _, _, err := s.resolveOrCreateUser(ctx, realmID, userID, nil); err != nil {
 			logger.Warn("failed to resolve user for status command",
 				logger.StringAttr("mm_user_id", userID),
 				logger.ErrAttr(err),
 			)
 			return
 		}
-		if err := s.sendStatusMessage(ctx, settings, resolvedUserID, channelID); err != nil {
+		if err := s.sendStatusMessage(ch); err != nil {
 			logger.Error("failed to send status message from WS", logger.ErrAttr(err))
 		}
 
 	case attachCommands.MatchString(msg) && len(event.Post.FileIds) > 0:
 		parts := attachCommands.FindStringSubmatch(msg)
 		number, _ := strconv.Atoi(parts[1])
-		if err := s.handleAttachFiles(ctx, settings, userID, channelID, number, event.Post.FileIds, ""); err != nil {
+		if err := s.handleAttachFiles(ctx, ch, number, event.Post.FileIds, ""); err != nil {
 			logger.Error("failed to handle attach from WS",
 				logger.StringAttr("user_id", userID),
 				logger.ErrAttr(err),
@@ -181,7 +186,7 @@ func (s *MattermostService) handleWSEvent(ctx context.Context, realmID uuid.UUID
 		}
 
 	case len(event.Post.FileIds) > 0 && !attachCommands.MatchString(msg):
-		if err := s.handleTextWithFiles(ctx, settings, userID, channelID, msg, event.Post.FileIds); err != nil {
+		if err := s.handleTextWithFiles(ctx, ch, msg, event.Post.FileIds); err != nil {
 			logger.Error("failed to handle text with files from WS",
 				logger.StringAttr("user_id", userID),
 				logger.ErrAttr(err),
@@ -189,7 +194,7 @@ func (s *MattermostService) handleWSEvent(ctx context.Context, realmID uuid.UUID
 		}
 
 	case commentCommands.MatchString(msg):
-		if err := s.handleComment(ctx, settings, userID, channelID, msg); err != nil {
+		if err := s.handleComment(ctx, ch, msg); err != nil {
 			logger.Error("failed to handle comment from WS",
 				logger.StringAttr("user_id", userID),
 				logger.ErrAttr(err),
@@ -198,7 +203,7 @@ func (s *MattermostService) handleWSEvent(ctx context.Context, realmID uuid.UUID
 
 	default:
 		if len(event.Post.FileIds) > 0 {
-			if err := s.handleAttachFiles(ctx, settings, userID, channelID, 0, event.Post.FileIds, ""); err != nil {
+			if err := s.handleAttachFiles(ctx, ch, 0, event.Post.FileIds, ""); err != nil {
 				logger.Error("failed to handle auto-attach from WS",
 					logger.StringAttr("user_id", userID),
 					logger.ErrAttr(err),

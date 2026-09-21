@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
@@ -77,24 +78,18 @@ func (h *Handler) handleDialogOpen(c *gin.Context) {
 		return
 	}
 
-	var payload struct {
-		TriggerId string            `json:"trigger_id"`
-		UserID    string            `json:"user_id"`
-		ChannelId string            `json:"channel_id"`
-		PostId    string            `json:"post_id"`
-		Context   map[string]string `json:"context"`
-	}
+	var payload models.DialogOpenDTO
 	if err := json.Unmarshal(body, &payload); err != nil {
 		response.SendError(c, fmt.Errorf("invalid dialog open payload: %w", err))
 		return
 	}
 
-	if payload.TriggerId == "" {
+	if payload.TriggerID == "" {
 		response.SendError(c, fmt.Errorf("missing trigger_id"))
 		return
 	}
 
-	if err := h.service.HandleDialogOpen(c, payload.TriggerId, payload.UserID, payload.ChannelId, payload.PostId, payload.Context); err != nil {
+	if err := h.service.HandleDialogOpen(c, &payload); err != nil {
 		response.SendError(c, fmt.Errorf("failed to open dialog: %w", err))
 		return
 	}
@@ -124,17 +119,13 @@ func (h *Handler) handleDialogSubmission(c *gin.Context) {
 }
 
 func (h *Handler) handleInteractiveAction(c *gin.Context) {
-	var payload struct {
-		UserID    string            `json:"user_id"`
-		ChannelID string            `json:"channel_id"`
-		Context   map[string]string `json:"context"`
-	}
+	var payload models.InteractiveActionDTO
 	if err := utils.BindJSON(c, &payload); err != nil {
 		response.SendError(c, fmt.Errorf("invalid interactive action payload: %w", err))
 		return
 	}
 
-	post, err := h.service.HandleInteractiveAction(c, payload.UserID, payload.ChannelID, payload.Context)
+	post, err := h.service.HandleInteractiveAction(c, &payload)
 	if err != nil {
 		response.SendError(c, fmt.Errorf("failed to handle interactive action: %w", err))
 		return

@@ -85,7 +85,6 @@ func main() {
 		Ctx:      ctx,
 		Conf:     conf,
 		Repo:     repo,
-		Hub:      hub,
 		Keycloak: keycloak,
 	})
 

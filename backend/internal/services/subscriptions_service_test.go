@@ -6,7 +6,6 @@ import (
 
 	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
-	"github.com/Alexander272/IssueTrack/backend/pkg/ws_hub"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -110,13 +109,11 @@ func TestNotificationService_TicketCommented_NotSelf(t *testing.T) {
 	mockRepo := new(MockNotificationsRepo)
 	mockSubs := new(MockTicketSubscriptionOps)
 	mockUserRealms := new(MockUserRealmsService)
-	hub := ws_hub.NewWebsocketHub()
 
 	mockUserRealms.On("GetRealmSupervisors", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
 	mockSubs.On("GetByTicket", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
 
 	svc := &NotificationService{
-		hub:           hub,
 		repo:          mockRepo,
 		subscriptions: mockSubs,
 		userRealms:    mockUserRealms,
@@ -132,8 +129,6 @@ func TestNotificationService_TicketCommented_NotSelf(t *testing.T) {
 		Assignee: &models.UserShort{ID: assigneeID},
 	}
 
-	mockRepo.On("GetSettings", mock.Anything, assigneeID).Return(
-		&models.NotificationSettings{Settings: []byte(`{"push":true}`)}, nil)
 	mockRepo.On("Create", mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 	err := svc.TicketCommented(context.Background(), ticket, actorID)
@@ -145,13 +140,11 @@ func TestNotificationService_TicketCommented_SelfIsAssignee(t *testing.T) {
 	mockRepo := new(MockNotificationsRepo)
 	mockSubs := new(MockTicketSubscriptionOps)
 	mockUserRealms := new(MockUserRealmsService)
-	hub := ws_hub.NewWebsocketHub()
 
 	mockUserRealms.On("GetRealmSupervisors", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
 	mockSubs.On("GetByTicket", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
 
 	svc := &NotificationService{
-		hub:           hub,
 		repo:          mockRepo,
 		subscriptions: mockSubs,
 		userRealms:    mockUserRealms,
@@ -169,39 +162,4 @@ func TestNotificationService_TicketCommented_SelfIsAssignee(t *testing.T) {
 	err := svc.TicketCommented(context.Background(), ticket, actorID)
 	assert.NoError(t, err)
 	mockRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
-}
-
-func TestNotificationService_AttachmentAdded_NotifiesAssignee(t *testing.T) {
-	mockRepo := new(MockNotificationsRepo)
-	mockSubs := new(MockTicketSubscriptionOps)
-	mockUserRealms := new(MockUserRealmsService)
-	hub := ws_hub.NewWebsocketHub()
-
-	mockUserRealms.On("GetRealmSupervisors", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
-	mockSubs.On("GetByTicket", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
-
-	svc := &NotificationService{
-		hub:           hub,
-		repo:          mockRepo,
-		subscriptions: mockSubs,
-		userRealms:    mockUserRealms,
-		txManager:     &mockTransactionManager{},
-	}
-
-	ticketID := uuid.New()
-	actorID := uuid.New()
-	assigneeID := uuid.New()
-	ticket := &models.Ticket{
-		ID:       ticketID,
-		Title:    "Test",
-		Assignee: &models.UserShort{ID: assigneeID},
-	}
-
-	mockRepo.On("GetSettings", mock.Anything, assigneeID).Return(
-		&models.NotificationSettings{Settings: []byte(`{"push":true}`)}, nil)
-	mockRepo.On("Create", mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
-
-	err := svc.AttachmentAdded(context.Background(), ticket, actorID)
-	assert.NoError(t, err)
-	mockRepo.AssertExpectations(t)
 }

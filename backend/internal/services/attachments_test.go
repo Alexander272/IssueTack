@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-func attachmentFixtures(t *testing.T) (*MockAttachmentsRepo, *MockSubtaskService, *MockTicketAccessChecker, *AttachmentService, string) {
+func attachmentFixtures(t *testing.T) (*MockAttachmentsRepo, *MockSubtaskService, *MockTicketAccessChecker, *AttachmentService) {
 	t.Helper()
 	mockRepo := new(MockAttachmentsRepo)
 	mockSubtasks := new(MockSubtaskService)
@@ -27,11 +27,11 @@ func attachmentFixtures(t *testing.T) (*MockAttachmentsRepo, *MockSubtaskService
 		ticketAccess: mockAccess,
 		subtasks:     mockSubtasks,
 	}
-	return mockRepo, mockSubtasks, mockAccess, svc, uploadDir
+	return mockRepo, mockSubtasks, mockAccess, svc
 }
 
 func TestAttachmentService_GetByEntity_Success(t *testing.T) {
-	mockRepo, _, mockAccess, svc, _ := attachmentFixtures(t)
+	mockRepo, _, mockAccess, svc := attachmentFixtures(t)
 
 	entityID := uuid.New()
 	actorID := uuid.New()
@@ -48,7 +48,7 @@ func TestAttachmentService_GetByEntity_Success(t *testing.T) {
 }
 
 func TestAttachmentService_GetByEntity_NoAccess(t *testing.T) {
-	_, _, _, svc, _ := attachmentFixtures(t)
+	_, _, _, svc := attachmentFixtures(t)
 	svc.ticketAccess = nil
 
 	dto := &models.EntityAccessDTO{EntityType: "ticket", EntityID: uuid.New(), ActorID: uuid.New()}
@@ -57,7 +57,7 @@ func TestAttachmentService_GetByEntity_NoAccess(t *testing.T) {
 }
 
 func TestAttachmentService_GetByEntity_AccessDenied(t *testing.T) {
-	mockRepo, _, mockAccess, svc, _ := attachmentFixtures(t)
+	mockRepo, _, mockAccess, svc := attachmentFixtures(t)
 
 	entityID := uuid.New()
 	actorID := uuid.New()
@@ -70,7 +70,7 @@ func TestAttachmentService_GetByEntity_AccessDenied(t *testing.T) {
 }
 
 func TestAttachmentService_GetByEntity_Subtask(t *testing.T) {
-	mockRepo, mockSubtasks, mockAccess, svc, _ := attachmentFixtures(t)
+	mockRepo, mockSubtasks, mockAccess, svc := attachmentFixtures(t)
 
 	subtaskID := uuid.New()
 	ticketID := uuid.New()
@@ -90,7 +90,7 @@ func TestAttachmentService_GetByEntity_Subtask(t *testing.T) {
 }
 
 func TestAttachmentService_Upload_InvalidEntityType(t *testing.T) {
-	_, _, _, svc, _ := attachmentFixtures(t)
+	_, _, _, svc := attachmentFixtures(t)
 
 	dto := &models.UploadAttachmentDTO{EntityType: "invalid", EntityID: uuid.New(), FileName: "test.txt", UploadedBy: uuid.New()}
 	_, err := svc.Upload(context.Background(), nil, dto)
@@ -99,7 +99,7 @@ func TestAttachmentService_Upload_InvalidEntityType(t *testing.T) {
 }
 
 func TestAttachmentService_Upload_Success(t *testing.T) {
-	mockRepo, _, mockAccess, svc, _ := attachmentFixtures(t)
+	mockRepo, _, mockAccess, svc := attachmentFixtures(t)
 
 	entityID := uuid.New()
 	actorID := uuid.New()
@@ -129,7 +129,7 @@ func TestAttachmentService_Upload_Success(t *testing.T) {
 }
 
 func TestAttachmentService_Upload_RepoCreateFails(t *testing.T) {
-	mockRepo, _, mockAccess, svc, _ := attachmentFixtures(t)
+	mockRepo, _, mockAccess, svc := attachmentFixtures(t)
 
 	entityID := uuid.New()
 	actorID := uuid.New()
@@ -146,7 +146,7 @@ func TestAttachmentService_Upload_RepoCreateFails(t *testing.T) {
 }
 
 func TestAttachmentService_Delete_Success(t *testing.T) {
-	mockRepo, _, mockAccess, svc, _ := attachmentFixtures(t)
+	mockRepo, _, mockAccess, svc := attachmentFixtures(t)
 
 	attID := uuid.New()
 	entityID := uuid.New()
@@ -167,7 +167,7 @@ func TestAttachmentService_Delete_Success(t *testing.T) {
 }
 
 func TestAttachmentService_Delete_FileNotFound(t *testing.T) {
-	mockRepo, _, mockAccess, svc, _ := attachmentFixtures(t)
+	mockRepo, _, mockAccess, svc := attachmentFixtures(t)
 
 	attID := uuid.New()
 	entityID := uuid.New()
@@ -188,7 +188,7 @@ func TestAttachmentService_Delete_FileNotFound(t *testing.T) {
 }
 
 func TestAttachmentService_Upload_ReadFileContents(t *testing.T) {
-	mockRepo, _, mockAccess, svc, _ := attachmentFixtures(t)
+	mockRepo, _, mockAccess, svc := attachmentFixtures(t)
 
 	entityID := uuid.New()
 	actorID := uuid.New()
@@ -216,7 +216,7 @@ func TestAttachmentService_Upload_ReadFileContents(t *testing.T) {
 }
 
 func TestAttachmentService_GetForComments_GroupsAndFilters(t *testing.T) {
-	mockRepo, _, _, svc, _ := attachmentFixtures(t)
+	mockRepo, _, _, svc := attachmentFixtures(t)
 
 	ticketID := uuid.New()
 	publicCommentID := uuid.New()
@@ -246,7 +246,7 @@ func TestAttachmentService_GetForComments_GroupsAndFilters(t *testing.T) {
 }
 
 func TestAttachmentService_GetByEntity_HidesInternalCommentFiles(t *testing.T) {
-	mockRepo, _, mockAccess, svc, _ := attachmentFixtures(t)
+	mockRepo, _, mockAccess, svc := attachmentFixtures(t)
 
 	entityID := uuid.New()
 	actorID := uuid.New()
@@ -272,7 +272,7 @@ func TestAttachmentService_GetByEntity_HidesInternalCommentFiles(t *testing.T) {
 }
 
 func TestAttachmentService_GetByEntity_ShowAllForInternalUser(t *testing.T) {
-	mockRepo, _, mockAccess, svc, _ := attachmentFixtures(t)
+	mockRepo, _, mockAccess, svc := attachmentFixtures(t)
 
 	entityID := uuid.New()
 	actorID := uuid.New()

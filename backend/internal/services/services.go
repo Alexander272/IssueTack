@@ -9,7 +9,6 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/Alexander272/IssueTrack/backend/pkg/auth"
 	"github.com/Alexander272/IssueTrack/backend/pkg/mattermost"
-	"github.com/Alexander272/IssueTrack/backend/pkg/ws_hub"
 )
 
 // Services — композиционный корень всех бизнес-сервисов приложения.
@@ -44,14 +43,13 @@ type Services struct {
 	Mattermost
 }
 
-// Deps — готовые внешние зависимости (конфиг, репозитории, keycloak, ws-хаб),
+// Deps — готовые внешние зависимости (конфиг, репозитории, keycloak),
 // которые сервисы не создают сами.
 type Deps struct {
 	Ctx      context.Context
 	Conf     *config.Config
 	Repo     *repository.Repository
 	Keycloak *auth.KeycloakClient
-	Hub      *ws_hub.Hub
 }
 
 // NewServices собирает все сервисы, разрешая их зависимости.
@@ -114,7 +112,22 @@ func NewServices(deps *Deps) *Services {
 	logs := NewActivityLogService(deps.Repo.ActivityLog, transaction)
 	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs, access)
 	subscriptionOps := NewTicketSubscriptionOpsService(deps.Repo.TicketSubscriptions)
-	notifications := NewNotificationService(deps.Hub, deps.Repo.Notifications, subscriptionOps, userRealms, groups, transaction)
+
+	// Канал уведомлений в Mattermost: DM от бота реалма. Собирается до NotificationService,
+	// чтобы уведомления всех событий тикетов доставлялись в Mattermost через него.
+	mmMost := mattermost.NewMost(mattermost.MostConfig{
+		ServerURL: deps.Conf.Mattermost.URL,
+		BaseURL:   deps.Conf.Http.BaseURL,
+	})
+	notifChan := NewMattermostNotifier(deps.Repo.Mattermost, users, mmMost, deps.Conf.Http.BaseURL)
+	notifications := NewNotificationService(&NotificationDeps{
+		Repo:          deps.Repo.Notifications,
+		Subscriptions: subscriptionOps,
+		UserRealms:    userRealms,
+		Groups:        groups,
+		TxManager:     transaction,
+		Channels:      []Notifier{notifChan},
+	})
 	attachments := NewAttachmentService(deps.Repo.Attachments, &deps.Conf.FileServer, access, subtasks)
 	checklists := NewChecklistService(deps.Repo.Checklists, subtasks)
 
@@ -137,11 +150,6 @@ func NewServices(deps *Deps) *Services {
 	// и позднее связывание не требуется.
 	subscriptions := NewTicketSubscriptionService(deps.Repo.TicketSubscriptions, tickets, access)
 	favorites := NewTicketFavoritesService(deps.Repo.TicketFavorites, tickets, access)
-
-	mmMost := mattermost.NewMost(mattermost.MostConfig{
-		ServerURL: deps.Conf.Mattermost.URL,
-		BaseURL:   deps.Conf.Http.BaseURL,
-	})
 
 	comments := NewCommentService(deps.Repo.Comments, access, tickets, users, deps.Repo.Mattermost, mmMost, notifications, transaction, attachments)
 

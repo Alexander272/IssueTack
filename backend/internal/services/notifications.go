@@ -14,35 +14,49 @@ import (
 	"github.com/google/uuid"
 )
 
-// NotificationService — сервис уведомлений пользователей (сохранение в БД и push через WebSocket-хаб).
-// Сервис не обращается к репозиторию тикетов напрямую: агрегат тикета приходит уже загруженным
-// от сервиса-владельца (TicketService) через параметры методов — так удаётся избежать цикла
-// зависимостей (tickets → notifications → tickets) и сохранить инкапсуляцию бизнес-правил.
+// NotificationService — сервис уведомлений пользователей: сохранение в БД (persist) и доставка
+// по каналам (channels, сейчас Mattermost). Сервис не обращается к репозиторию тикетов напрямую:
+// агрегат тикета приходит уже загруженным от сервиса-владельца (TicketService) через параметры
+// методов — так удаётся избежать цикла зависимостей (tickets → notifications → tickets) и
+// сохранить инкапсуляцию бизнес-правил.
 type NotificationService struct {
-	hub           *ws_hub.Hub
 	repo          repository.Notifications
 	subscriptions TicketSubscriptionOps
 	userRealms    UserRealms
 	groups        Groups
 	txManager     TransactionManager
+	channels      []Notifier
 }
 
-// NewNotificationService создаёт NotificationService.
-func NewNotificationService(hub *ws_hub.Hub, repo repository.Notifications, subscriptions TicketSubscriptionOps, userRealms UserRealms, groups Groups, txManager TransactionManager) *NotificationService {
+// NewNotificationService создаёт NotificationService. Уведомления сохраняются в БД
+// (persist), а затем рассылаются по включённым каналам (channels) — сейчас
+// Mattermost, в будущем push/email.
+func NewNotificationService(deps *NotificationDeps) *NotificationService {
 	return &NotificationService{
-		hub:           hub,
-		repo:          repo,
-		subscriptions: subscriptions,
-		userRealms:    userRealms,
-		groups:        groups,
-		txManager:     txManager,
+		repo:          deps.Repo,
+		subscriptions: deps.Subscriptions,
+		userRealms:    deps.UserRealms,
+		groups:        deps.Groups,
+		txManager:     deps.TxManager,
+		channels:      deps.Channels,
 	}
+}
+
+// NotificationDeps — зависимости, необходимые для создания NotificationService.
+type NotificationDeps struct {
+	Repo          repository.Notifications
+	Subscriptions TicketSubscriptionOps
+	UserRealms    UserRealms
+	Groups        Groups
+	TxManager     TransactionManager
+	Channels      []Notifier
 }
 
 // Notifications — интерфейс уведомлений о событиях тикетов.
 type Notifications interface {
 	// TicketCreated оповещает заинтересованных пользователей о создании тикета.
-	TicketCreated(ctx context.Context, ticket *models.Ticket) error
+	// Сам создатель (actorID) уведомление не получает.
+	TicketCreated(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) error
 	// TicketUpdated оповещает заинтересованных пользователей об обновлении тикета.
 	TicketUpdated(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID, changes []*models.FieldChange) error
 	// TicketDeleted оповещает заинтересованных пользователей об удалении тикета.
@@ -116,33 +130,38 @@ func (s *NotificationService) NotifyOverdue(ctx context.Context, ticket *models.
 		return fmt.Errorf("failed to marshal overdue notification data: %w", err)
 	}
 
+	var pending []uuid.UUID
 	for userID := range recipients {
 		exists, err := s.repo.HasNotification(ctx, userID, ticket.ID, string(models.NotificationTicketOverdue))
 		if err != nil {
 			return fmt.Errorf("failed to check overdue notification: %w", err)
 		}
-		if exists {
-			continue
-		}
-		dto := &models.CreateNotificationDTO{
-			UserID: userID,
-			Type:   string(models.NotificationTicketOverdue),
-			Title:  "Задача просрочена",
-			Body:   ticket.Title,
-			Data:   data,
-		}
-		if err := s.send(ctx, userID, dto); err != nil {
-			logger.Warn("failed to send overdue notification", logger.StringAttr("user_id", userID.String()), logger.ErrAttr(err))
+		if !exists {
+			pending = append(pending, userID)
 		}
 	}
+
+	if len(pending) == 0 {
+		return nil
+	}
+
+	dto := &models.CreateNotificationDTO{
+		Type:  string(models.NotificationTicketOverdue),
+		Title: "Задача просрочена",
+		Body:  ticket.Title,
+		Data:  data,
+	}
+	persisted := s.persistForUsers(ctx, pending, dto)
+	s.deliver(ctx, ticket, persisted, dto)
 
 	return nil
 }
 
 // TicketCreated оповещает менеджера, ответственных категории и исполнителя о создании тикета,
 // а также авто-подписывает на заявку надзителей реалма и менеджера группы (с включёнными
-// уведомлениями), чтобы они получали дальнейшие события через подписку.
-func (s *NotificationService) TicketCreated(ctx context.Context, ticket *models.Ticket) error {
+// уведомлениями), чтобы они получали дальнейшие события через подписку. Создатель тикета
+// уведомление о собственном действии не получает.
+func (s *NotificationService) TicketCreated(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) error {
 	recipients := make(map[uuid.UUID]struct{})
 
 	if ticket.Manager != nil {
@@ -194,6 +213,13 @@ func (s *NotificationService) TicketCreated(ctx context.Context, ticket *models.
 		}
 	}
 
+	// Создатель тикета не уведомляется о собственном действии.
+	delete(recipients, actorID)
+
+	if len(recipients) == 0 {
+		return nil
+	}
+
 	data, err := json.Marshal(map[string]interface{}{
 		"ticket_id": ticket.ID.String(),
 		"title":     ticket.Title,
@@ -202,19 +228,14 @@ func (s *NotificationService) TicketCreated(ctx context.Context, ticket *models.
 		return fmt.Errorf("failed to marshal notification data: %w", err)
 	}
 
-	for userID := range recipients {
-		n := &models.CreateNotificationDTO{
-			UserID: userID,
-			Type:   "ticket.created",
-			Title:  "Новая задача",
-			Body:   ticket.Title,
-			Data:   data,
-		}
-
-		if err := s.send(ctx, userID, n); err != nil {
-			logger.Warn("failed to send notification", logger.StringAttr("user_id", userID.String()), logger.ErrAttr(err))
-		}
+	dto := &models.CreateNotificationDTO{
+		Type:  string(models.NotificationTicketCreated),
+		Title: "Новая задача",
+		Body:  ticket.Title,
+		Data:  data,
 	}
+	persisted := s.persistForUsers(ctx, recipientsToSlice(recipients), dto)
+	s.deliver(ctx, ticket, persisted, dto)
 
 	return nil
 }
@@ -267,8 +288,9 @@ func (s *NotificationService) TicketUpdated(ctx context.Context, ticket *models.
 		}
 	}
 
-	// При смене статуса (в т.ч. отмена/возврат в работу) исполнитель уведомляется всегда.
-	if hasStatusChange(changes) && ticket.Assignee != nil {
+	// При смене статуса (в т.ч. отмена/возврат в работу) исполнитель уведомляется всегда,
+	// кроме случая, когда исполнитель — сам автор изменения.
+	if hasStatusChange(changes) && ticket.Assignee != nil && ticket.Assignee.ID != actorID {
 		recipients[ticket.Assignee.ID] = struct{}{}
 	}
 
@@ -283,6 +305,13 @@ func (s *NotificationService) TicketUpdated(ctx context.Context, ticket *models.
 		}
 	}
 
+	// Автор изменения не уведомляется о собственном действии.
+	delete(recipients, actorID)
+
+	if len(recipients) == 0 {
+		return nil
+	}
+
 	changesData, err := json.Marshal(changes)
 	if err != nil {
 		return fmt.Errorf("failed to marshal changes: %w", err)
@@ -290,25 +319,20 @@ func (s *NotificationService) TicketUpdated(ctx context.Context, ticket *models.
 	data, err := json.Marshal(map[string]interface{}{
 		"ticket_id": ticket.ID.String(),
 		"title":     ticket.Title,
-		"changes":   changesData,
+		"changes":   string(changesData),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to marshal notification data: %w", err)
 	}
 
-	for userID := range recipients {
-		dto := &models.CreateNotificationDTO{
-			UserID: userID,
-			Type:   "ticket.updated",
-			Title:  "Задача обновлена",
-			Body:   ticket.Title,
-			Data:   data,
-		}
-
-		if err := s.send(ctx, userID, dto); err != nil {
-			logger.Warn("failed to send notification", logger.StringAttr("user_id", userID.String()), logger.ErrAttr(err))
-		}
+	dto := &models.CreateNotificationDTO{
+		Type:  string(models.NotificationTicketUpdated),
+		Title: "Задача обновлена",
+		Body:  ticket.Title,
+		Data:  data,
 	}
+	persisted := s.persistForUsers(ctx, recipientsToSlice(recipients), dto)
+	s.deliver(ctx, ticket, persisted, dto)
 
 	return nil
 }
@@ -337,6 +361,10 @@ func (s *NotificationService) TicketDeleted(ctx context.Context, ticket *models.
 		recipients[id] = struct{}{}
 	}
 
+	if len(recipients) == 0 {
+		return nil
+	}
+
 	data, err := json.Marshal(map[string]interface{}{
 		"ticket_id": ticket.ID.String(),
 		"title":     ticket.Title,
@@ -345,19 +373,14 @@ func (s *NotificationService) TicketDeleted(ctx context.Context, ticket *models.
 		return fmt.Errorf("failed to marshal notification data: %w", err)
 	}
 
-	for userID := range recipients {
-		dto := &models.CreateNotificationDTO{
-			UserID: userID,
-			Type:   "ticket.deleted",
-			Title:  "Задача удалена",
-			Body:   ticket.Title,
-			Data:   data,
-		}
-
-		if err := s.send(ctx, userID, dto); err != nil {
-			logger.Warn("failed to send notification", logger.StringAttr("user_id", userID.String()), logger.ErrAttr(err))
-		}
+	dto := &models.CreateNotificationDTO{
+		Type:  string(models.NotificationTicketDeleted),
+		Title: "Задача удалена",
+		Body:  ticket.Title,
+		Data:  data,
 	}
+	persisted := s.persistForUsers(ctx, recipientsToSlice(recipients), dto)
+	s.deliver(ctx, ticket, persisted, dto)
 
 	return nil
 }
@@ -395,6 +418,10 @@ func (s *NotificationService) TicketCommented(ctx context.Context, ticket *model
 
 	delete(recipients, actorID)
 
+	if len(recipients) == 0 {
+		return nil
+	}
+
 	data, err := json.Marshal(map[string]interface{}{
 		"ticket_id": ticket.ID.String(),
 		"title":     ticket.Title,
@@ -403,19 +430,14 @@ func (s *NotificationService) TicketCommented(ctx context.Context, ticket *model
 		return fmt.Errorf("failed to marshal notification data: %w", err)
 	}
 
-	for userID := range recipients {
-		dto := &models.CreateNotificationDTO{
-			UserID: userID,
-			Type:   string(models.NotificationTicketComment),
-			Title:  "Новый комментарий",
-			Body:   ticket.Title,
-			Data:   data,
-		}
-
-		if err := s.send(ctx, userID, dto); err != nil {
-			logger.Warn("failed to send notification", logger.StringAttr("user_id", userID.String()), logger.ErrAttr(err))
-		}
+	dto := &models.CreateNotificationDTO{
+		Type:  string(models.NotificationTicketComment),
+		Title: "Новый комментарий",
+		Body:  ticket.Title,
+		Data:  data,
 	}
+	persisted := s.persistForUsers(ctx, recipientsToSlice(recipients), dto)
+	s.deliver(ctx, ticket, persisted, dto)
 
 	return nil
 }
@@ -442,6 +464,10 @@ func (s *NotificationService) AttachmentAdded(ctx context.Context, ticket *model
 
 	delete(recipients, actorID)
 
+	if len(recipients) == 0 {
+		return nil
+	}
+
 	data, err := json.Marshal(map[string]interface{}{
 		"ticket_id": ticket.ID.String(),
 		"title":     ticket.Title,
@@ -450,19 +476,14 @@ func (s *NotificationService) AttachmentAdded(ctx context.Context, ticket *model
 		return fmt.Errorf("failed to marshal notification data: %w", err)
 	}
 
-	for userID := range recipients {
-		dto := &models.CreateNotificationDTO{
-			UserID: userID,
-			Type:   string(models.NotificationTicketAttachment),
-			Title:  "Новое вложение",
-			Body:   ticket.Title,
-			Data:   data,
-		}
-
-		if err := s.send(ctx, userID, dto); err != nil {
-			logger.Warn("failed to send notification", logger.StringAttr("user_id", userID.String()), logger.ErrAttr(err))
-		}
+	dto := &models.CreateNotificationDTO{
+		Type:  string(models.NotificationTicketAttachment),
+		Title: "Новое вложение",
+		Body:  ticket.Title,
+		Data:  data,
 	}
+	persisted := s.persistForUsers(ctx, recipientsToSlice(recipients), dto)
+	s.deliver(ctx, ticket, persisted, dto)
 
 	return nil
 }
@@ -615,46 +636,54 @@ func (s *NotificationService) SendUnread(ctx context.Context, client *ws_hub.Cli
 	return nil
 }
 
-// send сохраняет уведомление в БД и, если в настройках пользователя включён push, отправляет его
-// через WebSocket-хаб. Запись и отправка выполняются в одной транзакции, чтобы уведомление не
-// осталось сохранённым, но не доставленным. Повреждённые настройки трактуются как включённый push
-// (значение по умолчанию), чтобы уведомление не потерялось из-за битых данных.
-func (s *NotificationService) send(ctx context.Context, userID uuid.UUID, dto *models.CreateNotificationDTO) error {
-	settings, err := s.repo.GetSettings(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("failed to get notification settings: %w", err)
-	}
-
-	var prefs map[string]bool
-	if err := json.Unmarshal(settings.Settings, &prefs); err != nil {
-		prefs = map[string]bool{}
-	}
-	// push не задан явно — считаем включённым (значение по умолчанию), чтобы уведомление
-	// доставлялось через WebSocket, если пользователь не отключил push.
-	push := true
-	if v, ok := prefs["push"]; ok {
-		push = v
-	}
-
+// persist сохраняет уведомление в БД. Запись выполняется в отдельной транзакции на каждого
+// получателя, чтобы сбой одного не откатывал создание уведомлений остальным.
+func (s *NotificationService) persist(ctx context.Context, dto *models.CreateNotificationDTO) error {
 	return s.txManager.WithinTransaction(ctx, func(tx postgres.Tx) error {
 		if err := s.repo.Create(ctx, tx, dto); err != nil {
 			return fmt.Errorf("failed to create notification: %w", err)
 		}
-
-		if push {
-			eventData, err := json.Marshal(map[string]interface{}{
-				"type":  dto.Type,
-				"title": dto.Title,
-				"body":  dto.Body,
-				"data":  dto.Data,
-			})
-			if err != nil {
-				logger.Warn("failed to marshal push event data", logger.ErrAttr(err))
-			} else {
-				s.hub.SendToUser(userID, eventData)
-			}
-		}
-
 		return nil
 	})
+}
+
+// persistForUsers сохраняет уведомление каждому получателю и возвращает только тех, кому
+// строка реально создана в БД — по ним затем выполняется доставка по каналам (чтобы, например,
+// cron не спамил Mattermost каждым прогоном, если запись не удалась). Ошибки записи логируются.
+func (s *NotificationService) persistForUsers(ctx context.Context, userIDs []uuid.UUID, dto *models.CreateNotificationDTO) []uuid.UUID {
+	var persisted []uuid.UUID
+	for _, userID := range userIDs {
+		dto.UserID = userID
+		if err := s.persist(ctx, dto); err != nil {
+			logger.Warn("failed to save notification", logger.StringAttr("user_id", userID.String()), logger.ErrAttr(err))
+			continue
+		}
+		persisted = append(persisted, userID)
+	}
+	return persisted
+}
+
+// deliver рассылает уже сохранённые уведомления по всем включённым каналам (best-effort).
+// Канал сам решает, может ли он доставить этому пользователю; ошибки лишь логируются.
+func (s *NotificationService) deliver(ctx context.Context, ticket *models.Ticket, userIDs []uuid.UUID, dto *models.CreateNotificationDTO) {
+	for _, ch := range s.channels {
+		for _, userID := range userIDs {
+			if err := ch.Notify(ctx, userID, dto, ticket); err != nil {
+				logger.Warn("failed to deliver notification",
+					logger.StringAttr("channel", ch.Name()),
+					logger.StringAttr("user_id", userID.String()),
+					logger.ErrAttr(err),
+				)
+			}
+		}
+	}
+}
+
+// recipientsToSlice превращает множество получателей в слайс.
+func recipientsToSlice(recipients map[uuid.UUID]struct{}) []uuid.UUID {
+	ids := make([]uuid.UUID, 0, len(recipients))
+	for id := range recipients {
+		ids = append(ids, id)
+	}
+	return ids
 }

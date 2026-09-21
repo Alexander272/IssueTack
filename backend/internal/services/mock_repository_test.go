@@ -641,8 +641,8 @@ type MockNotificationService struct {
 	mock.Mock
 }
 
-func (m *MockNotificationService) TicketCreated(ctx context.Context, ticket *models.Ticket) error {
-	args := m.Called(ctx, ticket)
+func (m *MockNotificationService) TicketCreated(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) error {
+	args := m.Called(ctx, ticket, actorID)
 	return args.Error(0)
 }
 func (m *MockNotificationService) TicketUpdated(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID, changes []*models.FieldChange) error {
@@ -1029,6 +1029,21 @@ func (m *MockAttachmentsRepo) GetByComments(ctx context.Context, ticketID uuid.U
 
 type MockNotificationsRepo struct {
 	mock.Mock
+}
+
+// MockNotifier — тестовая заглушка канала доставки уведомлений.
+type MockNotifier struct {
+	mock.Mock
+}
+
+func (m *MockNotifier) Name() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+func (m *MockNotifier) Notify(ctx context.Context, userID uuid.UUID, n *models.CreateNotificationDTO, ticket *models.Ticket) error {
+	args := m.Called(ctx, userID, n, ticket)
+	return args.Error(0)
 }
 
 func (m *MockNotificationsRepo) Create(ctx context.Context, tx postgres.Tx, dto *models.CreateNotificationDTO) error {

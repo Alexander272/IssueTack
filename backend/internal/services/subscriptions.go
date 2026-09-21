@@ -34,7 +34,7 @@ type Subscriptions interface {
 
 // Subscribe подписывает пользователя на уведомления по заявке.
 func (s *TicketSubscriptionService) Subscribe(ctx context.Context, dto *models.SubscribeDTO) error {
-	if _, err := s.getTicketWithSubscribeAccess(ctx, dto.TicketID, dto.ActorID); err != nil {
+	if err := s.getTicketWithSubscribeAccess(ctx, dto.TicketID, dto.ActorID); err != nil {
 		return err
 	}
 	return s.repo.Subscribe(ctx, nil, dto.TicketID, dto.ActorID)
@@ -42,7 +42,7 @@ func (s *TicketSubscriptionService) Subscribe(ctx context.Context, dto *models.S
 
 // Unsubscribe отписывает пользователя от уведомлений по заявке.
 func (s *TicketSubscriptionService) Unsubscribe(ctx context.Context, dto *models.SubscribeDTO) error {
-	if _, err := s.getTicketWithSubscribeAccess(ctx, dto.TicketID, dto.ActorID); err != nil {
+	if err := s.getTicketWithSubscribeAccess(ctx, dto.TicketID, dto.ActorID); err != nil {
 		return err
 	}
 	return s.repo.Unsubscribe(ctx, nil, dto.TicketID, dto.ActorID)
@@ -50,18 +50,18 @@ func (s *TicketSubscriptionService) Unsubscribe(ctx context.Context, dto *models
 
 // IsSubscribed проверяет, подписан ли пользователь на уведомления по заявке.
 func (s *TicketSubscriptionService) IsSubscribed(ctx context.Context, dto *models.IsSubscribedDTO) (bool, error) {
-	if _, err := s.getTicketWithSubscribeAccess(ctx, dto.TicketID, dto.ActorID); err != nil {
+	if err := s.getTicketWithSubscribeAccess(ctx, dto.TicketID, dto.ActorID); err != nil {
 		return false, err
 	}
 	return s.repo.Exists(ctx, dto.TicketID, dto.ActorID)
 }
 
-// getTicketWithSubscribeAccess загружает тикет, проверяет у пользователя read-доступ и право
-// подписки (надзитель реалма или менеджер группы заявки). Возвращает тикет для дальнейших действий.
-func (s *TicketSubscriptionService) getTicketWithSubscribeAccess(ctx context.Context, ticketID, userID uuid.UUID) (*models.Ticket, error) {
+// getTicketWithSubscribeAccess загружает тикет и проверяет у пользователя read-доступ и право
+// подписки (надзитель реалма или менеджер группы заявки).
+func (s *TicketSubscriptionService) getTicketWithSubscribeAccess(ctx context.Context, ticketID, userID uuid.UUID) error {
 	ticket, err := s.tickets.GetSummary(ctx, ticketID)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	realm := ""
@@ -70,17 +70,17 @@ func (s *TicketSubscriptionService) getTicketWithSubscribeAccess(ctx context.Con
 	}
 
 	if err := s.ticketAccess.CheckAccessOnTicket(ctx, ticket, userID, string(access.Read), realm); err != nil {
-		return nil, err
+		return err
 	}
 
 	allowed, err := s.ticketAccess.CanManage(ctx, userID, ticket)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if !allowed {
-		return nil, models.ErrPermissionDenied
+		return models.ErrPermissionDenied
 	}
-	return ticket, nil
+	return nil
 }
 
 // TicketSubscriptionOps — операции с подписками на заявки, нужные сервисам без

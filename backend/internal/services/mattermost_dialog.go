@@ -23,15 +23,15 @@ type recentTicket struct {
 // нажавшего кнопку «Создать заявку». Подгружает категории/площадки realm
 // и формирует поля диалога; в State передаёт канал и id кнопочного поста,
 // чтобы после создания оповестить пользователя и удалить кнопку.
-func (s *MattermostService) HandleDialogOpen(ctx context.Context, triggerID, _, channelID, buttonPostID string, actionCtx map[string]string) error {
-	if triggerID == "" {
+func (s *MattermostService) HandleDialogOpen(ctx context.Context, input *models.DialogOpenDTO) error {
+	if input.TriggerID == "" {
 		return fmt.Errorf("missing trigger_id")
 	}
 	if s.baseURL == "" {
 		return fmt.Errorf("failed to open dialog: http.base_url is not configured")
 	}
 
-	realmID, err := uuid.Parse(actionCtx["realm_id"])
+	realmID, err := uuid.Parse(input.Context["realm_id"])
 	if err != nil {
 		return fmt.Errorf("invalid realm_id: %w", err)
 	}
@@ -77,12 +77,12 @@ func (s *MattermostService) HandleDialogOpen(ctx context.Context, triggerID, _, 
 	}
 
 	if err := s.most.Dialog.Open(settings.BotToken, mattermost.OpenRequest{
-		TriggerID:   triggerID,
+		TriggerID:   input.TriggerID,
 		RealmID:     realmID.String(),
 		Title:       "Новая заявка",
 		SubmitLabel: "Создать",
 		Elements:    elements,
-		State:       fmt.Sprintf(`{"channelId":"%s","buttonPostId":"%s"}`, channelID, buttonPostID),
+		State:       fmt.Sprintf(`{"channelId":"%s","buttonPostId":"%s"}`, input.ChannelID, input.ButtonPostID),
 	}); err != nil {
 		return fmt.Errorf("failed to open dialog: %w", err)
 	}
@@ -188,17 +188,17 @@ func (s *MattermostService) HandleDialogSubmission(ctx context.Context, submissi
 // HandleInteractiveAction обрабатывает нажатия интерактивных кнопок Mattermost
 // и возвращает пост-ответ (или nil, если ответ не нужен). Для «view_ticket»
 // формирует кнопку «Открыть», ведущую на страницу заявки во фронтенде.
-func (s *MattermostService) HandleInteractiveAction(ctx context.Context, userID, channelID string, actionContext map[string]string) (*model.Post, error) {
+func (s *MattermostService) HandleInteractiveAction(ctx context.Context, input *models.InteractiveActionDTO) (*model.Post, error) {
 	if s.baseURL == "" {
 		return nil, fmt.Errorf("failed to handle action: http.base_url is not configured")
 	}
 
-	action := actionContext["action"]
+	action := input.Context["action"]
 
 	switch action {
 	case "view_ticket":
-		ticketID := actionContext["ticket_id"]
-		realmID := actionContext["realm_id"]
+		ticketID := input.Context["ticket_id"]
+		realmID := input.Context["realm_id"]
 		return s.most.Post.Reply(
 			fmt.Sprintf("Откройте заявку: /tasks/%s", ticketID),
 			&mattermost.InteractiveButton{

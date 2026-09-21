@@ -60,6 +60,17 @@
 - Тикеты без группы: в списке показываются только те, где пользователь создатель или исполнитель (`IncludeUngroupedAssignedTo` в `TicketFilter`).
 - `realm` пробрасывается в сервисы подзадач/вложений (variadic `...string`), чтобы Casbin-проверка шла по правильному домену.
 
+## Уведомления
+
+Реализованы в `backend/internal/services/notifications.go` (`NotificationService`).
+
+**Жизненный цикл события** (для каждого `Notify*`-метода): 1) собрать получателей + нейтральный `CreateNotificationDTO` (персональный тумблер `enabled` применяется только при авто-подписке в `autoSubscribeOnCreate`); 2) **persist** — сохранить строку в БД каждому получателю (транзакция `repo.Create`, сбой одного не откатывает остальных, ошибки логируются); 3) **deliver** — разослать по каналам (`channels []Notifier`, best-effort, ошибки только логируются). Deliver выполняется только для тех, кому строка реально создана (иначе cron по просрочке спамил бы каждый прогон).
+
+- **Каналы** — интерфейс `Notifier` (`services/channels.go`: `Name()` + `Notify(ctx, userID, dto, ticket) error`). Сейчас один: `mattermostNotifier` (`services/mattermost_notifier.go`) — DM от бота реалма. Канал сам гейтит себя: тикет без `RealmID` / неактивная интеграция (`mmRepo.GetByRealm` → `IsActive`/`BotToken`) / отсутствие `mattermost_id` у пользователя — пропуск без ошибки. Формат DM — в `format()`: «Новая задача / Задача обновлена / Задача удалена / Новый комментарий / Новое вложение / Задача просрочена» + `№N` (если `TicketNumber`) + заголовок; для `ticket.updated` добавляется сводка изменений из `Data.changes`; ссылка «Открыть: {baseURL}/tasks/{id}» при непустом `baseURL`. Примечание: поле `data.changes` в `CreateNotificationDTO` хранится как **строка** (JSON-массив `FieldChange`), не как `[]byte` (иначе при маршалинге получится base64). Новый канал (push/email) — отдельный `Notifier` в списке `channels` при сборке в `services.go`.
+- **Актор не уведомляется о собственных действиях**: `TicketCreated` (параметр `actorID`, `delete(recipients, actorID)`), `TicketUpdated` (`delete(...)` + исполнитель при смене статуса уведомляется только если он не актор), `TicketCommented`/`AttachmentAdded` (было ранее).
+- **WebSocket** не является каналом уведомлений: `NotificationService` хаб не держит. `/api/ws` (`transport/ws/handler.go`) остаётся транспортной заготовкой: через него асинхронно отдаются непрочитанные при коннекте (`SendUnread`, `repo.GetUnread`+`MarkAllRead`), push-доставка в реальном времени не реализована. WebSocket-отправку из комментариев/тикетов не добавлять — уведомления идут через `channels` в Mattermost.
+- Дублирующая DM-отправка владельцу заявки о комментарии живёт отдельно (`comments.go:notifyOwnerViaMattermost`) и используется для **внутренних** context-комментариев создателю; внешние комментарии теперь покрываются `TicketCommented` через канал.
+
 ## Текущий статус
 
 Страница деталей тикета (`/tasks/:id`) реализована: `frontend/src/features/tasks/components/Detail/*` (Header, InfoBar, Description, Subtasks, Attachments, Comments, Participants, Meta, Notifications). Часть из них — заглушки, см. `TODO.md`.
