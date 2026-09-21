@@ -167,7 +167,7 @@ func (h *Hub) Stop() {
 		h.mu.RUnlock()
 
 		for _, c := range all {
-			c.Conn.WriteControl(websocket.CloseMessage,
+			_ = c.Conn.WriteControl(websocket.CloseMessage,
 				websocket.FormatCloseMessage(websocket.CloseGoingAway, "Server is shutting down"),
 				time.Now().Add(time.Second))
 			h.mu.Lock()

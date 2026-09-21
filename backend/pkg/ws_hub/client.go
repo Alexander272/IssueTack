@@ -17,7 +17,7 @@ type Client struct {
 	closeOnce sync.Once
 	UserID    uuid.UUID
 
-	mu              sync.Mutex
+	mu               sync.Mutex
 	subscribedTopics map[string]struct{}
 }
 
@@ -93,12 +93,13 @@ func (c *Client) ReadPump(timeout time.Duration) {
 
 	c.Conn.SetReadLimit(4096)
 	c.Conn.SetPongHandler(func(string) error {
-		c.Conn.SetReadDeadline(time.Now().Add(timeout))
-		return nil
+		return c.Conn.SetReadDeadline(time.Now().Add(timeout))
 	})
 
 	for {
-		c.Conn.SetReadDeadline(time.Now().Add(timeout))
+		if err := c.Conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+			break
+		}
 		_, _, err := c.Conn.ReadMessage()
 		if err != nil {
 			break
@@ -117,15 +118,19 @@ func (c *Client) WritePump(pingInterval, writeTimeout time.Duration) {
 		select {
 		case message, ok := <-c.Send:
 			if !ok {
-				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+				_ = c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
-			c.Conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+			if err := c.Conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+				return
+			}
 			if err := c.Conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				return
 			}
 		case <-ticker.C:
-			c.Conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+			if err := c.Conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+				return
+			}
 			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}

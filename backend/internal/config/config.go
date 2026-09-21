@@ -104,6 +104,11 @@ type (
 
 	MattermostConfig struct {
 		URL string `yaml:"url" env:"MATTERMOST_URL" env-default:""`
+		// AllowedServerIPs — разрешённые источники входящих колбэков Mattermost
+		// (сам сервер MM или стоящий перед ним прокси). Форматы записи: одиночный IP
+		// ("10.0.0.1"), CIDR ("10.0.0.0/24"), диапазон ("10.0.0.5-10.0.0.20").
+		// Пустой список = все входящие MM-запросы отклоняются (fail-closed).
+		AllowedServerIPs []string `yaml:"allowed_server_ips" env:"MATTERMOST_ALLOWED_SERVER_IPS"`
 	}
 )
 

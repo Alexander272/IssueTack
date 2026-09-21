@@ -11,7 +11,7 @@ type RealmMattermost struct {
 	BotToken      string    `json:"-" db:"bot_token"`
 	BotUserID     string    `json:"botUserId" db:"bot_user_id"`
 	ChannelID     string    `json:"channelId" db:"channel_id"`
-	WebhookSecret string    `json:"-" db:"webhook_secret"`
+	WebhookSecret string    `json:"webhookSecret" db:"webhook_secret"`
 	IsActive      bool      `json:"isActive" db:"is_active"`
 	CreatedAt     time.Time `json:"createdAt" db:"created_at"`
 	UpdatedAt     time.Time `json:"updatedAt" db:"updated_at"`

@@ -1,11 +1,13 @@
 package mattermost
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 
+	"github.com/Alexander272/IssueTrack/backend/internal/config"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
@@ -19,10 +21,11 @@ type Handler struct {
 	service services.Mattermost
 }
 
-func Register(r *gin.RouterGroup, svc services.Mattermost) {
+func Register(r *gin.RouterGroup, svc services.Mattermost, cfg config.MattermostConfig) {
 	h := &Handler{service: svc}
 
 	mm := r.Group("/mattermost")
+	mm.Use(newSourceGuard(cfg).middleware())
 	{
 		mm.POST("/webhook", h.handleWebhook)
 		mm.POST("/dialog/open", h.handleDialogOpen)
@@ -35,8 +38,7 @@ func Register(r *gin.RouterGroup, svc services.Mattermost) {
 func (h *Handler) handleWebhook(c *gin.Context) {
 	token := c.GetHeader("Token")
 	if token == "" {
-		response.SendError(c, fmt.Errorf("missing token"))
-		return
+		token = c.Request.FormValue("token")
 	}
 
 	if err := c.Request.ParseForm(); err != nil {
@@ -44,14 +46,18 @@ func (h *Handler) handleWebhook(c *gin.Context) {
 		return
 	}
 
-	bodyToken := c.Request.FormValue("token")
-	if bodyToken == "" {
-		bodyToken = token
+	channelID := c.Request.FormValue("channel_id")
+	if channelID == "" {
+		response.SendError(c, fmt.Errorf("missing channel_id"))
+		return
+	}
+	if err := h.checkWebhookToken(c, token, channelID); err != nil {
+		response.SendError(c, err)
+		return
 	}
 
 	triggerID := c.Request.FormValue("trigger_id")
 	userID := c.Request.FormValue("user_id")
-	channelID := c.Request.FormValue("channel_id")
 	message := c.Request.FormValue("text")
 
 	fileIDs := c.Request.Form["file_ids"]
@@ -69,6 +75,22 @@ func (h *Handler) handleWebhook(c *gin.Context) {
 	}
 
 	c.Status(http.StatusOK)
+}
+
+// checkWebhookToken сверяет полученный токен webhook/события Mattermost с секретом
+// реалма (constant-time сравнение), найденным по ID канала.
+func (h *Handler) checkWebhookToken(c *gin.Context, token, channelID string) error {
+	if token == "" {
+		return fmt.Errorf("missing token")
+	}
+	settings, err := h.service.GetSettingsByChannelID(c, channelID)
+	if err != nil {
+		return fmt.Errorf("invalid channel: %w", err)
+	}
+	if settings.WebhookSecret == "" || subtle.ConstantTimeCompare([]byte(token), []byte(settings.WebhookSecret)) != 1 {
+		return fmt.Errorf("invalid webhook token")
+	}
+	return nil
 }
 
 func (h *Handler) handleDialogOpen(c *gin.Context) {
@@ -172,6 +194,13 @@ func (h *Handler) handleWSEvent(c *gin.Context) {
 
 	if post.UserId == "" || (post.Message == "" && len(post.FileIds) == 0) {
 		c.Status(http.StatusOK)
+		return
+	}
+
+	token := c.GetHeader("Token")
+	if err := h.checkWebhookToken(c, token, post.ChannelId); err != nil {
+		logger.Error("failed to authorize WS event", logger.ErrAttr(err))
+		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 

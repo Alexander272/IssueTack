@@ -15,15 +15,15 @@ import (
 )
 
 type wsEventData struct {
-	ChannelType   string `json:"channel_type"`
-	Post          string `json:"post"`
-	SenderName    string `json:"sender_name"`
-	ChannelID     string `json:"channel_id"`
-	TeamID        string `json:"team_id"`
-	SetOnline     bool   `json:"set_online"`
-	ChannelName   string `json:"channel_name"`
+	ChannelType     string `json:"channel_type"`
+	Post            string `json:"post"`
+	SenderName      string `json:"sender_name"`
+	ChannelID       string `json:"channel_id"`
+	TeamID          string `json:"team_id"`
+	SetOnline       bool   `json:"set_online"`
+	ChannelName     string `json:"channel_name"`
 	ChannelDispName string `json:"channel_display_name"`
-	Mentions      string `json:"mentions"`
+	Mentions        string `json:"mentions"`
 }
 
 type PostedEvent struct {
@@ -136,10 +136,11 @@ func (c *WSClient) listen(ctx context.Context) {
 	}
 	defer conn.Close()
 
-	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	if err := conn.SetReadDeadline(time.Now().Add(60 * time.Second)); err != nil {
+		return
+	}
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-		return nil
+		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	})
 
 	go func() {

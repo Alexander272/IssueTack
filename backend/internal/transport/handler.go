@@ -201,7 +201,9 @@ func (h *Handler) initStatic(router *gin.Engine, conf *config.Config) {
 		if rs, ok := f.(io.ReadSeeker); ok {
 			http.ServeContent(c.Writer, c.Request, path.Base(filePath), appStartTime, rs)
 		} else {
-			io.Copy(c.Writer, f)
+			if _, err := io.Copy(c.Writer, f); err != nil {
+				logger.Error("failed to stream file", logger.StringAttr("path", filePath), logger.ErrAttr(err))
+			}
 		}
 	})
 }

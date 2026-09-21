@@ -3,6 +3,8 @@ package services
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"regexp"
@@ -103,6 +105,7 @@ func NewMattermostService(deps *MattermostDeps) *MattermostService {
 // HTTP-обработчиками и главной точкой входа.
 type Mattermost interface {
 	GetSettings(ctx context.Context, realmID uuid.UUID) (*models.RealmMattermost, error)
+	GetSettingsByChannelID(ctx context.Context, channelID string) (*models.RealmMattermost, error)
 	SaveSettings(ctx context.Context, realmID uuid.UUID, dto *models.RealmMattermostDTO) error
 	DeleteSettings(ctx context.Context, realmID uuid.UUID) error
 
@@ -128,6 +131,26 @@ type HandleDMInput struct {
 	TriggerID string
 }
 
+// generateWebhookSecret создаёт случайный секрет вебхука Mattermost
+// (48 hex-символов) для аутентификации входящих webhook-запросов.
+func generateWebhookSecret() (string, error) {
+	buf := make([]byte, 24)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("failed to generate webhook secret: %w", err)
+	}
+	return hex.EncodeToString(buf), nil
+}
+
+// GetSettingsByChannelID возвращает настройки интеграции Mattermost для
+// активного реалма по ID канала (используется для проверки webhook-токена).
+func (s *MattermostService) GetSettingsByChannelID(ctx context.Context, channelID string) (*models.RealmMattermost, error) {
+	settings, err := s.repo.GetByChannelID(ctx, channelID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get mattermost settings: %w", err)
+	}
+	return settings, nil
+}
+
 // GetSettings возвращает настройки интеграции Mattermost для указанного realm.
 func (s *MattermostService) GetSettings(ctx context.Context, realmID uuid.UUID) (*models.RealmMattermost, error) {
 	settings, err := s.repo.GetByRealm(ctx, realmID)
@@ -138,6 +161,7 @@ func (s *MattermostService) GetSettings(ctx context.Context, realmID uuid.UUID) 
 }
 
 // SaveSettings проверяет валидность bot-токена, сохраняет настройки интеграции
+// (секрет вебхука генерируется один раз и сохраняется между пересохранениями)
 // и запускает веб-сокет для realm.
 func (s *MattermostService) SaveSettings(ctx context.Context, realmID uuid.UUID, dto *models.RealmMattermostDTO) error {
 	botUser, err := s.most.Client.GetMe(dto.BotToken)
@@ -145,12 +169,23 @@ func (s *MattermostService) SaveSettings(ctx context.Context, realmID uuid.UUID,
 		return fmt.Errorf("invalid bot token: %w", err)
 	}
 
+	webhookSecret := ""
+	if existing, err := s.repo.GetByRealm(ctx, realmID); err == nil && existing.WebhookSecret != "" {
+		webhookSecret = existing.WebhookSecret
+	} else {
+		webhookSecret, err = generateWebhookSecret()
+		if err != nil {
+			return err
+		}
+	}
+
 	settings := &models.RealmMattermost{
-		RealmID:   realmID,
-		BotToken:  dto.BotToken,
-		BotUserID: botUser.ID,
-		ChannelID: dto.ChannelID,
-		IsActive:  true,
+		RealmID:       realmID,
+		BotToken:      dto.BotToken,
+		BotUserID:     botUser.ID,
+		ChannelID:     dto.ChannelID,
+		WebhookSecret: webhookSecret,
+		IsActive:      true,
 	}
 	if err := s.repo.Upsert(ctx, nil, settings); err != nil {
 		return fmt.Errorf("failed to save mattermost settings: %w", err)

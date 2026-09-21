@@ -15,13 +15,13 @@ import (
 )
 
 type Handler struct {
-	service   services.Realms
+	service    services.Realms
 	mattermost services.Mattermost
 }
 
 func NewHandler(service services.Realms, mattermost services.Mattermost) *Handler {
 	return &Handler{
-		service:   service,
+		service:    service,
 		mattermost: mattermost,
 	}
 }

@@ -75,7 +75,13 @@ func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uui
 	if err := s.users.CreateSeveral(ctx, nil, []*models.UserDataDTO{userDTO}); err != nil {
 		return uuid.Nil, "", fmt.Errorf("failed to create user: %w", err)
 	}
-	s.ensureRealmMembership(ctx, newUserID, realmID, newUserID, mmUser.Username)
+	if err := s.ensureRealmMembership(ctx, newUserID, realmID, newUserID, mmUser.Username); err != nil {
+		logger.Warn("failed to add created user to realm",
+			logger.StringAttr("user_id", newUserID.String()),
+			logger.StringAttr("realm_id", realmID.String()),
+			logger.ErrAttr(err),
+		)
+	}
 
 	logger.Info("created user from mattermost",
 		logger.StringAttr("mm_user_id", mmUserID),

@@ -68,6 +68,7 @@ var (
 	ErrSessionEmpty     = NewDomainError(errors.New("user session not found"), http.StatusUnauthorized, "AU003", "Сессия пользователя не найдена")
 	ErrSessionExpired   = NewDomainError(errors.New("session expired"), http.StatusUnauthorized, "AU004", "Время сессии истекло, повторите вход")
 	ErrInvalidToken     = NewDomainError(errors.New("invalid token"), http.StatusUnauthorized, "AU005", "Токен невалиден")
+	ErrUntrustedSource  = NewDomainError(errors.New("untrusted request source"), http.StatusForbidden, "AU006", "Запрос от недоверенного источника")
 
 	// 500 & 504
 	ErrInternal         = NewDomainError(errors.New("internal server error"), http.StatusInternalServerError, "SRV01", "Внутренняя ошибка сервера")

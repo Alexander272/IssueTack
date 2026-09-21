@@ -34,10 +34,10 @@ type NotificationSettings struct {
 // Категории событий, по которым могут настраиваться уведомления.
 // Используются как ключи в JSON настройках (см. EventFieldName) и как события обращений к репозиторию.
 const (
-	EventNewTask  = "new"
-	EventStatus   = "status"
-	EventComment  = "comment"
-	EventOverdue  = "overdue"
+	EventNewTask = "new"
+	EventStatus  = "status"
+	EventComment = "comment"
+	EventOverdue = "overdue"
 )
 
 // EventFieldName возвращает имя поля JSON-настройки события для категории.
@@ -79,7 +79,7 @@ type GroupNotificationSetting struct {
 //   - Categories — матрица «категория × событие» (новые задачи, статус, комментарий, просрочка).
 //   - Groups — настройки по группам (новые задачи, просрочка).
 type NotificationSettingsPayload struct {
-	Enabled    bool                         `json:"enabled"`
+	Enabled    bool                          `json:"enabled"`
 	Categories []CategoryNotificationSetting `json:"categories"`
 	Groups     []GroupNotificationSetting    `json:"groups"`
 }

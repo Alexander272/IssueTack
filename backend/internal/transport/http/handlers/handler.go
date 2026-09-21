@@ -84,5 +84,5 @@ func (h *Handler) Init(group *gin.RouterGroup) {
 	activity_log.Register(secure, h.services.ActivityLog, h.middleware)
 	audit_log.Register(secure, h.services.AuditLogs, h.middleware)
 
-	mattermost.Register(v1, h.services.Mattermost)
+	mattermost.Register(v1, h.services.Mattermost, h.conf.Mattermost)
 }

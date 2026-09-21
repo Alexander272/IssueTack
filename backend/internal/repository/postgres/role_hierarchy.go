@@ -320,5 +320,3 @@ func (r *RoleHierarchyRepo) RemoveInheritance(ctx context.Context, tx Tx, dto *m
 	}
 	return nil
 }
-
-

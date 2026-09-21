@@ -10,7 +10,7 @@ import (
 
 type ActivityLog struct {
 	ID            uuid.UUID        `json:"id" db:"id"`
-	Action        string           `json:"action" db:"action"`   // 'INSERT', 'UPDATE', 'DELETE'
+	Action        string           `json:"action" db:"action"` // 'INSERT', 'UPDATE', 'DELETE'
 	ChangedBy     uuid.UUID        `json:"changedBy" db:"changed_by"`
 	ChangedByName string           `json:"changedByName" db:"changed_by_name"`
 	EntityType    string           `json:"entityType" db:"entity_type"`

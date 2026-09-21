@@ -512,7 +512,8 @@ func (s *NotificationService) GetSettingsPayload(ctx context.Context, userID uui
 	}
 	payload := models.DefaultNotificationSettings()
 	if len(settings.Settings) > 0 {
-		json.Unmarshal(settings.Settings, payload) // nolint:errcheck — при битых данных остаются дефолты
+		//nolint:errcheck // при битых данных остаются дефолты
+		json.Unmarshal(settings.Settings, payload)
 	}
 	if payload.Categories == nil {
 		payload.Categories = []models.CategoryNotificationSetting{}
@@ -567,7 +568,8 @@ func (s *NotificationService) notifEnabled(ctx context.Context, userID uuid.UUID
 	}
 	var payload models.NotificationSettingsPayload
 	if len(settings.Settings) > 0 {
-		json.Unmarshal(settings.Settings, &payload) // nolint:errcheck — при битых данных остаётся дефолт
+		//nolint:errcheck // при битых данных остаётся дефолт
+		json.Unmarshal(settings.Settings, &payload)
 	}
 	return payload.Enabled, nil
 }

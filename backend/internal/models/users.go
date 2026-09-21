@@ -33,8 +33,8 @@ type User struct {
 	CreatedAt    time.Time  `json:"createdAt" db:"created_at"`
 	UpdatedAt    time.Time  `json:"updatedAt" db:"updated_at"`
 
-	Permissions  map[string][]string         `json:"permissions"`
-	Realms       []*UserRealm                `json:"realms,omitempty"`
+	Permissions  map[string][]string          `json:"permissions"`
+	Realms       []*UserRealm                 `json:"realms,omitempty"`
 	Capabilities map[string]*UserCapabilities `json:"capabilities"`
 
 	AccessToken  string `json:"token"`
@@ -83,8 +83,8 @@ type UserData struct {
 }
 
 type UserDataDTO struct {
-	ID             uuid.UUID `json:"id" db:"id"`
-	MattermostID   *string   `json:"mattermostId" db:"mattermost_id"`
+	ID             uuid.UUID  `json:"id" db:"id"`
+	MattermostID   *string    `json:"mattermostId" db:"mattermost_id"`
 	Username       string     `json:"username" db:"username"`
 	FirstName      string     `json:"firstName" db:"first_name"`
 	LastName       string     `json:"lastName" db:"last_name"`
