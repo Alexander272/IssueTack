@@ -93,16 +93,29 @@ func (n *mattermostNotifier) Notify(ctx context.Context, userID uuid.UUID, notif
 
 // format собирает текст DM для конкретного события. Чтобы поправить сообщение
 // отдельного события — правится только соответствующая ветка префикса/дополнений.
+// format собирает текст DM для конкретного события. События «Задача …» («просрочена»,
+// «обновлена», «удалена») и «Скоро срок» выводят номер сразу после слова «Задача»/
+// «Скоро срок» («Задача №12 обновлена: …»), прочие типы — номер после префикса
+// («Новая задача №12: …»). Для overdue и deadline_soon при заданном дедлайне
+// добавляется строка «Дедлайн: …».
 func (n *mattermostNotifier) format(ticket *models.Ticket, notif *models.CreateNotificationDTO) string {
-	prefix := map[string]string{
-		string(models.NotificationTicketCreated):    "Новая задача",
-		string(models.NotificationTicketUpdated):    "Задача обновлена",
-		string(models.NotificationTicketDeleted):    "Задача удалена",
-		string(models.NotificationTicketComment):    "Новый комментарий",
-		string(models.NotificationTicketAttachment): "Новое вложение",
-		string(models.NotificationTicketOverdue):    "Задача просрочена",
-	}[notif.Type]
-	if prefix == "" {
+	var prefix, action string
+	switch notif.Type {
+	case string(models.NotificationTicketUpdated):
+		prefix, action = "Задача", "обновлена"
+	case string(models.NotificationTicketDeleted):
+		prefix, action = "Задача", "удалена"
+	case string(models.NotificationTicketOverdue):
+		prefix, action = "Задача", "просрочена"
+	case string(models.NotificationDeadlineSoon):
+		prefix = "Скоро срок"
+	case string(models.NotificationTicketCreated):
+		prefix = "Новая задача"
+	case string(models.NotificationTicketComment):
+		prefix = "Новый комментарий"
+	case string(models.NotificationTicketAttachment):
+		prefix = "Новое вложение"
+	default:
 		prefix = "Уведомление"
 	}
 
@@ -116,7 +129,28 @@ func (n *mattermostNotifier) format(ticket *models.Ticket, notif *models.CreateN
 		number = fmt.Sprintf(" №%d", *ticket.TicketNumber)
 	}
 
+	if action != "" {
+		// «Задача №12 обновлена: title» — действие идёт после номера.
+		text := fmt.Sprintf("**%s%s %s: %s**", prefix, number, action, title)
+		if notif.Type == string(models.NotificationTicketOverdue) && ticket.DueDate != nil {
+			text += fmt.Sprintf("\nДедлайн: %s", ticket.DueDate.Format("02.01.2006 15:04"))
+		}
+		if notif.Type == string(models.NotificationTicketUpdated) {
+			if details := n.changesSummary(notif.Data); details != "" {
+				text += "\n\n" + details
+			}
+		}
+		if n.baseURL != "" {
+			text += fmt.Sprintf("\nОткрыть: %s/tasks/%s", n.baseURL, ticket.ID.String())
+		}
+		return text
+	}
+
 	text := fmt.Sprintf("**%s%s: %s**", prefix, number, title)
+
+	if notif.Type == string(models.NotificationDeadlineSoon) && ticket.DueDate != nil {
+		text += fmt.Sprintf("\nДедлайн: %s", ticket.DueDate.Format("02.01.2006 15:04"))
+	}
 
 	if notif.Type == string(models.NotificationTicketUpdated) {
 		if details := n.changesSummary(notif.Data); details != "" {

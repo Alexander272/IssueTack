@@ -82,5 +82,6 @@ export const API = {
 	notifications: {
 		settings: '/notifications/settings',
 		getSettings: '/notifications',
+		deadlineReminders: '/notifications/deadline-reminders',
 	},
 }

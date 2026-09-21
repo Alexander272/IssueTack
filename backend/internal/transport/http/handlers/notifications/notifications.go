@@ -30,6 +30,8 @@ func Register(api *gin.RouterGroup, service services.Notifications, middleware *
 	{
 		notifications.GET("", h.getSettings)
 		notifications.PUT("/settings", h.updateSettings)
+		notifications.GET("/deadline-reminders", h.getDeadlineReminders)
+		notifications.PUT("/deadline-reminders", h.updateDeadlineReminders)
 		notifications.PUT("/:id/read", h.markRead)
 	}
 }
@@ -64,6 +66,52 @@ func (h *Handler) updateSettings(c *gin.Context) {
 	}
 
 	if err := h.service.SaveSettingsPayload(c.Request.Context(), user.ID, &body); err != nil {
+		response.SendError(c, err)
+		return
+	}
+
+	response.SendData(c, response.IdResponse{Message: "Настройки сохранены"})
+}
+
+// getDeadlineReminders возвращает пороги напоминаний «скоро срок» текущего пользователя.
+// Гейт «только участники групп реалма» выполняется в сервисе.
+func (h *Handler) getDeadlineReminders(c *gin.Context) {
+	user := utils.GetUser(c)
+	if user == nil {
+		return
+	}
+	realmID, ok := utils.GetRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	reminders, err := h.service.GetDeadlineReminders(c.Request.Context(), user.ID, realmID)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+
+	response.SendData(c, models.DeadlineRemindersDTO{Reminders: reminders})
+}
+
+// updateDeadlineReminders сохраняет пороги напоминаний «скоро срок» текущего пользователя.
+func (h *Handler) updateDeadlineReminders(c *gin.Context) {
+	user := utils.GetUser(c)
+	if user == nil {
+		return
+	}
+	realmID, ok := utils.GetRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	var body models.DeadlineRemindersDTO
+	if err := utils.BindJSON(c, &body); err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	if err := h.service.SaveDeadlineReminders(c.Request.Context(), user.ID, realmID, body.Reminders); err != nil {
 		response.SendError(c, err)
 		return
 	}

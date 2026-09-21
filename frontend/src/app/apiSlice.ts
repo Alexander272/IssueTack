@@ -77,6 +77,7 @@ export const apiSlice = createApi({
 		'Comments',
 		'Mattermost',
 		'Notifications',
+		'DeadlineReminders',
 		'Favorites',
 	],
 	endpoints: () => ({}),

@@ -1,4 +1,4 @@
-export { SettingsHeader } from './SettingsHeader'
+export { SubscriptionsTab } from './SubscriptionsTab'
 export { GeneralChannelsCard } from './GeneralChannelsCard'
 export { CategoriesCard } from './CategoriesCard'
 export { HowItWorksCard } from './HowItWorksCard'

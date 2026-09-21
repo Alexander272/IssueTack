@@ -13,8 +13,8 @@ import {
 	UsersIcon,
 	BuildingIcon,
 	SendIcon,
-	SettingsIcon,
 	StarIcon,
+	BellIcon,
 } from 'lucide-mui'
 
 export interface SidebarItem {
@@ -42,7 +42,7 @@ const homeItems: SidebarItem[] = [
 	{
 		path: AppRoutes.NotificationSettings,
 		label: 'Уведомления',
-		icon: <SettingsIcon sx={{ fontSize: 18 }} />,
+		icon: <BellIcon sx={{ fontSize: 18 }} />,
 	},
 ]
 

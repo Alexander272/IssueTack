@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
@@ -41,9 +42,15 @@ type Notifications interface {
 	SaveSettings(ctx context.Context, tx Tx, userID uuid.UUID, settings json.RawMessage) error
 	// GetOverdueTicketIDs возвращает ID «активных» тикетов с просроченным сроком (due_date < now).
 	GetOverdueTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error)
+	// GetUpcomingDeadlineTicketIDs возвращает ID «активных» тикетов с будущим сроком (due_date > now)
+	// и исполнителем — кандидатов на напоминание «скоро срок».
+	GetUpcomingDeadlineTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error)
 	// HasNotification возвращает true, если у пользователя уже есть уведомление заданного типа
 	// по конкретному тикету (по полю data.ticket_id) — используется для дедупликации просрочки.
 	HasNotification(ctx context.Context, userID, ticketID uuid.UUID, notifType string) (bool, error)
+	// HasDeadlineReminder возвращает true, если исполнителю уже создано напоминание «скоро срок»
+	// по тикету на порог remindBeforeMinutes (дедупликация по data.remind_before).
+	HasDeadlineReminder(ctx context.Context, userID, ticketID uuid.UUID, remindBeforeMinutes int) (bool, error)
 }
 
 func (r *notificationRepository) Create(ctx context.Context, tx Tx, dto *models.CreateNotificationDTO) error {
@@ -251,6 +258,57 @@ func (r *notificationRepository) HasNotification(ctx context.Context, userID, ti
 	var exists bool
 	if err := r.db.QueryRow(ctx, query, userID, notifType, ticketID.String()).Scan(&exists); err != nil {
 		return false, MapError(fmt.Errorf("failed to check existing notification: %w", err))
+	}
+	return exists, nil
+}
+
+// GetUpcomingDeadlineTicketIDs возвращает ID активных тикетов с будущим сроком и исполнителем.
+func (r *notificationRepository) GetUpcomingDeadlineTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error) {
+	query := fmt.Sprintf(`
+		SELECT id
+		FROM %s
+		WHERE due_date > $1
+			AND closed_at IS NULL
+			AND assignee_id IS NOT NULL
+			AND status IN ('open', 'in_progress', 'pending', 'on_hold')`, Tables.Tickets)
+
+	rows, err := r.db.Query(ctx, query, now)
+	if err != nil {
+		return nil, MapError(fmt.Errorf("failed to get upcoming-deadline ticket ids: %w", err))
+	}
+	defer rows.Close()
+
+	var data []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, MapError(fmt.Errorf("scan row error: %w", err))
+		}
+		data = append(data, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
+
+	return data, nil
+}
+
+// HasDeadlineReminder возвращает true, если исполнителю уже создано напоминание «скоро срок»
+// по тикету на конкретный порог (по полям data.ticket_id и data.remind_before).
+func (r *notificationRepository) HasDeadlineReminder(ctx context.Context, userID, ticketID uuid.UUID, remindBeforeMinutes int) (bool, error) {
+	query := fmt.Sprintf(`
+		SELECT EXISTS(
+			SELECT 1 FROM %s
+			WHERE user_id = $1
+				AND type = $2
+				AND data->>'ticket_id' = $3
+				AND data->>'remind_before' = $4
+		)`, Tables.Notifications)
+
+	var exists bool
+	notifType := string(models.NotificationDeadlineSoon)
+	if err := r.db.QueryRow(ctx, query, userID, notifType, ticketID.String(), strconv.Itoa(remindBeforeMinutes)).Scan(&exists); err != nil {
+		return false, MapError(fmt.Errorf("failed to check existing deadline reminder: %w", err))
 	}
 	return exists, nil
 }

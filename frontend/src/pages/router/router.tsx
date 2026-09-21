@@ -82,7 +82,7 @@ const config: RouteObject[] = [
 					},
 					{
 						path: AppRoutes.NotificationSettings,
-						element: <RoleRoute manager />,
+						element: <RoleRoute managerOrMember />,
 						children: [
 							{
 								index: true,

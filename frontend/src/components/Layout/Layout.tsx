@@ -3,7 +3,7 @@ import { Outlet, useLocation } from 'react-router'
 import { Box, Stack } from '@mui/material'
 
 import { useAppSelector } from '@/hooks/redux'
-import { getIsManager } from '@/features/user/userSlice'
+import { getCurrentCapabilities, getIsManager } from '@/features/user/userSlice'
 import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
 import { Fallback } from '@/components/Fallback/Fallback'
 import { LayoutHeader } from './LayoutHeader'
@@ -15,7 +15,6 @@ const managerOnlyRoutes = new Set([
 	AppRoutes.Groups,
 	AppRoutes.Categories,
 	AppRoutes.Sites,
-	AppRoutes.NotificationSettings,
 ])
 
 // Право на доступ к админскому разделу: наличие любого из write-пермишенов администрирования.
@@ -24,6 +23,8 @@ const adminPermissions = ['user:write', 'role:write', 'realm:write', 'permission
 export const Layout = () => {
 	const location = useLocation()
 	const isManager = useAppSelector(getIsManager)
+	const { memberGroupIds } = useAppSelector(getCurrentCapabilities)
+	const isMember = memberGroupIds.length > 0
 	const isAdminAccess = useCheckPermissions({ anyOf: adminPermissions })
 	const sidebarConfig = sidebarRules.find(r => r.match(location.pathname))?.config
 	const [mobileOpen, setMobileOpen] = useState(false)
@@ -33,6 +34,7 @@ export const Layout = () => {
 				...sidebarConfig,
 				items: sidebarConfig.items.filter(item => {
 					if (!isManager && managerOnlyRoutes.has(item.path as '/groups')) return false
+					if (item.path === AppRoutes.NotificationSettings && !isManager && !isMember) return false
 					if (location.pathname.startsWith(AppRoutes.Accesses) && !isAdminAccess) return false
 					return true
 				}),

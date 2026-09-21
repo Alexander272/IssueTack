@@ -676,6 +676,28 @@ func (m *MockNotificationService) GetOverdueTicketIDs(ctx context.Context, now t
 	}
 	return args.Get(0).([]uuid.UUID), args.Error(1)
 }
+func (m *MockNotificationService) NotifyDeadlineSoon(ctx context.Context, ticket *models.Ticket) error {
+	args := m.Called(ctx, ticket)
+	return args.Error(0)
+}
+func (m *MockNotificationService) GetUpcomingDeadlineTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error) {
+	args := m.Called(ctx, now)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
+func (m *MockNotificationService) GetDeadlineReminders(ctx context.Context, userID, realmID uuid.UUID) ([]int, error) {
+	args := m.Called(ctx, userID, realmID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]int), args.Error(1)
+}
+func (m *MockNotificationService) SaveDeadlineReminders(ctx context.Context, userID, realmID uuid.UUID, reminders []int) error {
+	args := m.Called(ctx, userID, realmID, reminders)
+	return args.Error(0)
+}
 func (m *MockNotificationService) GetSettings(ctx context.Context, userID uuid.UUID) (*models.NotificationSettings, error) {
 	args := m.Called(ctx, userID)
 	if args.Get(0) == nil {
@@ -1087,8 +1109,19 @@ func (m *MockNotificationsRepo) GetOverdueTicketIDs(ctx context.Context, now tim
 	}
 	return args.Get(0).([]uuid.UUID), args.Error(1)
 }
+func (m *MockNotificationsRepo) GetUpcomingDeadlineTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error) {
+	args := m.Called(ctx, now)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
 func (m *MockNotificationsRepo) HasNotification(ctx context.Context, userID, ticketID uuid.UUID, notifType string) (bool, error) {
 	args := m.Called(ctx, userID, ticketID, notifType)
+	return args.Bool(0), args.Error(1)
+}
+func (m *MockNotificationsRepo) HasDeadlineReminder(ctx context.Context, userID, ticketID uuid.UUID, remindBeforeMinutes int) (bool, error) {
+	args := m.Called(ctx, userID, ticketID, remindBeforeMinutes)
 	return args.Bool(0), args.Error(1)
 }
 func (m *MockNotificationsRepo) GetSettings(ctx context.Context, userID uuid.UUID) (*models.NotificationSettings, error) {

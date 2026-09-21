@@ -70,6 +70,15 @@ type Notifications interface {
 	NotifyOverdue(ctx context.Context, ticket *models.Ticket) error
 	// GetOverdueTicketIDs возвращает ID активных тикетов с просроченным сроком.
 	GetOverdueTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error)
+	// NotifyDeadlineSoon оповещает исполнителя о приближении срока тикета (ticket.deadline_soon).
+	NotifyDeadlineSoon(ctx context.Context, ticket *models.Ticket) error
+	// GetUpcomingDeadlineTicketIDs возвращает ID активных тикетов с будущим сроком и исполнителем.
+	GetUpcomingDeadlineTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error)
+	// GetDeadlineReminders возвращает пороги напоминаний «скоро срок» пользователя (в минутах
+	// до дедлайна). Доступно только участникам групп текущего реалма.
+	GetDeadlineReminders(ctx context.Context, userID, realmID uuid.UUID) ([]int, error)
+	// SaveDeadlineReminders сохраняет пороги напоминаний «скоро срок» пользователя.
+	SaveDeadlineReminders(ctx context.Context, userID, realmID uuid.UUID, reminders []int) error
 	// GetSettings возвращает персональные настройки уведомлений пользователя.
 	GetSettings(ctx context.Context, userID uuid.UUID) (*models.NotificationSettings, error)
 	// SaveSettings сохраняет персональные настройки уведомлений пользователя.
@@ -500,6 +509,136 @@ func (s *NotificationService) GetOverdueTicketIDs(ctx context.Context, now time.
 	return s.repo.GetOverdueTicketIDs(ctx, now)
 }
 
+// NotifyDeadlineSoon оповещает исполнителя тикета о приближении срока (ticket.deadline_soon).
+// Для каждого порога (минут до дедлайна) напоминание уходит один раз, когда до дедлайна
+// осталось не больше порога; дедупликация — по существующей строке с тем же remind_before
+// (см. HasDeadlineReminder). Дата срабатывания каждого порога приходит по мере приближения
+// срока: на первом прогоне cron порог «догоняет», далее тикет покидает выборку после дедлайна.
+func (s *NotificationService) NotifyDeadlineSoon(ctx context.Context, ticket *models.Ticket) error {
+	if ticket.Assignee == nil || ticket.DueDate == nil {
+		return nil
+	}
+
+	reminders, err := s.deadlineRemindersFor(ctx, ticket.Assignee.ID)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+	for _, before := range reminders {
+		if before <= 0 {
+			continue
+		}
+		// Порог ещё не наступил — до дедлайна больше before минут.
+		if now.Before(ticket.DueDate.Add(-time.Duration(before) * time.Minute)) {
+			continue
+		}
+		sent, err := s.repo.HasDeadlineReminder(ctx, ticket.Assignee.ID, ticket.ID, before)
+		if err != nil {
+			return fmt.Errorf("failed to check deadline reminder: %w", err)
+		}
+		if sent {
+			continue
+		}
+
+		data, err := json.Marshal(map[string]interface{}{
+			"ticket_id":     ticket.ID.String(),
+			"title":         ticket.Title,
+			"remind_before": before,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to marshal deadline reminder data: %w", err)
+		}
+
+		dto := &models.CreateNotificationDTO{
+			Type:  string(models.NotificationDeadlineSoon),
+			Title: "Подходит срок задачи",
+			Body:  ticket.Title,
+			Data:  data,
+		}
+		delivered := s.deliver(ctx, ticket, []uuid.UUID{ticket.Assignee.ID}, dto)
+		s.persistForUsers(ctx, delivered, dto)
+
+		logger.Info("deadline soon notification processed",
+			logger.StringAttr("ticket_id", ticket.ID.String()),
+			logger.StringAttr("title", ticket.Title),
+			logger.IntAttr("remind_before", before),
+			logger.StringAttr("assignee", ticket.Assignee.ID.String()),
+			logger.IntAttr("delivered", len(delivered)),
+		)
+	}
+	return nil
+}
+
+// GetUpcomingDeadlineTicketIDs возвращает ID активных тикетов с будущим сроком и исполнителем.
+func (s *NotificationService) GetUpcomingDeadlineTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error) {
+	return s.repo.GetUpcomingDeadlineTicketIDs(ctx, now)
+}
+
+// GetDeadlineReminders возвращает пороги напоминаний «скоро срок» пользователя. Доступно
+// только участникам групп текущего реалма (только они могут быть исполнителями): иначе
+// возвращается models.ErrPermissionDenied. Хранилище порогов глобальное (одно на все реалмы).
+func (s *NotificationService) GetDeadlineReminders(ctx context.Context, userID, realmID uuid.UUID) ([]int, error) {
+	member, err := s.isGroupMemberInRealm(ctx, userID, realmID)
+	if err != nil {
+		return nil, err
+	}
+	if !member {
+		return nil, models.ErrPermissionDenied
+	}
+	return s.deadlineRemindersFor(ctx, userID)
+}
+
+// SaveDeadlineReminders сохраняет пороги напоминаний «скоро срок» пользователя. Гейт членства — как
+// в GetDeadlineReminders. Прочие поля настройки (мастер-переключатель, категории, группы) сохраняются.
+func (s *NotificationService) SaveDeadlineReminders(ctx context.Context, userID, realmID uuid.UUID, reminders []int) error {
+	member, err := s.isGroupMemberInRealm(ctx, userID, realmID)
+	if err != nil {
+		return err
+	}
+	if !member {
+		return models.ErrPermissionDenied
+	}
+
+	payload, err := s.parseSettings(ctx, userID)
+	if err != nil {
+		return err
+	}
+	payload.DeadlineReminders = sanitizeReminders(reminders)
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal notification settings: %w", err)
+	}
+	return s.repo.SaveSettings(ctx, nil, userID, raw)
+}
+
+// isGroupMemberInRealm возвращает true, если пользователь состоит хотя бы в одной группе реалма.
+func (s *NotificationService) isGroupMemberInRealm(ctx context.Context, userID, realmID uuid.UUID) (bool, error) {
+	groupIDs, err := s.groups.GetMemberGroups(ctx, userID, &realmID)
+	if err != nil {
+		return false, fmt.Errorf("failed to check group membership: %w", err)
+	}
+	return len(groupIDs) > 0, nil
+}
+
+// sanitizeReminders нормализует список порогов: отбрасывает неположительные и дубликаты,
+// сохраняя порядок. Пустой результат означает «напоминания отключены».
+func sanitizeReminders(reminders []int) []int {
+	seen := make(map[int]struct{}, len(reminders))
+	out := make([]int, 0, len(reminders))
+	for _, r := range reminders {
+		if r <= 0 {
+			continue
+		}
+		if _, ok := seen[r]; ok {
+			continue
+		}
+		seen[r] = struct{}{}
+		out = append(out, r)
+	}
+	return out
+}
+
 // GetSettings возвращает персональные настройки уведомлений пользователя.
 func (s *NotificationService) GetSettings(ctx context.Context, userID uuid.UUID) (*models.NotificationSettings, error) {
 	return s.repo.GetSettings(ctx, userID)
@@ -513,14 +652,9 @@ func (s *NotificationService) SaveSettings(ctx context.Context, userID uuid.UUID
 // GetSettingsPayload возвращает типизированные настройки уведомлений пользователя.
 // Пустые/отсутствующие настройки трактуются как значения по умолчанию.
 func (s *NotificationService) GetSettingsPayload(ctx context.Context, userID uuid.UUID) (*models.NotificationSettingsPayload, error) {
-	settings, err := s.repo.GetSettings(ctx, userID)
+	payload, err := s.parseSettings(ctx, userID)
 	if err != nil {
 		return nil, err
-	}
-	payload := models.DefaultNotificationSettings()
-	if len(settings.Settings) > 0 {
-		//nolint:errcheck // при битых данных остаются дефолты
-		json.Unmarshal(settings.Settings, payload)
 	}
 	if payload.Categories == nil {
 		payload.Categories = []models.CategoryNotificationSetting{}
@@ -532,18 +666,51 @@ func (s *NotificationService) GetSettingsPayload(ctx context.Context, userID uui
 }
 
 // SaveSettingsPayload сохраняет типизированные настройки уведомлений пользователя.
+// Поля подписок (мастер-переключатель, категории, группы) замещаются пришедшими значениями,
+// а существующие пороги напоминаний «скоро срок» сохраняются без изменений — страница
+// подписок ими не управляет.
 func (s *NotificationService) SaveSettingsPayload(ctx context.Context, userID uuid.UUID, settings *models.NotificationSettingsPayload) error {
+	prev, err := s.parseSettings(ctx, userID)
+	if err != nil {
+		return err
+	}
 	if settings.Categories == nil {
 		settings.Categories = []models.CategoryNotificationSetting{}
 	}
 	if settings.Groups == nil {
 		settings.Groups = []models.GroupNotificationSetting{}
 	}
+	settings.DeadlineReminders = prev.DeadlineReminders
 	raw, err := json.Marshal(settings)
 	if err != nil {
 		return fmt.Errorf("failed to marshal notification settings: %w", err)
 	}
 	return s.repo.SaveSettings(ctx, nil, userID, raw)
+}
+
+// parseSettings читает и типизирует персональные настройки уведомлений пользователя.
+// Пустые/отсутствующие настройки трактуются как значения по умолчанию.
+func (s *NotificationService) parseSettings(ctx context.Context, userID uuid.UUID) (*models.NotificationSettingsPayload, error) {
+	settings, err := s.repo.GetSettings(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	payload := models.DefaultNotificationSettings()
+	if len(settings.Settings) > 0 {
+		//nolint:errcheck // при битых данных остаются дефолты
+		json.Unmarshal(settings.Settings, payload)
+	}
+	return payload, nil
+}
+
+// deadlineRemindersFor возвращает пороги напоминаний «скоро срок» пользователя.
+// Пустой список означает, что напоминания отключены.
+func (s *NotificationService) deadlineRemindersFor(ctx context.Context, userID uuid.UUID) ([]int, error) {
+	payload, err := s.parseSettings(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return payload.DeadlineReminders, nil
 }
 
 // hasStatusChange возвращает true, если среди изменений тикета есть смена статуса.

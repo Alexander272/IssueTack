@@ -34,4 +34,5 @@ const (
 	NotificationTicketComment    NotificationType = "ticket.comment_added"
 	NotificationTicketAttachment NotificationType = "ticket.attachment_added"
 	NotificationTicketOverdue    NotificationType = "ticket.overdue"
+	NotificationDeadlineSoon     NotificationType = "ticket.deadline_soon"
 )

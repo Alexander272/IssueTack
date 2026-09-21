@@ -78,18 +78,33 @@ type GroupNotificationSetting struct {
 //     полностью отключены. Личные уведомления (назначение, менеджерство и т.п.) приходят всегда.
 //   - Categories — матрица «категория × событие» (новые задачи, статус, комментарий, просрочка).
 //   - Groups — настройки по группам (новые задачи, просрочка).
+//   - DeadlineReminders — пороги напоминаний «скоро срок» исполнителю (в минутах до дедлайна).
+//     Персональная настройка, не зависит от мастер-переключателя enabled (у исполнителей его нет).
 type NotificationSettingsPayload struct {
-	Enabled    bool                          `json:"enabled"`
-	Categories []CategoryNotificationSetting `json:"categories"`
-	Groups     []GroupNotificationSetting    `json:"groups"`
+	Enabled           bool                          `json:"enabled"`
+	Categories        []CategoryNotificationSetting `json:"categories"`
+	Groups            []GroupNotificationSetting    `json:"groups"`
+	DeadlineReminders []int                         `json:"deadlineReminders"`
 }
 
 // DefaultNotificationSettings возвращает настройки уведомлений по умолчанию (все подписки включены,
 // матрица пуста — пользователь ни на что не подписывается, пока не отметит категории/события).
 func DefaultNotificationSettings() *NotificationSettingsPayload {
 	return &NotificationSettingsPayload{
-		Enabled:    true,
-		Categories: []CategoryNotificationSetting{},
-		Groups:     []GroupNotificationSetting{},
+		Enabled:           true,
+		Categories:        []CategoryNotificationSetting{},
+		Groups:            []GroupNotificationSetting{},
+		DeadlineReminders: DefaultDeadlineReminders(),
 	}
+}
+
+// DefaultDeadlineReminders возвращает пороги напоминаний «скоро срок» по умолчанию:
+// за 2 дня (2880 мин), 1 день (1440 мин) и 6 часов (360 мин) до дедлайна.
+func DefaultDeadlineReminders() []int {
+	return []int{2880, 1440, 360}
+}
+
+// DeadlineRemindersDTO — тело запроса/ответа персональных порогов напоминаний «скоро срок».
+type DeadlineRemindersDTO struct {
+	Reminders []int `json:"reminders"`
 }

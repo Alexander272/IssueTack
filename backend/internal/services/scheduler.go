@@ -80,6 +80,18 @@ func (s *SchedulerService) Start(conf *config.TicketConfig) error {
 		logger.Info("overdue-notify scheduler started, schedule: " + conf.NotifyOverdueSchedule)
 	}
 
+	if conf.DeadlineSoonSchedule != "" {
+		_, err := s.cron.NewJob(
+			gocron.CronJob(conf.DeadlineSoonSchedule, false),
+			gocron.NewTask(s.notifyDeadlineSoonJob),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create deadline-soon job. error: %w", err)
+		}
+		registered = true
+		logger.Info("deadline-soon scheduler started, schedule: " + conf.DeadlineSoonSchedule)
+	}
+
 	if conf.FavoriteCleanupSchedule != "" {
 		_, err := s.cron.NewJob(
 			gocron.CronJob(conf.FavoriteCleanupSchedule, false),
@@ -139,6 +151,30 @@ func (s *SchedulerService) notifyOverdueJob(ctx context.Context) {
 	}
 	if len(ids) > 0 {
 		logger.Info(fmt.Sprintf("Found %d overdue tickets", len(ids)))
+	}
+}
+
+// notifyDeadlineSoonJob — фоновая задача cron: ищет активные тикеты с будущим сроком и
+// исполнителем и оповещает исполнителя о приближении срока (дедупликация по порогам —
+// в сервисе уведомлений).
+func (s *SchedulerService) notifyDeadlineSoonJob(ctx context.Context) {
+	ids, err := s.notifications.GetUpcomingDeadlineTicketIDs(ctx, time.Now())
+	if err != nil {
+		logger.Error("failed to get upcoming-deadline tickets:", logger.ErrAttr(err))
+		return
+	}
+	for _, id := range ids {
+		ticket, err := s.tickets.GetSummary(ctx, id)
+		if err != nil {
+			logger.Error("failed to load upcoming-deadline ticket", logger.StringAttr("ticket_id", id.String()), logger.ErrAttr(err))
+			continue
+		}
+		if err := s.notifications.NotifyDeadlineSoon(ctx, ticket); err != nil {
+			logger.Error("failed to notify deadline soon:", logger.StringAttr("ticket_id", id.String()), logger.ErrAttr(err))
+		}
+	}
+	if len(ids) > 0 {
+		logger.Info(fmt.Sprintf("Found %d upcoming-deadline tickets", len(ids)))
 	}
 }
 
