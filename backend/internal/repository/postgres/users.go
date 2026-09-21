@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
@@ -71,6 +72,7 @@ func (r *userRepo) LoadPolicy(ctx context.Context) ([]*models.UserRole, error) {
 
 func (r *userRepo) GetByID(ctx context.Context, id uuid.UUID) (*models.UserData, error) {
 	query := fmt.Sprintf(`SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.created_at,
+			u.mattermost_id,
 			u.is_active AS user_is_active,
 			u.is_system AS user_is_system,
 			u.internal_number AS internal_number,
@@ -111,6 +113,7 @@ func (r *userRepo) GetByID(ctx context.Context, id uuid.UUID) (*models.UserData,
 
 func (r *userRepo) GetByLogin(ctx context.Context, login string) (*models.UserData, error) {
 	query := fmt.Sprintf(`SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.created_at,
+			u.mattermost_id,
 			u.is_active AS user_is_active,
 			u.is_system AS user_is_system,
 			u.internal_number AS internal_number,
@@ -151,6 +154,7 @@ func (r *userRepo) GetByLogin(ctx context.Context, login string) (*models.UserDa
 
 func (r *userRepo) GetByMattermostID(ctx context.Context, mattermostID string) (*models.UserData, error) {
 	query := fmt.Sprintf(`SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.created_at,
+			u.mattermost_id,
 			u.is_active AS user_is_active,
 			u.is_system AS user_is_system,
 			u.internal_number AS internal_number,
@@ -191,6 +195,7 @@ func (r *userRepo) GetByMattermostID(ctx context.Context, mattermostID string) (
 
 func (r *userRepo) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.UserData, error) {
 	baseQuery := fmt.Sprintf(`SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.created_at,
+			u.mattermost_id,
 			u.is_active AS user_is_active,
 			u.is_system AS user_is_system,
 			u.internal_number AS internal_number,
@@ -250,6 +255,7 @@ func (r *userRepo) GetByMembership(ctx context.Context, realmID uuid.UUID, membe
 	}
 
 	query := fmt.Sprintf(`SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.created_at,
+			u.mattermost_id,
 			u.is_active AS user_is_active,
 			u.is_system AS user_is_system,
 			u.internal_number AS internal_number,
@@ -292,6 +298,7 @@ func scanUserRows(rows pgx.Rows) ([]*pq_models.User, error) {
 		item := &pq_models.User{}
 		if err := rows.Scan(
 			&item.Id, &item.Username, &item.Email, &item.FirstName, &item.LastName, &item.CreatedAt,
+			&item.MattermostID,
 			&item.UserIsActive, &item.UserIsSystem,
 			&item.InternalNumber,
 			&item.UserRealmId, &item.IsActive,
@@ -308,6 +315,16 @@ func scanUserRows(rows pgx.Rows) ([]*pq_models.User, error) {
 		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
 	}
 	return result, nil
+}
+
+// mapMattermostID превращает nullable-колонку mattermost_id в *string, нормализуя пустое
+// значение к nil (пустая строка и отсутствие значения считаются «нет привязки»).
+func mapMattermostID(id sql.NullString) *string {
+	if !id.Valid || id.String == "" {
+		return nil
+	}
+	value := id.String
+	return &value
 }
 
 func mapUsersData(rows []*pq_models.User) ([]*models.UserData, error) {
@@ -331,6 +348,7 @@ func mapUsersData(rows []*pq_models.User) ([]*models.UserData, error) {
 					IsSystem:       u.UserIsSystem.Bool,
 					InternalNumber: u.InternalNumber.String,
 					CreatedAt:      u.CreatedAt,
+					MattermostID:   mapMattermostID(u.MattermostID),
 					Realms:         []*models.UserRealm{},
 				})
 				userIndex[u.Id] = len(result) - 1
@@ -410,6 +428,7 @@ func mapUsersData(rows []*pq_models.User) ([]*models.UserData, error) {
 				IsSystem:       u.UserIsSystem.Bool,
 				InternalNumber: u.InternalNumber.String,
 				CreatedAt:      u.CreatedAt,
+				MattermostID:   mapMattermostID(u.MattermostID),
 				Realms:         []*models.UserRealm{userRealm},
 			})
 			userIndex[u.Id] = len(result) - 1

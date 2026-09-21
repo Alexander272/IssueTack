@@ -151,8 +151,15 @@ func (s *NotificationService) NotifyOverdue(ctx context.Context, ticket *models.
 		Body:  ticket.Title,
 		Data:  data,
 	}
-	persisted := s.persistForUsers(ctx, pending, dto)
-	s.deliver(ctx, ticket, persisted, dto)
+	delivered := s.deliver(ctx, ticket, pending, dto)
+	s.persistForUsers(ctx, delivered, dto)
+
+	logger.Info("overdue notification processed",
+		logger.StringAttr("ticket_id", ticket.ID.String()),
+		logger.StringAttr("title", ticket.Title),
+		logger.IntAttr("recipients", len(pending)),
+		logger.IntAttr("delivered", len(delivered)),
+	)
 
 	return nil
 }
@@ -234,8 +241,8 @@ func (s *NotificationService) TicketCreated(ctx context.Context, ticket *models.
 		Body:  ticket.Title,
 		Data:  data,
 	}
-	persisted := s.persistForUsers(ctx, recipientsToSlice(recipients), dto)
-	s.deliver(ctx, ticket, persisted, dto)
+	delivered := s.deliver(ctx, ticket, recipientsToSlice(recipients), dto)
+	s.persistForUsers(ctx, delivered, dto)
 
 	return nil
 }
@@ -331,8 +338,8 @@ func (s *NotificationService) TicketUpdated(ctx context.Context, ticket *models.
 		Body:  ticket.Title,
 		Data:  data,
 	}
-	persisted := s.persistForUsers(ctx, recipientsToSlice(recipients), dto)
-	s.deliver(ctx, ticket, persisted, dto)
+	delivered := s.deliver(ctx, ticket, recipientsToSlice(recipients), dto)
+	s.persistForUsers(ctx, delivered, dto)
 
 	return nil
 }
@@ -379,8 +386,8 @@ func (s *NotificationService) TicketDeleted(ctx context.Context, ticket *models.
 		Body:  ticket.Title,
 		Data:  data,
 	}
-	persisted := s.persistForUsers(ctx, recipientsToSlice(recipients), dto)
-	s.deliver(ctx, ticket, persisted, dto)
+	delivered := s.deliver(ctx, ticket, recipientsToSlice(recipients), dto)
+	s.persistForUsers(ctx, delivered, dto)
 
 	return nil
 }
@@ -436,8 +443,8 @@ func (s *NotificationService) TicketCommented(ctx context.Context, ticket *model
 		Body:  ticket.Title,
 		Data:  data,
 	}
-	persisted := s.persistForUsers(ctx, recipientsToSlice(recipients), dto)
-	s.deliver(ctx, ticket, persisted, dto)
+	delivered := s.deliver(ctx, ticket, recipientsToSlice(recipients), dto)
+	s.persistForUsers(ctx, delivered, dto)
 
 	return nil
 }
@@ -482,8 +489,8 @@ func (s *NotificationService) AttachmentAdded(ctx context.Context, ticket *model
 		Body:  ticket.Title,
 		Data:  data,
 	}
-	persisted := s.persistForUsers(ctx, recipientsToSlice(recipients), dto)
-	s.deliver(ctx, ticket, persisted, dto)
+	delivered := s.deliver(ctx, ticket, recipientsToSlice(recipients), dto)
+	s.persistForUsers(ctx, delivered, dto)
 
 	return nil
 }
@@ -649,36 +656,45 @@ func (s *NotificationService) persist(ctx context.Context, dto *models.CreateNot
 	})
 }
 
-// persistForUsers сохраняет уведомление каждому получателю и возвращает только тех, кому
-// строка реально создана в БД — по ним затем выполняется доставка по каналам (чтобы, например,
-// cron не спамил Mattermost каждым прогоном, если запись не удалась). Ошибки записи логируются.
-func (s *NotificationService) persistForUsers(ctx context.Context, userIDs []uuid.UUID, dto *models.CreateNotificationDTO) []uuid.UUID {
-	var persisted []uuid.UUID
+// persistForUsers сохраняет уведомление каждому доставленному получателю. Запись выполняется
+// только для тех, кого канал фактически обслужил (см. deliver) — это одновременно и фиксация
+// факта доставки, и дедупликация для повторных прогонов (overdue). Ошибки записи логируются.
+func (s *NotificationService) persistForUsers(ctx context.Context, userIDs []uuid.UUID, dto *models.CreateNotificationDTO) {
 	for _, userID := range userIDs {
 		dto.UserID = userID
 		if err := s.persist(ctx, dto); err != nil {
 			logger.Warn("failed to save notification", logger.StringAttr("user_id", userID.String()), logger.ErrAttr(err))
-			continue
 		}
-		persisted = append(persisted, userID)
 	}
-	return persisted
 }
 
-// deliver рассылает уже сохранённые уведомления по всем включённым каналам (best-effort).
-// Канал сам решает, может ли он доставить этому пользователю; ошибки лишь логируются.
-func (s *NotificationService) deliver(ctx context.Context, ticket *models.Ticket, userIDs []uuid.UUID, dto *models.CreateNotificationDTO) {
+// deliver рассылает уведомление по всем включённым каналам (best-effort) и возвращает
+// получателей, которым реально доставлено хотя бы одним каналом. Для необслуженных (нет
+// адреса/интеграции или сбой канала) строка в БД не создаётся — уведомление будет
+// повторно предложено на следующей попытке (для overdue — на следующем прогоне cron).
+// Ошибки каналов лишь логируются, пострадавшие получатели доставленными не считаются.
+func (s *NotificationService) deliver(ctx context.Context, ticket *models.Ticket, userIDs []uuid.UUID, dto *models.CreateNotificationDTO) []uuid.UUID {
+	deliveredByUser := make(map[uuid.UUID]struct{})
 	for _, ch := range s.channels {
 		for _, userID := range userIDs {
-			if err := ch.Notify(ctx, userID, dto, ticket); err != nil {
+			ok, err := ch.Notify(ctx, userID, dto, ticket)
+			switch {
+			case err != nil:
 				logger.Warn("failed to deliver notification",
 					logger.StringAttr("channel", ch.Name()),
+					logger.StringAttr("ticket_id", ticket.ID.String()),
 					logger.StringAttr("user_id", userID.String()),
 					logger.ErrAttr(err),
 				)
+			case ok:
+				deliveredByUser[userID] = struct{}{}
 			}
 		}
 	}
+	if len(deliveredByUser) == 0 {
+		return nil
+	}
+	return recipientsToSlice(deliveredByUser)
 }
 
 // recipientsToSlice превращает множество получателей в слайс.

@@ -138,7 +138,7 @@ func (s *SchedulerService) notifyOverdueJob(ctx context.Context) {
 		}
 	}
 	if len(ids) > 0 {
-		logger.Info(fmt.Sprintf("Notified overdue for %d tickets", len(ids)))
+		logger.Info(fmt.Sprintf("Found %d overdue tickets", len(ids)))
 	}
 }
 

@@ -37,8 +37,9 @@ func TestMattermostNotifier_NoRealm_NoSend(t *testing.T) {
 	ticket := &models.Ticket{ID: uuid.New(), Title: "Без реалма"}
 	dto := &models.CreateNotificationDTO{Type: string(models.NotificationTicketCreated), Title: "Новая задача", Body: "Без реалма"}
 
-	err := svc.Notify(context.Background(), uuid.New(), dto, ticket)
+	delivered, err := svc.Notify(context.Background(), uuid.New(), dto, ticket)
 	assert.NoError(t, err)
+	assert.False(t, delivered)
 	mockSender.AssertNotCalled(t, "Send", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
@@ -49,8 +50,9 @@ func TestMattermostNotifier_InactiveRealm_NoSend(t *testing.T) {
 	realmID := *ticket.RealmID
 	mockMMRepo.On("GetByRealm", mock.Anything, realmID).Return(&models.RealmMattermost{RealmID: realmID, IsActive: false}, nil)
 
-	err := svc.Notify(context.Background(), uuid.New(), &models.CreateNotificationDTO{}, ticket)
+	delivered, err := svc.Notify(context.Background(), uuid.New(), &models.CreateNotificationDTO{}, ticket)
 	assert.NoError(t, err)
+	assert.False(t, delivered)
 	mockSender.AssertNotCalled(t, "Send", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
@@ -63,8 +65,9 @@ func TestMattermostNotifier_NoMattermostUser_NoSend(t *testing.T) {
 	mockMMRepo.On("GetByRealm", mock.Anything, realmID).Return(&models.RealmMattermost{RealmID: realmID, BotToken: "bt", BotUserID: "bb", IsActive: true}, nil)
 	mockUsers.On("GetByID", mock.Anything, userID).Return(&models.UserData{ID: userID, MattermostID: nil}, nil)
 
-	err := svc.Notify(context.Background(), userID, &models.CreateNotificationDTO{}, ticket)
+	delivered, err := svc.Notify(context.Background(), userID, &models.CreateNotificationDTO{}, ticket)
 	assert.NoError(t, err)
+	assert.False(t, delivered)
 	mockSender.AssertNotCalled(t, "Send", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
@@ -88,8 +91,9 @@ func TestMattermostNotifier_SendsCreatedDM(t *testing.T) {
 			assert.Contains(t, msg, "http://localhost:9000/tasks/"+ticket.ID.String())
 	})).Return(nil).Once()
 
-	err := svc.Notify(context.Background(), userID, dto, ticket)
+	delivered, err := svc.Notify(context.Background(), userID, dto, ticket)
 	assert.NoError(t, err)
+	assert.True(t, delivered)
 	mockSender.AssertExpectations(t)
 }
 
@@ -126,8 +130,9 @@ func TestMattermostNotifier_SendsUpdatedDMWithChanges(t *testing.T) {
 			assert.Contains(t, msg, "• priority_changed: — → high")
 	})).Return(nil).Once()
 
-	err = svc.Notify(context.Background(), userID, dto, ticket)
+	delivered, err := svc.Notify(context.Background(), userID, dto, ticket)
 	assert.NoError(t, err)
+	assert.True(t, delivered)
 	mockSender.AssertExpectations(t)
 }
 
@@ -143,8 +148,9 @@ func TestMattermostNotifier_SendError_Returned(t *testing.T) {
 	mockUsers.On("GetByID", mock.Anything, userID).Return(&models.UserData{ID: userID, MattermostID: &mmID}, nil)
 	mockSender.On("Send", "bt", "bb", mmID, mock.Anything).Return(assert.AnError).Once()
 
-	err := svc.Notify(context.Background(), userID, &models.CreateNotificationDTO{}, ticket)
+	delivered, err := svc.Notify(context.Background(), userID, &models.CreateNotificationDTO{}, ticket)
 	assert.Error(t, err)
+	assert.False(t, delivered)
 	mockSender.AssertExpectations(t)
 }
 

@@ -37,13 +37,14 @@ func (n *mattermostNotifier) Name() string { return "mattermost" }
 
 // Notify отправляет DM пользователю, если интеграция активна и у пользователя есть
 // mattermost_id. Пропуски (нет реалма/интеграции/адреса) — штатные условия, ошибками
-// не считаются. Сбой самой отправки возвращается как ошибка.
-func (n *mattermostNotifier) Notify(ctx context.Context, userID uuid.UUID, notif *models.CreateNotificationDTO, ticket *models.Ticket) error {
+// не считаются, но сообщаются как delivered=false (получатель не сохраняется в БД и
+// будет обслужен при следующей попытке). Сбой самой отправки возвращается как ошибка.
+func (n *mattermostNotifier) Notify(ctx context.Context, userID uuid.UUID, notif *models.CreateNotificationDTO, ticket *models.Ticket) (bool, error) {
 	if n.mmRepo == nil || n.users == nil || n.sender == nil {
-		return nil
+		return false, nil
 	}
 	if ticket == nil || ticket.RealmID == nil {
-		return nil
+		return false, nil
 	}
 
 	settings, err := n.mmRepo.GetByRealm(ctx, *ticket.RealmID)
@@ -52,10 +53,14 @@ func (n *mattermostNotifier) Notify(ctx context.Context, userID uuid.UUID, notif
 			logger.StringAttr("ticket_id", ticket.ID.String()),
 			logger.ErrAttr(err),
 		)
-		return nil
+		return false, nil
 	}
 	if !settings.IsActive || settings.BotToken == "" {
-		return nil
+		logger.Info("mattermost notification skipped: integration is not active",
+			logger.StringAttr("ticket_id", ticket.ID.String()),
+			logger.StringAttr("user_id", userID.String()),
+		)
+		return false, nil
 	}
 
 	user, err := n.users.GetByID(ctx, userID)
@@ -64,16 +69,26 @@ func (n *mattermostNotifier) Notify(ctx context.Context, userID uuid.UUID, notif
 			logger.StringAttr("user_id", userID.String()),
 			logger.ErrAttr(err),
 		)
-		return nil
+		return false, nil
 	}
 	if user.MattermostID == nil || *user.MattermostID == "" {
-		return nil
+		logger.Info("mattermost notification skipped: user has no mattermost_id",
+			logger.StringAttr("ticket_id", ticket.ID.String()),
+			logger.StringAttr("user_id", userID.String()),
+			logger.StringAttr("username", user.Username),
+		)
+		return false, nil
 	}
 
 	if err := n.sender.Send(settings.BotToken, settings.BotUserID, *user.MattermostID, n.format(ticket, notif)); err != nil {
-		return fmt.Errorf("failed to send mattermost notification: %w", err)
+		return false, fmt.Errorf("failed to send mattermost notification: %w", err)
 	}
-	return nil
+	logger.Info("mattermost notification sent",
+		logger.StringAttr("ticket_id", ticket.ID.String()),
+		logger.StringAttr("user_id", userID.String()),
+		logger.StringAttr("username", user.Username),
+	)
+	return true, nil
 }
 
 // format собирает текст DM для конкретного события. Чтобы поправить сообщение

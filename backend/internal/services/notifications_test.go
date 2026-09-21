@@ -37,10 +37,10 @@ func notificationServiceFixtures() (*MockNotificationsRepo, *MockNotifier, *Noti
 	return mockRepo, mockNotifier, svc
 }
 
-func expectPersistAndDeliver(mockRepo *MockNotificationsRepo, mockNotifier *MockNotifier, userIDs ...uuid.UUID) {
+func expectDeliverAndPersist(mockRepo *MockNotificationsRepo, mockNotifier *MockNotifier, userIDs ...uuid.UUID) {
 	for _, userID := range userIDs {
+		mockNotifier.On("Notify", mock.Anything, userID, mock.Anything, mock.Anything).Return(true, nil).Once()
 		mockRepo.On("Create", mock.Anything, nil, mock.Anything).Return(nil).Once()
-		mockNotifier.On("Notify", mock.Anything, userID, mock.Anything, mock.Anything).Return(nil).Once()
 	}
 }
 
@@ -59,7 +59,7 @@ func TestNotificationService_TicketCreated_Success(t *testing.T) {
 	}
 
 	mockRepo.On("GetResponsibleByCategory", mock.Anything, categoryID).Return([]uuid.UUID{}, nil)
-	expectPersistAndDeliver(mockRepo, mockNotifier, managerID)
+	expectDeliverAndPersist(mockRepo, mockNotifier, managerID)
 
 	err := svc.TicketCreated(context.Background(), ticket, uuid.New())
 	assert.NoError(t, err)
@@ -105,7 +105,7 @@ func TestNotificationService_TicketCreated_WithResponsible(t *testing.T) {
 	}
 
 	mockRepo.On("GetResponsibleByCategory", mock.Anything, categoryID).Return([]uuid.UUID{respID}, nil)
-	expectPersistAndDeliver(mockRepo, mockNotifier, managerID, respID)
+	expectDeliverAndPersist(mockRepo, mockNotifier, managerID, respID)
 
 	err := svc.TicketCreated(context.Background(), ticket, uuid.New())
 	assert.NoError(t, err)
@@ -126,10 +126,46 @@ func TestNotificationService_TicketCreated_NotifiesWithType(t *testing.T) {
 	mockRepo.On("Create", mock.Anything, nil, mock.MatchedBy(func(dto *models.CreateNotificationDTO) bool {
 		return dto.Type == string(models.NotificationTicketCreated) && dto.Title == "Новая задача"
 	})).Return(nil).Once()
-	mockNotifier.On("Notify", mock.Anything, managerID, mock.Anything, mock.Anything).Return(nil).Once()
+	mockNotifier.On("Notify", mock.Anything, managerID, mock.Anything, mock.Anything).Return(true, nil).Once()
 
 	err := svc.TicketCreated(context.Background(), ticket, uuid.New())
 	assert.NoError(t, err)
+}
+
+func TestNotificationService_TicketCreated_NotDelivered_NotPersisted(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	managerID := uuid.New()
+	ticket := &models.Ticket{
+		ID:      uuid.New(),
+		Title:   "Test Ticket",
+		Manager: &models.UserShort{ID: managerID},
+	}
+
+	mockNotifier.On("Notify", mock.Anything, managerID, mock.Anything, mock.Anything).Return(false, nil).Once()
+
+	err := svc.TicketCreated(context.Background(), ticket, uuid.New())
+	assert.NoError(t, err)
+	mockRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
+	mockNotifier.AssertExpectations(t)
+}
+
+func TestNotificationService_TicketCreated_ChannelError_NotPersisted(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	managerID := uuid.New()
+	ticket := &models.Ticket{
+		ID:      uuid.New(),
+		Title:   "Test Ticket",
+		Manager: &models.UserShort{ID: managerID},
+	}
+
+	mockNotifier.On("Notify", mock.Anything, managerID, mock.Anything, mock.Anything).Return(false, assert.AnError).Once()
+
+	err := svc.TicketCreated(context.Background(), ticket, uuid.New())
+	assert.NoError(t, err)
+	mockRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
+	mockNotifier.AssertExpectations(t)
 }
 
 func TestNotificationService_TicketUpdated_Success(t *testing.T) {
@@ -149,7 +185,7 @@ func TestNotificationService_TicketUpdated_Success(t *testing.T) {
 		{Tag: "title", OldVal: "Old", NewVal: "New"},
 	}
 
-	expectPersistAndDeliver(mockRepo, mockNotifier, managerID)
+	expectDeliverAndPersist(mockRepo, mockNotifier, managerID)
 
 	err := svc.TicketUpdated(context.Background(), ticket, actorID, changes)
 	assert.NoError(t, err)
@@ -198,7 +234,7 @@ func TestNotificationService_TicketUpdated_ActionAssigned_SelfAssign(t *testing.
 	}
 
 	mockRepo.On("GetResponsibleByCategory", mock.Anything, categoryID).Return([]uuid.UUID{respID}, nil)
-	expectPersistAndDeliver(mockRepo, mockNotifier, respID)
+	expectDeliverAndPersist(mockRepo, mockNotifier, respID)
 
 	err := svc.TicketUpdated(context.Background(), ticket, actorID, changes)
 	assert.NoError(t, err)
@@ -223,7 +259,7 @@ func TestNotificationService_TicketUpdated_ActionAssigned_Other(t *testing.T) {
 		{Tag: models.ActionAssigned, OldVal: "", NewVal: newAssigneeID.String()},
 	}
 
-	expectPersistAndDeliver(mockRepo, mockNotifier, newAssigneeID)
+	expectDeliverAndPersist(mockRepo, mockNotifier, newAssigneeID)
 
 	err := svc.TicketUpdated(context.Background(), ticket, actorID, changes)
 	assert.NoError(t, err)
@@ -265,7 +301,7 @@ func TestNotificationService_TicketUpdated_StatusChange_AssigneeNotified(t *test
 		{Tag: models.ActionStatusChanged, OldVal: "open", NewVal: "in_progress"},
 	}
 
-	expectPersistAndDeliver(mockRepo, mockNotifier, assigneeID)
+	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID)
 
 	err := svc.TicketUpdated(context.Background(), ticket, uuid.New(), changes)
 	assert.NoError(t, err)
@@ -307,7 +343,7 @@ func TestNotificationService_TicketDeleted_Success(t *testing.T) {
 	}
 
 	mockRepo.On("GetResponsibleByCategory", mock.Anything, categoryID).Return([]uuid.UUID{}, nil)
-	expectPersistAndDeliver(mockRepo, mockNotifier, managerID)
+	expectDeliverAndPersist(mockRepo, mockNotifier, managerID)
 
 	err := svc.TicketDeleted(context.Background(), ticket)
 	assert.NoError(t, err)
@@ -327,7 +363,7 @@ func TestNotificationService_TicketDeleted_NoManager(t *testing.T) {
 	}
 
 	mockRepo.On("GetResponsibleByCategory", mock.Anything, categoryID).Return([]uuid.UUID{respID}, nil)
-	expectPersistAndDeliver(mockRepo, mockNotifier, respID)
+	expectDeliverAndPersist(mockRepo, mockNotifier, respID)
 
 	err := svc.TicketDeleted(context.Background(), ticket)
 	assert.NoError(t, err)
@@ -347,7 +383,7 @@ func TestNotificationService_TicketCommented_NotifiesAssignee(t *testing.T) {
 		Category: &models.CategoryShort{ID: uuid.New()},
 	}
 
-	expectPersistAndDeliver(mockRepo, mockNotifier, assigneeID)
+	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID)
 
 	err := svc.TicketCommented(context.Background(), ticket, actorID)
 	assert.NoError(t, err)
@@ -384,7 +420,7 @@ func TestNotificationService_AttachmentAdded_NotifiesAssignee(t *testing.T) {
 		Category: &models.CategoryShort{ID: uuid.New()},
 	}
 
-	expectPersistAndDeliver(mockRepo, mockNotifier, assigneeID)
+	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID)
 
 	err := svc.AttachmentAdded(context.Background(), ticket, actorID)
 	assert.NoError(t, err)
@@ -408,7 +444,7 @@ func TestNotificationService_NotifyOverdue_NotifiesAssigneeAndManager(t *testing
 	}
 
 	mockRepo.On("HasNotification", mock.Anything, mock.Anything, ticket.ID, string(models.NotificationTicketOverdue)).Return(false, nil).Twice()
-	expectPersistAndDeliver(mockRepo, mockNotifier, assigneeID, managerID)
+	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID, managerID)
 
 	err := svc.NotifyOverdue(context.Background(), ticket)
 	assert.NoError(t, err)
@@ -432,4 +468,29 @@ func TestNotificationService_NotifyOverdue_NoDuplicate(t *testing.T) {
 	assert.NoError(t, err)
 	mockRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
 	mockNotifier.AssertNotCalled(t, "Notify", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestNotificationService_NotifyOverdue_PartialDeliver_PersistsOnlyDelivered(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	assigneeID := uuid.New()
+	managerID := uuid.New()
+	ticket := &models.Ticket{
+		ID:       uuid.New(),
+		Title:    "Overdue Ticket",
+		Assignee: &models.UserShort{ID: assigneeID},
+		Manager:  &models.UserShort{ID: managerID},
+	}
+
+	mockRepo.On("HasNotification", mock.Anything, mock.Anything, ticket.ID, string(models.NotificationTicketOverdue)).Return(false, nil).Twice()
+	mockNotifier.On("Notify", mock.Anything, assigneeID, mock.Anything, mock.Anything).Return(true, nil).Once()
+	mockNotifier.On("Notify", mock.Anything, managerID, mock.Anything, mock.Anything).Return(false, nil).Once()
+	mockRepo.On("Create", mock.Anything, nil, mock.MatchedBy(func(dto *models.CreateNotificationDTO) bool {
+		return dto.UserID == assigneeID
+	})).Return(nil).Once()
+
+	err := svc.NotifyOverdue(context.Background(), ticket)
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
 }

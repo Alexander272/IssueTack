@@ -1041,9 +1041,9 @@ func (m *MockNotifier) Name() string {
 	return args.String(0)
 }
 
-func (m *MockNotifier) Notify(ctx context.Context, userID uuid.UUID, n *models.CreateNotificationDTO, ticket *models.Ticket) error {
+func (m *MockNotifier) Notify(ctx context.Context, userID uuid.UUID, n *models.CreateNotificationDTO, ticket *models.Ticket) (bool, error) {
 	args := m.Called(ctx, userID, n, ticket)
-	return args.Error(0)
+	return args.Bool(0), args.Error(1)
 }
 
 func (m *MockNotificationsRepo) Create(ctx context.Context, tx postgres.Tx, dto *models.CreateNotificationDTO) error {
