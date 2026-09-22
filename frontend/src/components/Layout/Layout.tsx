@@ -6,7 +6,7 @@ import { useAppSelector } from '@/hooks/redux'
 import { getCurrentCapabilities, getIsManager } from '@/features/user/userSlice'
 import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
 import { Fallback } from '@/components/Fallback/Fallback'
-import { LayoutHeader } from './LayoutHeader'
+import { MobileHeader } from './MobileHeader'
 import { Sidebar } from './Sidebar'
 import { sidebarRules } from './sidebarConf'
 import { AppRoutes } from '@/pages/router/routes'
@@ -41,12 +41,14 @@ export const Layout = () => {
 			}
 		: undefined
 
+	const isAuth = location.pathname === AppRoutes.Auth
+
 	return (
 		<Box sx={{ minHeight: '100vh', height: '100vh', display: 'flex', flexDirection: 'column', pb: 4 }}>
-			<LayoutHeader onMenuClick={() => setMobileOpen(v => !v)} />
+			{!isAuth && <MobileHeader onMenuClick={() => setMobileOpen(v => !v)} />}
 
 			<Stack direction='row' sx={{ flexGrow: 1, overflow: 'hidden' }}>
-				{filteredConfig && (
+				{filteredConfig && !isAuth && (
 					<Sidebar
 						config={filteredConfig}
 						mobileOpen={mobileOpen}

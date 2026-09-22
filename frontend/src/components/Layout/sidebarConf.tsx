@@ -21,6 +21,7 @@ export interface SidebarItem {
 	path: string
 	label: string
 	icon: ReactNode
+	divider?: boolean
 }
 
 export interface SidebarConfig {
@@ -36,13 +37,19 @@ const homeItems: SidebarItem[] = [
 	{ path: AppRoutes.Home, label: 'Заявки', icon: <SendIcon sx={{ fontSize: 20 }} /> },
 	{ path: AppRoutes.Tasks, label: 'Задачи', icon: <InboxIcon sx={{ fontSize: 18 }} /> },
 	{ path: AppRoutes.Favorites, label: 'Избранное', icon: <StarIcon sx={{ fontSize: 18 }} /> },
-	{ path: AppRoutes.Groups, label: 'Группы', icon: <UsersIcon sx={{ fontSize: 18 }} /> },
+	{
+		path: AppRoutes.Groups,
+		label: 'Группы',
+		icon: <UsersIcon sx={{ fontSize: 18 }} />,
+		divider: true,
+	},
 	{ path: AppRoutes.Categories, label: 'Категории', icon: <LayersIcon sx={{ fontSize: 18 }} /> },
 	{ path: AppRoutes.Sites, label: 'Площадки', icon: <BuildingIcon sx={{ fontSize: 18 }} /> },
 	{
 		path: AppRoutes.NotificationSettings,
 		label: 'Уведомления',
 		icon: <BellIcon sx={{ fontSize: 18 }} />,
+		divider: true,
 	},
 ]
 
@@ -52,7 +59,7 @@ const accessesItems: SidebarItem[] = [
 		label: 'Главная',
 		icon: <ChevronsRightIcon sx={{ fontSize: 18, transform: 'rotate(180deg)' }} />,
 	},
-	{ path: AppRoutes.Accesses, label: 'Дашборд', icon: <LayoutDashboardIcon sx={{ fontSize: 18 }} /> },
+	{ path: AppRoutes.Accesses, label: 'Дашборд', icon: <LayoutDashboardIcon sx={{ fontSize: 18 }} />, divider: true },
 	{
 		path: AppRoutes.Realms,
 		label: 'Области',
@@ -79,7 +86,7 @@ export const sidebarRules: SidebarRule[] = [
 				AppRoutes.NotificationSettings,
 				'/history',
 				'/favorites',
-			].includes(path),
+			].includes(path) || path.startsWith(`${AppRoutes.Tasks}/`),
 		config: { items: homeItems },
 	},
 	{

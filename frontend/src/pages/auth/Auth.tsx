@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Box, useTheme } from '@mui/material'
 import { useLocation, useNavigate } from 'react-router'
+import Logo from '@/assets/logo.webp'
 
 import { useAppSelector } from '@/hooks/redux'
 import { getToken } from '@/features/user/userSlice'
@@ -35,6 +36,20 @@ export default function Auth() {
 					flexGrow: 1,
 				}}
 			>
+				<Box
+					sx={{
+						height: 70,
+						overflow: 'hidden',
+						display: 'flex',
+						alignItems: 'center',
+						justifyContent: 'center',
+						mb: 6,
+						mt: -8,
+						img: { height: '100%', width: 'auto' },
+					}}
+				>
+					<img src={Logo} alt='logo' />
+				</Box>
 				<Box
 					sx={{
 						mx: 3,

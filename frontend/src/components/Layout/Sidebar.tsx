@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, Fragment, type ReactNode } from 'react'
 import {
 	Box,
+	Divider,
 	Drawer,
 	List,
 	ListItem,
@@ -8,15 +9,21 @@ import {
 	ListItemIcon,
 	ListItemText,
 	Toolbar,
+	Tooltip,
 	useMediaQuery,
 	useTheme,
 } from '@mui/material'
-import { useLocation, useNavigate } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
+import { ArrowLeftIcon, LogOutIcon, ShieldIcon } from 'lucide-mui'
 
+import Logo from '@/assets/logo.webp'
+import LogoMini from '@/assets/logo192.webp'
 import type { SidebarConfig } from './sidebarConf'
-import { ArrowLeftIcon } from 'lucide-mui'
-import { LogOutIcon } from 'lucide-mui'
+import { AppRoutes } from '@/pages/router/routes'
+import { PermRules } from '@/features/access/constants/permissions'
+import { useCan } from '@/features/access/utils/can'
 import { useSignOutMutation } from '@/features/auth/authApiSlice'
+import { ActiveRealm } from '@/features/realms/components/ActiveRealm'
 
 const COLLAPSED_WIDTH = 60
 const EXPANDED_WIDTH = 240
@@ -43,15 +50,145 @@ export const Sidebar = ({ config, mobileOpen, onMobileClose }: SidebarProps) => 
 		})
 	}
 
+	const compact = isMobile ? false : collapsed
+
 	const { items } = config
 	const location = useLocation()
 	const navigate = useNavigate()
 	const [signOut] = useSignOutMutation()
+	const canEditSettings = useCan(PermRules.Users.Write)
+	const inAccesses = location.pathname.startsWith(AppRoutes.Accesses)
 
 	const handleSwitch = (path: string) => {
 		navigate(path)
 		if (isMobile) onMobileClose()
 	}
+
+	const renderRealm = () => (
+		<Box
+			sx={{
+				px: compact ? 1 : 2,
+				py: 0.5,
+				display: 'flex',
+				justifyContent: compact ? 'center' : 'flex-start',
+			}}
+		>
+			<ActiveRealm collapsed={compact} />
+		</Box>
+	)
+
+	const renderButton = ({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) => {
+		const button = (
+			<ListItemButton
+				onClick={onClick}
+				sx={{
+					borderRadius: '8px',
+					justifyContent: compact ? 'center' : 'flex-start',
+					px: compact ? 1 : 2,
+				}}
+			>
+				<ListItemIcon sx={{ minWidth: compact ? 0 : 40 }}>{icon}</ListItemIcon>
+				{!compact && <ListItemText primary={label} sx={{ fontSize: '14px', fontWeight: 500 }} />}
+			</ListItemButton>
+		)
+		if (!compact) return button
+		return (
+			<Tooltip title={label} placement='right'>
+				{button}
+			</Tooltip>
+		)
+	}
+
+	const collapseBlock = (
+		<Box sx={{ borderTop: '1px solid rgba(0, 0, 0, 0.12)', py: 1 }}>
+			{renderButton({
+				icon: (
+					<ArrowLeftIcon
+						sx={{
+							fontSize: 16,
+							transform: compact ? 'rotate(180deg)' : 'none',
+							transition: 'transform 0.3s ease',
+						}}
+					/>
+				),
+				label: compact ? 'Развернуть' : 'Свернуть',
+				onClick: handleToggle,
+			})}
+		</Box>
+	)
+
+	const renderNavList = () => (
+		<List sx={{ flexGrow: 1 }}>
+			{items.map(item => (
+				<Fragment key={item.path}>
+					{item.divider && <Divider component='li' sx={{ my: 1 }} />}
+					<ListItem disablePadding sx={{ mb: 0.5 }}>
+						{compact ? (
+							<Tooltip title={item.label} placement='right'>
+								<ListItemButton
+									selected={location.pathname === item.path}
+									onClick={() => handleSwitch(item.path)}
+									sx={{
+										borderRadius: '8px',
+										justifyContent: 'center',
+										px: 1,
+										'&.Mui-selected': {
+											backgroundColor: 'rgba(25, 118, 210, 0.08)',
+											color: 'primary.main',
+											svg: { color: theme => theme.palette.primary.main },
+											'& .MuiListItemIcon-root': {
+												color: 'primary.main',
+											},
+										},
+									}}
+								>
+									<ListItemIcon sx={{ minWidth: 0 }}>{item.icon}</ListItemIcon>
+								</ListItemButton>
+							</Tooltip>
+						) : (
+							<ListItemButton
+								selected={location.pathname === item.path}
+								onClick={() => handleSwitch(item.path)}
+								sx={{
+									borderRadius: '8px',
+									justifyContent: 'flex-start',
+									px: 2,
+									'&.Mui-selected': {
+										backgroundColor: 'rgba(25, 118, 210, 0.08)',
+										color: 'primary.main',
+										svg: { color: theme => theme.palette.primary.main },
+										'& .MuiListItemIcon-root': {
+											color: 'primary.main',
+										},
+									},
+								}}
+							>
+								<ListItemIcon sx={{ minWidth: 40 }}>{item.icon}</ListItemIcon>
+								<ListItemText primary={item.label} sx={{ fontSize: '14px', fontWeight: 500 }} />
+							</ListItemButton>
+						)}
+					</ListItem>
+				</Fragment>
+			))}
+
+			{canEditSettings && !inAccesses && (
+				<ListItem key='access-settings' disablePadding sx={{ mb: 0.5 }}>
+					{renderButton({
+						icon: <ShieldIcon sx={{ fontSize: 20 }} />,
+						label: 'Доступ',
+						onClick: () => navigate(AppRoutes.Accesses),
+					})}
+				</ListItem>
+			)}
+			<ListItem key='log-out' disablePadding sx={{ mb: 0.5 }}>
+				{renderButton({
+					icon: <LogOutIcon sx={{ fontSize: 20 }} />,
+					label: 'Выйти',
+					onClick: () => signOut(null),
+				})}
+			</ListItem>
+		</List>
+	)
 
 	if (isMobile) {
 		return (
@@ -71,43 +208,8 @@ export const Sidebar = ({ config, mobileOpen, onMobileClose }: SidebarProps) => 
 				}}
 			>
 				<Toolbar />
-				<Box sx={{ overflow: 'auto', flexGrow: 1 }}>
-					<List sx={{ flexGrow: 1 }}>
-						{items.map(item => (
-							<ListItem key={item.path} disablePadding sx={{ mb: 0.5 }}>
-								<ListItemButton
-									selected={location.pathname === item.path}
-									onClick={() => handleSwitch(item.path)}
-									sx={{
-										borderRadius: '8px',
-										px: 2,
-										'&.Mui-selected': {
-											backgroundColor: 'rgba(25, 118, 210, 0.08)',
-											color: 'primary.main',
-											svg: { color: theme => theme.palette.primary.main },
-											'& .MuiListItemIcon-root': {
-												color: 'primary.main',
-												// svg: { color: 'primary.main' },
-											},
-										},
-									}}
-								>
-									<ListItemIcon sx={{ minWidth: 40 }}>{item.icon}</ListItemIcon>
-									<ListItemText primary={item.label} sx={{ fontSize: '14px', fontWeight: 500 }} />
-								</ListItemButton>
-							</ListItem>
-						))}
-					</List>
-				</Box>
-
-				<Box sx={{ borderTop: '1px solid rgba(0, 0, 0, 0.12)', py: 1 }}>
-					<ListItemButton onClick={() => signOut(null)} sx={{ borderRadius: '8px', px: 2 }}>
-						<ListItemIcon sx={{ minWidth: 40 }}>
-							<LogOutIcon sx={{ fontSize: 20 }} />
-						</ListItemIcon>
-						<ListItemText primary='Выйти' sx={{ fontSize: '14px', fontWeight: 500 }} />
-					</ListItemButton>
-				</Box>
+				{renderRealm()}
+				<Box sx={{ overflow: 'auto', flexGrow: 1 }}>{renderNavList()}</Box>
 			</Drawer>
 		)
 	}
@@ -134,59 +236,29 @@ export const Sidebar = ({ config, mobileOpen, onMobileClose }: SidebarProps) => 
 				},
 			}}
 		>
-			<Toolbar />
-			<Box sx={{ overflow: 'auto', flexGrow: 1 }}>
-				<List sx={{ flexGrow: 1 }}>
-					{items.map(item => (
-						<ListItem key={item.path} disablePadding sx={{ mb: 0.5 }}>
-							<ListItemButton
-								selected={location.pathname === item.path}
-								onClick={() => handleSwitch(item.path)}
-								sx={{
-									borderRadius: '8px',
-									justifyContent: collapsed ? 'center' : 'flex-start',
-									px: collapsed ? 1 : 2,
-									'&.Mui-selected': {
-										backgroundColor: 'rgba(25, 118, 210, 0.08)',
-										color: 'primary.main',
-										svg: { color: theme => theme.palette.primary.main },
-										'& .MuiListItemIcon-root': {
-											color: 'primary.main',
-											// svg: { color: 'primary.main' },
-										},
-									},
-								}}
-							>
-								<ListItemIcon sx={{ minWidth: collapsed ? 0 : 40 }}>{item.icon}</ListItemIcon>
-								{!collapsed && (
-									<ListItemText primary={item.label} sx={{ fontSize: '14px', fontWeight: 500 }} />
-								)}
-							</ListItemButton>
-						</ListItem>
-					))}
-				</List>
+			<Box
+				component={Link}
+				to='/'
+				aria-label='home page'
+				sx={{
+					display: 'flex',
+					alignItems: 'center',
+					justifyContent: 'center',
+					overflow: 'hidden',
+					p: collapsed ? 0.5 : 1.5,
+					pt: collapsed ? 1 : 1.5,
+					img: { maxWidth: '100%' },
+				}}
+			>
+				<img
+					src={collapsed ? LogoMini : Logo}
+					alt='logo'
+					style={{ maxHeight: collapsed ? 32 : 44, width: 'auto' }}
+				/>
 			</Box>
-			<Box sx={{ borderTop: '1px solid rgba(0, 0, 0, 0.12)', py: 1 }}>
-				<ListItemButton
-					onClick={handleToggle}
-					sx={{
-						borderRadius: '8px',
-						justifyContent: collapsed ? 'center' : 'flex-start',
-						px: collapsed ? 1 : 2,
-					}}
-				>
-					<ListItemIcon sx={{ minWidth: collapsed ? 0 : 40 }}>
-						<ArrowLeftIcon
-							sx={{
-								fontSize: 16,
-								transform: collapsed ? 'rotate(180deg)' : 'none',
-								transition: 'transform 0.3s ease',
-							}}
-						/>
-					</ListItemIcon>
-					{!collapsed && <ListItemText primary='Свернуть' sx={{ fontSize: '14px', fontWeight: 500 }} />}
-				</ListItemButton>
-			</Box>
+			{renderRealm()}
+			<Box sx={{ overflow: 'auto', flexGrow: 1 }}>{renderNavList()}</Box>
+			{collapseBlock}
 		</Drawer>
 	)
 }

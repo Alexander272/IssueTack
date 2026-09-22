@@ -1,16 +1,20 @@
 import { type FC, useEffect } from 'react'
-import { MenuItem, Select, type SelectChangeEvent, type SxProps, type Theme, useTheme } from '@mui/material'
+import { MenuItem, Select, Tooltip, type SelectChangeEvent, type SxProps, type Theme, useTheme } from '@mui/material'
+import { LayoutGridIcon } from 'lucide-mui'
 
 import { useAppDispatch, useAppSelector } from '@/hooks/redux'
 import { getUserRealms, setRole } from '@/features/user/userSlice'
 // import { setPage } from '@/features/table/tableSlice'
 import { getRealm, setRealm } from '../realmSlice'
 
+const NoSelectIcon = () => null
+
 type Props = {
 	sx?: SxProps<Theme>
+	collapsed?: boolean
 }
 
-export const ActiveRealm: FC<Props> = ({ sx }) => {
+export const ActiveRealm: FC<Props> = ({ sx, collapsed = false }) => {
 	const { palette } = useTheme()
 
 	const realm = useAppSelector(getRealm)
@@ -35,11 +39,13 @@ export const ActiveRealm: FC<Props> = ({ sx }) => {
 	}
 
 	if ((realms?.length || 0) < 2) return null
-	return (
+
+	const select = (
 		<Select
 			value={realm?.id || ''}
 			onChange={changeHandler}
-			// disabled={isFetching}
+			renderValue={collapsed ? () => <LayoutGridIcon sx={{ fontSize: 20, display: 'flex' }} /> : undefined}
+			IconComponent={collapsed ? NoSelectIcon : undefined}
 			sx={{
 				color: palette.primary.main,
 				fontSize: '1.2rem',
@@ -51,7 +57,11 @@ export const ActiveRealm: FC<Props> = ({ sx }) => {
 				'&.MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
 					border: 0,
 				},
-				'.MuiOutlinedInput-input': { padding: '6.5px 10px' },
+				'.MuiOutlinedInput-input': {
+					padding: collapsed ? '6.5px 8px' : '6.5px 10px',
+					display: 'flex',
+				},
+				...collapsed && { width: 44 },
 				...sx,
 			}}
 		>
@@ -64,5 +74,13 @@ export const ActiveRealm: FC<Props> = ({ sx }) => {
 				</MenuItem>
 			))}
 		</Select>
+	)
+
+	return collapsed ? (
+		<Tooltip title={realm?.name || 'Выберите область'} placement='right'>
+			{select}
+		</Tooltip>
+	) : (
+		select
 	)
 }
