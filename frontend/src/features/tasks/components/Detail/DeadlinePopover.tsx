@@ -145,7 +145,7 @@ export const DeadlinePopover: FC<Props> = ({ onSetDueDate }) => {
 
 					<Stack spacing={0.5} sx={{ mb: 2 }}>
 						<Typography variant='caption' sx={{ color: 'text.secondary' }}>
-							Срок выполнения
+							Другая дата
 						</Typography>
 						<DatePicker
 							value={customDate}

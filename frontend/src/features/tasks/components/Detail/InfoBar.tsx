@@ -6,6 +6,8 @@ import type { ITask, TicketStatus } from '../../types/task'
 import { STATUS_MAP } from '../../constants/taskMaps'
 import { useAppSelector } from '@/hooks/redux'
 import { getUserId } from '@/features/user/userSlice'
+import { useUpdateTaskMutation, useTakeTaskMutation } from '../../tasksApiSlice'
+import { useCreateCommentMutation } from '../../modules/comments/commentsApiSlice'
 import { TaskStatusBadge } from '../TaskStatusBadge'
 import { TaskPriorityBadge } from '../TaskPriorityBadge'
 import { StatusChangeDialog } from './StatusChangeDialog'
@@ -16,14 +18,14 @@ const COMMENT_REQUIRED_STATUSES: TicketStatus[] = ['on_hold', 'pending']
 
 interface Props {
 	task: ITask
-	onStatusChange: (taskId: string, status: TicketStatus, comment?: string) => void
-	onTake: () => void
-	onSetDueDate?: (iso: string) => void
 }
 
-export const InfoBar = ({ task, onStatusChange, onTake, onSetDueDate }: Props) => {
+export const InfoBar = ({ task }: Props) => {
 	const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
 	const [pendingStatus, setPendingStatus] = useState<TicketStatus | null>(null)
+	const [updateTask] = useUpdateTaskMutation()
+	const [takeTask] = useTakeTaskMutation()
+	const [createComment] = useCreateCommentMutation()
 	const currentUserId = useAppSelector(getUserId)
 	const isOwner = currentUserId != null && currentUserId === task.owner?.id
 	// Закрытая/отменённая заявка терминальна — меню «Изменить статус» не показываем.
@@ -35,6 +37,17 @@ export const InfoBar = ({ task, onStatusChange, onTake, onSetDueDate }: Props) =
 	const canReturn = isOwner && task.status === 'resolved'
 	const canCancel = isOwner && ACTIVE_STATUSES.includes(task.status)
 
+	const handleStatusChange = async (status: TicketStatus, comment?: string) => {
+		try {
+			await updateTask({ id: task.id, status })
+			if (comment) {
+				await createComment({ ticketId: task.id, text: comment, isInternal: false, type: 'status_change' })
+			}
+		} catch {
+			// handled by toast in apiSlice
+		}
+	}
+
 	const changeStatus = (status: TicketStatus) => {
 		setAnchorEl(null)
 		// Комментарий при переходе в «В работе» требуется только при возврате из «Решена»,
@@ -44,14 +57,30 @@ export const InfoBar = ({ task, onStatusChange, onTake, onSetDueDate }: Props) =
 		if (requiresComment) {
 			setPendingStatus(status)
 		} else {
-			onStatusChange(task.id, status)
+			handleStatusChange(status)
 		}
 	}
 
 	const handleDialogSubmit = (comment: string) => {
 		if (pendingStatus) {
-			onStatusChange(task.id, pendingStatus, comment)
+			handleStatusChange(pendingStatus, comment)
 			setPendingStatus(null)
+		}
+	}
+
+	const handleTake = async () => {
+		try {
+			await takeTask(task.id)
+		} catch {
+			// handled by toast in apiSlice
+		}
+	}
+
+	const handleSetDueDate = async (iso: string) => {
+		try {
+			await updateTask({ id: task.id, dueDate: iso })
+		} catch {
+			// handled by toast in apiSlice
 		}
 	}
 
@@ -114,8 +143,8 @@ export const InfoBar = ({ task, onStatusChange, onTake, onSetDueDate }: Props) =
 			</Box>
 
 			<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
-				{(task.access?.isManager || task.access?.isAdmin) && !isTerminal && !task.dueDate && onSetDueDate && (
-					<DeadlinePopover onSetDueDate={onSetDueDate} />
+				{(task.access?.isManager || task.access?.isAdmin) && !isTerminal && !task.dueDate && (
+					<DeadlinePopover onSetDueDate={handleSetDueDate} />
 				)}
 
 				{canCancel && (
@@ -155,7 +184,7 @@ export const InfoBar = ({ task, onStatusChange, onTake, onSetDueDate }: Props) =
 				{canTake && (
 					<Button
 						variant='outlined'
-						onClick={onTake}
+						onClick={handleTake}
 						startIcon={<Hand sx={{ fontSize: 16 }} />}
 						sx={{ textTransform: 'none', boxShadow: 'none', '&:hover': { boxShadow: 'none' } }}
 					>

@@ -2,10 +2,7 @@ import { useState } from 'react'
 import { Box, Grid } from '@mui/material'
 import { useParams } from 'react-router'
 
-import type { TicketStatus } from '../types/task'
-import { useGetTaskByIdQuery, useUpdateTaskMutation, useTakeTaskMutation } from '../tasksApiSlice'
-import { useUpdateSubtaskMutation } from '../modules/subtasks/subtasksApiSlice'
-import { useCreateCommentMutation } from '../modules/comments/commentsApiSlice'
+import { useGetTaskByIdQuery } from '../tasksApiSlice'
 import { BoxFallback } from '@/components/Fallback/BoxFallback'
 import { useAppSelector } from '@/hooks/redux'
 import { getIsManager } from '@/features/user/userSlice'
@@ -25,10 +22,6 @@ import DetailNotFound from './TaskDetailEmpty'
 export const TaskDetailPage = () => {
 	const { id } = useParams<{ id: string }>()
 	const { data, isLoading } = useGetTaskByIdQuery(id!)
-	const [updateTask] = useUpdateTaskMutation()
-	const [takeTask] = useTakeTaskMutation()
-	const [updateSubtask] = useUpdateSubtaskMutation()
-	const [createComment] = useCreateCommentMutation()
 	const [editOpen, setEditOpen] = useState(false)
 	const [transferOpen, setTransferOpen] = useState(false)
 	const isManager = useAppSelector(getIsManager)
@@ -42,41 +35,6 @@ export const TaskDetailPage = () => {
 	const isInactive = task.status === 'resolved' || task.status === 'closed' || task.status === 'cancelled'
 	const canEdit = !isInactive && task.access?.canEditFields
 	const canUploadAttachments = !isInactive && task.access?.canWork
-
-	const handleStatusChange = async (taskId: string, status: TicketStatus, comment?: string) => {
-		try {
-			await updateTask({ id: taskId, status })
-			if (comment) {
-				await createComment({ ticketId: taskId, text: comment, isInternal: false, type: 'status_change' })
-			}
-		} catch {
-			// handled by toast in apiSlice
-		}
-	}
-
-	const handleTake = async () => {
-		try {
-			await takeTask(task.id)
-		} catch {
-			// handled by toast in apiSlice
-		}
-	}
-
-	const handleSetDueDate = async (iso: string) => {
-		try {
-			await updateTask({ id: task.id, dueDate: iso })
-		} catch {
-			// handled by toast in apiSlice
-		}
-	}
-
-	const handleSubtaskStatusChange = async (taskId: string, subtaskId: string, status: TicketStatus) => {
-		try {
-			await updateSubtask({ ticketId: taskId, id: subtaskId, status })
-		} catch {
-			// handled by toast in apiSlice
-		}
-	}
 
 	return (
 		<>
@@ -97,7 +55,7 @@ export const TaskDetailPage = () => {
 							onTransfer={() => setTransferOpen(true)}
 						/>
 
-						<InfoBar task={task} onStatusChange={handleStatusChange} onTake={handleTake} onSetDueDate={handleSetDueDate} />
+						<InfoBar task={task} />
 					</Box>
 
 					<Grid container spacing={2} sx={{ mt: 2 }}>
@@ -110,7 +68,6 @@ export const TaskDetailPage = () => {
 								subtasks={task.subtasks}
 								taskId={task.id}
 								canWork={task.access?.canWork}
-								onSubtaskStatusChange={handleSubtaskStatusChange}
 							/>
 							<Attachments
 								attachments={task.attachments}

@@ -2,10 +2,10 @@ import { Box, FormControl, MenuItem, Select, Typography } from '@mui/material'
 import { CheckCircle, Clock, Circle, ListCheck } from 'lucide-mui'
 
 import type { ISubtask, TicketStatus } from '../../types/task'
+import { useUpdateSubtaskMutation } from '../../modules/subtasks/subtasksApiSlice'
 
 interface Props {
 	subtasks: ISubtask[] | undefined
-	onSubtaskStatusChange: (taskId: string, subtaskId: string, status: TicketStatus) => void
 	taskId: string
 	canWork?: boolean
 }
@@ -16,12 +16,21 @@ const SUBTASK_STATUS_OPTIONS: { value: TicketStatus; label: string }[] = [
 	{ value: 'closed', label: 'Выполнена' },
 ]
 
-export const Subtasks = ({ subtasks, onSubtaskStatusChange, taskId, canWork = true }: Props) => {
+export const Subtasks = ({ subtasks, taskId, canWork = true }: Props) => {
+	const [updateSubtask] = useUpdateSubtaskMutation()
 	const done = subtasks ? subtasks.filter(s => s.status === 'closed' || s.status === 'resolved').length : 0
 	const total = subtasks?.length ?? 0
 	const progress = total > 0 ? Math.round((done / total) * 100) : 0
 
 	if (!subtasks || subtasks.length === 0) return null
+
+	const handleStatusChange = async (subtaskId: string, status: TicketStatus) => {
+		try {
+			await updateSubtask({ ticketId: taskId, id: subtaskId, status })
+		} catch {
+			// handled by toast in apiSlice
+		}
+	}
 
 	return (
 		<Box sx={{ bgcolor: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
@@ -86,7 +95,7 @@ export const Subtasks = ({ subtasks, onSubtaskStatusChange, taskId, canWork = tr
 							<Select
 								value={sub.status}
 								disabled={!canWork}
-								onChange={e => onSubtaskStatusChange(taskId, sub.id, e.target.value as TicketStatus)}
+								onChange={e => handleStatusChange(sub.id, e.target.value as TicketStatus)}
 								sx={{
 									borderRadius: '999px',
 									fontSize: '0.75rem',
