@@ -30,11 +30,6 @@
 
 - [x] **Напоминания о приближении срока (deadline_soon)** (бэкенд + фронтенд). Тип `ticket.deadline_soon` (`models/subscription.go`). Пороги хранятся **глобально на пользователя** (ключ `deadlineReminders` в `user_notification_settings.settings`, без миграций), дефолт `[2880,1440,360]` (`models.DefaultDeadlineReminders`). Бэкенд: `repo.GetUpcomingDeadlineTicketIDs` (due_date в будущем, не closed, есть assignee, активный статус), `repo.HasDeadlineReminder` (дедуп по `ticket_id`+`remind_before`), `NotificationService.NotifyDeadlineSoon` (только исполнителю, deliver→persist), `Get/SaveDeadlineReminders` (гейт «участник группы реалма» → `ErrPermissionDenied`), `parseSettings`/`sanitizeReminders`, merge в `Get/SaveSettingsPayload` (страница менеджеров не затирает пороги; пустой список = отключено). Джоб `notifyDeadlineSoonJob` + конфиг `tickets.deadline_soon_schedule` (`@hourly`). Handler `GET/PUT /notifications/deadline-reminders` (`{reminders:[...]}`). Формат DM: «Скоро срок №N: title» + строка «Дедлайн: …»; для всех «Задача …» типов — «Задача №N просрочена/обновлена/удалена: …» + дедлайн у просрочки. Фронтенд: `deadlineRemindersApiSlice.ts` (тэг `DeadlineReminders`), вкладка «Сроки» на странице `/settings/notifications` (`DeadlineRemindersTab` + карточки `RemindersCard`/`HowItWorks`, чипы-пороги с иконками и цветом, сортировка 14д → 30м, меню добавления только из неиспользованных пресетов, удаление крестиком). Страница уведомлений объединена табами: «Подписки» (только менеджерам) и «Сроки» (только участникам групп), активная вкладка — внутренний state, без query; гард `RoleRoute managerOrMember`, пункт меню один «Уведомления» (скрыт, если пользователь не менеджер и не участник). Общие кнопки сохранения — `components/SettingsActions.tsx`.
 
-## Незакоммичено (сейчас в git status)
-
-- Избранные заявки (см. «Сделано (текущая сессия)»).
-- Напоминания о приближении срока (`deadline_soon`): бэкенд + фронтенд + формат DM. Живая проверка DM **не выполнена** — см. чек-лист ниже.
-
 ### Ручная проверка deadline_soon (не выполнена)
 
 - [ ] Тост/доставка: временно поставить `tickets.deadline_soon_schedule: '@every 1m'`, создать заявку с будущим `due_date` (в пределах дефолтных порогов) и назначить исполнителя с `mattermost_id` → дождаться DM «Скоро срок №N: …\nДедлайн: …\nОткрыть: …»; вернуть `@hourly`.

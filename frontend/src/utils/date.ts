@@ -54,7 +54,7 @@ export const getSmartDate = (date: string) => {
 	// 	return target.fromNow()
 	// }
 
-	const fullFormat = 'dddd, DD MMM YYYY HH:mm'
+	const fullFormat = 'dd, DD MMM YYYY HH:mm'
 
 	// Для сегодня, вчера и совсем старых дат — календарный формат
 	return target.calendar(null, {

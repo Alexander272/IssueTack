@@ -158,7 +158,7 @@ export const AdvancedSettingsSection = ({ number = 3, autoAssign = true, isAdmin
 							render={({ field }) => (
 								<DatePicker
 									value={field.value ? dayjs(field.value) : null}
-									onChange={date => field.onChange(date ? date.toISOString() : null)}
+									onChange={date => field.onChange(date ? date.endOf('day').toISOString() : null)}
 									slots={{
 										textField: DateTextField,
 									}}

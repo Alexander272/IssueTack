@@ -9,6 +9,7 @@ import { getUserId } from '@/features/user/userSlice'
 import { TaskStatusBadge } from '../TaskStatusBadge'
 import { TaskPriorityBadge } from '../TaskPriorityBadge'
 import { StatusChangeDialog } from './StatusChangeDialog'
+import { DeadlinePopover } from './DeadlinePopover'
 
 const ACTIVE_STATUSES: TicketStatus[] = ['open', 'in_progress', 'pending', 'on_hold']
 const COMMENT_REQUIRED_STATUSES: TicketStatus[] = ['on_hold', 'pending']
@@ -17,9 +18,10 @@ interface Props {
 	task: ITask
 	onStatusChange: (taskId: string, status: TicketStatus, comment?: string) => void
 	onTake: () => void
+	onSetDueDate?: (iso: string) => void
 }
 
-export const InfoBar = ({ task, onStatusChange, onTake }: Props) => {
+export const InfoBar = ({ task, onStatusChange, onTake, onSetDueDate }: Props) => {
 	const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
 	const [pendingStatus, setPendingStatus] = useState<TicketStatus | null>(null)
 	const currentUserId = useAppSelector(getUserId)
@@ -112,6 +114,10 @@ export const InfoBar = ({ task, onStatusChange, onTake }: Props) => {
 			</Box>
 
 			<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
+				{(task.access?.isManager || task.access?.isAdmin) && !isTerminal && !task.dueDate && onSetDueDate && (
+					<DeadlinePopover onSetDueDate={onSetDueDate} />
+				)}
+
 				{canCancel && (
 					<Button
 						variant='outlined'

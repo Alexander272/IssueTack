@@ -62,6 +62,14 @@ export const TaskDetailPage = () => {
 		}
 	}
 
+	const handleSetDueDate = async (iso: string) => {
+		try {
+			await updateTask({ id: task.id, dueDate: iso })
+		} catch {
+			// handled by toast in apiSlice
+		}
+	}
+
 	const handleSubtaskStatusChange = async (taskId: string, subtaskId: string, status: TicketStatus) => {
 		try {
 			await updateSubtask({ ticketId: taskId, id: subtaskId, status })
@@ -83,13 +91,17 @@ export const TaskDetailPage = () => {
 							border: '1px solid #e5e7eb',
 						}}
 					>
-						<Header task={task} onEdit={canEdit ? () => setEditOpen(true) : undefined} onTransfer={() => setTransferOpen(true)} />
+						<Header
+							task={task}
+							onEdit={canEdit ? () => setEditOpen(true) : undefined}
+							onTransfer={() => setTransferOpen(true)}
+						/>
 
-						<InfoBar task={task} onStatusChange={handleStatusChange} onTake={handleTake} />
+						<InfoBar task={task} onStatusChange={handleStatusChange} onTake={handleTake} onSetDueDate={handleSetDueDate} />
 					</Box>
 
-					<Grid container spacing={3} sx={{ mt: 2 }}>
-						<Grid size={{ xs: 12, lg: 8 }} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+					<Grid container spacing={2} sx={{ mt: 2 }}>
+						<Grid size={{ xs: 12, lg: 9 }} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
 							<Description
 								description={task.description}
 								onEdit={canEdit ? () => setEditOpen(true) : undefined}
@@ -108,7 +120,7 @@ export const TaskDetailPage = () => {
 							<Comments taskId={task.id} isInactive={isInactive} />
 						</Grid>
 
-						<Grid size={{ xs: 12, lg: 4 }} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+						<Grid size={{ xs: 12, lg: 3 }} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
 							<Participants task={task} />
 							<Meta task={task} />
 							{isManager && <Notifications taskId={task.id} />}

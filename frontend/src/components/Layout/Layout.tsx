@@ -11,11 +11,7 @@ import { Sidebar } from './Sidebar'
 import { sidebarRules } from './sidebarConf'
 import { AppRoutes } from '@/pages/router/routes'
 
-const managerOnlyRoutes = new Set([
-	AppRoutes.Groups,
-	AppRoutes.Categories,
-	AppRoutes.Sites,
-])
+const managerOnlyRoutes = new Set([AppRoutes.Groups, AppRoutes.Categories, AppRoutes.Sites])
 
 // Право на доступ к админскому разделу: наличие любого из write-пермишенов администрирования.
 const adminPermissions = ['user:write', 'role:write', 'realm:write', 'permission:write']
@@ -44,7 +40,7 @@ export const Layout = () => {
 	const isAuth = location.pathname === AppRoutes.Auth
 
 	return (
-		<Box sx={{ minHeight: '100vh', height: '100vh', display: 'flex', flexDirection: 'column', pb: 4 }}>
+		<Box sx={{ minHeight: '100vh', height: '100vh', display: 'flex', flexDirection: 'column', pb: 2 }}>
 			{!isAuth && <MobileHeader onMenuClick={() => setMobileOpen(v => !v)} />}
 
 			<Stack direction='row' sx={{ flexGrow: 1, overflow: 'hidden' }}>
