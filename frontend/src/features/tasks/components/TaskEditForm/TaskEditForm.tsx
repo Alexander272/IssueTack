@@ -5,7 +5,7 @@ import { toast } from 'react-toastify'
 import type { ITask, ITaskDTO } from '../../types/task'
 import type { FormValues } from './types'
 import { useAppSelector } from '@/hooks/redux'
-import { getIsManager } from '@/features/user/userSlice'
+import { getIsManager, getCurrentCapabilities } from '@/features/user/userSlice'
 import { useUpdateTaskMutation } from '../../tasksApiSlice'
 import { AdvancedSettingsSection } from '../TaskCreateForm/AdvancedSettingsSection'
 import { SectionCard } from '../TaskCreateForm/SectionCard'
@@ -70,6 +70,7 @@ const EditDescriptionSection = () => {
 
 export const TaskEditForm = ({ task, onSuccess, onCancel, embedded }: Props) => {
 	const isManager = useAppSelector(getIsManager)
+	const capabilities = useAppSelector(getCurrentCapabilities)
 
 	const [updateTask, { isLoading }] = useUpdateTaskMutation()
 
@@ -137,6 +138,7 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded }: Props) => 
 								autoAssign={false}
 								isAdmin={task.access?.isAdmin ?? false}
 								isManager={task.access?.isManager ?? false}
+								canEditDueDate={Boolean(task.access?.isManager) || capabilities.isRealmAdmin}
 							/>
 						)}
 

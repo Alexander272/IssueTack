@@ -27,16 +27,14 @@ func NewHandler(service services.Subtasks) *Handler {
 func Register(api *gin.RouterGroup, service services.Subtasks, middleware *middleware.Middleware) {
 	handlers := NewHandler(service)
 
+	// Роуты гейтятся только чтением тикета; решения о создании/изменении/удалении
+	// подзадач принимает сервис (CheckWorkAccess / CheckAccess), а не Casbin-роль.
 	subtasks := api.Group("/tickets/:id/subtasks", middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Read()))
 	{
 		subtasks.GET("", handlers.getByTicket)
-
-		subtasks.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Write()))
 		subtasks.POST("", handlers.create)
-		subtasks.PUT("/:id", handlers.update)
-
-		subtasks.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Delete()))
-		subtasks.DELETE("/:id", handlers.delete)
+		subtasks.PUT("/:subId", handlers.update)
+		subtasks.DELETE("/:subId", handlers.delete)
 	}
 }
 
@@ -94,7 +92,7 @@ func (h *Handler) create(c *gin.Context) {
 }
 
 func (h *Handler) update(c *gin.Context) {
-	strId := c.Param("id")
+	strId := c.Param("subId")
 	id, err := uuid.Parse(strId)
 	if err != nil {
 		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
@@ -107,7 +105,7 @@ func (h *Handler) update(c *gin.Context) {
 		return
 	}
 	if id != dto.ID {
-		response.SendError(c, fmt.Errorf("%w: %s", models.ErrInvalidInput, "id is not equal to dto.ID"))
+		response.SendError(c, fmt.Errorf("%w: path id %q is not equal to dto.ID %q", models.ErrInvalidInput, id, dto.ID))
 		return
 	}
 	dto.ID = id
@@ -128,7 +126,7 @@ func (h *Handler) update(c *gin.Context) {
 }
 
 func (h *Handler) delete(c *gin.Context) {
-	strId := c.Param("id")
+	strId := c.Param("subId")
 	id, err := uuid.Parse(strId)
 	if err != nil {
 		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))

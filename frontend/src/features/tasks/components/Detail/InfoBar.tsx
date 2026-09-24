@@ -5,7 +5,7 @@ import { useState } from 'react'
 import type { ITask, TicketStatus } from '../../types/task'
 import { STATUS_MAP } from '../../constants/taskMaps'
 import { useAppSelector } from '@/hooks/redux'
-import { getUserId } from '@/features/user/userSlice'
+import { getUserId, getCurrentCapabilities } from '@/features/user/userSlice'
 import { useUpdateTaskMutation, useTakeTaskMutation } from '../../tasksApiSlice'
 import { useCreateCommentMutation } from '../../modules/comments/commentsApiSlice'
 import { TaskStatusBadge } from '../TaskStatusBadge'
@@ -27,10 +27,18 @@ export const InfoBar = ({ task }: Props) => {
 	const [takeTask] = useTakeTaskMutation()
 	const [createComment] = useCreateCommentMutation()
 	const currentUserId = useAppSelector(getUserId)
+	const capabilities = useAppSelector(getCurrentCapabilities)
 	const isOwner = currentUserId != null && currentUserId === task.owner?.id
+	// Меню «Изменить статус» доступно только автору, исполнителю, менеджеру группы
+	// или админу реалма. Права Casbin write/canWork сами по себе его не открывают.
+	const isCreator = currentUserId != null && currentUserId === task.creator?.id
+	const isAssignee = currentUserId != null && currentUserId === task.assignee?.id
+	const isManager = Boolean(task.access?.isManager) || capabilities.isRealmAdmin
+	const isStatusManager = isCreator || isAssignee || isManager
 	// Закрытая/отменённая заявка терминальна — меню «Изменить статус» не показываем.
 	const isTerminal = task.status === 'closed' || task.status === 'cancelled'
-	const canUseMenu = !isTerminal && (task.access?.canWrite || task.access?.canWork)
+	const isActive = ACTIVE_STATUSES.includes(task.status)
+	const canUseMenu = !isTerminal && isStatusManager
 	const canTake = Boolean(task.access?.canTake)
 	const allowedStatuses = task.access?.allowedStatuses
 	const canAccept = isOwner && task.status === 'resolved'
@@ -143,7 +151,7 @@ export const InfoBar = ({ task }: Props) => {
 			</Box>
 
 			<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
-				{(task.access?.isManager || task.access?.isAdmin) && !isTerminal && !task.dueDate && (
+				{(task.access?.isManager || capabilities.isRealmAdmin) && isActive && !task.dueDate && (
 					<DeadlinePopover onSetDueDate={handleSetDueDate} />
 				)}
 

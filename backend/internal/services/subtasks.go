@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
@@ -106,13 +107,18 @@ func (s *SubtaskService) GetUnresolvedCount(ctx context.Context, ticketID uuid.U
 	return count, nil
 }
 
-// Create создаёт подзадачу с проверкой work-доступа и записью в журнал активности.
+// Create создаёт подзадачу с проверкой права создания (CanCreateSubtask: создатель/
+// исполнитель тикета или «управление» тикетом) и записью в журнал активности.
 func (s *SubtaskService) Create(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO, realm string) error {
 	if s.ticketAccess == nil {
 		return models.ErrPermissionDenied
 	}
-	if err := s.ticketAccess.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: dto.TicketID, UserID: dto.Actor.ID, Realm: realm}); err != nil {
-		return err
+	canCreate, err := s.ticketAccess.CanCreateSubtask(ctx, dto.Actor.ID, dto.TicketID, realm)
+	if err != nil {
+		return fmt.Errorf("failed to check subtask create access: %w", err)
+	}
+	if !canCreate {
+		return models.ErrPermissionDenied
 	}
 	if err := s.repo.Create(ctx, tx, dto); err != nil {
 		return fmt.Errorf("failed to create subtask: %w", err)
@@ -137,14 +143,18 @@ func (s *SubtaskService) Create(ctx context.Context, tx postgres.Tx, dto *models
 	return nil
 }
 
-// CreateSeveral создаёт несколько подзадач с проверкой work-доступа и записью в журнал активности.
+// CreateSeveral создаёт несколько подзадач с проверкой права создания и записью в журнал активности.
 func (s *SubtaskService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.SubtaskDTO, realm string) error {
 	if s.ticketAccess == nil {
 		return models.ErrPermissionDenied
 	}
 	if len(dto) > 0 {
-		if err := s.ticketAccess.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: dto[0].TicketID, UserID: dto[0].Actor.ID, Realm: realm}); err != nil {
-			return err
+		canCreate, err := s.ticketAccess.CanCreateSubtask(ctx, dto[0].Actor.ID, dto[0].TicketID, realm)
+		if err != nil {
+			return fmt.Errorf("failed to check subtask create access: %w", err)
+		}
+		if !canCreate {
+			return models.ErrPermissionDenied
 		}
 	}
 	if err := s.repo.CreateSeveral(ctx, tx, dto); err != nil {
@@ -174,7 +184,11 @@ func (s *SubtaskService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto 
 	return nil
 }
 
-// Update обновляет подзадачу с проверкой work-доступа и фиксацией изменений в журнале активности.
+// Update обновляет подзадачу. Требует:
+//   - work-доступ к тикету (CheckWorkAccess) для любых изменений;
+//   - права на правку содержимого (CanEditSubtask: автор подзадачи или менеджер группы /
+//     realm supervisor) для всех полей, кроме status. Смену статуса может выполнить любой
+//     обладатель work-доступа.
 func (s *SubtaskService) Update(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO, realm string) error {
 	old, err := s.repo.GetByID(ctx, &models.GetSubtaskDTO{ID: dto.ID})
 	if err != nil {
@@ -185,6 +199,38 @@ func (s *SubtaskService) Update(ctx context.Context, tx postgres.Tx, dto *models
 	}
 	if err := s.ticketAccess.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: old.TicketID, UserID: dto.Actor.ID, Realm: realm}); err != nil {
 		return err
+	}
+
+	for _, f := range []string{"title", "description", "priority", "assigneeId", "dueDate", "sortOrder"} {
+		if !dto.HasField(f) {
+			continue
+		}
+		canEdit, err := s.ticketAccess.CanEditSubtask(ctx, dto.Actor.ID, old)
+		if err != nil {
+			return fmt.Errorf("failed to check subtask edit access: %w", err)
+		}
+		if !canEdit {
+			return models.ErrPermissionDenied
+		}
+		break
+	}
+
+	// Проставление closed_at по аналогии с тикетами: завершающие статусы
+	// (resolved/closed) фиксируют время, возврат в активный статус сбрасывает его.
+	if dto.HasField("status") && dto.Status != old.Status {
+		now := time.Now()
+		switch dto.Status {
+		case models.StatusResolved, models.StatusClosed:
+			if old.ClosedAt == nil {
+				dto.ClosedAt = &now
+				dto.MarkProvided("closedAt")
+			}
+		default:
+			if old.ClosedAt != nil {
+				dto.ClosedAt = nil
+				dto.MarkProvided("closedAt")
+			}
+		}
 	}
 
 	changes := dto.GetChanges(old)
@@ -224,7 +270,9 @@ func (s *SubtaskService) Update(ctx context.Context, tx postgres.Tx, dto *models
 	return nil
 }
 
-// Delete удаляет подзадачу с проверкой work-доступа и записью в журнал активности.
+// Delete удаляет подзадачу. Требует «рабочего» доступа (CheckWorkAccess — блокирует
+// замороженные заявки) и права на удаление из агрегата тикета: менеджер группы
+// (по атрибутам) или обладатель Casbin ticket:delete.
 func (s *SubtaskService) Delete(ctx context.Context, tx postgres.Tx, dto *models.DelSubtaskDTO, realm string) error {
 	old, err := s.repo.GetByID(ctx, &models.GetSubtaskDTO{ID: dto.ID})
 	if err != nil {
@@ -234,6 +282,9 @@ func (s *SubtaskService) Delete(ctx context.Context, tx postgres.Tx, dto *models
 		return models.ErrPermissionDenied
 	}
 	if err := s.ticketAccess.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: old.TicketID, UserID: dto.Actor.ID, Realm: realm}); err != nil {
+		return err
+	}
+	if err := s.ticketAccess.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: old.TicketID, UserID: dto.Actor.ID, Action: string(access.Delete), Realm: realm}); err != nil {
 		return err
 	}
 

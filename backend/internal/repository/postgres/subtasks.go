@@ -34,7 +34,7 @@ type Subtasks interface {
 
 func (r *SubtaskRepo) GetByTicketID(ctx context.Context, ticketID uuid.UUID) ([]*models.Subtask, error) {
 	query := fmt.Sprintf(`SELECT 
-			s.id, s.ticket_id, s.title, s.description, s.status, s.priority, s.due_date, s.closed_at, s.sort_order, s.created_at, s.updated_at,
+			s.id, s.ticket_id, s.title, s.description, s.status, s.priority, s.due_date, s.closed_at, s.sort_order, s.created_by, s.created_at, s.updated_at,
 			u.id, u.username, u.first_name, u.last_name, u.internal_number
 		FROM %s s
 		LEFT JOIN %s u ON s.assignee_id = u.id
@@ -58,7 +58,7 @@ func (r *SubtaskRepo) GetByTicketID(ctx context.Context, ticketID uuid.UUID) ([]
 		if err := rows.Scan(
 			&item.ID, &item.TicketID, &item.Title, &item.Description,
 			&item.Status, &item.Priority, &item.DueDate, &item.ClosedAt,
-			&item.SortOrder, &item.CreatedAt, &item.UpdatedAt,
+			&item.SortOrder, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt,
 			&assigneeID, &assigneeUsername, &assigneeFirstName, &assigneeLastName, &assigneeInternalNumber,
 		); err != nil {
 			return nil, MapError(fmt.Errorf("scan row error: %w", err))
@@ -79,7 +79,7 @@ func (r *SubtaskRepo) GetByTicketID(ctx context.Context, ticketID uuid.UUID) ([]
 
 func (r *SubtaskRepo) GetByID(ctx context.Context, req *models.GetSubtaskDTO) (*models.Subtask, error) {
 	query := fmt.Sprintf(`SELECT 
-			s.id, s.ticket_id, s.title, s.description, s.status, s.priority, s.due_date, s.closed_at, s.sort_order, 
+			s.id, s.ticket_id, s.title, s.description, s.status, s.priority, s.due_date, s.closed_at, s.sort_order, s.created_by,
 			s.created_at, s.updated_at,
 			u.id, u.username, u.first_name, u.last_name, u.internal_number
 		FROM %s s
@@ -95,7 +95,7 @@ func (r *SubtaskRepo) GetByID(ctx context.Context, req *models.GetSubtaskDTO) (*
 	if err := r.db.QueryRow(ctx, query, req.ID).Scan(
 		&item.ID, &item.TicketID, &item.Title, &item.Description,
 		&item.Status, &item.Priority, &item.DueDate, &item.ClosedAt,
-		&item.SortOrder, &item.CreatedAt, &item.UpdatedAt,
+		&item.SortOrder, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt,
 		&assigneeID, &assigneeUsername, &assigneeFirstName, &assigneeLastName, &assigneeInternalNumber,
 	); err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
@@ -107,8 +107,8 @@ func (r *SubtaskRepo) GetByID(ctx context.Context, req *models.GetSubtaskDTO) (*
 }
 
 func (r *SubtaskRepo) Create(ctx context.Context, tx Tx, dto *models.SubtaskDTO) error {
-	query := fmt.Sprintf(`INSERT INTO %s (id, ticket_id, title, description, status, priority, assignee_id, due_date, sort_order) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+	query := fmt.Sprintf(`INSERT INTO %s (id, ticket_id, title, description, status, priority, assignee_id, due_date, sort_order, created_by) 
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		Tables.Subtasks,
 	)
 	if dto.ID == uuid.Nil {
@@ -117,7 +117,7 @@ func (r *SubtaskRepo) Create(ctx context.Context, tx Tx, dto *models.SubtaskDTO)
 
 	_, err := r.getExec(tx).Exec(ctx, query,
 		dto.ID, dto.TicketID, dto.Title, dto.Description,
-		dto.Status, dto.Priority, dto.AssigneeID, dto.DueDate, dto.SortOrder,
+		dto.Status, dto.Priority, dto.AssigneeID, dto.DueDate, dto.SortOrder, dto.Actor.ID,
 	)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
@@ -137,11 +137,11 @@ func (r *SubtaskRepo) CreateSeveral(ctx context.Context, tx Tx, dto []*models.Su
 		}
 		rows[i] = []interface{}{
 			v.ID, v.TicketID, v.Title, v.Description,
-			v.Status, v.Priority, v.AssigneeID, v.DueDate, v.SortOrder,
+			v.Status, v.Priority, v.AssigneeID, v.DueDate, v.SortOrder, v.Actor.ID,
 		}
 	}
 
-	columns := []string{"id", "ticket_id", "title", "description", "status", "priority", "assignee_id", "due_date", "sort_order"}
+	columns := []string{"id", "ticket_id", "title", "description", "status", "priority", "assignee_id", "due_date", "sort_order", "created_by"}
 	_, err := r.getExec(tx).CopyFrom(
 		ctx,
 		pgx.Identifier{Tables.Subtasks},
@@ -174,6 +174,7 @@ func (r *SubtaskRepo) Update(ctx context.Context, tx Tx, dto *models.SubtaskDTO)
 	add("priority", "priority", dto.Priority)
 	add("assigneeId", "assignee_id", dto.AssigneeID)
 	add("dueDate", "due_date", dto.DueDate)
+	add("closedAt", "closed_at", dto.ClosedAt)
 	add("sortOrder", "sort_order", dto.SortOrder)
 
 	if len(sets) == 0 {

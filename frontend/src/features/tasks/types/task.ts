@@ -116,6 +116,8 @@ export interface ISubtask {
 	dueDate: string | null
 	closedAt: string | null
 	sortOrder: number
+	/** Автор подзадачи: правка содержимого доступна автору, менеджеру группы или админу реалма. */
+	createdBy?: string | null
 	createdAt: string
 	updatedAt: string
 }

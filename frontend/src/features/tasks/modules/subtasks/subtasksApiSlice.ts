@@ -24,7 +24,7 @@ const subtasksApiSlice = apiSlice.injectEndpoints({
 			},
 		}),
 
-		createSubtask: builder.mutation<{ id: string; message: string }, ISubtaskDTO>({
+		createSubtask: builder.mutation<{ id: string; message: string }, Omit<ISubtaskDTO, 'id'>>({
 			query: body => ({
 				url: API.subtasks.byTicket(body.ticketId),
 				method: 'POST',

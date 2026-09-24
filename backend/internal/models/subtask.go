@@ -19,8 +19,11 @@ type Subtask struct {
 	DueDate     *time.Time   `json:"dueDate" db:"due_date"`
 	ClosedAt    *time.Time   `json:"closedAt" db:"closed_at"`
 	SortOrder   int          `json:"sortOrder" db:"sort_order"`
-	CreatedAt   time.Time    `json:"createdAt" db:"created_at"`
-	UpdatedAt   time.Time    `json:"updatedAt" db:"updated_at"`
+	// CreatedBy — автор подзадачи. Используется для доступа: содержимое подзадачи
+	// (кроме статуса) разрешено править её автору, менеджеру группы или админу реалма.
+	CreatedBy *uuid.UUID `json:"createdBy,omitempty" db:"created_by"`
+	CreatedAt time.Time  `json:"createdAt" db:"created_at"`
+	UpdatedAt time.Time  `json:"updatedAt" db:"updated_at"`
 }
 
 type GetSubtaskDTO struct {
@@ -41,6 +44,7 @@ type SubtaskDTO struct {
 	Priority    Priority     `json:"priority"`
 	AssigneeID  *uuid.UUID   `json:"assigneeId,omitempty"`
 	DueDate     *time.Time   `json:"dueDate,omitempty"`
+	ClosedAt    *time.Time   `json:"closedAt,omitempty"`
 	SortOrder   int          `json:"sortOrder"`
 
 	// Поля, переданные в запросе (заполняется при UnmarshalJSON). Позволяет делать partial update.

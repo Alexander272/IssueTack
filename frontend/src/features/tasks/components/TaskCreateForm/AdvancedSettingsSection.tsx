@@ -20,9 +20,17 @@ type Props = {
 	autoAssign?: boolean
 	isAdmin?: boolean
 	isManager?: boolean
+	/** Можно ли менять срок: только менеджер группы заявки или админ реалма. */
+	canEditDueDate?: boolean
 }
 
-export const AdvancedSettingsSection = ({ number = 3, autoAssign = true, isAdmin = true, isManager = true }: Props) => {
+export const AdvancedSettingsSection = ({
+	number = 3,
+	autoAssign = true,
+	isAdmin = true,
+	isManager = true,
+	canEditDueDate = true,
+}: Props) => {
 	const { control, setValue } = useFormContext<FormValues>()
 	const { data: categoriesData } = useGetAllCategoriesQuery()
 	const { data: groupsData } = useGetAllGroupsQuery()
@@ -159,6 +167,7 @@ export const AdvancedSettingsSection = ({ number = 3, autoAssign = true, isAdmin
 								<DatePicker
 									value={field.value ? dayjs(field.value) : null}
 									onChange={date => field.onChange(date ? date.endOf('day').toISOString() : null)}
+									disabled={!canEditDueDate}
 									slots={{
 										textField: DateTextField,
 									}}

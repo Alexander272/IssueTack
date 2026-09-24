@@ -5,7 +5,7 @@ import { useParams } from 'react-router'
 import { useGetTaskByIdQuery } from '../tasksApiSlice'
 import { BoxFallback } from '@/components/Fallback/BoxFallback'
 import { useAppSelector } from '@/hooks/redux'
-import { getIsManager } from '@/features/user/userSlice'
+import { getCurrentCapabilities, getIsManager, getUserId } from '@/features/user/userSlice'
 import { Header } from '../components/Detail/Header'
 import { InfoBar } from '../components/Detail/InfoBar'
 import { Description } from '../components/Detail/Description'
@@ -25,6 +25,8 @@ export const TaskDetailPage = () => {
 	const [editOpen, setEditOpen] = useState(false)
 	const [transferOpen, setTransferOpen] = useState(false)
 	const isManager = useAppSelector(getIsManager)
+	const capabilities = useAppSelector(getCurrentCapabilities)
+	const userId = useAppSelector(getUserId)
 
 	if (isLoading) return <BoxFallback />
 	if (!data?.data) return <DetailNotFound />
@@ -35,6 +37,12 @@ export const TaskDetailPage = () => {
 	const isInactive = task.status === 'resolved' || task.status === 'closed' || task.status === 'cancelled'
 	const canEdit = !isInactive && task.access?.canEditFields
 	const canUploadAttachments = !isInactive && task.access?.canWork
+	const canCreate = Boolean(
+		task.creator?.id === userId ||
+		task.assignee?.id === userId ||
+		task.access?.isManager ||
+		capabilities.isRealmAdmin,
+	)
 
 	return (
 		<>
@@ -68,6 +76,12 @@ export const TaskDetailPage = () => {
 								subtasks={task.subtasks}
 								taskId={task.id}
 								canWork={task.access?.canWork}
+								canCreate={canCreate}
+								canDelete={
+									Boolean(task.access?.canDelete) && Boolean(task.access?.canWork) && !isInactive
+								}
+								userId={userId ?? undefined}
+								canManage={Boolean(task.access?.isManager) || capabilities.isRealmAdmin}
 							/>
 							<Attachments
 								attachments={task.attachments}

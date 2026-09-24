@@ -968,6 +968,16 @@ func (m *MockTicketAccessChecker) CanCreateTicket(ctx context.Context, userID uu
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockTicketAccessChecker) CanEditSubtask(ctx context.Context, userID uuid.UUID, subtask *models.Subtask) (bool, error) {
+	args := m.Called(ctx, userID, subtask)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockTicketAccessChecker) CanCreateSubtask(ctx context.Context, userID uuid.UUID, ticketID uuid.UUID, realm string) (bool, error) {
+	args := m.Called(ctx, userID, ticketID, realm)
+	return args.Bool(0), args.Error(1)
+}
+
 type MockActivityLogRepo struct {
 	mock.Mock
 }

@@ -33,6 +33,17 @@ type TicketAccessChecker interface {
 	// начальником области (realm supervisor) или менеджером группы, к которой относится
 	// тикет. Используется для админских операций поверх тикета (подписки и т.п.).
 	CanManage(ctx context.Context, userID uuid.UUID, ticket *models.Ticket) (bool, error)
+	// CanEditSubtask проверяет, может ли пользователь править содержимое подзадачи
+	// (все поля кроме status): автор подзадачи (created_by) или «управление» тикетом
+	// (CanManage — менеджер группы или realm supervisor). Смена статуса подзадачи этим
+	// методом не гейтится — она остаётся за work-доступом (CheckWorkAccess на тикете).
+	CanEditSubtask(ctx context.Context, userID uuid.UUID, subtask *models.Subtask) (bool, error)
+	// CanCreateSubtask проверяет, может ли пользователь создавать подзадачи в тикете:
+	// создатель тикета, исполнитель (assignee) или «управление» тикетом (CanManage —
+	// менеджер группы / realm supervisor). В отличие от CheckWorkAccess, realm-wide
+	// политика ticket:write сама по себе права на создание подзадач не даёт: иначе
+	// пользователь мог бы создать подзадачу, но не отредактировать/удалить её.
+	CanCreateSubtask(ctx context.Context, userID uuid.UUID, ticketID uuid.UUID, realm string) (bool, error)
 	// CanCreateTicket проверяет наличие realm-wide write-политики на ресурс тикетов —
 	// достаточно ли прав создать заявку напрямую (без ограничений «рабочего» режима).
 	CanCreateTicket(ctx context.Context, userID uuid.UUID, realm string) (bool, error)
@@ -262,4 +273,44 @@ func (s *TicketAccessService) CanCreateTicket(ctx context.Context, userID uuid.U
 		return false, fmt.Errorf("policy check failed: %w", err)
 	}
 	return ok, nil
+}
+
+// CanCreateSubtask — создание подзадач доступно только пользователям с «атрибутной»
+// ролью в тикете: создатель, исполнитель либо «управление» тикетом (CanManage —
+// менеджер группы / realm supervisor). Realm-wide политика ticket:write (Casbin) права
+// на создание не даёт, чтобы не было разрыва «могу создать, но не могу править/удалить».
+// На замороженных заявках (resolved/closed/cancelled) создание запрещено всегда —
+// как и в CheckWorkAccess.
+func (s *TicketAccessService) CanCreateSubtask(ctx context.Context, userID uuid.UUID, ticketID uuid.UUID, realm string) (bool, error) {
+	ticket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: ticketID})
+	if err != nil {
+		return false, fmt.Errorf("failed to load ticket: %w", err)
+	}
+
+	if isTicketInactive(ticket.Status) {
+		return false, nil
+	}
+	if ticket.Creator.ID == userID {
+		return true, nil
+	}
+	if ticket.Assignee != nil && ticket.Assignee.ID == userID {
+		return true, nil
+	}
+	return s.CanManage(ctx, userID, ticket)
+}
+
+// CanEditSubtask — автор подзадачи может править её содержимое всегда; в противном случае
+// нужно «управление» тикетом (CanManage: менеджер группы или realm supervisor).
+// Ошибки работы с таблицами (поиск автора, загрузка тикета) не приравниваются к отказу
+// в доступе — они возвращаются как ошибки, чтобы отличать неполадки от запрета.
+func (s *TicketAccessService) CanEditSubtask(ctx context.Context, userID uuid.UUID, subtask *models.Subtask) (bool, error) {
+	if subtask.CreatedBy != nil && *subtask.CreatedBy == userID {
+		return true, nil
+	}
+
+	ticket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: subtask.TicketID})
+	if err != nil {
+		return false, fmt.Errorf("failed to load ticket for subtask edit check: %w", err)
+	}
+	return s.CanManage(ctx, userID, ticket)
 }

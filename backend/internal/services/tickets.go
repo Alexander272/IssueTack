@@ -104,6 +104,9 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to get tickets. error: %w", err)
 		}
+		if err := s.attachSubtasks(ctx, data, req.Actor.ID, realmStr); err != nil {
+			return nil, 0, fmt.Errorf("failed to attach subtasks. error: %w", err)
+		}
 		return data, total, nil
 	}
 
@@ -156,6 +159,9 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to get tickets. error: %w", err)
 	}
+	if err := s.attachSubtasks(ctx, data, req.Actor.ID, realmStr); err != nil {
+		return nil, 0, fmt.Errorf("failed to attach subtasks: %w", err)
+	}
 	return data, total, nil
 }
 
@@ -176,6 +182,25 @@ func unionGroupIDs(managed, member []uuid.UUID) []uuid.UUID {
 		}
 	}
 	return out
+}
+
+// attachSubtasks загружает подзадачи для каждой заявки листинга и кладёт их в тикет.
+// Фронт листинга (TaskRow/TaskCard) рисует прогресс-бар и счётчик подзадач из task.subtasks,
+// поэтому без этого массива у заявок с подзадачами на обзоре/«моих»/избранном пусто,
+// хотя подзадачи в БД есть. В детали (GetByID) подзадачи приходят отдельно через
+// s.subtasks.GetByTicketID — там этот вызов не нужен (N+1 на одну страницу, обычно 10-50).
+func (s *TicketService) attachSubtasks(ctx context.Context, data []*models.Ticket, actorID uuid.UUID, realm string) error {
+	if len(data) == 0 {
+		return nil
+	}
+	for _, t := range data {
+		subtasks, err := s.subtasks.GetByTicketID(ctx, t.ID, actorID, realm)
+		if err != nil {
+			return fmt.Errorf("failed to get subtasks for ticket %s: %w", t.ID, err)
+		}
+		t.Subtasks = subtasks
+	}
+	return nil
 }
 
 // autoAssign при создании тикета достраивает поля из группы:
@@ -358,6 +383,23 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		return fmt.Errorf("auto-assign: %w", err)
 	}
 
+	// Срок выполнения при создании может ставить только менеджер группы тикета
+	// или админ реалма (realm supervisor). Политика Casbin write права на срок
+	// не даёт — участник с realm-wide write не может выставить dueDate.
+	if dto.DueDate != nil {
+		isManager, err := s.isManagerOfGroup(ctx, &models.GroupShort{ID: *dto.GroupID}, dto.Actor.ID)
+		if err != nil {
+			return fmt.Errorf("failed to check manager access: %w", err)
+		}
+		supervisor, err := s.access.IsRealmSupervisor(ctx, dto.Actor.ID, realmStr)
+		if err != nil {
+			return fmt.Errorf("failed to check supervisor access: %w", err)
+		}
+		if !isManager && !supervisor {
+			return models.ErrPermissionDenied
+		}
+	}
+
 	err = s.tx.WithinTransaction(ctx, func(newTx postgres.Tx) error {
 		if err := s.repo.Create(ctx, newTx, dto); err != nil {
 			return fmt.Errorf("failed to create ticket. error: %w", err)
@@ -464,6 +506,16 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 		oldTicket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
 		if err != nil {
 			return err
+		}
+
+		if dto.HasField("status") && dto.Status != oldTicket.Status {
+			ok, err := s.canChangeStatus(ctx, oldTicket, dto.Actor.ID, realmStr)
+			if err != nil {
+				return fmt.Errorf("failed to check status access: %w", err)
+			}
+			if !ok {
+				return models.ErrPermissionDenied
+			}
 		}
 
 		if ownerOnly && dto.HasField("status") && dto.Status != oldTicket.Status && !s.ownerTransitionAllowed(oldTicket, dto) {
@@ -940,6 +992,31 @@ func (s *TicketService) isCreatorOrManager(ctx context.Context, ticket *models.T
 		return true, nil
 	}
 	return s.isManagerOfGroup(ctx, ticket.Group, actorID)
+}
+
+// canChangeStatus определяет, может ли пользователь переводить тикет по статусам:
+// только автор, исполнитель, владелец, менеджер группы или админ реалма (realm supervisor).
+// Политика Casbin write сама по себе права на смену статуса не даёт — участник группы
+// с realm-wide write-правом (не admin) менять статус не может. Закрытие/отмена дополнительно
+// гейтятся isCreatorOrManager/владельцем (строгая проверка), терминальные статусы — ErrTicketFrozen.
+func (s *TicketService) canChangeStatus(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, realm string) (bool, error) {
+	if ticket.Creator.ID == userID {
+		return true, nil
+	}
+	if ticket.Assignee != nil && ticket.Assignee.ID == userID {
+		return true, nil
+	}
+	if ticket.Owner != nil && ticket.Owner.ID == userID {
+		return true, nil
+	}
+	isManager, err := s.isManagerOfGroup(ctx, ticket.Group, userID)
+	if err != nil {
+		return false, err
+	}
+	if isManager {
+		return true, nil
+	}
+	return s.access.IsRealmSupervisor(ctx, userID, realm)
 }
 
 // isManagerOfGroup проверяет, является ли пользователь менеджером указанной группы тикета.
