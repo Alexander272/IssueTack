@@ -30,14 +30,19 @@ type Checklists interface {
 	Delete(ctx context.Context, dto *models.DelChecklistTemplateDTO) error
 	GetItems(ctx context.Context, templateID uuid.UUID) ([]*models.ChecklistTemplateItem, error)
 	SetItems(ctx context.Context, tx Tx, templateID uuid.UUID, items []*models.ChecklistTemplateItemDTO) error
+	ExistsByTitle(ctx context.Context, realmID uuid.UUID, title string, ownerID *uuid.UUID) (bool, error)
 }
 
 func (r *ChecklistRepo) Get(ctx context.Context, req *models.GetChecklistTemplatesDTO) ([]*models.ChecklistTemplate, error) {
-	query := fmt.Sprintf(`SELECT id, realm_id, title, description, created_at, updated_at FROM %s WHERE realm_id = $1 ORDER BY title`,
-		Tables.ChecklistTemplates,
-	)
+	query := fmt.Sprintf(`SELECT id, realm_id, title, description, created_by, created_at, updated_at FROM %s WHERE realm_id = $1`, Tables.ChecklistTemplates)
+	args := []interface{}{req.RealmID}
+	if req.OwnerID != nil {
+		query += " AND created_by = $2"
+		args = append(args, *req.OwnerID)
+	}
+	query += " ORDER BY title"
 
-	rows, err := r.db.Query(ctx, query, req.RealmID)
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -47,7 +52,7 @@ func (r *ChecklistRepo) Get(ctx context.Context, req *models.GetChecklistTemplat
 	for rows.Next() {
 		item := &models.ChecklistTemplate{}
 		if err := rows.Scan(
-			&item.ID, &item.RealmID, &item.Title, &item.Description,
+			&item.ID, &item.RealmID, &item.Title, &item.Description, &item.CreatedBy,
 			&item.CreatedAt, &item.UpdatedAt,
 		); err != nil {
 			return nil, MapError(fmt.Errorf("scan row error: %w", err))
@@ -64,13 +69,13 @@ func (r *ChecklistRepo) Get(ctx context.Context, req *models.GetChecklistTemplat
 }
 
 func (r *ChecklistRepo) GetByID(ctx context.Context, req *models.GetChecklistTemplateDTO) (*models.ChecklistTemplate, error) {
-	query := fmt.Sprintf(`SELECT id, realm_id, title, description, created_at, updated_at FROM %s WHERE id = $1`,
+	query := fmt.Sprintf(`SELECT id, realm_id, title, description, created_by, created_at, updated_at FROM %s WHERE id = $1`,
 		Tables.ChecklistTemplates,
 	)
 
 	item := &models.ChecklistTemplate{}
 	if err := r.db.QueryRow(ctx, query, req.ID).Scan(
-		&item.ID, &item.RealmID, &item.Title, &item.Description,
+		&item.ID, &item.RealmID, &item.Title, &item.Description, &item.CreatedBy,
 		&item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
@@ -107,18 +112,36 @@ func (r *ChecklistRepo) GetItems(ctx context.Context, templateID uuid.UUID) ([]*
 }
 
 func (r *ChecklistRepo) Create(ctx context.Context, dto *models.ChecklistTemplateDTO) error {
-	query := fmt.Sprintf(`INSERT INTO %s (id, realm_id, title, description) VALUES ($1, $2, $3, $4)`,
+	query := fmt.Sprintf(`INSERT INTO %s (id, realm_id, title, description, created_by) VALUES ($1, $2, $3, $4, $5)`,
 		Tables.ChecklistTemplates,
 	)
 	if dto.ID == uuid.Nil {
 		dto.ID = uuid.New()
 	}
 
-	_, err := r.db.Exec(ctx, query, dto.ID, dto.RealmID, dto.Title, dto.Description)
+	_, err := r.db.Exec(ctx, query, dto.ID, dto.RealmID, dto.Title, dto.Description, dto.CreatedBy)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
 	return nil
+}
+
+// ExistsByTitle проверяет существование шаблона с таким названием в реалме.
+// При ownerID != nil проверка выполняется только среди шаблонов этого владельца.
+func (r *ChecklistRepo) ExistsByTitle(ctx context.Context, realmID uuid.UUID, title string, ownerID *uuid.UUID) (bool, error) {
+	query := fmt.Sprintf(`SELECT EXISTS(SELECT 1 FROM %s WHERE realm_id = $1 AND title = $2`, Tables.ChecklistTemplates)
+	args := []interface{}{realmID, title}
+	if ownerID != nil {
+		query += " AND created_by = $3"
+		args = append(args, *ownerID)
+	}
+	query += ")"
+
+	var exists bool
+	if err := r.db.QueryRow(ctx, query, args...).Scan(&exists); err != nil {
+		return false, MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	return exists, nil
 }
 
 func (r *ChecklistRepo) Update(ctx context.Context, dto *models.ChecklistTemplateDTO) error {

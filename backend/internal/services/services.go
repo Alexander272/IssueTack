@@ -129,7 +129,7 @@ func NewServices(deps *Deps) *Services {
 		Channels:      []Notifier{notifChan},
 	})
 	attachments := NewAttachmentService(deps.Repo.Attachments, &deps.Conf.FileServer, access, subtasks)
-	checklists := NewChecklistService(deps.Repo.Checklists, subtasks)
+	checklists := NewChecklistService(deps.Repo.Checklists, subtasks, policies)
 
 	// Тикеты собираются до своих потребителей (comments/subscriptions/favorites),
 	// чтобы те зависели от сервиса — владельца агрегата тикетов, а не от репозитория.

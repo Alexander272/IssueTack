@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
@@ -27,19 +26,17 @@ func NewHandler(service services.Checklists) *Handler {
 func Register(api *gin.RouterGroup, service services.Checklists, middleware *middleware.Middleware) {
 	handlers := NewHandler(service)
 
-	checklists := api.Group("/checklists", middleware.CheckPermissions(access.Reg.R(access.ResourceChecklist).Read()))
+	// Доступ к шаблонам чек-листов проверяется на уровне сервиса: без права
+	// checklist:read пользователь видит и меняет только свои шаблоны.
+	checklists := api.Group("/checklists")
 	{
 		checklists.GET("", handlers.getAll)
 		checklists.GET("/:id", handlers.getByID)
 		checklists.GET("/:id/items", handlers.getItems)
-
-		checklists.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceChecklist).Write()))
 		checklists.POST("", handlers.create)
 		checklists.PUT("/:id", handlers.update)
 		checklists.PUT("/:id/items", handlers.setItems)
 		checklists.POST("/:id/apply/:ticketId", handlers.apply)
-
-		checklists.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceChecklist).Delete()))
 		checklists.DELETE("/:id", handlers.delete)
 	}
 }
@@ -55,6 +52,15 @@ func (h *Handler) getAll(c *gin.Context) {
 		}
 		dto.RealmID = id
 	}
+	if ctxRealm, ok := utils.GetRealmUUID(c); ok {
+		dto.RealmID = ctxRealm
+	}
+
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+	dto.Actor = actor
 
 	data, err := h.service.Get(c, dto)
 	if err != nil {
@@ -72,7 +78,12 @@ func (h *Handler) getByID(c *gin.Context) {
 		return
 	}
 
-	data, err := h.service.GetByID(c, &models.GetChecklistTemplateDTO{ID: id})
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+
+	data, err := h.service.GetByID(c, &models.GetChecklistTemplateDTO{ID: id}, actor.ID, c.GetHeader("realm"))
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -88,7 +99,12 @@ func (h *Handler) getItems(c *gin.Context) {
 		return
 	}
 
-	data, err := h.service.GetItems(c, id)
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+
+	data, err := h.service.GetItems(c, id, actor.ID, c.GetHeader("realm"))
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -102,6 +118,15 @@ func (h *Handler) create(c *gin.Context) {
 		response.SendError(c, err)
 		return
 	}
+
+	if ctxRealm, ok := utils.GetRealmUUID(c); ok {
+		dto.RealmID = ctxRealm
+	}
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+	dto.Actor = actor
 
 	if err := h.service.Create(c, dto); err != nil {
 		response.SendError(c, err, dto)
@@ -129,7 +154,12 @@ func (h *Handler) update(c *gin.Context) {
 	}
 	dto.ID = id
 
-	if err := h.service.Update(c, dto); err != nil {
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+
+	if err := h.service.Update(c, dto, actor.ID, c.GetHeader("realm")); err != nil {
 		response.SendError(c, err, dto)
 		return
 	}
@@ -150,7 +180,12 @@ func (h *Handler) setItems(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.SetItems(c, nil, id, items); err != nil {
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+
+	if err := h.service.SetItems(c, nil, id, items, actor.ID, c.GetHeader("realm")); err != nil {
 		response.SendError(c, err)
 		return
 	}
@@ -190,7 +225,12 @@ func (h *Handler) delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.Delete(c, &models.DelChecklistTemplateDTO{ID: id}); err != nil {
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+
+	if err := h.service.Delete(c, &models.DelChecklistTemplateDTO{ID: id}, actor.ID, c.GetHeader("realm")); err != nil {
 		response.SendError(c, err)
 		return
 	}

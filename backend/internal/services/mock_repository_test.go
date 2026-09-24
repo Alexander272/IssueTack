@@ -1251,6 +1251,10 @@ func (m *MockChecklistsRepo) SetItems(ctx context.Context, tx postgres.Tx, templ
 	args := m.Called(ctx, tx, templateID, items)
 	return args.Error(0)
 }
+func (m *MockChecklistsRepo) ExistsByTitle(ctx context.Context, realmID uuid.UUID, title string, ownerID *uuid.UUID) (bool, error) {
+	args := m.Called(ctx, realmID, title, ownerID)
+	return args.Bool(0), args.Error(1)
+}
 
 type MockUserRealmsRepo struct {
 	mock.Mock

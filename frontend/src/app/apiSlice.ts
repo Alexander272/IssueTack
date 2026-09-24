@@ -79,6 +79,7 @@ export const apiSlice = createApi({
 		'Notifications',
 		'DeadlineReminders',
 		'Favorites',
+		'ChecklistTemplates',
 	],
 	endpoints: () => ({}),
 })

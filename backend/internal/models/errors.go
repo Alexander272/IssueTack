@@ -53,6 +53,9 @@ var (
 	ErrTicketFrozen          = NewDomainError(errors.New("ticket is resolved/closed/cancelled"), http.StatusConflict, "TK003", "Заявка решена, закрыта или отменена — изменение данных недоступно")
 	ErrOwnerRequired         = NewDomainError(errors.New("customer (owner) is required"), http.StatusBadRequest, "TK004", "Необходимо указать заказчика")
 
+	// 409 Conflict (шаблоны чек-листов)
+	ErrTemplateNameExists = NewDomainError(errors.New("checklist template with this title already exists"), http.StatusConflict, "CL001", "Шаблон с таким названием уже существует")
+
 	// 409 Conflict (удаление справочников)
 	ErrGroupHasOpenTickets    = NewDomainError(errors.New("group has open tickets"), http.StatusConflict, "GR001", "Нельзя удалить группу, пока в ней есть незакрытые заявки")
 	ErrCategoryHasOpenTickets = NewDomainError(errors.New("category has open tickets"), http.StatusConflict, "CT001", "Нельзя удалить категорию, пока в ней есть незакрытые заявки")

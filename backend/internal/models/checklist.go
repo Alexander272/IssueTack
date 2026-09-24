@@ -11,6 +11,7 @@ type ChecklistTemplate struct {
 	RealmID     uuid.UUID                `json:"realmId" db:"realm_id"`
 	Title       string                   `json:"title" db:"title"`
 	Description string                   `json:"description" db:"description"`
+	CreatedBy   *uuid.UUID               `json:"createdBy,omitempty" db:"created_by"`
 	Items       []*ChecklistTemplateItem `json:"items,omitempty"`
 	CreatedAt   time.Time                `json:"createdAt" db:"created_at"`
 	UpdatedAt   time.Time                `json:"updatedAt" db:"updated_at"`
@@ -30,6 +31,11 @@ type GetChecklistTemplateDTO struct {
 
 type GetChecklistTemplatesDTO struct {
 	RealmID uuid.UUID `json:"realmId"`
+	// Actor — кто запрашивает (заполняется хендлером). Если у пользователя нет
+	// права checklist:read, сервис вернёт только его собственные шаблоны.
+	Actor *Actor `json:"-"`
+	// OwnerID — фильтр «только мои» (устанавливает сервис).
+	OwnerID *uuid.UUID `json:"-"`
 }
 
 type ChecklistTemplateDTO struct {
@@ -37,6 +43,10 @@ type ChecklistTemplateDTO struct {
 	ID          uuid.UUID `json:"id"`
 	Title       string    `json:"title"`
 	Description string    `json:"description,omitempty"`
+	// CreatedBy проставляется сервером (модель владения шаблоном).
+	CreatedBy *uuid.UUID `json:"-"`
+	// Actor заполняется хендлером из контекста.
+	Actor *Actor `json:"-"`
 }
 
 type ChecklistTemplateItemDTO struct {
