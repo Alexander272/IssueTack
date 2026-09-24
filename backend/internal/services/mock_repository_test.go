@@ -593,6 +593,10 @@ func (m *MockSubtaskService) CreateSeveral(ctx context.Context, tx postgres.Tx, 
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
 }
+func (m *MockSubtaskService) CreateManyOnCreate(ctx context.Context, tx postgres.Tx, dto []*models.SubtaskDTO) error {
+	args := m.Called(ctx, tx, dto)
+	return args.Error(0)
+}
 func (m *MockSubtaskService) Update(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO, realm string) error {
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)

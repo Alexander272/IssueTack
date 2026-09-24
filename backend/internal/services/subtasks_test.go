@@ -242,3 +242,38 @@ func TestSubtaskService_Delete_Success(t *testing.T) {
 	mockAccess.AssertExpectations(t)
 	mockRepo.AssertExpectations(t)
 }
+
+func TestSubtaskService_CreateManyOnCreate_Defaults(t *testing.T) {
+	mockRepo, mockLogs, _, svc := subtaskServiceFixtures()
+
+	actor := &models.Actor{ID: uuid.New(), Name: "test"}
+	ticketID := uuid.New()
+	dto := []*models.SubtaskDTO{
+		{TicketID: ticketID, Title: "S1", Actor: actor},
+		{TicketID: ticketID, Title: "S2", SortOrder: 5, Actor: actor},
+	}
+
+	mockRepo.On("CreateSeveral", mock.Anything, nil, mock.Anything).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+
+	err := svc.CreateManyOnCreate(context.Background(), nil, dto)
+
+	assert.NoError(t, err)
+	assert.Equal(t, models.StatusOpen, dto[0].Status)
+	assert.Equal(t, models.PriorityMedium, dto[0].Priority)
+	assert.Equal(t, 0, dto[0].SortOrder)
+	assert.Equal(t, models.PriorityMedium, dto[1].Priority)
+	assert.Equal(t, 5, dto[1].SortOrder)
+	mockRepo.AssertCalled(t, "CreateSeveral", mock.Anything, nil, mock.Anything)
+	mockLogs.AssertCalled(t, "Create", mock.Anything, nil, mock.Anything)
+}
+
+func TestSubtaskService_CreateManyOnCreate_Empty(t *testing.T) {
+	mockRepo, mockLogs, _, svc := subtaskServiceFixtures()
+
+	err := svc.CreateManyOnCreate(context.Background(), nil, nil)
+
+	assert.NoError(t, err)
+	mockRepo.AssertNotCalled(t, "CreateSeveral", mock.Anything, mock.Anything, mock.Anything)
+	mockLogs.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
+}

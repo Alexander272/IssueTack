@@ -17,6 +17,7 @@ import { CategoryAndSiteSection } from './CategoryAndSiteSection'
 import { DescriptionSection } from './DescriptionSection'
 import { AdvancedSettingsSection } from './AdvancedSettingsSection'
 import { CustomerSelectionSection } from './CustomerSelectionSection'
+import { SubtasksCreationSection } from './SubtasksCreationSection'
 
 export const TaskCreateForm = ({ onSuccess, onCancel, embedded }: Props) => {
 	const currentUserId = useAppSelector(getUserId)
@@ -46,6 +47,7 @@ export const TaskCreateForm = ({ onSuccess, onCancel, embedded }: Props) => {
 			assigneeId: null,
 			siteId: '',
 			dueDate: null,
+			subtasks: [],
 		},
 	})
 	const { control, handleSubmit, reset, setValue } = methods
@@ -87,6 +89,9 @@ export const TaskCreateForm = ({ onSuccess, onCancel, embedded }: Props) => {
 			managerId: null,
 			dueDate: isManager ? data.dueDate || null : null,
 			closedAt: null,
+			subtasks: data.subtasks
+				.map(s => ({ title: s.title.trim(), description: s.description.trim() }))
+				.filter(s => s.title.length > 0),
 		}
 
 		try {
@@ -132,9 +137,11 @@ export const TaskCreateForm = ({ onSuccess, onCancel, embedded }: Props) => {
 
 			<FormProvider {...methods}>
 				<Box component='form' onSubmit={onSubmit}>
-					<Stack sx={{ gap: 3 }}>
+					<Stack sx={{ gap: { xs: 1.5, sm: 3 } }}>
 						<CategoryAndSiteSection categories={categories} sites={sites} />
 						<DescriptionSection files={files} onFilesChange={setFiles} />
+
+						{(isManager || isExecutor) && <SubtasksCreationSection />}
 
 						{isExecutor && <CustomerSelectionSection />}
 

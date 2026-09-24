@@ -86,6 +86,11 @@ export interface ITaskFilter {
 	mode?: string
 }
 
+export interface ISubtaskCreateDTO {
+	title: string
+	description?: string
+}
+
 export interface ITaskDTO {
 	id: string | null
 	title: string
@@ -103,6 +108,8 @@ export interface ITaskDTO {
 	dueDate?: string | null
 	closedAt?: string | null
 	resolvedAt?: string | null
+	/** Подзадачи, создаваемые вместе с заявкой (автор, статус, приоритет и порядок проставит бэкенд). */
+	subtasks?: ISubtaskCreateDTO[]
 }
 
 export interface ISubtask {

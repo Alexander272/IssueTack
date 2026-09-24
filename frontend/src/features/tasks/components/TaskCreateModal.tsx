@@ -1,5 +1,5 @@
 import { type FC } from 'react'
-import { Dialog, DialogContent, DialogTitle, IconButton, Typography } from '@mui/material'
+import { Dialog, DialogContent, DialogTitle, IconButton, Typography, useMediaQuery, useTheme } from '@mui/material'
 
 import { TaskCreateForm } from './TaskCreateForm'
 import { XIcon } from 'lucide-mui'
@@ -10,17 +10,23 @@ type Props = {
 }
 
 export const TaskCreateModal: FC<Props> = ({ open, onClose }) => {
+	const theme = useTheme()
+	const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
+
 	return (
 		<Dialog
 			open={open}
 			onClose={onClose}
 			fullWidth
+			fullScreen={isMobile}
 			maxWidth='md'
 			slotProps={{
-				paper: { sx: { borderRadius: '16px', p: 1 } },
+				paper: { sx: { borderRadius: { xs: 0, sm: '16px' }, p: { xs: 0, sm: 1 } } },
 			}}
 		>
-			<DialogTitle sx={{ m: 0, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+			<DialogTitle
+				sx={{ m: 0, p: { xs: 1.5, sm: 2 }, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+			>
 				<Typography variant='h6' component='div' sx={{ fontWeight: 'bold' }}>
 					Создание заявки
 				</Typography>
@@ -29,7 +35,7 @@ export const TaskCreateModal: FC<Props> = ({ open, onClose }) => {
 				</IconButton>
 			</DialogTitle>
 
-			<DialogContent>
+			<DialogContent sx={{ p: { xs: 1, sm: 2.5 } }}>
 				<TaskCreateForm embedded onSuccess={onClose} onCancel={onClose} />
 			</DialogContent>
 		</Dialog>

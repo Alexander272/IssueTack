@@ -25,7 +25,7 @@ type Props = {
 }
 
 export const AdvancedSettingsSection = ({
-	number = 3,
+	number = 4,
 	autoAssign = true,
 	isAdmin = true,
 	isManager = true,

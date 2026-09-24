@@ -11,7 +11,7 @@ type Props = {
 	number?: number
 }
 
-export const CustomerSelectionSection = ({ number = 3 }: Props) => {
+export const CustomerSelectionSection = ({ number = 4 }: Props) => {
 	const { control } = useFormContext<FormValues>()
 	const { data: customersData } = useGetRealmUsersQuery('customers')
 	const customers = useMemo(() => customersData?.data ?? [], [customersData])

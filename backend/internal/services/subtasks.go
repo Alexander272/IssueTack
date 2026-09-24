@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -44,6 +45,13 @@ type Subtasks interface {
 	Create(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO, realm string) error
 	// CreateSeveral создаёт несколько подзадач.
 	CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.SubtaskDTO, realm string) error
+	// CreateManyOnCreate создаёт подзадачи в момент создания заявки внутри той же
+	// транзакции. Проверка CanCreateSubtask не выполняется: авторизация неявна —
+	// создатель новой заявки всегда имеет право создавать в ней подзадачи, а сама
+	// заявка ещё не закоммичена и невидима пулом (CanCreateSubtask читает тикет
+	// через отдельное соединение). Вызывающий должен заполнить TicketID, Actor,
+	// Status, Priority и SortOrder каждого DTO.
+	CreateManyOnCreate(ctx context.Context, tx postgres.Tx, dto []*models.SubtaskDTO) error
 	// Update обновляет подзадачу.
 	Update(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO, realm string) error
 	// Delete удаляет подзадачу.
@@ -155,6 +163,55 @@ func (s *SubtaskService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto 
 		}
 		if !canCreate {
 			return models.ErrPermissionDenied
+		}
+	}
+	if err := s.repo.CreateSeveral(ctx, tx, dto); err != nil {
+		return fmt.Errorf("failed to create subtasks: %w", err)
+	}
+
+	logs := make([]*models.ActivityLogDTO, len(dto))
+	for i, v := range dto {
+		log := &models.ActivityLogDTO{
+			Action:        "created",
+			ChangedBy:     v.Actor.ID,
+			ChangedByName: v.Actor.Name,
+			EntityType:    "subtask",
+			EntityID:      v.ID,
+			Entity:        v.Title,
+			ParentID:      &v.TicketID,
+		}
+		if err := log.SetNewValues(map[string]string{"title": v.Title}); err != nil {
+			return fmt.Errorf("set new values: %w", err)
+		}
+		logs[i] = log
+	}
+	if err := s.logs.Create(ctx, tx, logs); err != nil {
+		return fmt.Errorf("store logs: %w", err)
+	}
+
+	return nil
+}
+
+// CreateManyOnCreate создаёт подзадачи в момент создания заявки внутри той же транзакции
+// (см. интерфейс Subtasks). В отличие от CreateSeveral не выполняет проверку
+// CanCreateSubtask: заявка ещё не закоммичена (невидима пулу), а создатель всегда
+// авторизован. Пропущенные Status/Priority/SortOrder заполняются значениями по умолчанию.
+func (s *SubtaskService) CreateManyOnCreate(ctx context.Context, tx postgres.Tx, dto []*models.SubtaskDTO) error {
+	if len(dto) == 0 {
+		return nil
+	}
+	for i, v := range dto {
+		if v == nil || v.Actor == nil {
+			return errors.New("subtask actor is required")
+		}
+		if v.Status == "" {
+			v.Status = models.StatusOpen
+		}
+		if v.Priority == "" {
+			v.Priority = models.PriorityMedium
+		}
+		if v.SortOrder == 0 && i > 0 {
+			v.SortOrder = i
 		}
 	}
 	if err := s.repo.CreateSeveral(ctx, tx, dto); err != nil {

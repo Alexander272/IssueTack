@@ -122,6 +122,10 @@ type TicketDTO struct {
 	ClosedAt   *time.Time `json:"closedAt" db:"closed_at"`
 	ResolvedAt *time.Time `json:"resolvedAt" db:"resolved_at"`
 
+	// Подзадачи, создаваемые вместе с заявкой (используется только при Create;
+	// при Update — запланированные значения игнорируются).
+	Subtasks []*SubtaskDTO `json:"subtasks,omitempty"`
+
 	// Поля, переданные в запросе (заполняется при UnmarshalJSON). Позволяет делать partial update.
 	Provided map[string]bool `json:"-"`
 }

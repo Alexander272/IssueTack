@@ -20,8 +20,8 @@ export const SectionCard = ({ number, title, subtitle, children }: Props) => (
 	>
 		<Box
 			sx={{
-				px: 2.5,
-				py: 1.75,
+				px: { xs: 1.5, sm: 2.5 },
+				py: { xs: 1.25, sm: 1.75 },
 				borderBottom: '1px solid #e5e7eb',
 				bgcolor: '#f9fafb',
 				display: 'flex',
@@ -59,6 +59,6 @@ export const SectionCard = ({ number, title, subtitle, children }: Props) => (
 				)}
 			</Box>
 		</Box>
-		<Box sx={{ p: 2.5, pt: 1.5 }}>{children}</Box>
+		<Box sx={{ p: { xs: 1.5, sm: 2.5 }, pt: { xs: 1.25, sm: 1.5 } }}>{children}</Box>
 	</Box>
 )

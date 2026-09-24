@@ -405,6 +405,16 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 			return fmt.Errorf("failed to create ticket. error: %w", err)
 		}
 
+		if len(dto.Subtasks) > 0 {
+			for _, st := range dto.Subtasks {
+				st.TicketID = *dto.ID
+				st.Actor = dto.Actor
+			}
+			if err := s.subtasks.CreateManyOnCreate(ctx, newTx, dto.Subtasks); err != nil {
+				return fmt.Errorf("failed to create subtasks: %w", err)
+			}
+		}
+
 		log := &models.ActivityLogDTO{
 			Action:        "created",
 			ChangedBy:     dto.Actor.ID,

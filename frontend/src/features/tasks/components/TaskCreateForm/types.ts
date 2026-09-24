@@ -1,5 +1,10 @@
 import type { Priority } from '../../types/task'
 
+export interface SubtaskFormValues {
+	title: string
+	description: string
+}
+
 export interface FormValues {
 	title: string
 	description: string
@@ -10,6 +15,7 @@ export interface FormValues {
 	assigneeId: string | null
 	siteId: string
 	dueDate: string | null
+	subtasks: SubtaskFormValues[]
 }
 
 export type Props = {

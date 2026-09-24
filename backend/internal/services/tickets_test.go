@@ -285,6 +285,47 @@ func TestTicketService_Create_Success(t *testing.T) {
 	assert.Equal(t, &managerID, dto.ManagerID)
 }
 
+func TestTicketService_Create_WithSubtasks_Success(t *testing.T) {
+	mockRepo, mockLogs, mockSubtasks, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	groupID := uuid.New()
+	assigneeID := uuid.New()
+	managerID := uuid.New()
+	id := uuid.New()
+	dto := &models.TicketDTO{
+		ID:        &id,
+		Actor:     &models.Actor{ID: actorID, Name: "test"},
+		Title:     "New Ticket With Subtasks",
+		GroupID:   &groupID,
+		CreatorID: actorID,
+		Subtasks: []*models.SubtaskDTO{
+			{Title: "Subtask 1", Description: "first"},
+			{Title: "Subtask 2"},
+		},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(true, nil)
+	mockGroups.On("GetByID", mock.Anything, &models.GetGroupDTO{ID: groupID}).Return(&models.Group{
+		ID:                groupID,
+		DefaultAssigneeID: &assigneeID,
+		ManagerID:         &managerID,
+	}, nil)
+	mockRepo.On("Create", mock.Anything, nil, dto).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockSubtasks.On("CreateManyOnCreate", mock.Anything, mock.Anything, mock.AnythingOfType("[]*models.SubtaskDTO")).Return(nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: id}).Return(&models.Ticket{ID: id}, nil)
+	mockNotifications.On("TicketCreated", mock.Anything, mock.AnythingOfType("*models.Ticket"), mock.AnythingOfType("uuid.UUID")).Return(nil)
+
+	err := svc.Create(context.Background(), dto)
+	assert.NoError(t, err)
+	assert.Equal(t, id, dto.Subtasks[0].TicketID)
+	assert.Equal(t, id, dto.Subtasks[1].TicketID)
+	assert.Equal(t, dto.Actor, dto.Subtasks[0].Actor)
+	assert.Equal(t, dto.Actor, dto.Subtasks[1].Actor)
+	mockSubtasks.AssertCalled(t, "CreateManyOnCreate", mock.Anything, mock.Anything, mock.Anything)
+}
+
 func TestTicketService_Create_DueDate_NonManagerDenied(t *testing.T) {
 	mockRepo, _, _, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
 
