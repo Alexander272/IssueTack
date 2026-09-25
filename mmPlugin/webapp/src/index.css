@@ -338,6 +338,7 @@
     border-radius: 4px;
     cursor: pointer;
     color: rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.72);
+    text-decoration: none;
 }
 
 .it-icon-btn:hover {
@@ -554,6 +555,7 @@
 .it-ticket-card__foot {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     padding-top: 8px;
     border-top: 1px solid rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.08);
 }
@@ -561,6 +563,24 @@
 .it-ticket-card__date {
     font-size: 12px;
     color: rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.56);
+}
+
+.it-ticket-card__open {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: none;
+    background: transparent;
+    padding: 2px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--link-color, #2389d7);
+    text-decoration: none;
+}
+
+.it-ticket-card__open:hover {
+    background: rgba(35, 137, 215, 0.12);
 }
 
 .it-badge {
@@ -637,16 +657,6 @@
     display: flex;
     justify-content: flex-end;
     gap: 8px;
-}
-
-.it-ticket-detail__open {
-    font-size: 12px;
-    color: var(--link-color, #2389d7);
-    text-decoration: none;
-}
-
-.it-ticket-detail__open:hover {
-    text-decoration: underline;
 }
 
 .it-ticket-detail__loading {
@@ -951,6 +961,7 @@
 
 .it-comment-form__file-input {
     display: none;
+    flex-grow: 1;
 }
 
 .it-comment-form__hint {
