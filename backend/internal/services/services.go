@@ -162,6 +162,7 @@ func NewServices(deps *Deps) *Services {
 		Users:       users,
 		UserRealms:  userRealms,
 		Roles:       roles,
+		Realms:      realms,
 		Tickets:     tickets,
 		Groups:      groups,
 		Categories:  categories,

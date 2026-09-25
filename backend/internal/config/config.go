@@ -111,6 +111,9 @@ type (
 		// ("10.0.0.1"), CIDR ("10.0.0.0/24"), диапазон ("10.0.0.5-10.0.0.20").
 		// Пустой список = все входящие MM-запросы отклоняются (fail-closed).
 		AllowedServerIPs []string `yaml:"allowed_server_ips" env:"MATTERMOST_ALLOWED_SERVER_IPS"`
+		// PluginToken — общий сервисный токен, которым MM-плагин аутентифицирует
+		// свои запросы в /api/v1/plugin/* (Authorization: Bearer). Пустой = отключено.
+		PluginToken string `yaml:"plugin_token" env:"MATTERMOST_PLUGIN_TOKEN" env-default:""`
 	}
 )
 

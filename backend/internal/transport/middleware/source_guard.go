@@ -1,4 +1,4 @@
-package mattermost
+package middleware
 
 import (
 	"bytes"
@@ -26,6 +26,12 @@ type sourceGuard struct {
 	ips    []net.IP
 	nets   []*net.IPNet
 	ranges []ipRange
+}
+
+// SourceGuard возвращает middleware, пропускающий только запросы от источников
+// из конфига Mattermost (allowed_server_ips).
+func SourceGuard(cfg config.MattermostConfig) gin.HandlerFunc {
+	return newSourceGuard(cfg).middleware()
 }
 
 // newSourceGuard собирает allowlist из конфига. Форматы записей:
@@ -104,7 +110,7 @@ func (g *sourceGuard) allow(remoteAddr string) bool {
 		host = remoteAddr
 	}
 
-	ip := toComparableIP(net.ParseIP(host))
+	ip := net.ParseIP(host)
 	if ip == nil {
 		return false
 	}
@@ -120,7 +126,7 @@ func (g *sourceGuard) allow(remoteAddr string) bool {
 		}
 	}
 	for _, r := range g.ranges {
-		if bytes.Compare(ip, toComparableIP(r.lo)) >= 0 && bytes.Compare(ip, toComparableIP(r.hi)) <= 0 {
+		if bytes.Compare(toComparableIP(ip), toComparableIP(r.lo)) >= 0 && bytes.Compare(toComparableIP(ip), toComparableIP(r.hi)) <= 0 {
 			return true
 		}
 	}

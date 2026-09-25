@@ -1,0 +1,24 @@
+{
+    "name": "issuetrack-webapp",
+    "version": "0.1.0",
+    "private": true,
+    "description": "IssueTrack Mattermost web app plugin: create tickets and view own active tickets from a channel header icon",
+    "scripts": {
+        "check": "tsc --noEmit",
+        "build": "webpack --mode=production"
+    },
+    "devDependencies": {
+        "@babel/core": "^7.25.9",
+        "@babel/preset-env": "^7.25.9",
+        "@babel/preset-react": "^7.25.9",
+        "@babel/preset-typescript": "^7.25.9",
+        "@types/react": "^18.3.12",
+        "@types/react-dom": "^18.3.1",
+        "babel-loader": "^9.2.1",
+        "css-loader": "^7.1.2",
+        "style-loader": "^4.0.0",
+        "typescript": "^5.6.3",
+        "webpack": "^5.97.1",
+        "webpack-cli": "^5.1.4"
+    }
+}

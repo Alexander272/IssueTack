@@ -1,0 +1,37 @@
+{
+    "id": "issuetrack",
+    "name": "IssueTrack",
+    "description": "Создание заявок и просмотр активных заявок IssueTrack прямо из Mattermost",
+    "version": "0.1.0",
+    "min_server_version": "10.0.0",
+    "server": {
+        "executables": {
+            "linux-amd64": "server/dist/plugin-linux-amd64"
+        }
+    },
+    "webapp": {
+        "bundle_path": "webapp/dist/main.js"
+    },
+    "settings_schema": {
+        "header": "Сервисная интеграция с системой учёта заявок. Параметры должны совпадать с настройками бэкенда.",
+        "footer": "",
+        "settings": [
+            {
+                "key": "backend_url",
+                "display_name": "Адрес бэкенда (backend_url)",
+                "type": "text",
+                "help_text": "Базовый URL бэкенда IssueTrack, например http://192.168.4.159:9000",
+                "placeholder": "http://localhost:9000",
+                "default": "http://localhost:9000"
+            },
+            {
+                "key": "api_token",
+                "display_name": "Сервисный токен (plugin_token)",
+                "type": "text",
+                "help_text": "Общий токен, совпадающий с mattermost.plugin_token в конфиге бэкенда. Передаётся как Authorization: Bearer",
+                "placeholder": "",
+                "default": ""
+            }
+        ]
+    }
+}

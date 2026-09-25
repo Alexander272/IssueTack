@@ -103,9 +103,8 @@ func (s *MattermostService) HandleDialogSubmission(ctx context.Context, submissi
 	}
 
 	var (
-		creatorID   uuid.UUID
-		creatorName string
-		siteID      *uuid.UUID
+		creator *models.UserData
+		siteID  *uuid.UUID
 	)
 	if rawSite, ok := submission.Submission["siteId"].(string); ok && rawSite != "" {
 		if id, err := uuid.Parse(rawSite); err == nil {
@@ -113,7 +112,7 @@ func (s *MattermostService) HandleDialogSubmission(ctx context.Context, submissi
 		}
 	}
 
-	creatorID, creatorName, err = s.resolveOrCreateUser(ctx, realmID, submission.UserId, siteID)
+	creator, err = s.resolveOrCreateUser(ctx, realmID, submission.UserId, siteID)
 	if err != nil {
 		return fmt.Errorf("failed to resolve user: %w", err)
 	}
@@ -123,8 +122,8 @@ func (s *MattermostService) HandleDialogSubmission(ctx context.Context, submissi
 		Title:     title,
 		Status:    models.StatusOpen,
 		RealmID:   &realmID,
-		CreatorID: creatorID,
-		Actor:     &models.Actor{ID: creatorID, Name: creatorName},
+		CreatorID: creator.ID,
+		Actor:     &models.Actor{ID: creator.ID, Name: creator.Username},
 	}
 
 	if desc, ok := submission.Submission["description"].(string); ok && desc != "" {

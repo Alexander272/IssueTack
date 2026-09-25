@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -36,6 +37,7 @@ type MattermostDeps struct {
 	Users       Users
 	UserRealms  UserRealms
 	Roles       Roles
+	Realms      Realms
 	Tickets     Tickets
 	Groups      Groups
 	Categories  Categories
@@ -64,6 +66,7 @@ type MattermostService struct {
 	users         Users
 	userRealms    UserRealms
 	roles         Roles
+	realms        Realms
 	tickets       Tickets
 	groups        Groups
 	categories    Categories
@@ -87,6 +90,7 @@ func NewMattermostService(deps *MattermostDeps) *MattermostService {
 		users:       deps.Users,
 		userRealms:  deps.UserRealms,
 		roles:       deps.Roles,
+		realms:      deps.Realms,
 		tickets:     deps.Tickets,
 		groups:      deps.Groups,
 		categories:  deps.Categories,
@@ -113,6 +117,15 @@ type Mattermost interface {
 	HandleDialogOpen(ctx context.Context, input *models.DialogOpenDTO) error
 	HandleDialogSubmission(ctx context.Context, submission *model.SubmitDialogRequest) error
 	HandleInteractiveAction(ctx context.Context, input *models.InteractiveActionDTO) (*model.Post, error)
+
+	// Плагин MM (webapp + plugin-server → /api/v1/plugin/*)
+	PluginContext(ctx context.Context, channelID, mmUserID string) (*PluginContextResult, error)
+	PluginCreateTicket(ctx context.Context, input *PluginCreateTicketInput) (*PluginCreateTicketResult, error)
+	PluginListMine(ctx context.Context, channelID, mmUserID string) ([]PluginTicketShort, error)
+	PluginGetTicket(ctx context.Context, channelID, mmUserID, ticketID string) (*PluginTicketDetail, error)
+	PluginGetComments(ctx context.Context, channelID, mmUserID, ticketID string) ([]PluginComment, error)
+	PluginCreateComment(ctx context.Context, input *PluginCreateCommentInput) (*PluginComment, error)
+	PluginGetAttachmentContent(ctx context.Context, channelID, mmUserID, attachmentID string) (*models.Attachment, io.ReadCloser, error)
 
 	StartWSForRealm(ctx context.Context, realmID uuid.UUID) error
 	StopWSForRealm(realmID uuid.UUID)
@@ -253,7 +266,7 @@ func (s *MattermostService) HandleDM(ctx context.Context, input *HandleDMInput) 
 		return s.sendHelpMessage(settings.BotToken, input.ChannelID, isAdmin)
 
 	case statusCommands.MatchString(msg):
-		if _, _, err := s.resolveOrCreateUser(ctx, settings.RealmID, input.MmUserID, nil); err != nil {
+		if _, err := s.resolveOrCreateUser(ctx, settings.RealmID, input.MmUserID, nil); err != nil {
 			return fmt.Errorf("failed to resolve user: %w", err)
 		}
 		return s.sendStatusMessage(ch)
@@ -346,7 +359,7 @@ func (s *MattermostService) sendStatusMessage(ch *mmChannel) error {
 // номера файлы прикрепляются к последней созданной пользователем заявке из
 // recentTickets, если с момента создания прошло не более 30 минут.
 func (s *MattermostService) handleAttachFiles(ctx context.Context, ch *mmChannel, ticketNumber int, fileIDs []string, commentText string) error {
-	userID, _, err := s.resolveOrCreateUser(ctx, ch.Settings.RealmID, ch.MmUserID, nil)
+	user, err := s.resolveOrCreateUser(ctx, ch.Settings.RealmID, ch.MmUserID, nil)
 	if err != nil {
 		return fmt.Errorf("failed to resolve user: %w", err)
 	}
@@ -358,7 +371,7 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, ch *mmChannel
 		tickets, _, err := s.tickets.Get(ctx, &models.TicketFilter{
 			Number:  &ticketNumber,
 			RealmID: &ch.Settings.RealmID,
-			Actor:   &models.Actor{ID: userID},
+			Actor:   &models.Actor{ID: user.ID},
 		})
 		if err != nil || len(tickets) == 0 {
 			s.sendDMBestEffort(ch, fmt.Sprintf("Заявка №%d не найдена", ticketNumber))
@@ -366,7 +379,7 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, ch *mmChannel
 		}
 		ticket := tickets[0]
 		ticketID = ticket.ID
-		if ticket.Creator.ID != userID {
+		if ticket.Creator.ID != user.ID {
 			if commentText == "" {
 				s.sendDMBestEffort(ch, "Прикреплять файлы может только создатель заявки")
 				return nil
@@ -414,7 +427,7 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, ch *mmChannel
 			FileSize:   info.Size,
 			MimeType:   info.MimeType,
 			File:       bytes.NewReader(data),
-			UploadedBy: userID,
+			UploadedBy: user.ID,
 			Realm:      ch.Settings.RealmID.String(),
 		})
 	}
@@ -428,7 +441,7 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, ch *mmChannel
 			TicketID:   ticketID,
 			IsInternal: false,
 			Type:       "",
-			UserID:     userID,
+			UserID:     user.ID,
 			Realm:      ch.Settings.RealmID.String(),
 			Files:      fileDTOs,
 		})
@@ -482,7 +495,7 @@ func (s *MattermostService) commentAndReply(ctx context.Context, ch *mmChannel, 
 	if commentText == "" {
 		return nil
 	}
-	userID, _, err := s.resolveOrCreateUser(ctx, ch.Settings.RealmID, ch.MmUserID, nil)
+	user, err := s.resolveOrCreateUser(ctx, ch.Settings.RealmID, ch.MmUserID, nil)
 	if err != nil {
 		return fmt.Errorf("failed to resolve user: %w", err)
 	}
@@ -491,7 +504,7 @@ func (s *MattermostService) commentAndReply(ctx context.Context, ch *mmChannel, 
 		TicketID:   ticketID,
 		IsInternal: false,
 		Type:       "",
-		UserID:     userID,
+		UserID:     user.ID,
 		Realm:      ch.Settings.RealmID.String(),
 	}); err != nil {
 		if errors.Is(err, models.ErrPermissionDenied) {
@@ -528,7 +541,7 @@ func (s *MattermostService) handleComment(ctx context.Context, ch *mmChannel, me
 	number, _ := strconv.Atoi(parts[1])
 	text := strings.TrimSpace(parts[2])
 
-	userID, _, err := s.resolveOrCreateUser(ctx, ch.Settings.RealmID, ch.MmUserID, nil)
+	user, err := s.resolveOrCreateUser(ctx, ch.Settings.RealmID, ch.MmUserID, nil)
 	if err != nil {
 		return fmt.Errorf("failed to resolve user: %w", err)
 	}
@@ -536,7 +549,7 @@ func (s *MattermostService) handleComment(ctx context.Context, ch *mmChannel, me
 	tickets, _, err := s.tickets.Get(ctx, &models.TicketFilter{
 		Number:  &number,
 		RealmID: &ch.Settings.RealmID,
-		Actor:   &models.Actor{ID: userID},
+		Actor:   &models.Actor{ID: user.ID},
 	})
 	if err != nil || len(tickets) == 0 {
 		s.sendDMBestEffort(ch, fmt.Sprintf("Заявка №%d не найдена", number))
@@ -549,7 +562,7 @@ func (s *MattermostService) handleComment(ctx context.Context, ch *mmChannel, me
 		TicketID:   ticket.ID,
 		IsInternal: false,
 		Type:       "",
-		UserID:     userID,
+		UserID:     user.ID,
 		Realm:      ch.Settings.RealmID.String(),
 	}); err != nil {
 		if errors.Is(err, models.ErrPermissionDenied) {

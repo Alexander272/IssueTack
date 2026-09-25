@@ -13,41 +13,41 @@ import (
 )
 
 // resolveOrCreateUser находит или создаёт системного пользователя по userID
-// из Mattermost, возвращая его UUID и имя. Сначала ищет уже сохранённую связку;
-// если её нет — пытается сопоставить с существующим пользователем (по email,
-// username или ФИО) и при неудаче создаёт нового. Реализовано так, чтобы
-// внешний Mattermost-пользователь всегда мог создавать заявки без ручной
-// регистрации в системе.
-func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uuid.UUID, mmUserID string, siteID *uuid.UUID) (uuid.UUID, string, error) {
+// из Mattermost, возвращая его данные (ID, имя и привязанную площадку). Сначала
+// ищет уже сохранённую связку; если её нет — пытается сопоставить с существующим
+// пользователем (по email, username или ФИО) и при неудаче создаёт нового.
+// Реализовано так, чтобы внешний Mattermost-пользователь всегда мог создавать
+// заявки без ручной регистрации в системе.
+func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uuid.UUID, mmUserID string, siteID *uuid.UUID) (*models.UserData, error) {
 	existing, err := s.users.GetByMattermostID(ctx, mmUserID)
 	if err == nil {
 		s.ensureLinkAndRealm(ctx, realmID, existing.ID, mmUserID, siteID, existing.ID, existing.Username)
-		return existing.ID, existing.Username, nil
+		return existing, nil
 	}
 
 	settings, err := s.repo.GetByRealm(ctx, realmID)
 	if err != nil {
-		return uuid.Nil, "", fmt.Errorf("failed to get realm settings: %w", err)
+		return nil, fmt.Errorf("failed to get realm settings: %w", err)
 	}
 
 	mmUser, err := s.most.Client.GetUser(settings.BotToken, mmUserID)
 	if err != nil {
-		return uuid.Nil, "", fmt.Errorf("failed to get mattermost user: %w", err)
+		return nil, fmt.Errorf("failed to get mattermost user: %w", err)
 	}
 
 	sysUsers, err := s.users.GetAll(ctx, nil)
 	if err != nil {
-		return uuid.Nil, "", fmt.Errorf("failed to get system users: %w", err)
+		return nil, fmt.Errorf("failed to get system users: %w", err)
 	}
 
 	if matched, userID, username := matchByEmail(sysUsers, mmUser.Email); matched {
 		s.ensureLinkAndRealm(ctx, realmID, userID, mmUser.Id, siteID, userID, username)
-		return userID, username, nil
+		return &models.UserData{ID: userID, Username: username, SiteID: userSiteByID(sysUsers, userID)}, nil
 	}
 
 	if matched, userID, username := matchByUsername(sysUsers, mmUser.Username); matched {
 		s.ensureLinkAndRealm(ctx, realmID, userID, mmUser.Id, siteID, userID, username)
-		return userID, username, nil
+		return &models.UserData{ID: userID, Username: username, SiteID: userSiteByID(sysUsers, userID)}, nil
 	}
 
 	mmFio := buildFIO(mmUser.FirstName, mmUser.LastName)
@@ -55,7 +55,7 @@ func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uui
 		for _, sysU := range sysUsers {
 			if buildFIO(sysU.FirstName, sysU.LastName) == mmFio {
 				s.ensureLinkAndRealm(ctx, realmID, sysU.ID, mmUser.Id, siteID, sysU.ID, sysU.Username)
-				return sysU.ID, sysU.Username, nil
+				return sysU, nil
 			}
 		}
 	}
@@ -73,7 +73,7 @@ func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uui
 		IsActive:     true,
 	}
 	if err := s.users.CreateSeveral(ctx, nil, []*models.UserDataDTO{userDTO}); err != nil {
-		return uuid.Nil, "", fmt.Errorf("failed to create user: %w", err)
+		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 	if err := s.ensureRealmMembership(ctx, newUserID, realmID, newUserID, mmUser.Username); err != nil {
 		logger.Warn("failed to add created user to realm",
@@ -87,7 +87,28 @@ func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uui
 		logger.StringAttr("mm_user_id", mmUserID),
 		logger.StringAttr("user_id", newUserID.String()),
 	)
-	return newUserID, mmUser.Username, nil
+
+	newUser := &models.UserData{
+		ID:       newUserID,
+		Username: mmUser.Username,
+	}
+	if siteID != nil {
+		value := siteID.String()
+		newUser.SiteID = &value
+	}
+
+	return newUser, nil
+}
+
+// userSiteByID возвращает привязанную площадку пользователя из списка (системные
+// пользователи уже содержат SiteID после чтения из БД).
+func userSiteByID(users []*models.UserData, id uuid.UUID) *string {
+	for _, u := range users {
+		if u.ID == id {
+			return u.SiteID
+		}
+	}
+	return nil
 }
 
 // ensureRealmMembership добавляет пользователя в realm с ролью «user», если он
@@ -190,12 +211,12 @@ func buildFIO(firstName, lastName string) string {
 // администратору realm; необязательными аргументами можно ограничить синк
 // конкретными командами Mattermost.
 func (s *MattermostService) handleSync(ctx context.Context, ch *mmChannel, message string) error {
-	senderID, senderName, err := s.resolveOrCreateUser(ctx, ch.Settings.RealmID, ch.MmUserID, nil)
+	sender, err := s.resolveOrCreateUser(ctx, ch.Settings.RealmID, ch.MmUserID, nil)
 	if err != nil {
 		return fmt.Errorf("failed to resolve sender: %w", err)
 	}
 
-	if !s.isRealmSupervisor(ctx, senderID, ch.Settings.RealmID) {
+	if !s.isRealmSupervisor(ctx, sender.ID, ch.Settings.RealmID) {
 		if err := s.most.DM.Send(ch.Settings.BotToken, ch.Settings.BotUserID, ch.MmUserID,
 			"Только администраторы могут синхронизировать пользователей"); err != nil {
 			return fmt.Errorf("failed to send no-permission message: %w", err)
@@ -250,7 +271,7 @@ func (s *MattermostService) handleSync(ctx context.Context, ch *mmChannel, messa
 
 		existing, existingErr := s.users.GetByMattermostID(ctx, mmU.Id)
 		if existingErr == nil {
-			if err := s.ensureRealmMembership(ctx, existing.ID, ch.Settings.RealmID, senderID, senderName); err != nil {
+			if err := s.ensureRealmMembership(ctx, existing.ID, ch.Settings.RealmID, sender.ID, sender.Username); err != nil {
 				logger.Warn("failed to add user to realm",
 					logger.StringAttr("mm_user_id", mmU.Id),
 					logger.ErrAttr(err),
@@ -265,7 +286,7 @@ func (s *MattermostService) handleSync(ctx context.Context, ch *mmChannel, messa
 
 		if mmU.Email != "" {
 			if sysU, ok := sysByEmail[strings.ToLower(mmU.Email)]; ok {
-				s.ensureLinkAndRealm(ctx, ch.Settings.RealmID, sysU.ID, mmU.Id, nil, senderID, senderName)
+				s.ensureLinkAndRealm(ctx, ch.Settings.RealmID, sysU.ID, mmU.Id, nil, sender.ID, sender.Username)
 				linked++
 				matched = true
 			}
@@ -273,7 +294,7 @@ func (s *MattermostService) handleSync(ctx context.Context, ch *mmChannel, messa
 
 		if !matched && mmU.Username != "" {
 			if sysU, ok := sysByUsername[strings.ToLower(mmU.Username)]; ok {
-				s.ensureLinkAndRealm(ctx, ch.Settings.RealmID, sysU.ID, mmU.Id, nil, senderID, senderName)
+				s.ensureLinkAndRealm(ctx, ch.Settings.RealmID, sysU.ID, mmU.Id, nil, sender.ID, sender.Username)
 				linked++
 				matched = true
 			}
@@ -282,7 +303,7 @@ func (s *MattermostService) handleSync(ctx context.Context, ch *mmChannel, messa
 		if !matched {
 			if fio := buildFIO(mmU.FirstName, mmU.LastName); fio != "" {
 				if sysU, ok := sysByFIO[fio]; ok {
-					s.ensureLinkAndRealm(ctx, ch.Settings.RealmID, sysU.ID, mmU.Id, nil, senderID, senderName)
+					s.ensureLinkAndRealm(ctx, ch.Settings.RealmID, sysU.ID, mmU.Id, nil, sender.ID, sender.Username)
 					linked++
 					matched = true
 				}
@@ -311,7 +332,7 @@ func (s *MattermostService) handleSync(ctx context.Context, ch *mmChannel, messa
 			)
 			continue
 		}
-		if err := s.ensureRealmMembership(ctx, newUserID, ch.Settings.RealmID, senderID, senderName); err != nil {
+		if err := s.ensureRealmMembership(ctx, newUserID, ch.Settings.RealmID, sender.ID, sender.Username); err != nil {
 			logger.Warn("failed to add user to realm",
 				logger.StringAttr("mm_user_id", mmU.Id),
 				logger.ErrAttr(err),

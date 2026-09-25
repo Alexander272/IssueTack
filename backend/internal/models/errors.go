@@ -44,6 +44,8 @@ var (
 	ErrNotFound = NewDomainError(errors.New("resource not found"), http.StatusNotFound, "NF001", "Ничего не найдено")
 	ErrNoRows   = NewDomainError(errors.New("row not found"), http.StatusNotFound, "NF002", "Запись не найдена")
 	ErrNoData   = NewDomainError(errors.New("no data"), http.StatusNotFound, "NF003", "Данные отсутствуют")
+	// ErrChannelNotBound — Mattermost-канал не привязан ни к одному реалму.
+	ErrChannelNotBound = NewDomainError(errors.New("channel is not bound to a realm"), http.StatusNotFound, "NF004", "Канал не привязан к системе учёта заявок")
 
 	// 409 Conflict
 	ErrAlreadyExists = NewDomainError(errors.New("resource already exists"), http.StatusConflict, "AE001", "Запись уже существует")

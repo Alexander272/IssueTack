@@ -12,6 +12,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/mattermost/mattermost/server/public/model"
@@ -25,7 +26,7 @@ func Register(r *gin.RouterGroup, svc services.Mattermost, cfg config.Mattermost
 	h := &Handler{service: svc}
 
 	mm := r.Group("/mattermost")
-	mm.Use(newSourceGuard(cfg).middleware())
+	mm.Use(middleware.SourceGuard(cfg))
 	{
 		mm.POST("/webhook", h.handleWebhook)
 		mm.POST("/dialog/open", h.handleDialogOpen)
@@ -33,6 +34,8 @@ func Register(r *gin.RouterGroup, svc services.Mattermost, cfg config.Mattermost
 		mm.POST("/action", h.handleInteractiveAction)
 		mm.POST("/event", h.handleWSEvent)
 	}
+
+	h.registerPluginRoutes(r, cfg)
 }
 
 func (h *Handler) handleWebhook(c *gin.Context) {
