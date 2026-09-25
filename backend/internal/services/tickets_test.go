@@ -223,6 +223,39 @@ func TestTicketService_Get_Created_Regular(t *testing.T) {
 	assert.Equal(t, 0, total)
 }
 
+func TestTicketService_Get_CreatedOrOwned_Regular(t *testing.T) {
+	mockRepo, _, mockSubtasks, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	mode := "created_or_owned"
+	req := &models.TicketFilter{
+		Actor: &models.Actor{ID: actorID, Name: "test"},
+		Mode:  &mode,
+		Limit: 20, Offset: 0,
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+
+	expected := []*models.Ticket{{ID: uuid.New(), Title: "Ticket 1"}}
+	expectedFilter := &models.TicketFilter{
+		Actor:           &models.Actor{ID: actorID, Name: "test"},
+		Mode:            &mode,
+		Limit:           20,
+		Offset:          0,
+		CreatedOrOwnedBy: &actorID,
+	}
+	mockRepo.On("Get", mock.Anything, expectedFilter).Return(expected, 0, nil)
+	mockSubtasks.On("GetByTicketIDs", mock.Anything, mock.Anything).Return((map[uuid.UUID][]*models.Subtask)(nil), nil)
+
+	got, total, err := svc.Get(context.Background(), req)
+	assert.NoError(t, err)
+	assert.Equal(t, expected, got)
+	assert.Equal(t, 0, total)
+}
+
 func TestTicketService_GetByID_Success(t *testing.T) {
 	mockRepo, _, mockSubtasks, mockAttachments, _, _, mockPolicies, svc := ticketServiceFixtures()
 

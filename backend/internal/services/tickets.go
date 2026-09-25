@@ -147,6 +147,10 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 		// без ограничения группой — иначе теряются внегрупповые заявки автора.
 		if req.Mode != nil && *req.Mode == "created" {
 			req.CreatorID = &req.Actor.ID
+		} else if req.Mode != nil && *req.Mode == "created_or_owned" {
+			// «Автор ИЛИ заказчик» (mode=created_or_owned, Mattermost-плагин):
+			// тикеты, где пользователь автор ИЛИ заказчик (owner), без ограничения группой.
+			req.CreatedOrOwnedBy = &req.Actor.ID
 		} else {
 			// Обзор без mode: все заявки групп пользователя + внегрупповые, назначенные ему.
 			if groups := unionGroupIDs(managed, member); len(groups) > 0 {

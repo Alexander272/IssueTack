@@ -84,7 +84,7 @@ func TestPluginListMine_HappyPath(t *testing.T) {
 
 	num := 7
 	tickets.On("Get", mock.Anything, mock.MatchedBy(func(f *models.TicketFilter) bool {
-		if f.CreatorID == nil || *f.CreatorID != userID {
+		if f.Mode == nil || *f.Mode != "created_or_owned" {
 			return false
 		}
 		if f.RealmID == nil || *f.RealmID != realmID {
@@ -139,6 +139,12 @@ func TestPluginListMine_Statuses(t *testing.T) {
 		assert.NotEqual(t, models.StatusClosed, s)
 		assert.NotEqual(t, models.StatusCancelled, s)
 	}
+	// «Автор ИЛИ заказчик»: плагин запрашивает mode=created_or_owned, который
+	// реальный TicketService переводит в фильтр (creator_id OR owner_id).
+	if filter.Mode != nil {
+		assert.Equal(t, "created_or_owned", *filter.Mode)
+	}
+	assert.Nil(t, filter.CreatorID)
 }
 
 func TestPluginContext_UnboundChannel(t *testing.T) {

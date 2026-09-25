@@ -590,14 +590,13 @@ func (s *MattermostService) PluginListMine(ctx context.Context, channelID, mmUse
 		// или «вернуть в работу» прямо из плагина.
 		models.StatusResolved,
 	}
-	created := "created"
+	mode := "created_or_owned"
 
 	tickets, _, err := s.tickets.Get(ctx, &models.TicketFilter{
-		CreatorID: &user.ID,
-		RealmID:   &settings.RealmID,
-		Statuses:  statuses,
-		Actor:     &models.Actor{ID: user.ID, Name: user.Username},
-		Mode:      &created,
+		RealmID:  &settings.RealmID,
+		Statuses: statuses,
+		Actor:    &models.Actor{ID: user.ID, Name: user.Username},
+		Mode:     &mode,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user tickets: %w", err)

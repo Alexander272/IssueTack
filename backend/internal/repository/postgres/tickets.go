@@ -201,6 +201,18 @@ func (w *whereBuilder) favorites(userID *uuid.UUID, typ *models.FavoriteType) {
 	w.idx++
 }
 
+// creatorOrOwner добавляет "(t.creator_id = $n OR t.owner_id = $n)": тикеты, где
+// пользователь является автором ИЛИ заказчиком (для Mattermost-плагина).
+func (w *whereBuilder) creatorOrOwner(userID *uuid.UUID) {
+	if userID == nil {
+		return
+	}
+	w.idx++
+	w.add(fmt.Sprintf("(t.creator_id = $%d OR t.owner_id = $%d)", w.idx, w.idx+1))
+	w.args = append(w.args, *userID, *userID)
+	w.idx++
+}
+
 // myWork добавляет "(t.assignee_id = $n OR t.group_id IN (...))" для страницы
 // «Мои задачи»: личные назначения пользователя ИЛИ задачи его групп.
 func (w *whereBuilder) myWork(f *models.MyWorkFilter) {
@@ -266,6 +278,7 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 	eq(w, "t.assignee_id", req.AssigneeID)
 	w.groups(req.GroupIDs, req.IncludeUngroupedAssignedTo)
 	eq(w, "t.creator_id", req.CreatorID)
+	w.creatorOrOwner(req.CreatedOrOwnedBy)
 	eq(w, "t.ticket_number", req.Number)
 	eq(w, "t.realm_id", req.RealmID)
 	w.search(req.Search)

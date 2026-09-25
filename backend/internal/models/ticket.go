@@ -78,6 +78,9 @@ type TicketFilter struct {
 	Sort                       *string        `form:"sort" json:"sort"`
 	Mode                       *string        `form:"mode" json:"mode"`
 	CreatorID                  *uuid.UUID     `json:"-"`
+	// CreatedOrOwnedBy — внутренний фильтр «автор ИЛИ заказчик» (для Mattermost-плагина):
+	// тикеты, где пользователь является creator_id ИЛИ owner_id.
+	CreatedOrOwnedBy           *uuid.UUID     `json:"-"`
 	Archived                   *bool          `form:"archived" json:"archived"`
 	FavoritesByUser            *uuid.UUID     `json:"-"`
 	FavoriteType               *FavoriteType  `json:"-"`
