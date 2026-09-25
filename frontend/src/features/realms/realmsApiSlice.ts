@@ -19,7 +19,7 @@ const realmsApiSlice = apiSlice.injectEndpoints({
 					await api.queryFulfilled
 				} catch (error) {
 					const fetchError = (error as IBaseFetchError).error
-					toast.error(fetchError.data.message, { autoClose: false })
+					toast.error(fetchError.data?.message, { autoClose: false })
 				}
 			},
 			providesTags: [{ type: 'Realms', id: 'ALL' }],
@@ -35,7 +35,7 @@ const realmsApiSlice = apiSlice.injectEndpoints({
 					await api.queryFulfilled
 				} catch (error) {
 					const fetchError = (error as IBaseFetchError).error
-					toast.error(fetchError.data.message, { autoClose: false })
+					toast.error(fetchError.data?.message, { autoClose: false })
 				}
 			},
 		}),
@@ -77,7 +77,7 @@ const realmsApiSlice = apiSlice.injectEndpoints({
 				} catch (error) {
 					const fetchError = error as IBaseFetchError
 					if (fetchError.error?.status !== 404) {
-						toast.error(fetchError.error.data.message, { autoClose: false })
+						toast.error(fetchError.error.data?.message, { autoClose: false })
 					}
 				}
 			},

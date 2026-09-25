@@ -67,7 +67,7 @@ export const UpdateRole: FC<Props> = ({ roleId, onCancel, onSuccess }) => {
 			if (onSuccess) onSuccess()
 		} catch (error) {
 			const fetchError = error as IFetchError
-			toast.error(fetchError.data.message, { autoClose: false })
+			toast.error(fetchError.data?.message, { autoClose: false })
 		}
 	})
 
@@ -79,7 +79,7 @@ export const UpdateRole: FC<Props> = ({ roleId, onCancel, onSuccess }) => {
 			if (onSuccess) onSuccess()
 		} catch (error) {
 			const fetchError = error as IFetchError
-			toast.error(fetchError.data.message, { autoClose: false })
+			toast.error(fetchError.data?.message, { autoClose: false })
 		}
 	}
 

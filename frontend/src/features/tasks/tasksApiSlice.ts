@@ -20,7 +20,7 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 					await api.queryFulfilled
 				} catch (error) {
 					const fetchError = (error as IBaseFetchError).error
-					toast.error(fetchError.data.message, { autoClose: false })
+					toast.error(fetchError.data?.message, { autoClose: false })
 				}
 			},
 		}),
@@ -36,7 +36,7 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 					await api.queryFulfilled
 				} catch (error) {
 					const fetchError = (error as IBaseFetchError).error
-					toast.error(fetchError.data.message, { autoClose: false })
+					toast.error(fetchError.data?.message, { autoClose: false })
 				}
 			},
 		}),
@@ -65,7 +65,7 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 					await api.queryFulfilled
 				} catch (error) {
 					const fetchError = (error as IBaseFetchError).error
-					toast.error(fetchError.data.message, { autoClose: false })
+					toast.error(fetchError.data?.message, { autoClose: false })
 				}
 			},
 		}),
@@ -84,7 +84,7 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 					await api.queryFulfilled
 				} catch (error) {
 					const fetchError = (error as IBaseFetchError).error
-					toast.error(fetchError.data.message, { autoClose: false })
+					toast.error(fetchError.data?.message, { autoClose: false })
 				}
 			},
 		}),
@@ -104,7 +104,7 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 					await api.queryFulfilled
 				} catch (error) {
 					const fetchError = (error as IBaseFetchError).error
-					toast.error(fetchError.data.message, { autoClose: false })
+					toast.error(fetchError.data?.message, { autoClose: false })
 				}
 			},
 		}),
@@ -114,13 +114,16 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 				url: API.tickets.byId(id),
 				method: 'DELETE',
 			}),
-			invalidatesTags: [{ type: 'Tasks', id: 'LIST' }],
+			invalidatesTags: (_result, _error, id) => [
+				{ type: 'Tasks', id: 'LIST' },
+				{ type: 'Tasks', id },
+			],
 			onQueryStarted: async (_arg, api) => {
 				try {
 					await api.queryFulfilled
 				} catch (error) {
 					const fetchError = (error as IBaseFetchError).error
-					toast.error(fetchError.data.message, { autoClose: false })
+					toast.error(fetchError.data?.message, { autoClose: false })
 				}
 			},
 		}),

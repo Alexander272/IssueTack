@@ -138,7 +138,7 @@ func (h *Handler) transfer(c *gin.Context) {
 		return
 	}
 	dto.ID = &id
-	if *dto.AssigneeID == uuid.Nil {
+	if dto.AssigneeID == nil || *dto.AssigneeID == uuid.Nil {
 		response.SendError(c, models.ErrInvalidInput)
 		return
 	}
@@ -198,7 +198,7 @@ func (h *Handler) update(c *gin.Context) {
 		response.SendError(c, err)
 		return
 	}
-	if id != *dto.ID {
+	if dto.ID == nil || id != *dto.ID {
 		response.SendError(c, fmt.Errorf("%w: %s", models.ErrInvalidInput, "id is not equal to dto.ID"))
 		return
 	}

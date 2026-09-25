@@ -1,5 +1,6 @@
 import { type FC, useState } from 'react'
 import { Box, Dialog, IconButton, Typography } from '@mui/material'
+import { toast } from 'react-toastify'
 import { X, Download, Maximize2, Minimize2 } from 'lucide-mui'
 
 import { formatSize } from '../../utils/size'
@@ -22,8 +23,15 @@ function PreviewContent({ fileKey, fileName, fileSize, fullScreen, onToggleFullS
 
 	const handleDownload = async () => {
 		if (!src) return
-		const res = await fetch(src)
-		saveAs(await res.blob(), fileName)
+		try {
+			const res = await fetch(src)
+			if (!res.ok) {
+				throw new Error('Ошибка при получении файла')
+			}
+			saveAs(await res.blob(), fileName)
+		} catch {
+			toast.error('Ошибка скачивания файла')
+		}
 	}
 
 	return (

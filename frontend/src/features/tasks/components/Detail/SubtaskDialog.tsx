@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from '@mui/material'
 
 import type { ISubtask } from '../../types/task'
@@ -14,9 +14,11 @@ export const SubtaskDialog = ({ open, editSubtask, onSubmit, onClose }: Props) =
 	const isEdit = Boolean(editSubtask)
 	const [title, setTitle] = useState(editSubtask?.title ?? '')
 	const [description, setDescription] = useState(editSubtask?.description ?? '')
+	const submittedRef = useRef(false)
 
 	const handleSubmit = () => {
-		if (!title.trim()) return
+		if (!title.trim() || submittedRef.current) return
+		submittedRef.current = true
 		onSubmit({ title: title.trim(), description: description.trim() })
 		onClose()
 	}
@@ -24,6 +26,7 @@ export const SubtaskDialog = ({ open, editSubtask, onSubmit, onClose }: Props) =
 	const handleClose = () => {
 		setTitle('')
 		setDescription('')
+		submittedRef.current = false
 		onClose()
 	}
 
@@ -39,7 +42,10 @@ export const SubtaskDialog = ({ open, editSubtask, onSubmit, onClose }: Props) =
 					label='Заголовок'
 					placeholder='Краткое описание подзадачи'
 					value={title}
-					onChange={e => setTitle(e.target.value)}
+					onChange={e => {
+						submittedRef.current = false
+						setTitle(e.target.value)
+					}}
 					onKeyDown={e => {
 						if (e.key === 'Enter') handleSubmit()
 					}}
@@ -51,7 +57,10 @@ export const SubtaskDialog = ({ open, editSubtask, onSubmit, onClose }: Props) =
 					multiline
 					rows={3}
 					value={description}
-					onChange={e => setDescription(e.target.value)}
+					onChange={e => {
+						submittedRef.current = false
+						setDescription(e.target.value)
+					}}
 					onKeyDown={e => {
 						if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSubmit()
 					}}

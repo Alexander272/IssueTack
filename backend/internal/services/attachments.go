@@ -78,6 +78,11 @@ type Attachments interface {
 	Upload(ctx context.Context, tx postgres.Tx, dto *models.UploadAttachmentDTO) (*models.Attachment, error)
 	// Delete удаляет вложение и связанный файл с диска.
 	Delete(ctx context.Context, tx postgres.Tx, dto *models.DeleteAttachmentDTO) error
+	// DeleteByEntity удаляет все вложения сущности (тикета/подзадачи) и файлы
+	// с диска. Внутренний вызов при каскадном удалении родительской записи:
+	// доступ не проверяется, авторизацию обеспечивает вызывающий. Файлы с
+	// диска удаляются целиком директорией entity_type/entity_id.
+	DeleteByEntity(ctx context.Context, tx postgres.Tx, entityType string, entityID uuid.UUID) error
 	// GetForComments возвращает вложения комментариев тикета, сгруппированные по
 	// comment_id. Ожидается, что вызов осуществляет CommentService, уже проверивший
 	// право чтения тикета и видимость внутренних комментариев.
@@ -210,10 +215,21 @@ func (s *AttachmentService) Upload(ctx context.Context, tx postgres.Tx, dto *mod
 		return nil, fmt.Errorf("failed to create file: %w", err)
 	}
 
-	if _, err := io.Copy(dst, dto.File); err != nil {
+	var written int64
+	if s.conf.MaxSize > 0 {
+		written, err = io.Copy(dst, io.LimitReader(dto.File, s.conf.MaxSize+1))
+	} else {
+		written, err = io.Copy(dst, dto.File)
+	}
+	if err != nil {
 		dst.Close()
 		os.Remove(absPath)
 		return nil, fmt.Errorf("failed to write file: %w", err)
+	}
+	if s.conf.MaxSize > 0 && written > s.conf.MaxSize {
+		dst.Close()
+		os.Remove(absPath)
+		return nil, fmt.Errorf("%w: максимум %d байт", models.ErrFileTooLarge, s.conf.MaxSize)
 	}
 	dst.Close()
 
@@ -258,6 +274,24 @@ func (s *AttachmentService) Delete(ctx context.Context, tx postgres.Tx, dto *mod
 
 	if err := os.Remove(att.FilePath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to delete file: %w", err)
+	}
+	return nil
+}
+
+// DeleteByEntity удаляет все вложения сущности и директорию с файлами.
+// Применяется при каскадном удалении тикета (вместе с подзадачами), чтобы не
+// оставлять «осиротевшие» записи и файлы. Вызывается внутри транзакции удаления
+// тикета, без проверки доступа — она выполнена выше, при проверке Delete-права.
+func (s *AttachmentService) DeleteByEntity(ctx context.Context, tx postgres.Tx, entityType string, entityID uuid.UUID) error {
+	if !allowedEntityTypes[entityType] {
+		return fmt.Errorf("invalid entity type: %s", entityType)
+	}
+	if err := s.repo.DeleteByEntity(ctx, tx, entityType, entityID); err != nil {
+		return fmt.Errorf("failed to delete attachments: %w", err)
+	}
+	dir := filepath.Join(s.conf.UploadDir, entityType, entityID.String())
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("failed to remove attachment directory: %w", err)
 	}
 	return nil
 }

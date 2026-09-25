@@ -75,7 +75,7 @@ export const UpdateModal: FC<Props> = ({ user, onClose }) => {
 			onClose()
 		} catch (error) {
 			const fetchError = error as IFetchError
-			toast.error(fetchError.data.message, { autoClose: false })
+			toast.error(fetchError.data?.message, { autoClose: false })
 		}
 	})
 

@@ -567,6 +567,13 @@ func (m *MockSubtaskService) GetByTicketID(ctx context.Context, ticketID, actorI
 	args := m.Called(ctx, ticketID, actorID)
 	return args.Get(0).([]*models.Subtask), args.Error(1)
 }
+func (m *MockSubtaskService) GetByTicketIDs(ctx context.Context, ticketIDs []uuid.UUID) (map[uuid.UUID][]*models.Subtask, error) {
+	args := m.Called(ctx, ticketIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[uuid.UUID][]*models.Subtask), args.Error(1)
+}
 func (m *MockSubtaskService) GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID, realm string) (*models.Subtask, error) {
 	args := m.Called(ctx, req, actorID)
 	if args.Get(0) == nil {
@@ -630,6 +637,10 @@ func (m *MockAttachmentService) Upload(ctx context.Context, tx postgres.Tx, dto 
 }
 func (m *MockAttachmentService) Delete(ctx context.Context, tx postgres.Tx, dto *models.DeleteAttachmentDTO) error {
 	args := m.Called(ctx, tx, dto)
+	return args.Error(0)
+}
+func (m *MockAttachmentService) DeleteByEntity(ctx context.Context, tx postgres.Tx, entityType string, entityID uuid.UUID) error {
+	args := m.Called(ctx, tx, entityType, entityID)
 	return args.Error(0)
 }
 func (m *MockAttachmentService) GetForComments(ctx context.Context, ticketID uuid.UUID, showInternal bool) (map[uuid.UUID][]*models.Attachment, error) {
@@ -1003,6 +1014,13 @@ func (m *MockSubtasksRepo) GetByTicketID(ctx context.Context, ticketID uuid.UUID
 	args := m.Called(ctx, ticketID)
 	return args.Get(0).([]*models.Subtask), args.Error(1)
 }
+func (m *MockSubtasksRepo) GetByTicketIDs(ctx context.Context, ticketIDs []uuid.UUID) ([]*models.Subtask, error) {
+	args := m.Called(ctx, ticketIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.Subtask), args.Error(1)
+}
 func (m *MockSubtasksRepo) GetByID(ctx context.Context, req *models.GetSubtaskDTO) (*models.Subtask, error) {
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
@@ -1048,6 +1066,10 @@ func (m *MockAttachmentsRepo) Create(ctx context.Context, tx postgres.Tx, dto *m
 }
 func (m *MockAttachmentsRepo) Delete(ctx context.Context, tx postgres.Tx, id uuid.UUID) error {
 	args := m.Called(ctx, tx, id)
+	return args.Error(0)
+}
+func (m *MockAttachmentsRepo) DeleteByEntity(ctx context.Context, tx postgres.Tx, entityType string, entityID uuid.UUID) error {
+	args := m.Called(ctx, tx, entityType, entityID)
 	return args.Error(0)
 }
 func (m *MockAttachmentsRepo) GetByComments(ctx context.Context, ticketID uuid.UUID) (map[uuid.UUID]bool, []*models.Attachment, error) {

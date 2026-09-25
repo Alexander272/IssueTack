@@ -1,5 +1,6 @@
 import { Box, Button, Stack, TextField, Typography } from '@mui/material'
 import { Controller, FormProvider, useForm, useFormContext } from 'react-hook-form'
+import { useEffect, useState } from 'react'
 import { toast } from 'react-toastify'
 
 import type { ITask, ITaskDTO } from '../../types/task'
@@ -16,6 +17,7 @@ type Props = {
 	onSuccess?: () => void
 	onCancel?: () => void
 	embedded?: boolean
+	onSavingChange?: (saving: boolean) => void
 }
 
 const EditDescriptionSection = () => {
@@ -33,7 +35,10 @@ const EditDescriptionSection = () => {
 				<Controller
 					control={control}
 					name='title'
-					rules={{ required: 'Обязательное поле' }}
+					rules={{
+						required: 'Обязательное поле',
+						validate: value => (value ?? '').trim().length > 0 || 'Заголовок не может состоять из пробелов',
+					}}
 					render={({ field, fieldState }) => (
 						<Box>
 							<TextField
@@ -68,11 +73,15 @@ const EditDescriptionSection = () => {
 	)
 }
 
-export const TaskEditForm = ({ task, onSuccess, onCancel, embedded }: Props) => {
+export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChange }: Props) => {
 	const isManager = useAppSelector(getIsManager)
 	const capabilities = useAppSelector(getCurrentCapabilities)
 
 	const [updateTask, { isLoading }] = useUpdateTaskMutation()
+
+	useEffect(() => {
+		onSavingChange?.(isLoading)
+	}, [isLoading, onSavingChange])
 
 	const methods = useForm<FormValues>({
 		defaultValues: {
@@ -88,32 +97,39 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded }: Props) => 
 		},
 	})
 	const { handleSubmit, reset } = methods
+	const [submitting, setSubmitting] = useState(false)
 
 	const onSubmit = handleSubmit(async data => {
-		const dto: Omit<ITaskDTO, 'id'> & { id: string } = {
-			id: task.id,
-			title: data.title,
-			description: data.description,
-			status: task.status,
-			priority: data.priority,
-			realmId: task.realmId ?? '',
-			siteId: task.site.id,
-			categoryId: task.category.id,
-			creatorId: task.creator.id,
-			ownerId: data.ownerId || null,
-			groupId: data.groupId || null,
-			assigneeId: data.assigneeId || null,
-			managerId: task.manager?.id ?? null,
-			dueDate: data.dueDate || null,
-		}
-
+		if (submitting) return
+		setSubmitting(true)
 		try {
-			await updateTask(dto).unwrap()
-			toast.success('Задача обновлена')
-			reset()
-			onSuccess?.()
-		} catch {
-			// ошибка уже показана тостом в tasksApiSlice (updateTask.onQueryStarted)
+			const dto: Omit<ITaskDTO, 'id'> & { id: string } = {
+				id: task.id,
+				title: data.title.trim(),
+				description: data.description,
+				status: task.status,
+				priority: data.priority,
+				realmId: task.realmId ?? '',
+				siteId: task.site.id,
+				categoryId: task.category.id,
+				creatorId: task.creator.id,
+				ownerId: data.ownerId || null,
+				groupId: data.groupId || null,
+				assigneeId: data.assigneeId || null,
+				managerId: task.manager?.id ?? null,
+				dueDate: data.dueDate || null,
+			}
+
+			try {
+				await updateTask(dto).unwrap()
+				toast.success('Задача обновлена')
+				reset()
+				onSuccess?.()
+			} catch {
+				// ошибка уже показана тостом в tasksApiSlice (updateTask.onQueryStarted)
+			}
+		} finally {
+			setSubmitting(false)
 		}
 	})
 

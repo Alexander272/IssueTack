@@ -104,6 +104,10 @@ type UpdateAccountDTO struct {
 	InternalNumber string    `json:"internalNumber"`
 	Actor          *Actor
 	Realms         []*UserRealmDTO `json:"realms,omitempty"`
+	// RealmID — realm запроса (заголовок realm), выставляется хендлером из контекста.
+	// Привязки ролей в dto.Realms допустимы только внутри этого realm: защита от
+	// кросс-реалмовой эскалации (users:write проверяется Casbin по домену запроса).
+	RealmID uuid.UUID `json:"-"`
 }
 
 type UserRole struct {

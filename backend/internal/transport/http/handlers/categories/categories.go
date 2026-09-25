@@ -114,7 +114,7 @@ func (h *Handler) update(c *gin.Context) {
 		response.SendError(c, err)
 		return
 	}
-	if id != *dto.ID {
+	if dto.ID == nil || id != *dto.ID {
 		response.SendError(c, fmt.Errorf("%w: %s", models.ErrInvalidInput, "id is not equal to dto.ID"))
 		return
 	}

@@ -74,7 +74,7 @@ export const CreateRole: FC<Props> = ({ onCancel, onSuccess }) => {
 			if (onSuccess) onSuccess()
 		} catch (error) {
 			const fetchError = error as IFetchError
-			toast.error(fetchError.data.message, { autoClose: false })
+			toast.error(fetchError.data?.message, { autoClose: false })
 		}
 	})
 

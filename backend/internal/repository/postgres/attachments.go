@@ -34,6 +34,10 @@ type Attachments interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*models.Attachment, error)
 	Create(ctx context.Context, tx Tx, dto *models.Attachment) error
 	Delete(ctx context.Context, tx Tx, id uuid.UUID) error
+	// DeleteByEntity удаляет все вложения сущности — используется при каскадном
+	// удалении родительской записи (тикета/подзадачи), когда записи вложений
+	// не вычищаются СУБД (нет FK на полиморфный entity_id).
+	DeleteByEntity(ctx context.Context, tx Tx, entityType string, entityID uuid.UUID) error
 	// GetByComments возвращает вложения, привязанные к комментариям указанного
 	// тикета, сгруппированные по comment_id и с флагом внутреннего комментария.
 	GetByComments(ctx context.Context, ticketID uuid.UUID) (map[uuid.UUID]bool, []*models.Attachment, error)
@@ -114,6 +118,16 @@ func (r *AttachmentRepo) Delete(ctx context.Context, tx Tx, id uuid.UUID) error 
 	query := fmt.Sprintf(`DELETE FROM %s WHERE id = $1`, Tables.Attachments)
 
 	_, err := r.getExec(tx).Exec(ctx, query, id)
+	if err != nil {
+		return MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	return nil
+}
+
+func (r *AttachmentRepo) DeleteByEntity(ctx context.Context, tx Tx, entityType string, entityID uuid.UUID) error {
+	query := fmt.Sprintf(`DELETE FROM %s WHERE entity_type = $1 AND entity_id = $2`, Tables.Attachments)
+
+	_, err := r.getExec(tx).Exec(ctx, query, entityType, entityID)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}

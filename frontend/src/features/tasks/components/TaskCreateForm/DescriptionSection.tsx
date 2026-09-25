@@ -29,7 +29,10 @@ export const DescriptionSection = ({ files, onFilesChange }: Props) => {
 				<Controller
 					control={control}
 					name='title'
-					rules={{ required: 'Обязательное поле' }}
+					rules={{
+						required: 'Обязательное поле',
+						validate: value => (value ?? '').trim().length > 0 || 'Заголовок не может состоять из пробелов',
+					}}
 					render={({ field, fieldState }) => (
 						<Box>
 							<TextField

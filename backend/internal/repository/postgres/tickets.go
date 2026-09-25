@@ -438,8 +438,16 @@ func (r *TicketRepo) Create(ctx context.Context, tx Tx, dto *models.TicketDTO) e
 		Tables.Tickets,
 	)
 
+	var siteID, categoryID interface{}
+	if dto.SiteID != uuid.Nil {
+		siteID = dto.SiteID
+	}
+	if dto.CategoryID != uuid.Nil {
+		categoryID = dto.CategoryID
+	}
+
 	_, err := r.getExec(tx).Exec(
-		ctx, query, dto.ID, dto.Title, dto.Description, dto.Status, dto.Priority, dto.SiteID, dto.CategoryID,
+		ctx, query, dto.ID, dto.Title, dto.Description, dto.Status, dto.Priority, siteID, categoryID,
 		dto.CreatorID, dto.OwnerID, dto.GroupID, dto.AssigneeID, dto.ManagerID, dto.DueDate, ticketNumber, dto.RealmID,
 	)
 	if err != nil {

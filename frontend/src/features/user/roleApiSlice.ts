@@ -19,7 +19,7 @@ export const rolesApiSlice = apiSlice.injectEndpoints({
 					await api.queryFulfilled
 				} catch (error) {
 					const fetchError = (error as IBaseFetchError).error
-					toast.error(fetchError.data.message, { autoClose: false })
+					toast.error(fetchError.data?.message, { autoClose: false })
 				}
 			},
 		}),
@@ -34,7 +34,7 @@ export const rolesApiSlice = apiSlice.injectEndpoints({
 					await api.queryFulfilled
 				} catch (error) {
 					const fetchError = (error as IBaseFetchError).error
-					toast.error(fetchError.data.message, { autoClose: false })
+					toast.error(fetchError.data?.message, { autoClose: false })
 				}
 			},
 		}),
@@ -49,7 +49,7 @@ export const rolesApiSlice = apiSlice.injectEndpoints({
 					await api.queryFulfilled
 				} catch (error) {
 					const fetchError = (error as IBaseFetchError).error
-					toast.error(fetchError.data.message, { autoClose: false })
+					toast.error(fetchError.data?.message, { autoClose: false })
 				}
 			},
 		}),

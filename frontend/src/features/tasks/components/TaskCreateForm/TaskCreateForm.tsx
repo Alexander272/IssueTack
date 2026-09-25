@@ -19,7 +19,7 @@ import { AdvancedSettingsSection } from './AdvancedSettingsSection'
 import { CustomerSelectionSection } from './CustomerSelectionSection'
 import { SubtasksCreationSection } from './SubtasksCreationSection'
 
-export const TaskCreateForm = ({ onSuccess, onCancel, embedded }: Props) => {
+export const TaskCreateForm = ({ onSuccess, onCancel, embedded, onSavingChange }: Props) => {
 	const currentUserId = useAppSelector(getUserId)
 	const realm = useAppSelector(getRealm)
 	const isManager = useAppSelector(getIsManager)
@@ -32,6 +32,7 @@ export const TaskCreateForm = ({ onSuccess, onCancel, embedded }: Props) => {
 	const { data: sitesData } = useGetAllSitesQuery()
 
 	const [files, setFiles] = useState<File[]>([])
+	const [submitting, setSubmitting] = useState(false)
 
 	const categories = useMemo(() => categoriesData?.data ?? [], [categoriesData])
 	const sites = useMemo(() => sitesData?.data ?? [], [sitesData])
@@ -63,62 +64,72 @@ export const TaskCreateForm = ({ onSuccess, onCancel, embedded }: Props) => {
 
 	const isSaving = isCreating || isUploading
 
+	useEffect(() => {
+		onSavingChange?.(isSaving)
+	}, [isSaving, onSavingChange])
+
 	const onSubmit = handleSubmit(async data => {
-		if (!currentUserId) {
-			toast.error('Пользователь не найден')
-			return
-		}
-		if (!realm?.id) {
-			toast.error('Область не выбрана')
-			return
-		}
-
-		const dto: ITaskDTO = {
-			id: null,
-			title: data.title,
-			description: data.description,
-			status: 'open',
-			priority: isManager ? data.priority : category?.priority || 'medium',
-			realmId: realm.id,
-			siteId: data.siteId,
-			categoryId: data.categoryId,
-			creatorId: currentUserId,
-			ownerId: isManager || isExecutor ? data.ownerId || null : null,
-			groupId: isManager ? data.groupId || null : category?.groupId || null,
-			assigneeId: isManager ? data.assigneeId || null : null,
-			managerId: null,
-			dueDate: isManager ? data.dueDate || null : null,
-			closedAt: null,
-			subtasks: data.subtasks
-				.map(s => ({ title: s.title.trim(), description: s.description.trim() }))
-				.filter(s => s.title.length > 0),
-		}
-
+		if (submitting) return
+		setSubmitting(true)
 		try {
-			const result = await createTask(dto).unwrap()
+			if (!currentUserId) {
+				toast.error('Пользователь не найден')
+				return
+			}
+			if (!realm?.id) {
+				toast.error('Область не выбрана')
+				return
+			}
 
-			if (files.length > 0) {
-				const results = await Promise.allSettled(
-					files.map(file => uploadAttachment({ entityType: 'ticket', entityId: result.id, file }).unwrap()),
-				)
-				const failed = results.filter(r => r.status === 'rejected').length
-				if (failed > 0) {
-					toast.warning(`Заявка создана, но ${failed} из ${files.length} файлов не загрузились`, {
-						autoClose: false,
-					})
+			const dto: ITaskDTO = {
+				id: null,
+				title: data.title.trim(),
+				description: data.description,
+				status: 'open',
+				priority: isManager ? data.priority : category?.priority || 'medium',
+				realmId: realm.id,
+				siteId: data.siteId,
+				categoryId: data.categoryId,
+				creatorId: currentUserId,
+				ownerId: isManager || isExecutor ? data.ownerId || null : null,
+				groupId: isManager ? data.groupId || null : category?.groupId || null,
+				assigneeId: isManager ? data.assigneeId || null : null,
+				managerId: null,
+				dueDate: isManager ? data.dueDate || null : null,
+				closedAt: null,
+				subtasks: data.subtasks
+					.map(s => ({ title: s.title.trim(), description: s.description.trim() }))
+					.filter(s => s.title.length > 0),
+			}
+
+			try {
+				const result = await createTask(dto).unwrap()
+
+				if (files.length > 0) {
+					const results = await Promise.allSettled(
+						files.map(file => uploadAttachment({ entityType: 'ticket', entityId: result.id, file }).unwrap()),
+					)
+					const failed = results.filter(r => r.status === 'rejected').length
+					if (failed > 0) {
+						toast.warning(`Заявка создана, но ${failed} из ${files.length} файлов не загрузились`, {
+							autoClose: false,
+						})
+					} else {
+						toast.success('Задача создана')
+					}
 				} else {
 					toast.success('Задача создана')
 				}
-			} else {
-				toast.success('Задача создана')
-			}
 
-			reset()
-			setFiles([])
-			onSuccess?.()
-		} catch (error) {
-			const fetchError = error as IFetchError
-			toast.error(fetchError.data?.message || 'Ошибка при создании задачи', { autoClose: false })
+				reset()
+				setFiles([])
+				onSuccess?.()
+			} catch (error) {
+				const fetchError = error as IFetchError
+				toast.error(fetchError.data?.message || 'Ошибка при создании задачи', { autoClose: false })
+			}
+		} finally {
+			setSubmitting(false)
 		}
 	})
 

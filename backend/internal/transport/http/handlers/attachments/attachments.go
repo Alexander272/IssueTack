@@ -23,17 +23,19 @@ import (
 type Handler struct {
 	service    services.Attachments
 	attachment services.Tickets
+	maxSize    int64
 }
 
-func NewHandler(service services.Attachments, attachment services.Tickets) *Handler {
+func NewHandler(service services.Attachments, attachment services.Tickets, maxSize int64) *Handler {
 	return &Handler{
 		service:    service,
 		attachment: attachment,
+		maxSize:    maxSize,
 	}
 }
 
-func Register(api *gin.RouterGroup, service services.Attachments, attachment services.Tickets, middleware *middleware.Middleware) {
-	handlers := NewHandler(service, attachment)
+func Register(api *gin.RouterGroup, service services.Attachments, attachment services.Tickets, maxSize int64, middleware *middleware.Middleware) {
+	handlers := NewHandler(service, attachment, maxSize)
 
 	attachments := api.Group("/attachments", middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Read()))
 	{
@@ -135,6 +137,13 @@ func (h *Handler) upload(c *gin.Context) {
 	user := utils.GetUser(c)
 	if user == nil {
 		return
+	}
+
+	// Ограничиваем тело запроса, чтобы multipart с файлом больше допустимого
+	// размера отбрасывался на этапе парсинга (защита от переполнения памяти/диска).
+	// К MaxSize добавляем запас на multipart-служебные поля (~64 КБ).
+	if h.maxSize > 0 {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, h.maxSize+(64<<10))
 	}
 
 	file, header, err := c.Request.FormFile("file")

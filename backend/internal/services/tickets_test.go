@@ -50,7 +50,7 @@ func TestTicketService_Get_Elevated(t *testing.T) {
 		{ID: uuid.New(), Title: "Ticket 1"},
 	}
 	mockRepo.On("Get", mock.Anything, req).Return(expected, 0, nil)
-	mockSubtasks.On("GetByTicketID", mock.Anything, mock.Anything, mock.Anything).Return(([]*models.Subtask)(nil), nil)
+	mockSubtasks.On("GetByTicketIDs", mock.Anything, mock.Anything).Return((map[uuid.UUID][]*models.Subtask)(nil), nil)
 
 	got, total, err := svc.Get(context.Background(), req)
 	assert.NoError(t, err)
@@ -85,7 +85,7 @@ func TestTicketService_Get_GroupFilter(t *testing.T) {
 		IncludeUngroupedAssignedTo: &actorID,
 	}
 	mockRepo.On("Get", mock.Anything, expectedFilter).Return(expected, 0, nil)
-	mockSubtasks.On("GetByTicketID", mock.Anything, mock.Anything, mock.Anything).Return(([]*models.Subtask)(nil), nil)
+	mockSubtasks.On("GetByTicketIDs", mock.Anything, mock.Anything).Return((map[uuid.UUID][]*models.Subtask)(nil), nil)
 
 	got, total, err := svc.Get(context.Background(), req)
 	assert.NoError(t, err)
@@ -149,7 +149,7 @@ func TestTicketService_Get_Assigned_Regular(t *testing.T) {
 		MyWork: &models.MyWorkFilter{UserID: actorID, GroupIDs: []uuid.UUID{managedID, memberID}},
 	}
 	mockRepo.On("Get", mock.Anything, expectedFilter).Return(expected, 0, nil)
-	mockSubtasks.On("GetByTicketID", mock.Anything, mock.Anything, mock.Anything).Return(([]*models.Subtask)(nil), nil)
+	mockSubtasks.On("GetByTicketIDs", mock.Anything, mock.Anything).Return((map[uuid.UUID][]*models.Subtask)(nil), nil)
 
 	got, total, err := svc.Get(context.Background(), req)
 	assert.NoError(t, err)
@@ -181,7 +181,7 @@ func TestTicketService_Get_Assigned_Supervisor(t *testing.T) {
 		MyWork: &models.MyWorkFilter{UserID: actorID, GroupIDs: []uuid.UUID{memberID}},
 	}
 	mockRepo.On("Get", mock.Anything, expectedFilter).Return(expected, 0, nil)
-	mockSubtasks.On("GetByTicketID", mock.Anything, mock.Anything, mock.Anything).Return(([]*models.Subtask)(nil), nil)
+	mockSubtasks.On("GetByTicketIDs", mock.Anything, mock.Anything).Return((map[uuid.UUID][]*models.Subtask)(nil), nil)
 
 	got, total, err := svc.Get(context.Background(), req)
 	assert.NoError(t, err)
@@ -215,7 +215,7 @@ func TestTicketService_Get_Created_Regular(t *testing.T) {
 		CreatorID: &actorID,
 	}
 	mockRepo.On("Get", mock.Anything, expectedFilter).Return(expected, 0, nil)
-	mockSubtasks.On("GetByTicketID", mock.Anything, mock.Anything, mock.Anything).Return(([]*models.Subtask)(nil), nil)
+	mockSubtasks.On("GetByTicketIDs", mock.Anything, mock.Anything).Return((map[uuid.UUID][]*models.Subtask)(nil), nil)
 
 	got, total, err := svc.Get(context.Background(), req)
 	assert.NoError(t, err)
@@ -1383,7 +1383,7 @@ func TestTicketService_AutoCloseResolved_Success(t *testing.T) {
 }
 
 func TestTicketService_Delete_Success(t *testing.T) {
-	mockRepo, mockLogs, _, _, mockNotifications, _, mockPolicies, svc := ticketServiceFixtures()
+	mockRepo, mockLogs, mockSubtasks, mockAttachments, mockNotifications, _, mockPolicies, svc := ticketServiceFixtures()
 
 	actorID := uuid.New()
 	ticketID := uuid.New()
@@ -1396,6 +1396,8 @@ func TestTicketService_Delete_Success(t *testing.T) {
 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Delete)).Return(true, nil)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(ticket, nil)
+	mockAttachments.On("DeleteByEntity", mock.Anything, nil, "ticket", ticketID).Return(nil)
+	mockSubtasks.On("GetByTicketID", mock.Anything, ticketID, actorID).Return([]*models.Subtask{}, nil)
 	mockRepo.On("Delete", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 	mockNotifications.On("TicketDeleted", mock.Anything, ticket).Return(nil)

@@ -71,7 +71,7 @@ export const Users = () => {
 			toast.success('Пользователи синхронизированы')
 		} catch (error) {
 			const err = error as IFetchError
-			toast.error(err.data.message, { autoClose: false })
+			toast.error(err.data?.message, { autoClose: false })
 		}
 	}
 

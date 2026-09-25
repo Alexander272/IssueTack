@@ -51,7 +51,7 @@ export const GroupDialog: FC<Props> = ({ group, users, open, onClose }) => {
 			onClose()
 		} catch (error) {
 			const fetchError = error as IFetchError
-			toast.error(fetchError.data.message, { autoClose: false })
+			toast.error(fetchError.data?.message, { autoClose: false })
 		}
 	})
 
@@ -64,7 +64,7 @@ export const GroupDialog: FC<Props> = ({ group, users, open, onClose }) => {
 			onClose()
 		} catch (error) {
 			const fetchError = error as IFetchError
-			toast.error(fetchError.data.message, { autoClose: false })
+			toast.error(fetchError.data?.message, { autoClose: false })
 		}
 	}
 

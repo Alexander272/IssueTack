@@ -1,5 +1,5 @@
 export interface IFetchError {
-	data: {
+	data?: {
 		message: string
 		code: string
 		fields?: IFieldError[]
@@ -15,7 +15,7 @@ export interface IFieldError {
 
 export interface IBaseFetchError {
 	error: {
-		data: {
+		data?: {
 			message: string
 			code: string
 		}

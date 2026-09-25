@@ -41,7 +41,7 @@ export const RealmDialog: FC<Props> = ({ realm, open, onClose }) => {
 			onClose()
 		} catch (error) {
 			const fetchError = error as IFetchError
-			toast.error(fetchError.data.message, { autoClose: false })
+			toast.error(fetchError.data?.message, { autoClose: false })
 		}
 	})
 

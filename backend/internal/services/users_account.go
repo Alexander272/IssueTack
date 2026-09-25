@@ -23,6 +23,21 @@ func (s *userService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*
 
 // UpdateAccount обновляет учётную запись пользователя и его привязки к realm'ам, публикуя событие аудита.
 func (s *userService) UpdateAccount(ctx context.Context, dto *models.UpdateAccountDTO) error {
+	// Защита от кросс-реалмовой эскалации: users:write проверяется Casbin по домену
+	// запроса (заголовок realm), поэтому менять привязки ролей можно только внутри
+	// этого же realm. Попытка выставить/изменить/удалить привязку в другом realm
+	// (включая пустой RealmID запроса) отклоняется.
+	if len(dto.Realms) > 0 {
+		if dto.RealmID == uuid.Nil {
+			return fmt.Errorf("%w: привязки ролей задаются в рамках realm запроса", models.ErrPermissionDenied)
+		}
+		for _, r := range dto.Realms {
+			if r.RealmID != dto.RealmID {
+				return fmt.Errorf("%w: привязки ролей в другом realm изменять запрещено", models.ErrPermissionDenied)
+			}
+		}
+	}
+
 	candidate, err := s.GetByID(ctx, dto.ID)
 	if err != nil {
 		return err

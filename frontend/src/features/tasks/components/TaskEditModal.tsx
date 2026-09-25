@@ -1,4 +1,4 @@
-import { type FC } from 'react'
+import { type FC, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle, IconButton, Typography } from '@mui/material'
 import { XIcon } from 'lucide-mui'
 
@@ -12,10 +12,14 @@ type Props = {
 }
 
 export const TaskEditModal: FC<Props> = ({ open, onClose, task }) => {
+	const [saving, setSaving] = useState(false)
+
+	const canClose = !saving
+
 	return (
 		<Dialog
 			open={open}
-			onClose={onClose}
+			onClose={canClose ? onClose : undefined}
 			fullWidth
 			maxWidth='md'
 			slotProps={{
@@ -26,13 +30,13 @@ export const TaskEditModal: FC<Props> = ({ open, onClose, task }) => {
 				<Typography variant='h6' component='div' sx={{ fontWeight: 'bold' }}>
 					Редактирование заявки
 				</Typography>
-				<IconButton size='large' onClick={onClose} sx={{ color: 'text.secondary' }}>
+				<IconButton size='large' onClick={canClose ? onClose : undefined} disabled={saving} sx={{ color: 'text.secondary' }}>
 					<XIcon sx={{ fontSize: 20 }} />
 				</IconButton>
 			</DialogTitle>
 
 			<DialogContent>
-				<TaskEditForm task={task} embedded onSuccess={onClose} onCancel={onClose} />
+				<TaskEditForm task={task} embedded onSuccess={onClose} onCancel={onClose} onSavingChange={setSaving} />
 			</DialogContent>
 		</Dialog>
 	)

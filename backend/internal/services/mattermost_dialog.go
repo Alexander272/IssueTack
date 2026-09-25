@@ -118,8 +118,9 @@ func (s *MattermostService) HandleDialogSubmission(ctx context.Context, submissi
 		return fmt.Errorf("failed to resolve user: %w", err)
 	}
 
+	title, _ := submission.Submission["title"].(string)
 	dto := &models.TicketDTO{
-		Title:     submission.Submission["title"].(string),
+		Title:     title,
 		Status:    models.StatusOpen,
 		RealmID:   &realmID,
 		CreatorID: creatorID,

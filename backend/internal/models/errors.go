@@ -96,4 +96,7 @@ var (
 
 	// 400 (business)
 	ErrCommentExpired = NewDomainError(errors.New("comment delete window expired"), http.StatusBadRequest, "BR010", "Время на удаление комментария истекло (15 минут)")
+
+	// 400 (вложения)
+	ErrFileTooLarge = NewDomainError(errors.New("file exceeds maximum allowed size"), http.StatusBadRequest, "UP001", "Файл превышает допустимый размер")
 )

@@ -21,7 +21,7 @@ const authApiSlice = apiSlice.injectEndpoints({
 			// 		await api.queryFulfilled
 			// 	} catch (error) {
 			// 		const fetchError = (error as IBaseFetchError).error
-			// 		toast.error(fetchError.data.message, { autoClose: false })
+			// 		toast.error(fetchError.data?.message, { autoClose: false })
 			// 	}
 			// },
 		}),
@@ -37,7 +37,7 @@ const authApiSlice = apiSlice.injectEndpoints({
 					api.dispatch(resetUser())
 				} catch (error) {
 					const fetchError = (error as IBaseFetchError).error
-					toast.error(fetchError.data.message, { autoClose: false })
+					toast.error(fetchError.data?.message, { autoClose: false })
 				}
 			},
 		}),

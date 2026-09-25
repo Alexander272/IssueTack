@@ -52,7 +52,7 @@ export const CategoryDialog: FC<Props> = ({ category, groups, open, onClose }) =
 			onClose()
 		} catch (error) {
 			const fetchError = error as IFetchError
-			toast.error(fetchError.data.message, { autoClose: false })
+			toast.error(fetchError.data?.message, { autoClose: false })
 		}
 	})
 
@@ -65,7 +65,7 @@ export const CategoryDialog: FC<Props> = ({ category, groups, open, onClose }) =
 			onClose()
 		} catch (error) {
 			const fetchError = error as IFetchError
-			toast.error(fetchError.data.message, { autoClose: false })
+			toast.error(fetchError.data?.message, { autoClose: false })
 		}
 	}
 

@@ -82,9 +82,11 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 
 	const isArchive = tab === 'archive'
 
+	const numberFilter = filters.ticketNumber ? Number(filters.ticketNumber) : NaN
+
 	const queryFilter: ITaskFilter = useMemo(
 		() => ({
-			number: filters.ticketNumber ? Number(filters.ticketNumber) : undefined,
+			number: Number.isNaN(numberFilter) ? undefined : numberFilter,
 			ownerId: filters.ownerId ?? undefined,
 			assigneeId: filters.assigneeId ?? undefined,
 			siteIds: filters.siteIds?.length ? filters.siteIds : undefined,
@@ -99,7 +101,7 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 			limit: isArchive ? rowsPerPage : undefined,
 			offset: isArchive ? page * rowsPerPage : undefined,
 		}),
-		[filters, mode, page, isArchive],
+		[filters, mode, page, isArchive, numberFilter],
 	)
 
 	const { data, isFetching } = useGetTasksQuery(queryFilter)

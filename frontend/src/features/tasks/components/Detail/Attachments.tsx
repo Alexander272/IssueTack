@@ -69,10 +69,13 @@ export const Attachments = ({ attachments, canWork, taskId }: Props) => {
 			try {
 				const { url } = await fetchContent(file.id).unwrap()
 				const res = await fetch(url)
+				if (!res.ok) {
+					throw new Error('Ошибка при получении файла')
+				}
 				saveAs(await res.blob(), file.fileName)
 			} catch (error) {
 				const fetchError = error as IFetchError
-				toast.error(fetchError.data?.message || 'Ошибка скачивания файла')
+				toast.error(fetchError.data?.message || 'Ошибка скачивания файла', { autoClose: false })
 			}
 		},
 		[fetchContent],
@@ -101,16 +104,16 @@ export const Attachments = ({ attachments, canWork, taskId }: Props) => {
 
 	if (files.length === 0 && !showUpload) return null
 
-	const handleUpload = async (list: FileList) => {
+	const handleUpload = async (files: File[]) => {
 		if (!taskId) return
 		try {
 			await Promise.all(
-				Array.from(list).map(file =>
+				files.map(file =>
 					uploadAttachment({ entityType: 'ticket', entityId: taskId, file }).unwrap(),
 				),
 			)
-			if (list.length > 1) {
-				toast.success(`Загружено файлов: ${list.length}`)
+			if (files.length > 1) {
+				toast.success(`Загружено файлов: ${files.length}`)
 			}
 		} catch (error) {
 			const fetchError = error as IFetchError

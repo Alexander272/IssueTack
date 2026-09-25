@@ -10,15 +10,18 @@ interface Props {
 
 export const StatusChangeDialog = ({ open, statusLabel, onSubmit, onCancel }: Props) => {
 	const [text, setText] = useState('')
+	const [submitted, setSubmitted] = useState(false)
 
 	const handleSubmit = () => {
-		if (!text.trim()) return
+		if (!text.trim() || submitted) return
+		setSubmitted(true)
 		onSubmit(text.trim())
 		setText('')
 	}
 
 	const handleClose = () => {
 		setText('')
+		setSubmitted(false)
 		onCancel()
 	}
 
@@ -32,7 +35,10 @@ export const StatusChangeDialog = ({ open, statusLabel, onSubmit, onCancel }: Pr
 					rows={3}
 					placeholder={`Укажите причину смены статуса на «${statusLabel}»...`}
 					value={text}
-					onChange={e => setText(e.target.value)}
+					onChange={e => {
+						setSubmitted(false)
+						setText(e.target.value)
+					}}
 					onKeyDown={e => {
 						if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSubmit()
 					}}
@@ -50,7 +56,7 @@ export const StatusChangeDialog = ({ open, statusLabel, onSubmit, onCancel }: Pr
 				<Button
 					variant='contained'
 					onClick={handleSubmit}
-					disabled={!text.trim()}
+					disabled={!text.trim() || submitted}
 					sx={{ textTransform: 'none', boxShadow: 'none', '&:hover': { boxShadow: 'none' } }}
 				>
 					Отправить

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/access"
@@ -104,7 +105,7 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to get tickets. error: %w", err)
 		}
-		if err := s.attachSubtasks(ctx, data, req.Actor.ID, realmStr); err != nil {
+		if err := s.attachSubtasks(ctx, data); err != nil {
 			return nil, 0, fmt.Errorf("failed to attach subtasks. error: %w", err)
 		}
 		return data, total, nil
@@ -159,7 +160,7 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to get tickets. error: %w", err)
 	}
-	if err := s.attachSubtasks(ctx, data, req.Actor.ID, realmStr); err != nil {
+	if err := s.attachSubtasks(ctx, data); err != nil {
 		return nil, 0, fmt.Errorf("failed to attach subtasks: %w", err)
 	}
 	return data, total, nil
@@ -184,21 +185,24 @@ func unionGroupIDs(managed, member []uuid.UUID) []uuid.UUID {
 	return out
 }
 
-// attachSubtasks загружает подзадачи для каждой заявки листинга и кладёт их в тикет.
-// Фронт листинга (TaskRow/TaskCard) рисует прогресс-бар и счётчик подзадач из task.subtasks,
-// поэтому без этого массива у заявок с подзадачами на обзоре/«моих»/избранном пусто,
-// хотя подзадачи в БД есть. В детали (GetByID) подзадачи приходят отдельно через
-// s.subtasks.GetByTicketID — там этот вызов не нужен (N+1 на одну страницу, обычно 10-50).
-func (s *TicketService) attachSubtasks(ctx context.Context, data []*models.Ticket, actorID uuid.UUID, realm string) error {
+// attachSubtasks загружает подзадачи для всех заявок листинга одним запросом
+// и раскладывает их по тикетам. Фронт листинга (TaskRow/TaskCard) рисует
+// прогресс-бар и счётчик подзадач из task.subtasks. В детали (GetByID) подзадачи
+// приходят отдельно через s.subtasks.GetByTicketID — там этот вызов не нужен.
+func (s *TicketService) attachSubtasks(ctx context.Context, data []*models.Ticket) error {
 	if len(data) == 0 {
 		return nil
 	}
+	ids := make([]uuid.UUID, len(data))
+	for i, t := range data {
+		ids[i] = t.ID
+	}
+	byTicket, err := s.subtasks.GetByTicketIDs(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("failed to get subtasks for tickets: %w", err)
+	}
 	for _, t := range data {
-		subtasks, err := s.subtasks.GetByTicketID(ctx, t.ID, actorID, realm)
-		if err != nil {
-			return fmt.Errorf("failed to get subtasks for ticket %s: %w", t.ID, err)
-		}
-		t.Subtasks = subtasks
+		t.Subtasks = byTicket[t.ID]
 	}
 	return nil
 }
@@ -345,6 +349,13 @@ func (s *TicketService) GetByID(ctx context.Context, req *models.GetTicketByIdDT
 // владельца/исполнителя (при необходимости — автоматически), фиксирует
 // действие в журнале и отправляет уведомление.
 func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error {
+	if dto.Actor == nil {
+		return models.ErrPermissionDenied
+	}
+	if strings.TrimSpace(dto.Title) == "" {
+		return models.ErrInvalidInput
+	}
+
 	realmStr := ""
 	if dto.RealmID != nil {
 		realmStr = dto.RealmID.String()
@@ -976,6 +987,22 @@ func (s *TicketService) Delete(ctx context.Context, dto *models.DeleteTicketDTO)
 		}
 		if err := s.logs.Create(ctx, newTx, []*models.ActivityLogDTO{log}); err != nil {
 			return fmt.Errorf("store log: %w", err)
+		}
+
+		// Вложения не привязаны к тикету внешним ключом (полиморфный entity_id),
+		// поэтому при удалении тикета их нужно вычищать явно: записи из БД и
+		// директорию с файлами (ticket/{id}, subtask/{id}).
+		if err := s.attachments.DeleteByEntity(ctx, newTx, "ticket", dto.ID); err != nil {
+			return fmt.Errorf("failed to cleanup ticket attachments: %w", err)
+		}
+		subs, subsErr := s.subtasks.GetByTicketID(ctx, dto.ID, dto.Actor.ID, dto.RealmID)
+		if subsErr != nil {
+			return fmt.Errorf("failed to load ticket subtasks: %w", subsErr)
+		}
+		for _, sub := range subs {
+			if err := s.attachments.DeleteByEntity(ctx, newTx, "subtask", sub.ID); err != nil {
+				return fmt.Errorf("failed to cleanup subtask attachments: %w", err)
+			}
 		}
 
 		if err := s.repo.Delete(ctx, newTx, dto); err != nil {

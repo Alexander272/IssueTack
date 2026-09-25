@@ -54,7 +54,7 @@ type Checklists interface {
 }
 
 // hasChecklistPerm проверяет, есть ли у пользователя право action на ресурс чек-листов в реалме.
-func (s *ChecklistService) hasChecklistPerm(ctx context.Context, userID uuid.UUID, realm string, action string) (bool, error) {
+func (s *ChecklistService) hasChecklistPerm(userID uuid.UUID, realm string, action string) (bool, error) {
 	if s.policies == nil {
 		return false, nil
 	}
@@ -62,32 +62,32 @@ func (s *ChecklistService) hasChecklistPerm(ctx context.Context, userID uuid.UUI
 }
 
 // canAccessTemplate — доступ к конкретному шаблону: право checklist:read или автор.
-func (s *ChecklistService) canAccessTemplate(ctx context.Context, tpl *models.ChecklistTemplate, actorID uuid.UUID, realm string) (bool, error) {
+func (s *ChecklistService) canAccessTemplate(tpl *models.ChecklistTemplate, actorID uuid.UUID, realm string) (bool, error) {
 	if tpl.CreatedBy != nil && *tpl.CreatedBy == actorID {
 		return true, nil
 	}
 	if realm == "" {
-		return s.hasChecklistPerm(ctx, actorID, tpl.RealmID.String(), string(access.Read))
+		return s.hasChecklistPerm(actorID, tpl.RealmID.String(), string(access.Read))
 	}
-	return s.hasChecklistPerm(ctx, actorID, realm, string(access.Read))
+	return s.hasChecklistPerm(actorID, realm, string(access.Read))
 }
 
 // canManageTemplate — право менять шаблон: автор или checklist:write.
-func (s *ChecklistService) canManageTemplate(ctx context.Context, tpl *models.ChecklistTemplate, actorID uuid.UUID, realm string, action string) (bool, error) {
+func (s *ChecklistService) canManageTemplate(tpl *models.ChecklistTemplate, actorID uuid.UUID, realm string, action string) (bool, error) {
 	if tpl.CreatedBy != nil && *tpl.CreatedBy == actorID {
 		return true, nil
 	}
 	if realm == "" {
 		realm = tpl.RealmID.String()
 	}
-	return s.hasChecklistPerm(ctx, actorID, realm, action)
+	return s.hasChecklistPerm(actorID, realm, action)
 }
 
 // Get возвращает список шаблонов чек-листов. Пользователи без права checklist:read
 // видят только свои шаблоны (фильтр по created_by).
 func (s *ChecklistService) Get(ctx context.Context, req *models.GetChecklistTemplatesDTO) ([]*models.ChecklistTemplate, error) {
 	if req.Actor != nil && req.OwnerID == nil {
-		hasRead, err := s.hasChecklistPerm(ctx, req.Actor.ID, req.RealmID.String(), string(access.Read))
+		hasRead, err := s.hasChecklistPerm(req.Actor.ID, req.RealmID.String(), string(access.Read))
 		if err != nil {
 			return nil, fmt.Errorf("failed to check checklist read access: %w", err)
 		}
@@ -110,7 +110,7 @@ func (s *ChecklistService) GetByID(ctx context.Context, req *models.GetChecklist
 		return nil, fmt.Errorf("failed to get checklist template: %w", err)
 	}
 
-	ok, err := s.canAccessTemplate(ctx, template, actorID, realm)
+	ok, err := s.canAccessTemplate(template, actorID, realm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check template access: %w", err)
 	}
@@ -138,7 +138,7 @@ func (s *ChecklistService) Create(ctx context.Context, dto *models.ChecklistTemp
 	}
 
 	var ownerID *uuid.UUID
-	hasWrite, err := s.hasChecklistPerm(ctx, dto.Actor.ID, dto.RealmID.String(), string(access.Write))
+	hasWrite, err := s.hasChecklistPerm(dto.Actor.ID, dto.RealmID.String(), string(access.Write))
 	if err != nil {
 		return fmt.Errorf("failed to check checklist write access: %w", err)
 	}
@@ -171,7 +171,7 @@ func (s *ChecklistService) Update(ctx context.Context, dto *models.ChecklistTemp
 	if err != nil {
 		return fmt.Errorf("failed to get checklist template: %w", err)
 	}
-	ok, err := s.canManageTemplate(ctx, tpl, actorID, realm, string(access.Write))
+	ok, err := s.canManageTemplate(tpl, actorID, realm, string(access.Write))
 	if err != nil {
 		return fmt.Errorf("failed to check template edit access: %w", err)
 	}
@@ -191,7 +191,7 @@ func (s *ChecklistService) Delete(ctx context.Context, dto *models.DelChecklistT
 	if err != nil {
 		return fmt.Errorf("failed to get checklist template: %w", err)
 	}
-	ok, err := s.canManageTemplate(ctx, tpl, actorID, realm, string(access.Delete))
+	ok, err := s.canManageTemplate(tpl, actorID, realm, string(access.Delete))
 	if err != nil {
 		return fmt.Errorf("failed to check template delete access: %w", err)
 	}
@@ -211,7 +211,7 @@ func (s *ChecklistService) SetItems(ctx context.Context, tx postgres.Tx, templat
 	if err != nil {
 		return fmt.Errorf("failed to get checklist template: %w", err)
 	}
-	ok, err := s.canManageTemplate(ctx, tpl, actorID, realm, string(access.Write))
+	ok, err := s.canManageTemplate(tpl, actorID, realm, string(access.Write))
 	if err != nil {
 		return fmt.Errorf("failed to check template edit access: %w", err)
 	}
@@ -231,7 +231,7 @@ func (s *ChecklistService) GetItems(ctx context.Context, templateID uuid.UUID, a
 	if err != nil {
 		return nil, fmt.Errorf("failed to get checklist template: %w", err)
 	}
-	ok, err := s.canAccessTemplate(ctx, tpl, actorID, realm)
+	ok, err := s.canAccessTemplate(tpl, actorID, realm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check template access: %w", err)
 	}
@@ -252,7 +252,7 @@ func (s *ChecklistService) ApplyTemplate(ctx context.Context, tx postgres.Tx, dt
 	if err != nil {
 		return fmt.Errorf("failed to get checklist template: %w", err)
 	}
-	ok, err := s.canAccessTemplate(ctx, tpl, dto.Actor.ID, tpl.RealmID.String())
+	ok, err := s.canAccessTemplate(tpl, dto.Actor.ID, tpl.RealmID.String())
 	if err != nil {
 		return fmt.Errorf("failed to check template access: %w", err)
 	}

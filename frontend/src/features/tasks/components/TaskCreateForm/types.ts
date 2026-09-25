@@ -22,4 +22,5 @@ export type Props = {
 	onSuccess?: () => void
 	onCancel?: () => void
 	embedded?: boolean
+	onSavingChange?: (saving: boolean) => void
 }

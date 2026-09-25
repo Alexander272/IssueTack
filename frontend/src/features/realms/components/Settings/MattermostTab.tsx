@@ -34,7 +34,7 @@ export const MattermostTab: FC<Props> = ({ realmId }) => {
 			toast.success('Настройки Mattermost сохранены')
 		} catch (error) {
 			const err = error as IFetchError
-			toast.error(err.data.message, { autoClose: false })
+			toast.error(err.data?.message, { autoClose: false })
 		}
 	})
 
@@ -45,7 +45,7 @@ export const MattermostTab: FC<Props> = ({ realmId }) => {
 			toast.success('Настройки Mattermost удалены')
 		} catch (error) {
 			const err = error as IFetchError
-			toast.error(err.data.message, { autoClose: false })
+			toast.error(err.data?.message, { autoClose: false })
 		}
 	}
 

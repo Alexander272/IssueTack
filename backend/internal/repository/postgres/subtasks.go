@@ -25,6 +25,7 @@ func NewSubtaskRepo(db *pgxpool.Pool, tr Transaction) *SubtaskRepo {
 
 type Subtasks interface {
 	GetByTicketID(ctx context.Context, ticketID uuid.UUID) ([]*models.Subtask, error)
+	GetByTicketIDs(ctx context.Context, ticketIDs []uuid.UUID) ([]*models.Subtask, error)
 	GetByID(ctx context.Context, req *models.GetSubtaskDTO) (*models.Subtask, error)
 	Create(ctx context.Context, tx Tx, dto *models.SubtaskDTO) error
 	CreateSeveral(ctx context.Context, tx Tx, dto []*models.SubtaskDTO) error
@@ -32,14 +33,34 @@ type Subtasks interface {
 	Delete(ctx context.Context, tx Tx, dto *models.DelSubtaskDTO) error
 }
 
+// subtasksSelect с общими полями и LEFT JOIN исполнителя.
+const subtasksSelect = `SELECT 
+		s.id, s.ticket_id, s.title, s.description, s.status, s.priority, s.due_date, s.closed_at, s.sort_order, s.created_by, s.created_at, s.updated_at,
+		u.id, u.username, u.first_name, u.last_name, u.internal_number
+	FROM %s s
+	LEFT JOIN %s u ON s.assignee_id = u.id`
+
+// scanSubtask считывает строку в *models.Subtask (с опциональным исполнителем).
+func scanSubtask(row pgx.Row) (*models.Subtask, error) {
+	item := &models.Subtask{}
+	var assigneeID *uuid.UUID
+	var assigneeUsername, assigneeFirstName, assigneeLastName, assigneeInternalNumber *string
+	if err := row.Scan(
+		&item.ID, &item.TicketID, &item.Title, &item.Description,
+		&item.Status, &item.Priority, &item.DueDate, &item.ClosedAt,
+		&item.SortOrder, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt,
+		&assigneeID, &assigneeUsername, &assigneeFirstName, &assigneeLastName, &assigneeInternalNumber,
+	); err != nil {
+		return nil, err
+	}
+	if assigneeID != nil {
+		item.Assignee = &models.UserShort{ID: *assigneeID, Username: *assigneeUsername, FirstName: *assigneeFirstName, LastName: *assigneeLastName, InternalNumber: *assigneeInternalNumber}
+	}
+	return item, nil
+}
+
 func (r *SubtaskRepo) GetByTicketID(ctx context.Context, ticketID uuid.UUID) ([]*models.Subtask, error) {
-	query := fmt.Sprintf(`SELECT 
-			s.id, s.ticket_id, s.title, s.description, s.status, s.priority, s.due_date, s.closed_at, s.sort_order, s.created_by, s.created_at, s.updated_at,
-			u.id, u.username, u.first_name, u.last_name, u.internal_number
-		FROM %s s
-		LEFT JOIN %s u ON s.assignee_id = u.id
-		WHERE s.ticket_id = $1
-		ORDER BY s.sort_order, s.created_at`,
+	query := fmt.Sprintf(subtasksSelect+` WHERE s.ticket_id = $1 ORDER BY s.sort_order, s.created_at`,
 		Tables.Subtasks, Tables.Users,
 	)
 
@@ -51,20 +72,42 @@ func (r *SubtaskRepo) GetByTicketID(ctx context.Context, ticketID uuid.UUID) ([]
 
 	var data []*models.Subtask
 	for rows.Next() {
-		item := &models.Subtask{}
-		var assigneeID *uuid.UUID
-		var assigneeUsername, assigneeFirstName, assigneeLastName *string
-		var assigneeInternalNumber *string
-		if err := rows.Scan(
-			&item.ID, &item.TicketID, &item.Title, &item.Description,
-			&item.Status, &item.Priority, &item.DueDate, &item.ClosedAt,
-			&item.SortOrder, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt,
-			&assigneeID, &assigneeUsername, &assigneeFirstName, &assigneeLastName, &assigneeInternalNumber,
-		); err != nil {
+		item, err := scanSubtask(rows)
+		if err != nil {
 			return nil, MapError(fmt.Errorf("scan row error: %w", err))
 		}
-		if assigneeID != nil {
-			item.Assignee = &models.UserShort{ID: *assigneeID, Username: *assigneeUsername, FirstName: *assigneeFirstName, LastName: *assigneeLastName, InternalNumber: *assigneeInternalNumber}
+		data = append(data, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
+	if data == nil {
+		return []*models.Subtask{}, nil
+	}
+	return data, nil
+}
+
+// GetByTicketIDs возвращает подзадачи всех перечисленных тикетов одним запросом —
+// для листинга, чтобы не делать N+1 запросов по каждой заявке.
+func (r *SubtaskRepo) GetByTicketIDs(ctx context.Context, ticketIDs []uuid.UUID) ([]*models.Subtask, error) {
+	if len(ticketIDs) == 0 {
+		return []*models.Subtask{}, nil
+	}
+	query := fmt.Sprintf(subtasksSelect+` WHERE s.ticket_id = ANY($1) ORDER BY s.ticket_id, s.sort_order, s.created_at`,
+		Tables.Subtasks, Tables.Users,
+	)
+
+	rows, err := r.db.Query(ctx, query, ticketIDs)
+	if err != nil {
+		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	defer rows.Close()
+
+	var data []*models.Subtask
+	for rows.Next() {
+		item, err := scanSubtask(rows)
+		if err != nil {
+			return nil, MapError(fmt.Errorf("scan row error: %w", err))
 		}
 		data = append(data, item)
 	}
@@ -130,6 +173,27 @@ func (r *SubtaskRepo) CreateSeveral(ctx context.Context, tx Tx, dto []*models.Su
 		return nil
 	}
 
+	// Без внешней транзакции создаём свои: CopyFrom не обязан быть атомарным,
+	// а ошибка на M-ом пункте не должна оставлять уже созданные подзадачи.
+	if tx == nil {
+		tx, err := r.BeginTx(ctx)
+		if err != nil {
+			return MapError(fmt.Errorf("failed to begin transaction: %w", err))
+		}
+		if err := r.createSeveral(ctx, tx, dto); err != nil {
+			_ = tx.Rollback(ctx)
+			return err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return MapError(fmt.Errorf("failed to commit transaction: %w", err))
+		}
+		return nil
+	}
+
+	return r.createSeveral(ctx, tx, dto)
+}
+
+func (r *SubtaskRepo) createSeveral(ctx context.Context, tx Tx, dto []*models.SubtaskDTO) error {
 	rows := make([][]interface{}, len(dto))
 	for i, v := range dto {
 		if v.ID == uuid.Nil {

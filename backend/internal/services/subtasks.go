@@ -33,6 +33,10 @@ func NewSubtaskService(repo repository.Subtasks, logs ActivityLog, ticketAccess 
 type Subtasks interface {
 	// GetByTicketID возвращает подзадачи тикета.
 	GetByTicketID(ctx context.Context, ticketID, actorID uuid.UUID, realm string) ([]*models.Subtask, error)
+	// GetByTicketIDs возвращает подзадачи нескольких тикетов (для листинга,
+	// один запрос вместо N+1). Доступ на чтение к каждому тикету уже проверен
+	// запросом листинга.
+	GetByTicketIDs(ctx context.Context, ticketIDs []uuid.UUID) (map[uuid.UUID][]*models.Subtask, error)
 	// GetByID возвращает подзадачу по идентификатору.
 	GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID, realm string) (*models.Subtask, error)
 	// GetRawByID возвращает подзадачу по идентификатору без проверки доступа —
@@ -71,6 +75,20 @@ func (s *SubtaskService) GetByTicketID(ctx context.Context, ticketID, actorID uu
 		return nil, fmt.Errorf("failed to get subtasks: %w", err)
 	}
 	return data, nil
+}
+
+// GetByTicketIDs возвращает подзадачи нескольких тикетов одним запросом,
+// сгруппированные по тикету.
+func (s *SubtaskService) GetByTicketIDs(ctx context.Context, ticketIDs []uuid.UUID) (map[uuid.UUID][]*models.Subtask, error) {
+	data, err := s.repo.GetByTicketIDs(ctx, ticketIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get subtasks for tickets: %w", err)
+	}
+	out := make(map[uuid.UUID][]*models.Subtask, len(ticketIDs))
+	for _, st := range data {
+		out[st.TicketID] = append(out[st.TicketID], st)
+	}
+	return out, nil
 }
 
 // GetRawByID возвращает подзадачу по идентификатору без проверки доступа.

@@ -129,6 +129,16 @@ func (h *Handler) updateAccount(c *gin.Context) {
 	}
 	dto.ID = id
 
+	// Realm запроса нужен сервису, чтобы разрешить привязки ролей (dto.Realms)
+	// только внутри realm, где Casbin уже подтвердил users:write. Невалидный
+	// заголовок GetRealmUUID отвечает ошибкой сам; при отсутствии заголовка
+	// dto.RealmID остаётся Nil — привязки ролей сервис отклонит.
+	if realmID, ok := utils.GetRealmUUID(c); ok {
+		dto.RealmID = realmID
+	} else if c.GetHeader("realm") != "" {
+		return
+	}
+
 	actor := utils.GetActor(c)
 	if actor == nil {
 		return

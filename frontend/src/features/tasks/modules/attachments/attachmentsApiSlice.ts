@@ -30,6 +30,10 @@ const attachmentsApiSlice = apiSlice.injectEndpoints({
 				)
 				if (res.error) return { error: res.error }
 				const blob = res.data as Blob
+				const prev = contentUrls.get(id)
+				// при обновлении данных (invalidate/refetch) старый blob-URL истёк бы,
+				// не будучи отозванным — отзываем его до замены на новый
+				if (prev) URL.revokeObjectURL(prev)
 				const url = URL.createObjectURL(blob)
 				contentUrls.set(id, url)
 				return { data: { url, size: blob.size } }

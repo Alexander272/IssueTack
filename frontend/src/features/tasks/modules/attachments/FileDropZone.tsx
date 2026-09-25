@@ -1,11 +1,15 @@
 import { useRef, useState } from 'react'
 import { Box, IconButton, Stack, Typography } from '@mui/material'
+import { toast } from 'react-toastify'
 import { CloudUploadIcon, Paperclip, XIcon } from 'lucide-mui'
+
+// Максимальный размер файла — должно совпадать с UPLOAD_MAX_SIZE бэкенда (по умолчанию 10 МБ).
+const MAX_FILE_SIZE = 10 * 1024 * 1024
 
 type Props = {
 	files?: File[]
 	onChange?: (files: File[]) => void
-	onUpload?: (list: FileList) => void
+	onUpload?: (files: File[]) => void
 }
 
 const formatFileSize = (bytes: number) => {
@@ -20,10 +24,19 @@ export const FileDropZone = ({ files = [], onChange, onUpload }: Props) => {
 
 	const handleFiles = (list: FileList | null) => {
 		if (!list || list.length === 0) return
+		const all = Array.from(list)
+		const valid = all.filter(f => f.size <= MAX_FILE_SIZE)
+		const rejected = all.filter(f => f.size > MAX_FILE_SIZE)
+		if (rejected.length > 0) {
+			toast.error(
+				`${rejected.length} файл(ов) превышают лимит ${formatFileSize(MAX_FILE_SIZE)} и не будут загружены`,
+			)
+		}
+		if (valid.length === 0) return
 		if (onUpload) {
-			onUpload(list)
+			onUpload(valid)
 		} else {
-			onChange?.([...files, ...Array.from(list)])
+			onChange?.([...files, ...valid])
 		}
 	}
 
