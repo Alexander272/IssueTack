@@ -7,6 +7,7 @@ import {
     getMyTickets,
     getTicket,
     postComment,
+    setTicketStatus,
 } from '../api';
 import type {
     PluginComment,
@@ -16,6 +17,7 @@ import type {
     PluginUserShort,
 } from '../types';
 import {formatBytes, formatDate, statusMeta} from '../labels';
+import {TrashIcon} from './icons';
 
 interface MyTicketsTabProps {
     channelId: string;
@@ -49,6 +51,12 @@ export default function MyTicketsTab({channelId, userId}: MyTicketsTabProps) {
     const [sending, setSending] = useState(false);
     const [sendError, setSendError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const [changingStatus, setChangingStatus] = useState(false);
+    const [statusError, setStatusError] = useState<string | null>(null);
+    const [reasonOpen, setReasonOpen] = useState(false);
+    const [reasonText, setReasonText] = useState('');
+    const [confirmingCancel, setConfirmingCancel] = useState(false);
 
     const load = useCallback(() => {
         setTickets(null);
@@ -89,7 +97,45 @@ export default function MyTicketsTab({channelId, userId}: MyTicketsTabProps) {
         setCommentText('');
         setCommentFiles([]);
         setSendError(null);
+        setChangingStatus(false);
+        setStatusError(null);
+        setReasonOpen(false);
+        setReasonText('');
+        setConfirmingCancel(false);
     }, []);
+
+    // Смена статуса из плагина (действия владельца). При «Вернуть в работу»
+    // (resolved → in_progress) сначала меняем статус и только потом постим
+    // комментарий-причину: на ещё не активной заявке внешние комментарии запрещены.
+    const applyStatus = useCallback(async (status: string, reason?: string) => {
+        if (!selectedId) {
+            return;
+        }
+        setChangingStatus(true);
+        setStatusError(null);
+        try {
+            await setTicketStatus(channelId, userId, selectedId, status);
+        } catch (err) {
+            setStatusError(err instanceof ApiError ? err.message : 'Не удалось изменить статус');
+            setChangingStatus(false);
+            return;
+        }
+        if (reason) {
+            try {
+                await postComment(channelId, userId, selectedId, reason, []);
+            } catch (err) {
+                setStatusError(err instanceof ApiError ? err.message : 'Статус изменён, но причину не удалось отправить');
+            }
+        }
+        setReasonOpen(false);
+        setReasonText('');
+        getTicket(channelId, userId, selectedId)
+            .then((d) => setDetail(d))
+            .catch(() => undefined);
+        loadComments(selectedId);
+        load();
+        setChangingStatus(false);
+    }, [channelId, userId, selectedId, loadComments, load]);
 
     const sendComment = useCallback(() => {
         if (!selectedId || !commentText.trim() && commentFiles.length === 0) {
@@ -128,11 +174,27 @@ export default function MyTicketsTab({channelId, userId}: MyTicketsTabProps) {
                     <button type="button" className="it-btn it-btn--sm" onClick={goBack}>
                         ← Назад к заявкам
                     </button>
-                    {detail && detail.link ? (
-                        <a className="it-ticket-detail__open" href={detail.link} target="_blank" rel="noreferrer">
-                            Открыть в программе
-                        </a>
-                    ) : null}
+                    <div className="it-ticket-detail__bar-actions">
+                        {detail && detail.link ? (
+                            <a className="it-ticket-detail__open" href={detail.link} target="_blank" rel="noreferrer">
+                                Открыть в программе
+                            </a>
+                        ) : null}
+                        {detail && detail.canCancel ? (
+                            <button
+                                type="button"
+                                className="it-icon-btn it-icon-btn--danger"
+                                title="Отменить заявку"
+                                disabled={changingStatus}
+                                onClick={() => {
+                                    setStatusError(null);
+                                    setConfirmingCancel(true);
+                                }}
+                            >
+                                <TrashIcon size={16}/>
+                            </button>
+                        ) : null}
+                    </div>
                 </div>
 
                 {detailError ? <div className="it-ticket-error">{detailError}</div> : null}
@@ -150,6 +212,53 @@ export default function MyTicketsTab({channelId, userId}: MyTicketsTabProps) {
                                 {detailStatus.label}
                             </span>
                         </div>
+                        {detail.canConfirm || detail.canReopen ? (
+                            <div className="it-ticket-detail__actions">
+                                {detail.canConfirm ? (
+                                    <button
+                                        type="button"
+                                        className="it-btn it-btn--sm it-btn--primary"
+                                        disabled={changingStatus}
+                                        onClick={() => applyStatus('closed')}
+                                    >
+                                        Подтвердить решение
+                                    </button>
+                                ) : null}
+                                {detail.canReopen ? (
+                                    <button
+                                        type="button"
+                                        className="it-btn it-btn--sm"
+                                        disabled={changingStatus}
+                                        onClick={() => {
+                                            setStatusError(null);
+                                            setReasonOpen((v) => !v);
+                                        }}
+                                    >
+                                        {reasonOpen ? 'Отмена' : 'Вернуть в работу'}
+                                    </button>
+                                ) : null}
+                            </div>
+                        ) : null}
+                        {statusError ? <div className="it-ticket-error">{statusError}</div> : null}
+                        {detail.canReopen && reasonOpen ? (
+                            <div className="it-reason">
+                                <div className="it-reason__title">Причина возврата</div>
+                                <textarea
+                                    className="it-comment-form__text it-reason__text"
+                                    placeholder="Зачем вернуть в работу…"
+                                    value={reasonText}
+                                    onChange={(e) => setReasonText(e.target.value)}
+                                />
+                                <button
+                                    type="button"
+                                    className="it-btn it-btn--sm it-btn--primary"
+                                    disabled={changingStatus || !reasonText.trim()}
+                                    onClick={() => applyStatus('in_progress', reasonText.trim())}
+                                >
+                                    {changingStatus ? 'Отправка…' : 'Вернуть в работу'}
+                                </button>
+                            </div>
+                        ) : null}
                         {detail.description ? <div className="it-ticket-detail__desc">{detail.description}</div> : null}
                         <div className="it-ticket-detail__meta">
                             {userName(detail.creator) ? (
@@ -282,6 +391,37 @@ export default function MyTicketsTab({channelId, userId}: MyTicketsTabProps) {
                     </div>
                     <div className="it-comment-form__hint">До {MAX_PLUGIN_FILES} файлов</div>
                 </div>
+
+                {confirmingCancel && detail ? (
+                    <div
+                        className="it-confirm"
+                        onClick={() => setConfirmingCancel(false)}
+                    >
+                        <div className="it-confirm__box" onClick={(e) => e.stopPropagation()}>
+                            <div className="it-confirm__title">Отменить заявку?</div>
+                            <div className="it-confirm__text">
+                                {detail.number ? `№${detail.number}. ` : ''}
+                                {detail.title}. Действие необратимо.
+                            </div>
+                            <div className="it-confirm__actions">
+                                <button type="button" className="it-btn it-btn--sm" disabled={changingStatus} onClick={() => setConfirmingCancel(false)}>
+                                    Нет
+                                </button>
+                                <button
+                                    type="button"
+                                    className="it-btn it-btn--sm it-btn--danger it-btn--solid"
+                                    disabled={changingStatus}
+                                    onClick={() => {
+                                        setConfirmingCancel(false);
+                                        applyStatus('cancelled');
+                                    }}
+                                >
+                                    {changingStatus ? 'Отмена…' : 'Отменить'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                ) : null}
             </div>
         );
     }
@@ -293,9 +433,9 @@ export default function MyTicketsTab({channelId, userId}: MyTicketsTabProps) {
     return (
         <div className="it-ticket-list">
             <div className="it-ticket-list__toolbar">
-                <span className="it-ticket-list__count">
-                    {tickets ? `Активные заявки: ${tickets.length}` : 'Загрузка…'}
-                </span>
+<span className="it-ticket-list__count">
+                        {tickets ? `Мои заявки: ${tickets.length}` : 'Загрузка…'}
+                    </span>
                 <button type="button" className="it-btn it-btn--sm" onClick={load}>
                     Обновить
                 </button>
@@ -304,7 +444,7 @@ export default function MyTicketsTab({channelId, userId}: MyTicketsTabProps) {
             {error ? <div className="it-ticket-error">{error}</div> : null}
 
             {!error && tickets && sorted.length === 0 ? (
-                <div className="it-ticket-list__empty">Активных заявок нет.</div>
+                <div className="it-ticket-list__empty">Заявок пока нет.</div>
             ) : null}
 
             {tickets ? (

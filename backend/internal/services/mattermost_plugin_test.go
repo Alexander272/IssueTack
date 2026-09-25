@@ -90,7 +90,7 @@ func TestPluginListMine_HappyPath(t *testing.T) {
 		if f.RealmID == nil || *f.RealmID != realmID {
 			return false
 		}
-		return len(f.Statuses) == 4
+		return len(f.Statuses) == 5
 	})).Return([]*models.Ticket{
 		{ID: uuid.New(), Title: "Заявка 1", Status: models.StatusOpen, Priority: models.PriorityHigh, TicketNumber: &num, CreatedAt: time.Now()},
 	}, 1, nil)
@@ -106,7 +106,7 @@ func TestPluginListMine_HappyPath(t *testing.T) {
 	assert.Empty(t, list[0].Link)
 }
 
-func TestPluginListMine_ExcludesFinishedStatuses(t *testing.T) {
+func TestPluginListMine_Statuses(t *testing.T) {
 	realmID := uuid.New()
 	userID := uuid.New()
 	repo, users, userRealms, tickets := pluginMocks()
@@ -128,14 +128,14 @@ func TestPluginListMine_ExcludesFinishedStatuses(t *testing.T) {
 		}
 	}
 	require.NotNil(t, filter)
+	// Активные статусы + resolved («ждут подтверждения» владельцем).
 	want := map[models.TicketStatus]bool{
 		models.StatusOpen: true, models.StatusInProgress: true,
-		models.StatusPending: true, models.StatusOnHold: true,
+		models.StatusPending: true, models.StatusOnHold: true, models.StatusResolved: true,
 	}
-	require.Len(t, filter.Statuses, 4)
+	require.Len(t, filter.Statuses, 5)
 	for _, s := range filter.Statuses {
 		assert.True(t, want[s], "неожиданный статус: %s", s)
-		assert.NotEqual(t, models.StatusResolved, s)
 		assert.NotEqual(t, models.StatusClosed, s)
 		assert.NotEqual(t, models.StatusCancelled, s)
 	}
@@ -488,4 +488,171 @@ func TestPluginGetAttachmentContent(t *testing.T) {
 	attBody, _, err := svc.PluginGetAttachmentContent(context.Background(), "ch1", "mm1", "bad-id")
 	assert.ErrorIs(t, err, models.ErrInvalidInput)
 	assert.Nil(t, attBody)
+}
+
+func pluginGetTicketWithTicket(repo *MockMattermostRepo, users *MockUserService, userRealms *MockUserRealmsService, tickets *MockTicketsService, realmID, userID, ticketID uuid.UUID, tck *models.Ticket) {
+	repo.On("GetByChannelID", mock.Anything, "ch1").Return(&models.RealmMattermost{RealmID: realmID, IsActive: true}, nil)
+	expectExistingUser(users, userRealms, userID, realmID)
+	tickets.On("GetByID", mock.Anything, mock.MatchedBy(func(d *models.GetTicketByIdDTO) bool {
+		return d.ID == ticketID && d.Actor != nil && d.Actor.ID == userID && d.RealmID == realmID.String()
+	})).Return(tck, nil)
+}
+
+func TestPluginGetTicket_OwnerFlags(t *testing.T) {
+	realmID := uuid.New()
+	userID := uuid.New()
+	ticketID := uuid.New()
+	repo, users, userRealms, tickets := pluginMocks()
+
+	pluginGetTicketWithTicket(repo, users, userRealms, tickets, realmID, userID, ticketID, &models.Ticket{
+		ID:     ticketID,
+		Status: models.StatusResolved,
+		Owner:  &models.UserShort{ID: userID, Username: "u1"},
+	})
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
+
+	detail, err := svc.PluginGetTicket(context.Background(), "ch1", "mm1", ticketID.String())
+	require.NoError(t, err)
+	assert.True(t, detail.CanConfirm)
+	assert.True(t, detail.CanReopen)
+	assert.False(t, detail.CanCancel)
+}
+
+func TestPluginGetTicket_OwnerOpenCanCancel(t *testing.T) {
+	realmID := uuid.New()
+	userID := uuid.New()
+	ticketID := uuid.New()
+	repo, users, userRealms, tickets := pluginMocks()
+
+	pluginGetTicketWithTicket(repo, users, userRealms, tickets, realmID, userID, ticketID, &models.Ticket{
+		ID:     ticketID,
+		Status: models.StatusOpen,
+		Owner:  &models.UserShort{ID: userID, Username: "u1"},
+	})
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
+
+	detail, err := svc.PluginGetTicket(context.Background(), "ch1", "mm1", ticketID.String())
+	require.NoError(t, err)
+	assert.False(t, detail.CanConfirm)
+	assert.False(t, detail.CanReopen)
+	assert.True(t, detail.CanCancel)
+}
+
+func TestPluginGetTicket_OwnerInProgressNoCancel(t *testing.T) {
+	realmID := uuid.New()
+	userID := uuid.New()
+	ticketID := uuid.New()
+	repo, users, userRealms, tickets := pluginMocks()
+
+	pluginGetTicketWithTicket(repo, users, userRealms, tickets, realmID, userID, ticketID, &models.Ticket{
+		ID:     ticketID,
+		Status: models.StatusInProgress,
+		Owner:  &models.UserShort{ID: userID, Username: "u1"},
+	})
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
+
+	detail, err := svc.PluginGetTicket(context.Background(), "ch1", "mm1", ticketID.String())
+	require.NoError(t, err)
+	assert.False(t, detail.CanConfirm)
+	assert.False(t, detail.CanReopen)
+	assert.False(t, detail.CanCancel)
+}
+
+func TestPluginGetTicket_NotOwnerNoFlags(t *testing.T) {
+	realmID := uuid.New()
+	userID := uuid.New()
+	otherID := uuid.New()
+	ticketID := uuid.New()
+	repo, users, userRealms, tickets := pluginMocks()
+
+	pluginGetTicketWithTicket(repo, users, userRealms, tickets, realmID, userID, ticketID, &models.Ticket{
+		ID:     ticketID,
+		Status: models.StatusResolved,
+		Owner:  &models.UserShort{ID: otherID, Username: "u2"},
+	})
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
+
+	detail, err := svc.PluginGetTicket(context.Background(), "ch1", "mm1", ticketID.String())
+	require.NoError(t, err)
+	assert.False(t, detail.CanConfirm)
+	assert.False(t, detail.CanReopen)
+	assert.False(t, detail.CanCancel)
+}
+
+func TestPluginChangeStatus_HappyPaths(t *testing.T) {
+	for _, status := range []models.TicketStatus{models.StatusClosed, models.StatusInProgress, models.StatusCancelled} {
+		t.Run(string(status), func(t *testing.T) {
+			realmID := uuid.New()
+			userID := uuid.New()
+			ticketID := uuid.New()
+			repo, users, userRealms, tickets := pluginMocks()
+
+			repo.On("GetByChannelID", mock.Anything, "ch1").Return(&models.RealmMattermost{RealmID: realmID, IsActive: true}, nil)
+			expectExistingUser(users, userRealms, userID, realmID)
+
+			tickets.On("Update", mock.Anything, mock.MatchedBy(func(d *models.TicketDTO) bool {
+				if d.ID == nil || *d.ID != ticketID {
+					return false
+				}
+				if d.Actor == nil || d.Actor.ID != userID {
+					return false
+				}
+				if d.RealmID == nil || *d.RealmID != realmID {
+					return false
+				}
+				if d.Status != status || !d.HasField("status") {
+					return false
+				}
+				return true
+			})).Return(nil)
+
+			svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
+
+			err := svc.PluginChangeStatus(context.Background(), "ch1", "mm1", ticketID.String(), string(status))
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestPluginChangeStatus_PermissionDeniedPropagated(t *testing.T) {
+	realmID := uuid.New()
+	userID := uuid.New()
+	ticketID := uuid.New()
+	repo, users, userRealms, tickets := pluginMocks()
+
+	repo.On("GetByChannelID", mock.Anything, "ch1").Return(&models.RealmMattermost{RealmID: realmID, IsActive: true}, nil)
+	expectExistingUser(users, userRealms, userID, realmID)
+	tickets.On("Update", mock.Anything, mock.Anything).Return(models.ErrPermissionDenied)
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
+
+	err := svc.PluginChangeStatus(context.Background(), "ch1", "mm1", ticketID.String(), string(models.StatusClosed))
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+}
+
+func TestPluginChangeStatus_Invalid(t *testing.T) {
+	repo, _, _, _ := pluginMocks()
+	repo.On("GetByChannelID", mock.Anything, "ch1").Return(&models.RealmMattermost{RealmID: uuid.New(), IsActive: true}, nil)
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo})
+
+	err := svc.PluginChangeStatus(context.Background(), "ch1", "mm1", uuid.New().String(), "bogus")
+	assert.ErrorIs(t, err, models.ErrInvalidInput)
+
+	err = svc.PluginChangeStatus(context.Background(), "ch1", "mm1", "not-a-uuid", string(models.StatusClosed))
+	assert.ErrorIs(t, err, models.ErrInvalidInput)
+}
+
+func TestPluginChangeStatus_UnboundChannel(t *testing.T) {
+	repo, _, _, _ := pluginMocks()
+	repo.On("GetByChannelID", mock.Anything, "ch1").Return(nil, errors.New("no rows"))
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo})
+
+	err := svc.PluginChangeStatus(context.Background(), "ch1", "mm1", uuid.New().String(), string(models.StatusClosed))
+	assert.ErrorIs(t, err, models.ErrChannelNotBound)
 }

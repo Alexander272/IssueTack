@@ -1117,18 +1117,16 @@ func (s *TicketService) validateAssigneeForAssign(ctx context.Context, ticket *m
 }
 
 // ownerTransitionAllowed — допустимые переходы по статусам для «чистого» владельца (без
-// write/work-доступа). Владелец может только: активный статус → cancelled (отменить заявку),
-// resolved → closed (принять решение) и resolved → in_progress (вернуть в работу). Все прочие
-// смены статусов и изменение полей для него запрещены (проверяется в Update).
+// write/work-доступа). Владелец может только: open → cancelled (отменить новую заявку),
+// resolved → closed (принять решение) и resolved → in_progress (вернуть в работу). Все
+// прочие смены статусов и изменение полей для него запрещены (проверяется в Update).
 func (s *TicketService) ownerTransitionAllowed(ticket *models.Ticket, dto *models.TicketDTO) bool {
 	if !dto.HasField("status") || dto.Status == ticket.Status {
 		return false
 	}
 	switch dto.Status {
 	case models.StatusCancelled:
-		return ticket.Status != models.StatusResolved &&
-			ticket.Status != models.StatusClosed &&
-			ticket.Status != models.StatusCancelled
+		return ticket.Status == models.StatusOpen
 	case models.StatusClosed:
 		return ticket.Status == models.StatusResolved
 	case models.StatusInProgress:

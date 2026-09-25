@@ -136,6 +136,14 @@ export async function getTicket(channelId: string, userId: string, ticketId: str
     return request<PluginTicketDetail>(`/plugins/issuetrack/api/tickets/${encodeURIComponent(ticketId)}?${qs.toString()}`);
 }
 
+export async function setTicketStatus(channelId: string, userId: string, ticketId: string, status: string): Promise<void> {
+    await request(`/plugins/issuetrack/api/tickets/${encodeURIComponent(ticketId)}/status`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({channelId, userId, status}),
+    });
+}
+
 export async function getComments(channelId: string, userId: string, ticketId: string): Promise<PluginComment[]> {
     const qs = new URLSearchParams({channelId, userId});
     return request<PluginComment[]>(`/plugins/issuetrack/api/tickets/${encodeURIComponent(ticketId)}/comments?${qs.toString()}`);

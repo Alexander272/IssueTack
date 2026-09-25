@@ -125,6 +125,7 @@ type Mattermost interface {
 	PluginGetTicket(ctx context.Context, channelID, mmUserID, ticketID string) (*PluginTicketDetail, error)
 	PluginGetComments(ctx context.Context, channelID, mmUserID, ticketID string) ([]PluginComment, error)
 	PluginCreateComment(ctx context.Context, input *PluginCreateCommentInput) (*PluginComment, error)
+	PluginChangeStatus(ctx context.Context, channelID, mmUserID, ticketID, status string) error
 	PluginGetAttachmentContent(ctx context.Context, channelID, mmUserID, attachmentID string) (*models.Attachment, io.ReadCloser, error)
 
 	StartWSForRealm(ctx context.Context, realmID uuid.UUID) error

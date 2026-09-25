@@ -39,6 +39,7 @@ func (h *Handler) registerPluginRoutes(r *gin.RouterGroup, cfg config.Mattermost
 		plugin.GET("/tickets", h.handlePluginListMine)
 		plugin.POST("/tickets", h.handlePluginCreateTicket)
 		plugin.GET("/tickets/:id", h.handlePluginGetTicket)
+		plugin.POST("/tickets/:id/status", h.handlePluginChangeStatus)
 		plugin.GET("/tickets/:id/comments", h.handlePluginGetComments)
 		plugin.POST("/tickets/:id/comments", h.handlePluginCreateComment)
 		plugin.GET("/attachments/:id", h.handlePluginAttachmentContent)
@@ -194,6 +195,30 @@ func (h *Handler) handlePluginCreateTicket(c *gin.Context) {
 		"title":  dto.Title,
 		"link":   dto.Link,
 	})
+}
+
+// pluginChangeStatusRequest — запрос смены статуса заявки из плагина.
+type pluginChangeStatusRequest struct {
+	ChannelID string `json:"channelId" binding:"required"`
+	UserID    string `json:"userId" binding:"required"`
+	Status    string `json:"status" binding:"required"`
+}
+
+// handlePluginChangeStatus меняет статус заявки (действия владельца:
+// «Подтвердить решение» / «Вернуть в работу» / «Отменить заявку»).
+func (h *Handler) handlePluginChangeStatus(c *gin.Context) {
+	var req pluginChangeStatusRequest
+	if err := utils.BindJSON(c, &req); err != nil {
+		response.SendError(c, err)
+		return
+	}
+
+	if err := h.service.PluginChangeStatus(c, req.ChannelID, req.UserID, c.Param("id"), req.Status); err != nil {
+		response.SendError(c, err)
+		return
+	}
+
+	response.SendData(c, gin.H{"ok": true})
 }
 
 func (h *Handler) handlePluginGetComments(c *gin.Context) {

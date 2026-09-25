@@ -94,6 +94,12 @@ type PluginTicketDetail struct {
 	Link        string                `json:"link"`
 	// Attachments — вложенные к заявке файлы (не к комментариям).
 	Attachments []*PluginAttachment `json:"attachments,omitempty"`
+	// Флаги действий текущего пользователя (формулы те же, что в InfoBar
+	// веб-приложения): CanConfirm/CanReopen — владелец и статус resolved,
+	// CanCancel — владелец и статус open (отменять можно только новые заявки).
+	CanConfirm bool `json:"canConfirm,omitempty"`
+	CanReopen  bool `json:"canReopen,omitempty"`
+	CanCancel  bool `json:"canCancel,omitempty"`
 }
 
 // PluginAttachment — вложение заявки для плагина. Ссылка на скачивание строится
@@ -212,7 +218,53 @@ func (s *MattermostService) PluginGetTicket(ctx context.Context, channelID, mmUs
 		detail.Link = fmt.Sprintf("%s/tasks/%s", s.baseURL, ticket.ID)
 	}
 
+	isOwner := ticket.Owner != nil && ticket.Owner.ID == user.ID
+	detail.CanConfirm = isOwner && ticket.Status == models.StatusResolved
+	detail.CanReopen = isOwner && ticket.Status == models.StatusResolved
+	detail.CanCancel = isOwner && ticket.Status == models.StatusOpen
+
 	return detail, nil
+}
+
+// PluginChangeStatus меняет статус заявки из плагина MM. Используется для
+// действий владельца: «Подтвердить решение» (resolved → closed), «Вернуть в
+// работу» (resolved → in_progress), «Отменить заявку» (активный → cancelled).
+// Все правила перехода и прав доступа (canChangeStatus / ownerTransitionAllowed,
+// терминальные статусы, закрытие только из resolved и т.д.) применяет
+// TicketService.Update.
+func (s *MattermostService) PluginChangeStatus(ctx context.Context, channelID, mmUserID, ticketID, status string) error {
+	settings, err := s.repo.GetByChannelID(ctx, channelID)
+	if err != nil {
+		return models.ErrChannelNotBound
+	}
+	if !settings.IsActive {
+		return models.ErrChannelNotBound
+	}
+
+	id, err := uuid.Parse(ticketID)
+	if err != nil {
+		return models.ErrInvalidInput
+	}
+
+	next := models.TicketStatus(status)
+	if !next.IsValid() {
+		return models.ErrInvalidInput
+	}
+
+	user, err := s.resolveOrCreateUser(ctx, settings.RealmID, mmUserID, nil)
+	if err != nil {
+		return fmt.Errorf("failed to resolve user: %w", err)
+	}
+
+	dto := &models.TicketDTO{
+		ID:      &id,
+		Status:  next,
+		Actor:   &models.Actor{ID: user.ID, Name: user.Username},
+		RealmID: &settings.RealmID,
+	}
+	dto.MarkProvided("status")
+
+	return s.tickets.Update(ctx, dto)
 }
 
 // PluginGetComments возвращает общедоступные комментарии заявки (в порядке
@@ -534,6 +586,9 @@ func (s *MattermostService) PluginListMine(ctx context.Context, channelID, mmUse
 		models.StatusInProgress,
 		models.StatusPending,
 		models.StatusOnHold,
+		// resolved показываем владельцу, чтобы можно было «подтвердить решение»
+		// или «вернуть в работу» прямо из плагина.
+		models.StatusResolved,
 	}
 	created := "created"
 

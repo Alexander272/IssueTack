@@ -43,7 +43,8 @@ export const InfoBar = ({ task }: Props) => {
 	const allowedStatuses = task.access?.allowedStatuses
 	const canAccept = isOwner && task.status === 'resolved'
 	const canReturn = isOwner && task.status === 'resolved'
-	const canCancel = isOwner && ACTIVE_STATUSES.includes(task.status)
+	// Отменить можно только новую (open) заявку.
+	const canCancel = isOwner && task.status === 'open'
 
 	const handleStatusChange = async (status: TicketStatus, comment?: string) => {
 		try {

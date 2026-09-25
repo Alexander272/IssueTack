@@ -101,12 +101,7 @@ export default function CreateTab({ channelId, userId, context, onCreated }: Cre
 			<div className='it-ticket-success'>
 				<div className='it-ticket-success__title'>Заявка №{result.number || ''} создана</div>
 				<div className='it-ticket-success__actions'>
-					{result.link ? (
-						<a className='it-btn it-btn--primary' href={result.link} target='_blank' rel='noreferrer'>
-							Перейти к заявке
-						</a>
-					) : null}
-					<button type='button' className='it-btn' onClick={onCreated}>
+					<button type='button' className='it-btn it-btn--primary' onClick={onCreated}>
 						К моим заявкам
 					</button>
 					<button type='button' className='it-btn' onClick={reset}>

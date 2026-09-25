@@ -1081,8 +1081,40 @@ func TestTicketService_Update_Owner_ReturnToWork_FromResolved_Success(t *testing
 	mockRepo.AssertExpectations(t)
 }
 
-func TestTicketService_Update_Owner_Cancel_FromActive_Success(t *testing.T) {
+func TestTicketService_Update_Owner_Cancel_FromOpen_Success(t *testing.T) {
 	mockRepo, mockLogs, _, _, mockNotifications, _, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Status:   models.StatusCancelled,
+		Provided: map[string]bool{"status": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:      ticketID,
+		Title:   "Original Ticket",
+		Status:  models.StatusOpen,
+		Creator: models.UserShort{ID: uuid.New()},
+		Owner:   &models.UserShort{ID: actorID},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.NoError(t, err)
+	assert.NotNil(t, dto.ClosedAt)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestTicketService_Update_Owner_Cancel_FromInProgress_Denied(t *testing.T) {
+	mockRepo, _, _, _, _, _, mockPolicies, svc := ticketServiceFixtures()
 
 	actorID := uuid.New()
 	ticketID := uuid.New()
@@ -1103,14 +1135,11 @@ func TestTicketService_Update_Owner_Cancel_FromActive_Success(t *testing.T) {
 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
-	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
-	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
-	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
 
 	err := svc.Update(context.Background(), dto)
-	assert.NoError(t, err)
-	assert.NotNil(t, dto.ClosedAt)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 	mockRepo.AssertExpectations(t)
+	mockRepo.AssertNotCalled(t, "Update")
 }
 
 func TestTicketService_Update_Owner_Cancel_FromResolved_Denied(t *testing.T) {

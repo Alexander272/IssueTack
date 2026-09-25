@@ -83,6 +83,9 @@ export interface PluginTicketDetail {
     assignee?: PluginUserShort;
     link?: string;
     attachments?: PluginAttachment[];
+    canConfirm?: boolean;
+    canReopen?: boolean;
+    canCancel?: boolean;
 }
 
 export interface PluginCommentUser {
