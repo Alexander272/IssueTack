@@ -11,7 +11,7 @@ import { useGetAllCategoriesQuery } from '@/features/categories/categoriesApiSli
 import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
 import { useCreateTaskMutation } from '../../tasksApiSlice'
 import { useUploadAttachmentMutation } from '../../modules/attachments/attachmentsApiSlice'
-import { getCurrentCapabilities, getIsManager, getUserId } from '@/features/user/userSlice'
+import { getCurrentCapabilities, getIsManager, getUserId, getUserSiteId } from '@/features/user/userSlice'
 import { getRealm } from '@/features/realms/realmSlice'
 import { CategoryAndSiteSection } from './CategoryAndSiteSection'
 import { DescriptionSection } from './DescriptionSection'
@@ -24,6 +24,7 @@ export const TaskCreateForm = ({ onSuccess, onCancel, embedded, onSavingChange }
 	const realm = useAppSelector(getRealm)
 	const isManager = useAppSelector(getIsManager)
 	const capabilities = useAppSelector(getCurrentCapabilities)
+	const userSiteId = useAppSelector(getUserSiteId)
 	const isExecutor = !isManager && capabilities.memberGroupIds.length > 0
 
 	const [createTask, { isLoading: isCreating }] = useCreateTaskMutation()
@@ -51,7 +52,7 @@ export const TaskCreateForm = ({ onSuccess, onCancel, embedded, onSavingChange }
 			subtasks: [],
 		},
 	})
-	const { control, handleSubmit, reset, setValue } = methods
+	const { control, getValues, handleSubmit, reset, setValue } = methods
 
 	const selectedCategoryId = useWatch({ control, name: 'categoryId' })
 
@@ -59,6 +60,12 @@ export const TaskCreateForm = ({ onSuccess, onCancel, embedded, onSavingChange }
 		const cat = categories.find(c => c.id === selectedCategoryId)
 		if (cat) setValue('priority', cat.priority)
 	}, [selectedCategoryId, categories, setValue])
+
+	useEffect(() => {
+		if (userSiteId && !getValues('siteId')) {
+			setValue('siteId', userSiteId)
+		}
+	}, [userSiteId, setValue, getValues])
 
 	const category = categories.find(c => c.id === selectedCategoryId)
 

@@ -12,6 +12,7 @@ interface IUserState {
 	token: string | null
 	realms: IUserRealm[]
 	capabilities: Record<string, IUserCapabilities>
+	siteId?: string | null
 }
 
 const initialState: IUserState = {
@@ -21,6 +22,7 @@ const initialState: IUserState = {
 	permissions: {},
 	realms: [],
 	capabilities: {},
+	siteId: null,
 }
 
 const userSlice = createSlice({
@@ -34,6 +36,7 @@ const userSlice = createSlice({
 			state.token = action.payload.token
 			state.realms = action.payload.realms
 			state.capabilities = action.payload.capabilities ?? {}
+			state.siteId = action.payload.siteId ?? null
 		},
 
 		setRole: (state, action: PayloadAction<string>) => {
@@ -56,6 +59,7 @@ export const getPermissions = (state: RootState) => state.user.permissions
 export const getRole = (state: RootState) => state.user.role
 export const getUserRealms = (state: RootState) => state.user.realms
 export const getUserCapabilities = (state: RootState) => state.user.capabilities
+export const getUserSiteId = (state: RootState) => state.user.siteId
 
 export const getCurrentTenantPermissions = createSelector(
 	[getPermissions, getRealm],

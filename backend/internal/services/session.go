@@ -108,6 +108,12 @@ func (s *SessionService) loadUserRealms(ctx context.Context, user *models.User) 
 
 	s.loadUserCapabilities(ctx, user)
 
+	if data, err := s.user.GetByID(ctx, user.ID); err == nil && data.SiteID != nil {
+		if siteID, perr := uuid.Parse(*data.SiteID); perr == nil {
+			user.SiteID = &siteID
+		}
+	}
+
 	return nil
 }
 

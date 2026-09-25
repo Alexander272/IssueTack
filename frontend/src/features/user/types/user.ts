@@ -15,6 +15,7 @@ export interface IUser {
 	token: string
 	realms: IUserRealm[]
 	capabilities: Record<string, IUserCapabilities>
+	siteId?: string | null
 }
 
 export interface IUserShort {
