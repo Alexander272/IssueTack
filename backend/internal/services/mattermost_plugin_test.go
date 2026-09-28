@@ -67,10 +67,11 @@ func pluginMocks() (*MockMattermostRepo, *MockUserService, *MockUserRealmsServic
 }
 
 // expectExistingUser готовит моки пути «пользователь уже есть по mattermost_id».
+// UpdateMMAndSite здесь намеренно не ожидается: fast-path не должен писать в
+// users, если site_id не передан (см. TestPluginContext_KnownUser_NoWrite).
 func expectExistingUser(users *MockUserService, userRealms *MockUserRealmsService, userID, realmID uuid.UUID) {
 	userSite := "a1b2c3d4-0000-0000-0000-000000000001"
 	users.On("GetByMattermostID", mock.Anything, mock.Anything).Return(&models.UserData{ID: userID, Username: "u1", SiteID: &userSite}, nil)
-	users.On("UpdateMMAndSite", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	userRealms.On("GetByUserAndRealm", mock.Anything, userID, realmID).Return(&models.UserRealm{UserID: userID, RealmID: realmID}, nil)
 }
 
@@ -210,6 +211,45 @@ func TestPluginContext_HappyPath(t *testing.T) {
 	assert.Equal(t, "a1b2c3d4-0000-0000-0000-000000000001", *result.User.SiteID)
 	assert.Len(t, result.Categories, 1)
 	assert.Len(t, result.Sites, 1)
+}
+
+// TestPluginContext_KnownUser_NoWrite фиксирует отсутствие записи в users на
+// fast-path: mattermost_id уже совпадает, site_id не передан, поэтому UPDATE
+// менял бы только updated_at. /plugin/context вызывается при каждом переключении
+// канала, и лишняя запись давала бы мёртвые кортежи без изменения данных.
+func TestPluginContext_KnownUser_NoWrite(t *testing.T) {
+	realmID := uuid.New()
+	userID := uuid.New()
+	siteID := uuid.New()
+	repo, users, userRealms, _ := pluginMocks()
+
+	repo.On("GetByChannelID", mock.Anything, "ch1").Return(&models.RealmMattermost{RealmID: realmID, ChannelID: "ch1", IsActive: true}, nil)
+	expectExistingUser(users, userRealms, userID, realmID)
+
+	realms := &fakeRealmsSvc{getByID: func(_ context.Context, _ *models.GetRealmByIdDTO) (*models.Realm, error) {
+		return &models.Realm{ID: realmID, Name: "Риалм"}, nil
+	}}
+	categories := &fakeCategoriesSvc{get: func(_ context.Context, _ *models.GetCategoriesDTO) ([]*models.Category, error) {
+		return nil, nil
+	}}
+	sites := &fakeSitesSvc{get: func(_ context.Context, _ *models.GetSitesDTO) ([]*models.Site, error) {
+		return []*models.Site{{ID: siteID}}, nil
+	}}
+
+	svc := NewMattermostService(&MattermostDeps{
+		Repo: repo, Users: users, UserRealms: userRealms,
+		Realms: realms, Categories: categories, Sites: sites,
+	})
+
+	// Два вызова подряд — как два переключения канала одним пользователем.
+	for i := 0; i < 2; i++ {
+		result, err := svc.PluginContext(context.Background(), "ch1", "mm1")
+		require.NoError(t, err)
+		require.True(t, result.Bound)
+		require.Equal(t, userID, result.User.ID)
+	}
+
+	users.AssertNotCalled(t, "UpdateMMAndSite", mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestPluginCreateTicket_HappyPath(t *testing.T) {

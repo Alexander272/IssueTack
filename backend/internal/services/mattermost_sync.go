@@ -21,7 +21,7 @@ import (
 func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uuid.UUID, mmUserID string, siteID *uuid.UUID) (*models.UserData, error) {
 	existing, err := s.users.GetByMattermostID(ctx, mmUserID)
 	if err == nil {
-		s.ensureLinkAndRealm(ctx, realmID, existing.ID, mmUserID, siteID, existing.ID, existing.Username)
+		s.ensureKnownUserRealm(ctx, realmID, existing.ID, siteID, existing.ID, existing.Username)
 		return existing, nil
 	}
 
@@ -151,6 +151,26 @@ func (s *MattermostService) ensureRealmMembership(ctx context.Context, userID uu
 	s.eventBus.Notify(event)
 
 	return nil
+}
+
+// ensureKnownUserRealm готовит уже сопоставленного по mattermost_id пользователя:
+// при необходимости проставляет площадку и гарантирует членство в realm.
+// В отличие от ensureLinkAndRealm не трогает mattermost_id — он уже совпадает по
+// определению fast-path, поэтому запись в БД давала бы только обновление
+// updated_at на каждый вызов (например, /plugin/context при каждом переключении
+// канала), создавая мёртвые кортежи без изменения данных.
+func (s *MattermostService) ensureKnownUserRealm(ctx context.Context, realmID uuid.UUID, userID uuid.UUID, siteID *uuid.UUID, actorID uuid.UUID, actorName string) {
+	if siteID != nil {
+		if err := s.users.UpdateMMAndSite(ctx, nil, &models.UserDataDTO{
+			ID:     userID,
+			SiteID: siteID,
+		}); err != nil {
+			logger.Warn("failed to update user site", logger.ErrAttr(err))
+		}
+	}
+	if err := s.ensureRealmMembership(ctx, userID, realmID, actorID, actorName); err != nil {
+		logger.Warn("failed to add user to realm", logger.ErrAttr(err))
+	}
 }
 
 // ensureLinkAndRealm привязывает системного пользователя к его Mattermost
