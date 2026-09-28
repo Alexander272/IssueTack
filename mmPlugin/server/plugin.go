@@ -101,6 +101,22 @@ func (p *Plugin) ServeHTTP(_ *plugin.Context, w http.ResponseWriter, r *http.Req
 	rel := strings.TrimPrefix(r.URL.Path, apiPrefix)
 	target := strings.TrimSuffix(cfg.BackendURL, "/") + backendAPIPrefix + rel
 
+	// Непривязанный канал: отдаём закэшированный ответ, не трогая бэкенд.
+	if r.Method == http.MethodPost && rel == "/context" {
+		if channelID := r.URL.Query().Get("channelId"); channelID != "" {
+			if hit, ok := p.cachedContext(channelID); ok {
+				for k, vs := range hit.header {
+					for _, v := range vs {
+						w.Header().Add(k, v)
+					}
+				}
+				w.WriteHeader(hit.status)
+				_, _ = w.Write(hit.body)
+				return
+			}
+		}
+	}
+
 	outReq, err := http.NewRequestWithContext(r.Context(), r.Method, target, r.Body)
 	if err != nil {
 		http.Error(w, "failed to build request", http.StatusBadGateway)
@@ -121,34 +137,11 @@ func (p *Plugin) ServeHTTP(_ *plugin.Context, w http.ResponseWriter, r *http.Req
 	}
 	defer resp.Body.Close()
 
-	// Непривязанный канал: отдаём закэшированный ответ, не трогая бэкенд.
-	var cacheHit *contextNegEntry
-	if r.Method == http.MethodPost && rel == "/context" {
-		channelID := r.URL.Query().Get("channelId")
-		if channelID != "" {
-			cacheHit, _ = p.cachedContext(channelID)
+	for k, vs := range resp.Header {
+		for _, v := range vs {
+			w.Header().Add(k, v)
 		}
 	}
-
-	if cacheHit == nil {
-		for k, vs := range resp.Header {
-			for _, v := range vs {
-				w.Header().Add(k, v)
-			}
-		}
-	}
-
-	if cacheHit != nil {
-		for k, vs := range cacheHit.header {
-			for _, v := range vs {
-				w.Header().Add(k, v)
-			}
-		}
-		w.WriteHeader(cacheHit.status)
-		_, _ = w.Write(cacheHit.body)
-		return
-	}
-
 	w.WriteHeader(resp.StatusCode)
 
 	if r.Method == http.MethodPost && rel == "/context" {

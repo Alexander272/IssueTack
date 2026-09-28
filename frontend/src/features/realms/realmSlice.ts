@@ -22,7 +22,9 @@ const realmSlice = createSlice({
 			localStorage.setItem(STORAGE_KEYS.ActiveRealm, JSON.stringify(state.realm))
 		},
 
-		resetRealm: () => initialState,
+		// Полный сброс (logout/истечение сессии): активный реалм не восстанавливаем
+		// из localStorage — это состояние прошлого пользователя.
+		resetRealm: () => ({ realm: null }),
 	},
 })
 
