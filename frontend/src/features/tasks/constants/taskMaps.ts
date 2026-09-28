@@ -22,15 +22,6 @@ export interface StatusMapValue {
 	textColor: string
 }
 
-// export const STATUS_MAP: Record<TicketStatus, StatusMapValue> = {
-// 	open: { label: 'Новая', icon: AlertTriangleIcon, bgColor: '#dbeafe', textColor: '#1e40af' },
-// 	in_progress: { label: 'В работе', icon: PlayIcon, bgColor: '#fef3c7', textColor: '#92400e' },
-// 	pending: { label: 'Ожидание', icon: ClockIcon, bgColor: '#f3e8ff', textColor: '#6b21a8' },
-// 	on_hold: { label: 'Отложена', icon: PauseIcon, bgColor: '#f3e8ff', textColor: '#6b21a8' },
-// 	resolved: { label: 'Решена', icon: CheckIcon, bgColor: '#d1fae5', textColor: '#065f46' },
-// 	closed: { label: 'Закрыта', icon: LockIcon, bgColor: '#d1fae5', textColor: '#065f46' },
-// 	cancelled: { label: 'Отменена', icon: XCircleIcon, bgColor: '#fee2e2', textColor: '#b91c1c' },
-// }
 export const STATUS_MAP: Record<TicketStatus, StatusMapValue> = {
 	open: { label: 'Новая', icon: AlertTriangleIcon, bgColor: '#E1F5FE', textColor: '#01579B' },
 	in_progress: { label: 'В работе', icon: PlayIcon, bgColor: '#FFF3E0', textColor: '#E65100' },
@@ -86,8 +77,10 @@ export const STATUS_OPTIONS: { value: TicketStatus | 'all'; label: string }[] = 
 	{ value: 'open', label: 'Новые' },
 	{ value: 'in_progress', label: 'В работе' },
 	{ value: 'pending', label: 'Ожидание' },
+	{ value: 'on_hold', label: 'Отложены' },
 	{ value: 'resolved', label: 'Решены' },
 	{ value: 'closed', label: 'Закрыты' },
+	{ value: 'cancelled', label: 'Отменены' },
 ]
 
 export const SORT_OPTIONS = [

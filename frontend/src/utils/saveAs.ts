@@ -8,5 +8,7 @@ export const saveAs = (blob: Blob, name: string) => {
 	link.click();
 	link.remove();
 
-	URL.revokeObjectURL(href);
+	// Ревокация на следующем тике: мгновенный revoke может оборвать загрузку,
+	// пока браузер ещё стартует скачивание по URL.
+	setTimeout(() => URL.revokeObjectURL(href), 0);
 };

@@ -1,4 +1,4 @@
-import { useEffect, type FC } from 'react'
+import { useEffect, useRef, type FC } from 'react'
 import { FormProvider, useForm } from 'react-hook-form'
 import { Box, Button, Stack, Typography, useTheme } from '@mui/material'
 import { SaveIcon, Trash2Icon } from 'lucide-mui'
@@ -37,25 +37,26 @@ type Props = {
 export const UpdateRole: FC<Props> = ({ roleId, onCancel, onSuccess }) => {
 	const { palette } = useTheme()
 
-	const { data: role, isFetching } = useGetRoleWithPermissionsQuery(roleId, { skip: !roleId })
+	const { data: role, isLoading } = useGetRoleWithPermissionsQuery(roleId, { skip: !roleId })
 
 	const [update, { isLoading: isUpdating }] = useUpdateRoleMutation()
 	const [remove, { isLoading: isDeleting }] = useDeleteRoleMutation()
 
 	const methods = useForm<IForm>({ defaultValues })
 	const { handleSubmit, reset } = methods
+	const lastRoleId = useRef<string | null>(null)
 
+	// Ресетим форму только при смене роли и по данным, которые реально
+	// соответствуют текущему roleId, а не на каждом фоновом refetch.
 	useEffect(() => {
-		if (!role?.data) {
-			reset(defaultValues)
-			return
-		}
-		reset({ ...role.data, realmId: role.data.realm })
-	}, [role, reset])
+		const loaded = role?.data
+		if (!loaded || loaded.id !== roleId) return
+		if (lastRoleId.current === roleId) return
+		lastRoleId.current = roleId
+		reset({ ...loaded, realmId: loaded.realm })
+	}, [role, roleId, reset])
 
 	const onSubmit = handleSubmit(async form => {
-		console.log('📦 Отправка формы:', form)
-
 		form.permissions = form.perms.flatMap(p =>
 			p.resources.filter(r => r.isAssigned).map(r => r.permissionId as string),
 		)
@@ -87,7 +88,7 @@ export const UpdateRole: FC<Props> = ({ roleId, onCancel, onSuccess }) => {
 		if (onCancel) onCancel()
 	}
 
-	if (isFetching) return <Fallback />
+	if (isLoading) return <Fallback />
 
 	return (
 		<Box>

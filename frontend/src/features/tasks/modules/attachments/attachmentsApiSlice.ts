@@ -30,12 +30,12 @@ const attachmentsApiSlice = apiSlice.injectEndpoints({
 				)
 				if (res.error) return { error: res.error }
 				const blob = res.data as Blob
-				const prev = contentUrls.get(id)
-				// при обновлении данных (invalidate/refetch) старый blob-URL истёк бы,
-				// не будучи отозванным — отзываем его до замены на новый
-				if (prev) URL.revokeObjectURL(prev)
 				const url = URL.createObjectURL(blob)
+				const prev = contentUrls.get(id)
 				contentUrls.set(id, url)
+				// Отзываем старый URL на следующем тике, чтобы живой рендер (img/превью)
+				// успел переключиться на новый blob-URL; мгновенный revoke оборвал бы его.
+				if (prev) setTimeout(() => URL.revokeObjectURL(prev), 0)
 				return { data: { url, size: blob.size } }
 			},
 			onCacheEntryAdded: async (id, { cacheEntryRemoved }) => {

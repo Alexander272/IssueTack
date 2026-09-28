@@ -139,6 +139,11 @@ func (p *Plugin) ServeHTTP(_ *plugin.Context, w http.ResponseWriter, r *http.Req
 	}
 
 	if cacheHit != nil {
+		for k, vs := range cacheHit.header {
+			for _, v := range vs {
+				w.Header().Add(k, v)
+			}
+		}
 		w.WriteHeader(cacheHit.status)
 		_, _ = w.Write(cacheHit.body)
 		return
@@ -249,17 +254,20 @@ func (p *Plugin) ephemeralCreateConfirmation(r *http.Request, body []byte) {
 	}
 
 	post := &model.Post{ChannelId: channelID, Message: msg}
+	// SendEphemeralPost возвращает nil при ошибке отправки.
 	if p.API.SendEphemeralPost(userID, post) == nil {
 		p.API.LogError("failed to send ephemeral create confirmation", "user_id", userID)
 	}
 }
 
-// stripHopByHopHeaders удаляет hop-by-hop заголовки и Content-Length, чтобы
-// транспорт Go сам корректно пересчитал длину тела.
+// stripHopByHopHeaders удаляет hop-by-hop заголовки, Content-Length и
+// пользовательские креды Mattermost, чтобы транспорт Go сам корректно
+// пересчитал длину тела и сессия MM не утекала на бэкенд.
 func stripHopByHopHeaders(h http.Header) {
 	for _, key := range []string{
 		"Connection", "Proxy-Connection", "Keep-Alive", "Transfer-Encoding",
 		"Upgrade", "TE", "Trailer", "Content-Length",
+		"Cookie", "X-CSRF-Token",
 	} {
 		h.Del(key)
 	}

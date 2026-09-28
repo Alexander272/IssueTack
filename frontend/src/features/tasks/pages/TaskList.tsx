@@ -12,6 +12,7 @@ import { useAppSelector } from '@/hooks/redux'
 import { useCan } from '@/features/access/utils/can'
 import { useGetTasksQuery } from '../tasksApiSlice'
 import { getIsManager } from '@/features/user/userSlice'
+import { useDebounce } from '@/hooks/useDebounce'
 import { TaskFilters } from '../components/filters'
 import { TaskListView } from '../components/Table'
 import { TaskCreateModal } from '../components/TaskCreateModal'
@@ -82,6 +83,10 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 
 	const isArchive = tab === 'archive'
 
+	// Сетевой запрос дебаунсится, чтобы не долбить бэкенд на каждое нажатие
+	// клавиши в поиске; сам инпут фильтров остаётся мгновенным.
+	const debouncedSearch = useDebounce(filters.search, 300) as string
+
 	const numberFilter = filters.ticketNumber ? Number(filters.ticketNumber) : NaN
 
 	const queryFilter: ITaskFilter = useMemo(
@@ -94,14 +99,14 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 			statuses: filters.statuses?.length ? filters.statuses : undefined,
 			dueDateFrom: filters.dueDateFrom || undefined,
 			dueDateTo: filters.dueDateTo || undefined,
-			search: filters.search || undefined,
+			search: debouncedSearch || undefined,
 			sort: filters.sort,
 			mode,
 			archived: isArchive || undefined,
 			limit: isArchive ? rowsPerPage : undefined,
 			offset: isArchive ? page * rowsPerPage : undefined,
 		}),
-		[filters, mode, page, isArchive, numberFilter],
+		[filters, mode, page, isArchive, numberFilter, debouncedSearch],
 	)
 
 	const { data, isFetching } = useGetTasksQuery(queryFilter)

@@ -24,6 +24,20 @@ export function getCurrentUserId(): string | null {
         null;
 }
 
+export function subscribeCurrentUser(listener: (userId: string | null) => void): () => void {
+    if (!storeRef || typeof storeRef.subscribe !== 'function') {
+        return () => undefined;
+    }
+    let last = getCurrentUserId();
+    return storeRef.subscribe(() => {
+        const next = getCurrentUserId();
+        if (next !== last) {
+            last = next;
+            listener(next);
+        }
+    });
+}
+
 export class ApiError extends Error {
     status: number;
 
@@ -112,7 +126,7 @@ export async function getContext(channelId: string, userId: string): Promise<Plu
     if (cached) {
         return cached;
     }
-    const data = await request<PluginContextResult>('/plugins/issuetrack/api/context', {
+    const data = await request<PluginContextResult>(`/plugins/issuetrack/api/context?${new URLSearchParams({channelId, userId})}`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({channelId, userId}),
@@ -182,5 +196,6 @@ export async function createTicket(channelId: string, userId: string, payload: C
     for (const file of payload.files || []) {
         fd.append('files', file);
     }
-    return request<PluginCreateResult>('/plugins/issuetrack/api/tickets', {method: 'POST', body: fd});
+    const qs = new URLSearchParams({channelId, userId});
+    return request<PluginCreateResult>(`/plugins/issuetrack/api/tickets?${qs.toString()}`, {method: 'POST', body: fd});
 }

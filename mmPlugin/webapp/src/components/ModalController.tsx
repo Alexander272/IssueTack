@@ -68,7 +68,7 @@ export default function ModalController({ channelId, userId, context, onClose }:
 							onCreated={() => setTab('mine')}
 						/>
 					) : (
-						<MyTicketsTab channelId={channelId} userId={userId} onOpen={() => onClose()} />
+						<MyTicketsTab channelId={channelId} userId={userId} />
 					)}
 				</div>
 			</div>

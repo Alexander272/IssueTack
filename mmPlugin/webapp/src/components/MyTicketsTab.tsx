@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 
 import { ApiError, getMyTickets } from '../api'
 import type { PluginTicketShort } from '../types'
@@ -8,20 +8,29 @@ import TicketDetail from './TicketDetail'
 interface MyTicketsTabProps {
     channelId: string
     userId: string
-    onOpen: () => void
 }
 
 export default function MyTicketsTab({ channelId, userId }: MyTicketsTabProps) {
     const [tickets, setTickets] = useState<PluginTicketShort[] | null>(null)
     const [error, setError] = useState<string | null>(null)
     const [selectedId, setSelectedId] = useState<string | null>(null)
+    const reqRef = useRef(0)
 
     const load = useCallback(() => {
+        const reqId = ++reqRef.current
         setTickets(null)
         setError(null)
         getMyTickets(channelId, userId)
-            .then(list => setTickets(list || []))
-            .catch((err: unknown) => setError(err instanceof ApiError ? err.message : 'Не удалось загрузить заявки'))
+            .then(list => {
+                if (reqId === reqRef.current) {
+                    setTickets(list || [])
+                }
+            })
+            .catch((err: unknown) => {
+                if (reqId === reqRef.current) {
+                    setError(err instanceof ApiError ? err.message : 'Не удалось загрузить заявки')
+                }
+            })
     }, [channelId, userId])
 
     useEffect(() => {

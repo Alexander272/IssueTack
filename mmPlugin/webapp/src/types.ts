@@ -129,6 +129,7 @@ export interface PluginStore {
             };
         };
     };
+    subscribe: (listener: () => void) => () => void;
 }
 
 export interface PluginRegistry {

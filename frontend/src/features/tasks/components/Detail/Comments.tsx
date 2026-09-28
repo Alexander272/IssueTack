@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSelector } from 'react-redux'
 import {
 	Box,
@@ -134,6 +134,9 @@ const CommentAttachments = ({ attachments }: { attachments: IAttachment[] }) => 
 	)
 }
 
+// Окно, в течение которого автор может удалить свой комментарий.
+const DELETE_COMMENT_WINDOW_MS = 15 * 60 * 1000
+
 const CommentEntry = ({
 	comment,
 	currentUserId,
@@ -147,7 +150,20 @@ const CommentEntry = ({
 	const initials = getInitials(comment.user)
 	const color = getAvatarColor(comment.userId)
 	const isAuthor = comment.userId === currentUserId
-	const [withinDeleteWindow] = useState(() => Date.now() - new Date(comment.createdAt).getTime() < 15 * 60 * 1000)
+	const createdAt = new Date(comment.createdAt).getTime()
+	// Реактивное окно удаления: по его истечении кнопка дизейблится, а не остаётся
+	// замороженной на значении из момента монтирования.
+	const [deleteWindowExpired, setDeleteWindowExpired] = useState(
+		() => Date.now() - createdAt >= DELETE_COMMENT_WINDOW_MS,
+	)
+	useEffect(() => {
+		if (deleteWindowExpired) return undefined
+		const remaining = createdAt + DELETE_COMMENT_WINDOW_MS - Date.now()
+		if (remaining <= 0) return undefined
+		const timer = setTimeout(() => setDeleteWindowExpired(true), remaining)
+		return () => clearTimeout(timer)
+	}, [createdAt, deleteWindowExpired])
+	const withinDeleteWindow = !deleteWindowExpired
 
 	return (
 		<Box sx={{ display: 'flex', gap: 1.5 }}>

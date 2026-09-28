@@ -13,7 +13,6 @@ startResetStoreListener({
 	effect: async (_, listenerApi) => {
 		await listenerApi.delay(100)
 		// listenerApi.dispatch(resetDataTableState())
-		//TODO reset states
 		listenerApi.dispatch(apiSlice.util.resetApiState())
 	},
 })

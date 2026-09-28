@@ -41,25 +41,41 @@ export default function TicketDetail({ channelId, userId, ticketId, onBack, onCh
     const [reasonOpen, setReasonOpen] = useState(false)
     const [reasonText, setReasonText] = useState('')
     const [confirmingCancel, setConfirmingCancel] = useState(false)
+    const detailReqRef = useRef(0)
+    const commentReqRef = useRef(0)
 
     const loadComments = useCallback(() => {
+        const reqId = ++commentReqRef.current
         setComments(null)
         setCommentsError(null)
         getComments(channelId, userId, ticketId)
-            .then(list => setComments(list || []))
-            .catch((err: unknown) =>
-                setCommentsError(err instanceof ApiError ? err.message : 'Не удалось загрузить комментарии'),
-            )
+            .then(list => {
+                if (reqId === commentReqRef.current) {
+                    setComments(list || [])
+                }
+            })
+            .catch((err: unknown) => {
+                if (reqId === commentReqRef.current) {
+                    setCommentsError(err instanceof ApiError ? err.message : 'Не удалось загрузить комментарии')
+                }
+            })
     }, [channelId, userId, ticketId])
 
     useEffect(() => {
+        const reqId = ++detailReqRef.current
         setDetail(null)
         setDetailError(null)
         getTicket(channelId, userId, ticketId)
-            .then(d => setDetail(d))
-            .catch((err: unknown) =>
-                setDetailError(err instanceof ApiError ? err.message : 'Не удалось загрузить заявку'),
-            )
+            .then(d => {
+                if (reqId === detailReqRef.current) {
+                    setDetail(d)
+                }
+            })
+            .catch((err: unknown) => {
+                if (reqId === detailReqRef.current) {
+                    setDetailError(err instanceof ApiError ? err.message : 'Не удалось загрузить заявку')
+                }
+            })
         loadComments()
     }, [channelId, userId, ticketId, loadComments])
 

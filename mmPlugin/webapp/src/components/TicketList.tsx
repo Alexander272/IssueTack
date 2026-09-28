@@ -70,19 +70,14 @@ export default function TicketList({ tickets, error, onOpen, onRefresh }: Ticket
                                             <span className='it-ticket-card__date'>
                                                 Создана: {formatDate(t.createdAt)}
                                             </span>
-                                            <button
-                                                type='button'
+                                            <span
                                                 className='it-ticket-card__open'
                                                 title='Открыть заявку'
-                                                aria-label='Открыть заявку'
-                                                onClick={e => {
-                                                    e.stopPropagation()
-                                                    onOpen(t.id)
-                                                }}
+                                                onClick={() => onOpen(t.id)}
                                             >
                                                 <EyeIcon size={16} />
                                                 <span>Открыть</span>
-                                            </button>
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
