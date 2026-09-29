@@ -1,15 +1,23 @@
 package mattermost
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/config"
+	"github.com/Alexander272/IssueTrack/backend/internal/models"
+	"github.com/Alexander272/IssueTrack/backend/internal/services"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // runPluginGuarded invokes middleware.PluginTokenGuard as a middleware on a minimal route so
@@ -55,6 +63,27 @@ func TestPluginTokenGuard(t *testing.T) {
 	}
 }
 
+// TestPluginLinkContextRouteWiring проверяет, что ручка deep-link зарегистрирована:
+// запрошенный путь отвечает 400 (невалидный ввод), а не 404 (маршрут не зарегистрирован).
+// Guards проходятся корректными IP/токеном, но до сервиса дело не доходит —
+// userId обязателен, поэтому nil-сервис не трогается.
+func TestPluginLinkContextRouteWiring(t *testing.T) {
+	engine := gin.New()
+	h := &Handler{service: nil}
+	h.registerPluginRoutes(engine.Group("/api/v1"), config.MattermostConfig{
+		PluginToken:      "secret",
+		AllowedServerIPs: []string{"192.0.2.0/24"},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/plugin/tickets/abc/link-context", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "404")
+}
+
 // TestPluginRoutesWiring проверяет, что fail-closed срабатывает раньше хендлера:
 // плагин с пустым токеном получит 401, с запрещённым источником — 403.
 func TestPluginRoutesWiring(t *testing.T) {
@@ -90,4 +119,61 @@ func TestPluginRoutesWiring(t *testing.T) {
 			assert.Equal(t, tt.wantCode, rec.Code)
 		})
 	}
+}
+
+// stubCreateMattermost реализует services.Mattermost через встраивание интерфейса:
+// переопределён только PluginCreateTicket, остальные методы не вызываются.
+type stubCreateMattermost struct {
+	services.Mattermost
+	result *models.PluginCreateTicketResult
+}
+
+func (s stubCreateMattermost) PluginCreateTicket(context.Context, *models.PluginCreateTicketInput) (*models.PluginCreateTicketResult, error) {
+	return s.result, nil
+}
+
+// TestPluginCreateTicketReturnsDeepLink защищает от регрессии, при которой хендлер
+// собирает ответ вручную через gin.H и теряет deepLink: без него подтверждение о
+// создании заявки в Mattermost не содержит ссылки «Открыть в плагине».
+func TestPluginCreateTicketReturnsDeepLink(t *testing.T) {
+	ticketID := uuid.MustParse("b80349e7-9344-4217-8548-2860e381f2fd")
+	deepLink := models.PluginRoutePrefix + "/ticket/" + ticketID.String()
+
+	engine := gin.New()
+	h := &Handler{service: stubCreateMattermost{result: &models.PluginCreateTicketResult{
+		ID:       ticketID,
+		Number:   31,
+		Title:    "t",
+		Link:     "http://192.168.4.159:9000/tasks/" + ticketID.String(),
+		DeepLink: deepLink,
+	}}}
+	h.registerPluginRoutes(engine.Group("/api/v1"), config.MattermostConfig{
+		PluginToken:      "secret",
+		AllowedServerIPs: []string{"192.0.2.0/24"},
+	})
+
+	body := &bytes.Buffer{}
+	mw := multipart.NewWriter(body)
+	require.NoError(t, mw.WriteField("channelId", "c1"))
+	require.NoError(t, mw.WriteField("userId", "u1"))
+	require.NoError(t, mw.WriteField("title", "t"))
+	require.NoError(t, mw.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/plugin/tickets", body)
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var resp struct {
+		Data struct {
+			Link     string `json:"link"`
+			DeepLink string `json:"deepLink"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.NotEmpty(t, resp.Data.Link)
+	assert.Equal(t, deepLink, resp.Data.DeepLink)
 }

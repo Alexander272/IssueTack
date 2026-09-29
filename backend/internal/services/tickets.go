@@ -68,6 +68,10 @@ type Tickets interface {
 	// флагов доступа и без проверки прав. Используется внутренними сервисами, которым
 	// нужен сам тикет (статус, исполнитель, группа и т.п.), а не полный портрет с правами.
 	GetSummary(ctx context.Context, id uuid.UUID) (*models.Ticket, error)
+	// GetRealmIDByTicketID возвращает реалм заявки без проверки прав и без загрузки
+	// самой заявки. Нужен там, где канал ещё неизвестен: реалм определяется по тикету,
+	// чтобы затем выполнить полную проверку прав в GetByID.
+	GetRealmIDByTicketID(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	// Create создаёт новый тикет.
 	Create(ctx context.Context, dto *models.TicketDTO) error
 	// Update изменяет поля тикета с соблюдением правил доступа и переходов по статусам.
@@ -258,6 +262,17 @@ func (s *TicketService) GetSummary(ctx context.Context, id uuid.UUID) (*models.T
 		return nil, fmt.Errorf("failed to get ticket summary: %w", err)
 	}
 	return data, nil
+}
+
+// GetRealmIDByTicketID возвращает реалм заявки. Проверки прав здесь намеренно нет:
+// вызывающий код использует результат только для того, чтобы построить
+// GetTicketByIdDTO с корректным реалмом, а доступ проверяется уже в GetByID.
+func (s *TicketService) GetRealmIDByTicketID(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	realmID, err := s.repo.GetRealmIDByTicketID(ctx, id)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("failed to get ticket realm: %w", err)
+	}
+	return realmID, nil
 }
 
 // UploadAttachment сохраняет вложение через AttachmentService и, если вложение не

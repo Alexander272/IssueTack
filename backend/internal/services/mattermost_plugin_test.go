@@ -302,13 +302,13 @@ func TestPluginCreateTicket_HappyPath(t *testing.T) {
 		Tickets: tickets, Categories: categories, Groups: groups,
 	})
 
-	input := &PluginCreateTicketInput{
+	input := &models.PluginCreateTicketInput{
 		ChannelID:   "ch1",
 		MmUserID:    "mm1",
 		Title:       "Новая заявка",
 		Description: "Описание",
 		CategoryID:  categoryID,
-		Files: []PluginFile{
+		Files: []models.PluginFile{
 			{FileName: "a.txt", FileSize: 3, MimeType: "text/plain", Content: bytes.NewReader([]byte("abc"))},
 			{FileName: "b.txt", FileSize: 3, MimeType: "text/plain", Content: bytes.NewReader([]byte("def"))},
 		},
@@ -330,7 +330,7 @@ func TestPluginCreateTicket_UnboundChannel(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo})
 
-	_, err := svc.PluginCreateTicket(context.Background(), &PluginCreateTicketInput{
+	_, err := svc.PluginCreateTicket(context.Background(), &models.PluginCreateTicketInput{
 		ChannelID: "ch1", MmUserID: "mm1", Title: "Заявка",
 	})
 	assert.ErrorIs(t, err, models.ErrChannelNotBound)
@@ -350,17 +350,17 @@ func TestPluginGetTicket_HappyPath(t *testing.T) {
 	tickets.On("GetByID", mock.Anything, mock.MatchedBy(func(d *models.GetTicketByIdDTO) bool {
 		return d.ID == ticketID && d.Actor != nil && d.Actor.ID == userID && d.RealmID == realmID.String()
 	})).Return(&models.Ticket{
-		ID:            ticketID,
-		Title:         "Заявка 9",
-		Description:   "Описание заявки",
-		Status:        models.StatusOpen,
-		Priority:      models.PriorityMedium,
-		TicketNumber:  &num,
-		CreatedAt:     time.Now(),
-		DueDate:       &due,
-		Creator:       models.UserShort{ID: userID, Username: "mm1"},
-		Category:      &models.CategoryShort{ID: uuid.New(), Name: "Категория"},
-		Site:          &models.SiteShort{ID: uuid.New(), Name: "Площадка"},
+		ID:           ticketID,
+		Title:        "Заявка 9",
+		Description:  "Описание заявки",
+		Status:       models.StatusOpen,
+		Priority:     models.PriorityMedium,
+		TicketNumber: &num,
+		CreatedAt:    time.Now(),
+		DueDate:      &due,
+		Creator:      models.UserShort{ID: userID, Username: "mm1"},
+		Category:     &models.CategoryShort{ID: uuid.New(), Name: "Категория"},
+		Site:         &models.SiteShort{ID: uuid.New(), Name: "Площадка"},
 	}, nil)
 
 	svc := NewMattermostService(&MattermostDeps{
@@ -377,6 +377,101 @@ func TestPluginGetTicket_HappyPath(t *testing.T) {
 	assert.Equal(t, "Площадка", detail.Site.Name)
 	assert.Equal(t, userID, detail.Creator.ID)
 	assert.Empty(t, detail.Link)
+
+	// DeepLink site-relative и заполняется всегда, в отличие от Link,
+	// который зависит от настроенного baseURL.
+	assert.Equal(t, "/plug/issuetrack/ticket/"+ticketID.String(), detail.DeepLink)
+}
+
+func TestPluginGetTicketLinkContext_ResolvesChannelByRealm(t *testing.T) {
+	realmID := uuid.New()
+	userID := uuid.New()
+	ticketID := uuid.New()
+	repo, users, userRealms, tickets := pluginMocks()
+
+	// Канал клиент не передаёт: реалм определяется по тикету, канал берётся
+	// из настроек реалма.
+	tickets.On("GetRealmIDByTicketID", mock.Anything, ticketID).Return(realmID, nil)
+	repo.On("GetByRealm", mock.Anything, realmID).Return(&models.RealmMattermost{RealmID: realmID, ChannelID: "ch9", IsActive: true}, nil)
+	// PluginGetTicket пере-resolve'ит настройки уже по найденному каналу.
+	repo.On("GetByChannelID", mock.Anything, "ch9").Return(&models.RealmMattermost{RealmID: realmID, ChannelID: "ch9", IsActive: true}, nil)
+	expectExistingUser(users, userRealms, userID, realmID)
+
+	num := 3
+	tickets.On("GetByID", mock.Anything, mock.MatchedBy(func(d *models.GetTicketByIdDTO) bool {
+		return d.ID == ticketID && d.Actor != nil && d.Actor.ID == userID && d.RealmID == realmID.String()
+	})).Return(&models.Ticket{
+		ID:           ticketID,
+		Title:        "Заявка 3",
+		Status:       models.StatusOpen,
+		Priority:     models.PriorityMedium,
+		TicketNumber: &num,
+		CreatedAt:    time.Now(),
+		Creator:      models.UserShort{ID: userID, Username: "mm1"},
+	}, nil)
+
+	svc := NewMattermostService(&MattermostDeps{
+		Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets,
+	})
+
+	linkContext, err := svc.PluginGetTicketLinkContext(context.Background(), "mm1", ticketID.String())
+	require.NoError(t, err)
+	require.NotNil(t, linkContext)
+	assert.Equal(t, "ch9", linkContext.ChannelID)
+	require.NotNil(t, linkContext.Detail)
+	assert.Equal(t, ticketID, linkContext.Detail.ID)
+	assert.Equal(t, "/plug/issuetrack/ticket/"+ticketID.String(), linkContext.Detail.DeepLink)
+
+	// Канал приходит только из настроек реалма, клиентский параметр не участвует.
+	repo.AssertNotCalled(t, "GetByChannelID", mock.Anything, "ch1")
+}
+
+func TestPluginGetTicketLinkContext_InvalidID(t *testing.T) {
+	repo, _, _, _ := pluginMocks()
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo})
+
+	_, err := svc.PluginGetTicketLinkContext(context.Background(), "mm1", "not-a-uuid")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, models.ErrInvalidInput)
+}
+
+func TestPluginGetTicketLinkContext_InactiveRealm(t *testing.T) {
+	realmID := uuid.New()
+	ticketID := uuid.New()
+	repo, _, _, tickets := pluginMocks()
+
+	tickets.On("GetRealmIDByTicketID", mock.Anything, ticketID).Return(realmID, nil)
+	repo.On("GetByRealm", mock.Anything, realmID).Return(&models.RealmMattermost{RealmID: realmID, ChannelID: "ch9", IsActive: false}, nil)
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo, Tickets: tickets})
+
+	_, err := svc.PluginGetTicketLinkContext(context.Background(), "mm1", ticketID.String())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, models.ErrChannelNotBound)
+}
+
+// Права на заявку проверяет PluginGetTicket внутри; link-context не должен
+// обходить её, поэтому ошибка доступа пробрасывается как есть.
+func TestPluginGetTicketLinkContext_PermissionDeniedPropagated(t *testing.T) {
+	realmID := uuid.New()
+	userID := uuid.New()
+	ticketID := uuid.New()
+	repo, users, userRealms, tickets := pluginMocks()
+
+	tickets.On("GetRealmIDByTicketID", mock.Anything, ticketID).Return(realmID, nil)
+	repo.On("GetByRealm", mock.Anything, realmID).Return(&models.RealmMattermost{RealmID: realmID, ChannelID: "ch9", IsActive: true}, nil)
+	repo.On("GetByChannelID", mock.Anything, "ch9").Return(&models.RealmMattermost{RealmID: realmID, ChannelID: "ch9", IsActive: true}, nil)
+	expectExistingUser(users, userRealms, userID, realmID)
+	tickets.On("GetByID", mock.Anything, mock.Anything).Return(nil, models.ErrPermissionDenied)
+
+	svc := NewMattermostService(&MattermostDeps{
+		Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets,
+	})
+
+	_, err := svc.PluginGetTicketLinkContext(context.Background(), "mm1", ticketID.String())
+	require.Error(t, err)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 }
 
 func TestPluginGetTicket_InvalidID(t *testing.T) {
@@ -423,7 +518,7 @@ func TestPluginGetComments_FiltersInternal(t *testing.T) {
 				{ID: uuid.New(), Text: "внутренний", IsInternal: true, CreatedAt: time.Now(),
 					User: &models.UserShort{ID: userID, Username: "mm1"}},
 				{ID: uuid.New(), Text: "публичный", IsInternal: false, CreatedAt: time.Now().Add(time.Minute),
-					User: &models.UserShort{ID: userID, Username: "mm1", FirstName: "Иван", LastName: "Иванов"},
+					User:        &models.UserShort{ID: userID, Username: "mm1", FirstName: "Иван", LastName: "Иванов"},
 					Attachments: []*models.Attachment{{ID: attID, FileName: "a.txt", FileSize: 3, MimeType: "text/plain"}}},
 			}, nil
 		},
@@ -465,12 +560,12 @@ func TestPluginCreateComment_HappyPath(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Comments: comments})
 
-	out, err := svc.PluginCreateComment(context.Background(), &PluginCreateCommentInput{
+	out, err := svc.PluginCreateComment(context.Background(), &models.PluginCreateCommentInput{
 		ChannelID: "ch1",
 		MmUserID:  "mm1",
 		TicketID:  ticketID.String(),
 		Text:      "Всем привет",
-		Files: []PluginFile{
+		Files: []models.PluginFile{
 			{FileName: "f.txt", FileSize: 3, MimeType: "text/plain", Content: bytes.NewReader([]byte("abc"))},
 		},
 	})
@@ -487,7 +582,7 @@ func TestPluginCreateComment_EmptyFails(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo})
 
-	_, err := svc.PluginCreateComment(context.Background(), &PluginCreateCommentInput{
+	_, err := svc.PluginCreateComment(context.Background(), &models.PluginCreateCommentInput{
 		ChannelID: "ch1", MmUserID: "mm1", TicketID: uuid.New().String(),
 	})
 	assert.ErrorIs(t, err, models.ErrInvalidInput)

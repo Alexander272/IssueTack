@@ -40,6 +40,7 @@ func NewTicketRepo(db *pgxpool.Pool, tr Transaction) *TicketRepo {
 type Tickets interface {
 	Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, int, error)
 	GetByID(ctx context.Context, req *models.GetTicketByIdDTO) (*models.Ticket, error)
+	GetRealmIDByTicketID(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	Create(ctx context.Context, tx Tx, dto *models.TicketDTO) error
 	Update(ctx context.Context, tx Tx, dto *models.TicketDTO) error
 	Delete(ctx context.Context, tx Tx, dto *models.DeleteTicketDTO) error
@@ -427,6 +428,20 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 	assoc.assign(ticket)
 
 	return ticket, nil
+}
+
+// GetRealmIDByTicketID возвращает реалм заявки без проверки доступа.
+// Используется deep-link страницей плагина, где канал ещё не известен:
+// реалм нужен, чтобы выполнить последующую проверку прав в TicketService.GetByID.
+func (r *TicketRepo) GetRealmIDByTicketID(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	query := fmt.Sprintf(`SELECT realm_id FROM %s WHERE id = $1;`, Tables.Tickets)
+
+	var realmID uuid.UUID
+	if err := r.db.QueryRow(ctx, query, id).Scan(&realmID); err != nil {
+		return uuid.Nil, MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+
+	return realmID, nil
 }
 
 func (r *TicketRepo) Create(ctx context.Context, tx Tx, dto *models.TicketDTO) error {

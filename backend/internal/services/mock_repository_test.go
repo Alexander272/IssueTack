@@ -227,6 +227,10 @@ func (m *MockTicketsRepo) GetByID(ctx context.Context, req *models.GetTicketById
 	}
 	return args.Get(0).(*models.Ticket), args.Error(1)
 }
+func (m *MockTicketsRepo) GetRealmIDByTicketID(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	args := m.Called(ctx, id)
+	return args.Get(0).(uuid.UUID), args.Error(1)
+}
 func (m *MockTicketsRepo) Create(ctx context.Context, tx postgres.Tx, dto *models.TicketDTO) error {
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
@@ -278,6 +282,10 @@ func (m *MockTicketsService) GetSummary(ctx context.Context, id uuid.UUID) (*mod
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*models.Ticket), args.Error(1)
+}
+func (m *MockTicketsService) GetRealmIDByTicketID(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	args := m.Called(ctx, id)
+	return args.Get(0).(uuid.UUID), args.Error(1)
 }
 func (m *MockTicketsService) Create(ctx context.Context, dto *models.TicketDTO) error {
 	args := m.Called(ctx, dto)

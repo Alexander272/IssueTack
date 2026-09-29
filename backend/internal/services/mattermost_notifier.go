@@ -143,6 +143,7 @@ func (n *mattermostNotifier) format(ticket *models.Ticket, notif *models.CreateN
 		if n.baseURL != "" {
 			text += fmt.Sprintf("\nОткрыть: %s/tasks/%s", n.baseURL, ticket.ID.String())
 		}
+		text += n.pluginLink(ticket.ID)
 		return text
 	}
 
@@ -161,7 +162,17 @@ func (n *mattermostNotifier) format(ticket *models.Ticket, notif *models.CreateN
 	if n.baseURL != "" {
 		text += fmt.Sprintf("\nОткрыть: %s/tasks/%s", n.baseURL, ticket.ID.String())
 	}
+	text += n.pluginLink(ticket.ID)
 	return text
+}
+
+// pluginLink возвращает вторую ссылку в DM — на заявку внутри Mattermost.
+// Ссылка site-relative: Mattermost помечает такие href как data-link и открывает
+// их через собственный роутер, поэтому заявка открывается внутри плагина, без
+// перехода в веб-приложение. Абсолютный URL здесь не подходит — site URL сервера
+// Mattermost бэкенду неизвестен, а бот-токен не может прочитать /api/v4/config.
+func (n *mattermostNotifier) pluginLink(ticketID uuid.UUID) string {
+	return fmt.Sprintf("\nОткрыть в плагине: %s", pluginDeepLink(ticketID))
 }
 
 // changesSummary превращает сводку изменений тикета (поле data.changes) в многострочный

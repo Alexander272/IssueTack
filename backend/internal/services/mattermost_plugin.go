@@ -5,140 +5,18 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/google/uuid"
 )
 
-// PluginContextResult — данные контекста канала для webapp-плагина MM:
-// реалм, связанный с каналом, резолвнутый системный пользователь и
-// справочники (категории, площадки) для формы создания заявки.
-// Bound=false означает, что канал не привязан к реалму (или привязка
-// неактивна): нормальное состояние, а не ошибка.
-type PluginContextResult struct {
-	Bound      bool               `json:"bound"`
-	RealmID    uuid.UUID          `json:"realmId"`
-	RealmName  string             `json:"realmName"`
-	User       PluginUser         `json:"user"`
-	Categories []*models.Category `json:"categories"`
-	Sites      []*models.Site     `json:"sites"`
-}
-
-// PluginUser — краткое представление системного пользователя для плагина.
-type PluginUser struct {
-	ID       uuid.UUID `json:"id"`
-	Username string    `json:"username"`
-	SiteID   *string   `json:"siteId,omitempty"`
-}
-
-// PluginFile — парснутый обработчиком файл из multipart-запроса плагина.
-type PluginFile struct {
-	FileName string
-	FileSize int64
-	MimeType string
-	Content  io.Reader
-}
-
-// PluginCreateTicketInput — данные для создания заявки из плагина MM.
-// CategoryID/SiteID равны uuid.Nil, если не выбраны.
-type PluginCreateTicketInput struct {
-	ChannelID   string
-	MmUserID    string
-	Title       string
-	Description string
-	CategoryID  uuid.UUID
-	SiteID      uuid.UUID
-	Files       []PluginFile
-}
-
-// PluginCreateTicketResult — результат создания заявки из плагина.
-type PluginCreateTicketResult struct {
-	ID     uuid.UUID `json:"id"`
-	Number int       `json:"number"`
-	Title  string    `json:"title"`
-	Link   string    `json:"link"`
-}
-
-// PluginTicketShort — строка списка «Мои активные заявки» для плагина.
-type PluginTicketShort struct {
-	ID          uuid.UUID             `json:"id"`
-	Number      int                   `json:"number"`
-	Title       string                `json:"title"`
-	Description string                `json:"description"`
-	Status      models.TicketStatus   `json:"status"`
-	Priority    models.Priority       `json:"priority"`
-	CreatedAt   time.Time             `json:"createdAt"`
-	Category    *models.CategoryShort `json:"category,omitempty"`
-	Site        *models.SiteShort     `json:"site,omitempty"`
-	Link        string                `json:"link"`
-}
-
-// PluginTicketDetail — компактная карточка заявки для показа в модалке
-// плагина MM (без подзадач/вложений/комментариев).
-type PluginTicketDetail struct {
-	ID          uuid.UUID             `json:"id"`
-	Number      int                   `json:"number"`
-	Title       string                `json:"title"`
-	Description string                `json:"description"`
-	Status      models.TicketStatus   `json:"status"`
-	Priority    models.Priority       `json:"priority"`
-	CreatedAt   time.Time             `json:"createdAt"`
-	DueDate     *time.Time            `json:"dueDate,omitempty"`
-	Category    *models.CategoryShort `json:"category,omitempty"`
-	Site        *models.SiteShort     `json:"site,omitempty"`
-	Creator     models.UserShort      `json:"creator"`
-	Owner       *models.UserShort     `json:"owner,omitempty"`
-	Assignee    *models.UserShort     `json:"assignee,omitempty"`
-	Link        string                `json:"link"`
-	// Attachments — вложенные к заявке файлы (не к комментариям).
-	Attachments []*PluginAttachment `json:"attachments,omitempty"`
-	// Флаги действий текущего пользователя (формулы те же, что в InfoBar
-	// веб-приложения): CanConfirm/CanReopen — владелец и статус resolved,
-	// CanCancel — владелец и статус open (отменять можно только новые заявки).
-	CanConfirm bool `json:"canConfirm,omitempty"`
-	CanReopen  bool `json:"canReopen,omitempty"`
-	CanCancel  bool `json:"canCancel,omitempty"`
-}
-
-// PluginAttachment — вложение заявки для плагина. Ссылка на скачивание строится
-// в webapp-плагине из id (через plugin-proxy, минуя авторизацию программы).
-type PluginAttachment struct {
-	ID       uuid.UUID `json:"id"`
-	FileName string    `json:"fileName"`
-	FileSize int64     `json:"fileSize"`
-	MimeType string    `json:"mimeType"`
-}
-
-// PluginComment — общедоступный комментарий к заявке для плагина.
-type PluginComment struct {
-	ID          uuid.UUID                 `json:"id"`
-	Text        string                    `json:"text"`
-	CreatedAt   time.Time                 `json:"createdAt"`
-	User        *PluginCommentUser        `json:"user"`
-	Attachments []*PluginCommentAttachment `json:"attachments,omitempty"`
-}
-
-type PluginCommentUser struct {
-	ID   uuid.UUID `json:"id"`
-	Name string    `json:"name"`
-}
-
-type PluginCommentAttachment struct {
-	ID       uuid.UUID `json:"id"`
-	FileName string    `json:"fileName"`
-	FileSize int64     `json:"fileSize"`
-	MimeType string    `json:"mimeType"`
-}
-
-// PluginCreateCommentInput — входящие данные комментария из плагина.
-type PluginCreateCommentInput struct {
-	ChannelID string
-	MmUserID  string
-	TicketID  string
-	Text      string
-	Files     []PluginFile
+// pluginDeepLink возвращает site-relative ссылку на заявку внутри плагина.
+// Абсолютный URL здесь не используется намеренно: site URL сервера MM
+// бэкенду неизвестен (см. models.RealmMattermost), а относительный путь
+// Mattermost помечает как data-link и открывает через SPA-роутер.
+func pluginDeepLink(ticketID uuid.UUID) string {
+	return fmt.Sprintf("%s/ticket/%s", models.PluginRoutePrefix, ticketID)
 }
 
 func pluginUserName(u models.UserShort) string {
@@ -149,11 +27,11 @@ func pluginUserName(u models.UserShort) string {
 	return name
 }
 
-func (s *MattermostService) pluginAttachmentDTO(a *models.Attachment) *PluginAttachment {
+func (s *MattermostService) pluginAttachmentDTO(a *models.Attachment) *models.PluginAttachment {
 	if a == nil {
 		return nil
 	}
-	return &PluginAttachment{
+	return &models.PluginAttachment{
 		ID:       a.ID,
 		FileName: a.FileName,
 		FileSize: a.FileSize,
@@ -163,7 +41,7 @@ func (s *MattermostService) pluginAttachmentDTO(a *models.Attachment) *PluginAtt
 
 // PluginGetTicket возвращает заявку по ID с проверкой права чтения.
 // Пользователь, не имеющий доступа к заявке, получает ErrPermissionDenied.
-func (s *MattermostService) PluginGetTicket(ctx context.Context, channelID, mmUserID, ticketID string) (*PluginTicketDetail, error) {
+func (s *MattermostService) PluginGetTicket(ctx context.Context, channelID, mmUserID, ticketID string) (*models.PluginTicketDetail, error) {
 	settings, err := s.repo.GetByChannelID(ctx, channelID)
 	if err != nil {
 		return nil, models.ErrChannelNotBound
@@ -191,7 +69,7 @@ func (s *MattermostService) PluginGetTicket(ctx context.Context, channelID, mmUs
 		return nil, err
 	}
 
-	detail := &PluginTicketDetail{
+	detail := &models.PluginTicketDetail{
 		ID:          ticket.ID,
 		Title:       ticket.Title,
 		Description: ticket.Description,
@@ -217,6 +95,7 @@ func (s *MattermostService) PluginGetTicket(ctx context.Context, channelID, mmUs
 	if s.baseURL != "" {
 		detail.Link = fmt.Sprintf("%s/tasks/%s", s.baseURL, ticket.ID)
 	}
+	detail.DeepLink = pluginDeepLink(ticket.ID)
 
 	isOwner := ticket.Owner != nil && ticket.Owner.ID == user.ID
 	detail.CanConfirm = isOwner && ticket.Status == models.StatusResolved
@@ -224,6 +103,41 @@ func (s *MattermostService) PluginGetTicket(ctx context.Context, channelID, mmUs
 	detail.CanCancel = isOwner && ticket.Status == models.StatusOpen
 
 	return detail, nil
+}
+
+// PluginGetTicketLinkContext отдаёт заявку для страницы, открытой по deep-link
+// ссылке вида /plug/issuetrack/ticket/<uuid>. В отличие от PluginGetTicket
+// канал не принимается: реалм определяется по самой заявке, из него берётся
+// привязанный канал, который возвращается клиенту для остальных запросов.
+// Проверка прав не дублируется — её выполняет PluginGetTicket внутри.
+func (s *MattermostService) PluginGetTicketLinkContext(ctx context.Context, mmUserID, ticketID string) (*models.PluginTicketLinkContext, error) {
+	id, err := uuid.Parse(ticketID)
+	if err != nil {
+		return nil, models.ErrInvalidInput
+	}
+
+	realmID, err := s.tickets.GetRealmIDByTicketID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	settings, err := s.repo.GetByRealm(ctx, realmID)
+	if err != nil {
+		return nil, err
+	}
+	if !settings.IsActive {
+		return nil, models.ErrChannelNotBound
+	}
+
+	detail, err := s.PluginGetTicket(ctx, settings.ChannelID, mmUserID, ticketID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &models.PluginTicketLinkContext{
+		ChannelID: settings.ChannelID,
+		Detail:    detail,
+	}, nil
 }
 
 // PluginChangeStatus меняет статус заявки из плагина MM. Используется для
@@ -269,7 +183,7 @@ func (s *MattermostService) PluginChangeStatus(ctx context.Context, channelID, m
 
 // PluginGetComments возвращает общедоступные комментарии заявки (в порядке
 // создания — как диалог). Внутренние комментарии плагину не отдаются.
-func (s *MattermostService) PluginGetComments(ctx context.Context, channelID, mmUserID, ticketID string) ([]PluginComment, error) {
+func (s *MattermostService) PluginGetComments(ctx context.Context, channelID, mmUserID, ticketID string) ([]models.PluginComment, error) {
 	settings, err := s.repo.GetByChannelID(ctx, channelID)
 	if err != nil {
 		return nil, models.ErrChannelNotBound
@@ -293,24 +207,24 @@ func (s *MattermostService) PluginGetComments(ctx context.Context, channelID, mm
 		return nil, err
 	}
 
-	out := make([]PluginComment, 0, len(comments))
+	out := make([]models.PluginComment, 0, len(comments))
 	for _, c := range comments {
 		if c == nil || c.IsInternal {
 			continue
 		}
-		item := PluginComment{
+		item := models.PluginComment{
 			ID:        c.ID,
 			Text:      c.Text,
 			CreatedAt: c.CreatedAt,
 		}
 		if c.User != nil {
-			item.User = &PluginCommentUser{ID: c.User.ID, Name: pluginUserName(*c.User)}
+			item.User = &models.PluginCommentUser{ID: c.User.ID, Name: pluginUserName(*c.User)}
 		}
 		for _, att := range c.Attachments {
 			if att == nil {
 				continue
 			}
-			item.Attachments = append(item.Attachments, &PluginCommentAttachment{
+			item.Attachments = append(item.Attachments, &models.PluginCommentAttachment{
 				ID:       att.ID,
 				FileName: att.FileName,
 				FileSize: att.FileSize,
@@ -326,7 +240,7 @@ func (s *MattermostService) PluginGetComments(ctx context.Context, channelID, mm
 // PluginCreateComment создаёт общедоступный комментарий к заявке (проверка
 // work-доступа и файлы — через CommentService.Create, атомарно). Требуется
 // текст или хотя бы один файл.
-func (s *MattermostService) PluginCreateComment(ctx context.Context, input *PluginCreateCommentInput) (*PluginComment, error) {
+func (s *MattermostService) PluginCreateComment(ctx context.Context, input *models.PluginCreateCommentInput) (*models.PluginComment, error) {
 	settings, err := s.repo.GetByChannelID(ctx, input.ChannelID)
 	if err != nil {
 		return nil, models.ErrChannelNotBound
@@ -378,11 +292,11 @@ func (s *MattermostService) PluginCreateComment(ctx context.Context, input *Plug
 		return nil, err
 	}
 
-	return &PluginComment{
+	return &models.PluginComment{
 		ID:        comment.ID,
 		Text:      text,
 		CreatedAt: comment.CreatedAt,
-		User:      &PluginCommentUser{ID: user.ID, Name: pluginUserName(models.UserShort{ID: user.ID, Username: user.Username, FirstName: user.FirstName, LastName: user.LastName})},
+		User:      &models.PluginCommentUser{ID: user.ID, Name: pluginUserName(models.UserShort{ID: user.ID, Username: user.Username, FirstName: user.FirstName, LastName: user.LastName})},
 	}, nil
 }
 
@@ -414,13 +328,13 @@ func (s *MattermostService) PluginGetAttachmentContent(ctx context.Context, chan
 // справочники и пользователя (с автосозданием при первом обращении).
 // Канал, не привязанный ни к одному реалму (или с неактивной привязкой), —
 // не ошибка: возвращается ответ с Bound=false, чтобы webapp просто скрыл иконку.
-func (s *MattermostService) PluginContext(ctx context.Context, channelID, mmUserID string) (*PluginContextResult, error) {
+func (s *MattermostService) PluginContext(ctx context.Context, channelID, mmUserID string) (*models.PluginContextResult, error) {
 	settings, err := s.repo.GetByChannelID(ctx, channelID)
 	if err != nil {
-		return &PluginContextResult{Bound: false}, nil
+		return &models.PluginContextResult{Bound: false}, nil
 	}
 	if !settings.IsActive {
-		return &PluginContextResult{Bound: false}, nil
+		return &models.PluginContextResult{Bound: false}, nil
 	}
 
 	realm, err := s.realms.GetByID(ctx, &models.GetRealmByIdDTO{ID: settings.RealmID})
@@ -443,11 +357,11 @@ func (s *MattermostService) PluginContext(ctx context.Context, channelID, mmUser
 		return nil, fmt.Errorf("failed to resolve user: %w", err)
 	}
 
-	return &PluginContextResult{
+	return &models.PluginContextResult{
 		Bound:      true,
 		RealmID:    settings.RealmID,
 		RealmName:  realm.Name,
-		User:       PluginUser{ID: user.ID, Username: user.Username, SiteID: user.SiteID},
+		User:       models.PluginUser{ID: user.ID, Username: user.Username, SiteID: user.SiteID},
 		Categories: categories,
 		Sites:      sites,
 	}, nil
@@ -456,7 +370,7 @@ func (s *MattermostService) PluginContext(ctx context.Context, channelID, mmUser
 // PluginCreateTicket создаёт заявку из формы плагина (аналог
 // HandleDialogSubmission) и прикрепляет загруженные файлы. Возвращает результат
 // с ID, номером и ссылкой на страницу заявки.
-func (s *MattermostService) PluginCreateTicket(ctx context.Context, input *PluginCreateTicketInput) (*PluginCreateTicketResult, error) {
+func (s *MattermostService) PluginCreateTicket(ctx context.Context, input *models.PluginCreateTicketInput) (*models.PluginCreateTicketResult, error) {
 	settings, err := s.repo.GetByChannelID(ctx, input.ChannelID)
 	if err != nil {
 		return nil, models.ErrChannelNotBound
@@ -551,7 +465,7 @@ func (s *MattermostService) PluginCreateTicket(ctx context.Context, input *Plugi
 		)
 	}
 
-	result := &PluginCreateTicketResult{
+	result := &models.PluginCreateTicketResult{
 		ID:    *dto.ID,
 		Title: dto.Title,
 	}
@@ -561,13 +475,14 @@ func (s *MattermostService) PluginCreateTicket(ctx context.Context, input *Plugi
 	if s.baseURL != "" {
 		result.Link = fmt.Sprintf("%s/tasks/%s", s.baseURL, dto.ID)
 	}
+	result.DeepLink = pluginDeepLink(*dto.ID)
 
 	return result, nil
 }
 
 // PluginListMine возвращает активные заявки пользователя в реалме канала —
 // созданные им и ещё не завершённые (open/in_progress/pending/on_hold).
-func (s *MattermostService) PluginListMine(ctx context.Context, channelID, mmUserID string) ([]PluginTicketShort, error) {
+func (s *MattermostService) PluginListMine(ctx context.Context, channelID, mmUserID string) ([]models.PluginTicketShort, error) {
 	settings, err := s.repo.GetByChannelID(ctx, channelID)
 	if err != nil {
 		return nil, models.ErrChannelNotBound
@@ -602,9 +517,9 @@ func (s *MattermostService) PluginListMine(ctx context.Context, channelID, mmUse
 		return nil, fmt.Errorf("failed to get user tickets: %w", err)
 	}
 
-	list := make([]PluginTicketShort, 0, len(tickets))
+	list := make([]models.PluginTicketShort, 0, len(tickets))
 	for _, t := range tickets {
-		item := PluginTicketShort{
+		item := models.PluginTicketShort{
 			ID:          t.ID,
 			Title:       t.Title,
 			Description: t.Description,
@@ -620,6 +535,7 @@ func (s *MattermostService) PluginListMine(ctx context.Context, channelID, mmUse
 		if s.baseURL != "" {
 			item.Link = fmt.Sprintf("%s/tasks/%s", s.baseURL, t.ID)
 		}
+		item.DeepLink = pluginDeepLink(t.ID)
 		list = append(list, item)
 	}
 

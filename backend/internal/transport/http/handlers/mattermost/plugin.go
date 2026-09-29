@@ -14,7 +14,6 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/config"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
-	"github.com/Alexander272/IssueTrack/backend/internal/services"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/gin-gonic/gin"
@@ -39,6 +38,7 @@ func (h *Handler) registerPluginRoutes(r *gin.RouterGroup, cfg config.Mattermost
 		plugin.GET("/tickets", h.handlePluginListMine)
 		plugin.POST("/tickets", h.handlePluginCreateTicket)
 		plugin.GET("/tickets/:id", h.handlePluginGetTicket)
+		plugin.GET("/tickets/:id/link-context", h.handlePluginGetTicketLinkContext)
 		plugin.POST("/tickets/:id/status", h.handlePluginChangeStatus)
 		plugin.GET("/tickets/:id/comments", h.handlePluginGetComments)
 		plugin.POST("/tickets/:id/comments", h.handlePluginCreateComment)
@@ -110,6 +110,28 @@ func (h *Handler) handlePluginGetTicket(c *gin.Context) {
 	response.SendData(c, detail)
 }
 
+// handlePluginGetTicketLinkContext отдаёт заявку для страницы, открытой по
+// deep-link ссылке /plug/issuetrack/ticket/<uuid>. В отличие от
+// handlePluginGetTicket канал не принимается: после перехода на маршрут плагина
+// текущего канала в клиенте нет, поэтому реалм определяется по самой заявке,
+// а нужный для остальных запросов channelId возвращается в ответе.
+func (h *Handler) handlePluginGetTicketLinkContext(c *gin.Context) {
+	userID := c.Query("userId")
+	ticketID := c.Param("id")
+	if userID == "" || ticketID == "" {
+		response.SendError(c, models.ErrInvalidInput)
+		return
+	}
+
+	linkContext, err := h.service.PluginGetTicketLinkContext(c, userID, ticketID)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+
+	response.SendData(c, linkContext)
+}
+
 // handlePluginCreateTicket создаёт заявку из multipart-формы плагина MM
 // (поля + files[]). Возвращает id, номер, заголовок и ссылку.
 func (h *Handler) handlePluginCreateTicket(c *gin.Context) {
@@ -125,7 +147,7 @@ func (h *Handler) handlePluginCreateTicket(c *gin.Context) {
 		return
 	}
 
-	input := &services.PluginCreateTicketInput{
+	input := &models.PluginCreateTicketInput{
 		ChannelID:   c.Request.FormValue("channelId"),
 		MmUserID:    c.Request.FormValue("userId"),
 		Title:       strings.TrimSpace(c.Request.FormValue("title")),
@@ -175,7 +197,7 @@ func (h *Handler) handlePluginCreateTicket(c *gin.Context) {
 			response.SendError(c, models.ErrInvalidInput)
 			return
 		}
-		input.Files = append(input.Files, services.PluginFile{
+		input.Files = append(input.Files, models.PluginFile{
 			FileName: fh.Filename,
 			FileSize: int64(len(data)),
 			MimeType: fh.Header.Get("Content-Type"),
@@ -189,12 +211,7 @@ func (h *Handler) handlePluginCreateTicket(c *gin.Context) {
 		return
 	}
 
-	response.SendData(c, gin.H{
-		"id":     dto.ID,
-		"number": dto.Number,
-		"title":  dto.Title,
-		"link":   dto.Link,
-	})
+	response.SendData(c, dto)
 }
 
 // pluginChangeStatusRequest — запрос смены статуса заявки из плагина.
@@ -252,7 +269,7 @@ func (h *Handler) handlePluginCreateComment(c *gin.Context) {
 		return
 	}
 
-	input := &services.PluginCreateCommentInput{
+	input := &models.PluginCreateCommentInput{
 		ChannelID: c.Request.FormValue("channelId"),
 		MmUserID:  c.Request.FormValue("userId"),
 		TicketID:  c.Param("id"),
@@ -281,7 +298,7 @@ func (h *Handler) handlePluginCreateComment(c *gin.Context) {
 			response.SendError(c, models.ErrInvalidInput)
 			return
 		}
-		input.Files = append(input.Files, services.PluginFile{
+		input.Files = append(input.Files, models.PluginFile{
 			FileName: fh.Filename,
 			FileSize: int64(len(data)),
 			MimeType: fh.Header.Get("Content-Type"),

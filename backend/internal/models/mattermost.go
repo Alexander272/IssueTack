@@ -39,3 +39,14 @@ type InteractiveActionDTO struct {
 	ChannelID string            `json:"channel_id"`
 	Context   map[string]string `json:"context"`
 }
+
+// HandleDMInput — входящее личное сообщение от пользователя Mattermost
+// (уже распарсенное обработчиком) вместе с загруженными файлами.
+type HandleDMInput struct {
+	MmUserID  string
+	BotUserID string
+	ChannelID string
+	Message   string
+	FileIDs   []string
+	TriggerID string
+}

@@ -82,10 +82,18 @@ export interface PluginTicketDetail {
     owner?: PluginUserShort;
     assignee?: PluginUserShort;
     link?: string;
+    deepLink?: string;
     attachments?: PluginAttachment[];
     canConfirm?: boolean;
     canReopen?: boolean;
     canCancel?: boolean;
+}
+
+// PluginTicketLinkContext — ответ для страницы заявки, открытой по deep-link.
+// На этой странице нет текущего канала, поэтому channelId приходит с сервера.
+export interface PluginTicketLinkContext {
+    channelId: string;
+    detail: PluginTicketDetail;
 }
 
 export interface PluginCommentUser {
@@ -113,6 +121,7 @@ export interface PluginCreateResult {
     number?: number;
     title: string;
     link?: string;
+    deepLink?: string;
 }
 
 export interface PluginApiErrorBody {
@@ -134,6 +143,11 @@ export interface PluginStore {
 
 export interface PluginRegistry {
     registerChannelHeaderIcon(input: {component: ComponentType<{channel: {id: string}}>}): string;
+
+    // registerCustomRoute монтирует компонент по адресу
+    // /plug/<pluginId>/<route>. Компонент не получает props (в том числе
+    // match.params), поэтому параметры маршрута парсятся из location.pathname.
+    registerCustomRoute(route: string, component: ComponentType): string;
 }
 
 export interface IssuetrackWebappPlugin {

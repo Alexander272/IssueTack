@@ -231,10 +231,11 @@ func (p *Plugin) ephemeralCreateConfirmation(r *http.Request, body []byte) {
 
 	var res struct {
 		Data struct {
-			ID     string `json:"id"`
-			Number int    `json:"number"`
-			Title  string `json:"title"`
-			Link   string `json:"link"`
+			ID       string `json:"id"`
+			Number   int    `json:"number"`
+			Title    string `json:"title"`
+			Link     string `json:"link"`
+			DeepLink string `json:"deepLink"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &res); err != nil || res.Data.ID == "" {
@@ -243,7 +244,12 @@ func (p *Plugin) ephemeralCreateConfirmation(r *http.Request, body []byte) {
 
 	msg := fmt.Sprintf("Заявка №%d создана.\n**Заголовок:** %s", res.Data.Number, res.Data.Title)
 	if res.Data.Link != "" {
-		msg += "\nОткрыть: " + res.Data.Link
+		msg += "\nОткрыть в веб-приложении: " + res.Data.Link
+	}
+	// Вторая ссылка открывает заявку внутри Mattermost (маршрут плагина).
+	// Путь приходит с бэкенда, здесь не хардкодится.
+	if res.Data.DeepLink != "" {
+		msg += "\nОткрыть в плагине: " + res.Data.DeepLink
 	}
 
 	post := &model.Post{ChannelId: channelID, Message: msg}

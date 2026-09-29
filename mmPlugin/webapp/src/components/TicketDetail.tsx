@@ -21,9 +21,12 @@ interface TicketDetailProps {
     ticketId: string
     onBack: () => void
     onChanged: () => void
+    // backLabel переопределяет подпись кнопки «Назад»: на странице, открытой по
+    // deep-link, возвращаться нужно не к списку заявок, а в предыдущее место.
+    backLabel?: string
 }
 
-export default function TicketDetail({ channelId, userId, ticketId, onBack, onChanged }: TicketDetailProps) {
+export default function TicketDetail({ channelId, userId, ticketId, onBack, onChanged, backLabel }: TicketDetailProps) {
     const [detail, setDetail] = useState<PluginTicketDetail | null>(null)
     const [detailError, setDetailError] = useState<string | null>(null)
 
@@ -151,7 +154,7 @@ export default function TicketDetail({ channelId, userId, ticketId, onBack, onCh
         <div className='it-ticket-detail'>
             <div className='it-ticket-detail__bar'>
                 <button type='button' className='it-btn it-btn--sm' onClick={onBack}>
-                    ← Назад к заявкам
+                    {backLabel || '← Назад к заявкам'}
                 </button>
                 <div className='it-ticket-detail__bar-actions'>
                     {detail && detail.link ? (

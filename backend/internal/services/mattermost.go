@@ -113,18 +113,19 @@ type Mattermost interface {
 	SaveSettings(ctx context.Context, realmID uuid.UUID, dto *models.RealmMattermostDTO) error
 	DeleteSettings(ctx context.Context, realmID uuid.UUID) error
 
-	HandleDM(ctx context.Context, input *HandleDMInput) error
+	HandleDM(ctx context.Context, input *models.HandleDMInput) error
 	HandleDialogOpen(ctx context.Context, input *models.DialogOpenDTO) error
 	HandleDialogSubmission(ctx context.Context, submission *model.SubmitDialogRequest) error
 	HandleInteractiveAction(ctx context.Context, input *models.InteractiveActionDTO) (*model.Post, error)
 
 	// Плагин MM (webapp + plugin-server → /api/v1/plugin/*)
-	PluginContext(ctx context.Context, channelID, mmUserID string) (*PluginContextResult, error)
-	PluginCreateTicket(ctx context.Context, input *PluginCreateTicketInput) (*PluginCreateTicketResult, error)
-	PluginListMine(ctx context.Context, channelID, mmUserID string) ([]PluginTicketShort, error)
-	PluginGetTicket(ctx context.Context, channelID, mmUserID, ticketID string) (*PluginTicketDetail, error)
-	PluginGetComments(ctx context.Context, channelID, mmUserID, ticketID string) ([]PluginComment, error)
-	PluginCreateComment(ctx context.Context, input *PluginCreateCommentInput) (*PluginComment, error)
+	PluginContext(ctx context.Context, channelID, mmUserID string) (*models.PluginContextResult, error)
+	PluginCreateTicket(ctx context.Context, input *models.PluginCreateTicketInput) (*models.PluginCreateTicketResult, error)
+	PluginListMine(ctx context.Context, channelID, mmUserID string) ([]models.PluginTicketShort, error)
+	PluginGetTicket(ctx context.Context, channelID, mmUserID, ticketID string) (*models.PluginTicketDetail, error)
+	PluginGetTicketLinkContext(ctx context.Context, mmUserID, ticketID string) (*models.PluginTicketLinkContext, error)
+	PluginGetComments(ctx context.Context, channelID, mmUserID, ticketID string) ([]models.PluginComment, error)
+	PluginCreateComment(ctx context.Context, input *models.PluginCreateCommentInput) (*models.PluginComment, error)
 	PluginChangeStatus(ctx context.Context, channelID, mmUserID, ticketID, status string) error
 	PluginGetAttachmentContent(ctx context.Context, channelID, mmUserID, attachmentID string) (*models.Attachment, io.ReadCloser, error)
 
@@ -132,17 +133,6 @@ type Mattermost interface {
 	StopWSForRealm(realmID uuid.UUID)
 	StopAllWS()
 	StartAllActiveWS(ctx context.Context)
-}
-
-// HandleDMInput — входящее личное сообщение от пользователя Mattermost
-// (уже распарсенное обработчиком) вместе с загруженными файлами.
-type HandleDMInput struct {
-	MmUserID  string
-	BotUserID string
-	ChannelID string
-	Message   string
-	FileIDs   []string
-	TriggerID string
 }
 
 // generateWebhookSecret создаёт случайный секрет вебхука Mattermost
@@ -226,7 +216,7 @@ func (s *MattermostService) DeleteSettings(ctx context.Context, realmID uuid.UUI
 
 // HandleDM обрабатывает личное сообщение пользователя: диспетчеризует его
 // на создание заявки, статус, помощь или синхронизацию.
-func (s *MattermostService) HandleDM(ctx context.Context, input *HandleDMInput) error {
+func (s *MattermostService) HandleDM(ctx context.Context, input *models.HandleDMInput) error {
 	var settings *models.RealmMattermost
 	var err error
 

@@ -65,7 +65,7 @@ func (h *Handler) handleWebhook(c *gin.Context) {
 
 	fileIDs := c.Request.Form["file_ids"]
 
-	err := h.service.HandleDM(c, &services.HandleDMInput{
+	err := h.service.HandleDM(c, &models.HandleDMInput{
 		MmUserID:  userID,
 		ChannelID: channelID,
 		Message:   message,
@@ -207,7 +207,7 @@ func (h *Handler) handleWSEvent(c *gin.Context) {
 		return
 	}
 
-	err = h.service.HandleDM(c, &services.HandleDMInput{
+	err = h.service.HandleDM(c, &models.HandleDMInput{
 		MmUserID:  post.UserId,
 		ChannelID: post.ChannelId,
 		Message:   post.Message,

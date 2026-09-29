@@ -5,6 +5,7 @@ import type {
     PluginCreateResult,
     PluginStore,
     PluginTicketDetail,
+    PluginTicketLinkContext,
     PluginTicketShort,
 } from './types';
 
@@ -148,6 +149,15 @@ export async function getMyTickets(channelId: string, userId: string): Promise<P
 export async function getTicket(channelId: string, userId: string, ticketId: string): Promise<PluginTicketDetail> {
     const qs = new URLSearchParams({channelId, userId});
     return request<PluginTicketDetail>(`/plugins/issuetrack/api/tickets/${encodeURIComponent(ticketId)}?${qs.toString()}`);
+}
+
+// getTicketLinkContext загружает заявку для страницы, открытой по deep-link
+// /plug/issuetrack/ticket/<uuid>. Канал не передаётся: после перехода на маршрут
+// плагина его нет в клиенте, поэтому сервер определяет реалм по заявке и сам
+// возвращает channelId для остальных запросов.
+export async function getTicketLinkContext(userId: string, ticketId: string): Promise<PluginTicketLinkContext> {
+    const qs = new URLSearchParams({userId});
+    return request<PluginTicketLinkContext>(`/plugins/issuetrack/api/tickets/${encodeURIComponent(ticketId)}/link-context?${qs.toString()}`);
 }
 
 export async function setTicketStatus(channelId: string, userId: string, ticketId: string, status: string): Promise<void> {

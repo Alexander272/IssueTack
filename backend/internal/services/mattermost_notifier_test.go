@@ -89,7 +89,8 @@ func TestMattermostNotifier_SendsCreatedDM(t *testing.T) {
 	mockUsers.On("GetByID", mock.Anything, userID).Return(&models.UserData{ID: userID, MattermostID: &mmID}, nil)
 	mockSender.On("Send", "bt", "bb", mmID, mock.MatchedBy(func(msg string) bool {
 		return assert.Contains(t, msg, "**Новая задача №12: Тестовая заявка**") &&
-			assert.Contains(t, msg, "http://localhost:9000/tasks/"+ticket.ID.String())
+			assert.Contains(t, msg, "http://localhost:9000/tasks/"+ticket.ID.String()) &&
+			assert.Contains(t, msg, "Открыть в плагине: /plug/issuetrack/ticket/"+ticket.ID.String())
 	})).Return(nil).Once()
 
 	delivered, err := svc.Notify(context.Background(), userID, dto, ticket)
@@ -128,7 +129,9 @@ func TestMattermostNotifier_SendsUpdatedDMWithChanges(t *testing.T) {
 	mockSender.On("Send", "bt", "bb", mmID, mock.MatchedBy(func(msg string) bool {
 		return assert.Contains(t, msg, "**Задача №12 обновлена: Тестовая заявка**") &&
 			assert.Contains(t, msg, "• status_changed: open → in_progress") &&
-			assert.Contains(t, msg, "• priority_changed: — → high")
+			assert.Contains(t, msg, "• priority_changed: — → high") &&
+			// Ветка format с action != "" тоже содержит обе ссылки.
+			assert.Contains(t, msg, "Открыть в плагине: /plug/issuetrack/ticket/"+ticket.ID.String())
 	})).Return(nil).Once()
 
 	delivered, err := svc.Notify(context.Background(), userID, dto, ticket)
