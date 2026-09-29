@@ -241,10 +241,10 @@ func TestTicketService_Get_CreatedOrOwned_Regular(t *testing.T) {
 
 	expected := []*models.Ticket{{ID: uuid.New(), Title: "Ticket 1"}}
 	expectedFilter := &models.TicketFilter{
-		Actor:           &models.Actor{ID: actorID, Name: "test"},
-		Mode:            &mode,
-		Limit:           20,
-		Offset:          0,
+		Actor:            &models.Actor{ID: actorID, Name: "test"},
+		Mode:             &mode,
+		Limit:            20,
+		Offset:           0,
 		CreatedOrOwnedBy: &actorID,
 	}
 	mockRepo.On("Get", mock.Anything, expectedFilter).Return(expected, 0, nil)
