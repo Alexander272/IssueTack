@@ -22,9 +22,9 @@ export const Dashboard = () => {
 	const isLoading = isFetchingUsers || isFetchingRoles
 
 	return (
-		<Box id='section-dashboard' className='section active' sx={{ p: 3 }}>
+		<Box sx={{ p: 3 }}>
 			{/* Page Header */}
-			<Box className='page-header' sx={{ mb: 4 }}>
+			<Box sx={{ mb: 4 }}>
 				<Typography variant='h4' component='h1' gutterBottom sx={{ fontWeight: 'bold' }}>
 					Дашборд
 				</Typography>

@@ -111,7 +111,7 @@ func TestMattermostNotifier_SendsUpdatedDMWithChanges(t *testing.T) {
 		{Tag: models.ActionPriorityChanged, OldVal: "none", NewVal: "high"},
 	})
 	assert.NoError(t, err)
-	data, err := json.Marshal(map[string]interface{}{
+	data, err := json.Marshal(map[string]any{
 		"ticket_id": ticket.ID.String(),
 		"title":     ticket.Title,
 		"changes":   string(changesData),

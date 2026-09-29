@@ -217,11 +217,11 @@ func (r *userRepo) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.Us
 	)
 
 	var query string
-	var args []interface{}
+	var args []any
 
 	if realmID != nil {
 		query = baseQuery + ` WHERE ur.realm_id = $1 ORDER BY u.first_name, u.last_name, u.username, rl.name`
-		args = []interface{}{*realmID}
+		args = []any{*realmID}
 	} else {
 		query = baseQuery + ` ORDER BY u.first_name, u.last_name, u.username, rl.name`
 	}
@@ -451,10 +451,10 @@ func (r *userRepo) CreateSeveral(ctx context.Context, tx Tx, dto []*models.UserD
 		return nil
 	}
 
-	rows := make([][]interface{}, len(dto))
+	rows := make([][]any, len(dto))
 
 	for i, v := range dto {
-		rows[i] = []interface{}{
+		rows[i] = []any{
 			v.ID,
 			v.Username,
 			v.FirstName,

@@ -451,8 +451,8 @@ func (s *RoleService) Update(ctx context.Context, dto *models.RoleDTO) error {
 			}
 		}
 
-		oldMap := make(map[string]interface{})
-		newM := make(map[string]interface{})
+		oldMap := make(map[string]any)
+		newM := make(map[string]any)
 		if roleChange {
 			oldMap["name"] = oldRole.Name
 			oldMap["slug"] = oldRole.Slug

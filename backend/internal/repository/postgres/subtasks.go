@@ -194,12 +194,12 @@ func (r *SubtaskRepo) CreateSeveral(ctx context.Context, tx Tx, dto []*models.Su
 }
 
 func (r *SubtaskRepo) createSeveral(ctx context.Context, tx Tx, dto []*models.SubtaskDTO) error {
-	rows := make([][]interface{}, len(dto))
+	rows := make([][]any, len(dto))
 	for i, v := range dto {
 		if v.ID == uuid.Nil {
 			v.ID = uuid.New()
 		}
-		rows[i] = []interface{}{
+		rows[i] = []any{
 			v.ID, v.TicketID, v.Title, v.Description,
 			v.Status, v.Priority, v.AssigneeID, v.DueDate, v.SortOrder, v.Actor.ID,
 		}
@@ -220,10 +220,10 @@ func (r *SubtaskRepo) createSeveral(ctx context.Context, tx Tx, dto []*models.Su
 
 func (r *SubtaskRepo) Update(ctx context.Context, tx Tx, dto *models.SubtaskDTO) error {
 	sets := make([]string, 0, 8)
-	args := []interface{}{dto.ID, dto.TicketID}
+	args := []any{dto.ID, dto.TicketID}
 	n := 2
 
-	add := func(jsonKey, column string, value interface{}) {
+	add := func(jsonKey, column string, value any) {
 		if !dto.HasField(jsonKey) {
 			return
 		}

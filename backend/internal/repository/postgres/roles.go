@@ -41,7 +41,7 @@ type Roles interface {
 
 func (r *RoleRepo) GetOne(ctx context.Context, req *models.GetRoleDTO) (*models.Role, error) {
 	condition := ""
-	params := []interface{}{}
+	params := []any{}
 	if req.ID != uuid.Nil {
 		params = append(params, req.ID)
 		condition = fmt.Sprintf("WHERE id = $%d", len(params))
@@ -264,7 +264,7 @@ func (r *RoleRepo) AssignPermissions(ctx context.Context, tx Tx, roleID uuid.UUI
 	}
 
 	values := make([]string, 0, len(permissionIDs))
-	args := make([]interface{}, 0, len(permissionIDs)*2)
+	args := make([]any, 0, len(permissionIDs)*2)
 	for i, permID := range permissionIDs {
 		values = append(values, fmt.Sprintf("($%d, $%d)", i*2+1, i*2+2))
 		args = append(args, roleID, permID)

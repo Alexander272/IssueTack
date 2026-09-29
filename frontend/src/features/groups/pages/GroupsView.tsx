@@ -94,11 +94,12 @@ export const GroupsView: FC = () => {
 				}}
 			>
 				<SearchIcon sx={{ fontSize: 18, color: '#9ca3af' }} />
-				<input
+				<Box
+					component='input'
 					value={search}
 					onChange={e => setSearch(e.target.value)}
 					placeholder='Поиск групп...'
-					style={{
+					sx={{
 						border: 'none',
 						outline: 'none',
 						flex: 1,

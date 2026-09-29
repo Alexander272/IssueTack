@@ -289,7 +289,7 @@ func (s *TicketService) UploadAttachment(ctx context.Context, tx postgres.Tx, dt
 		return att, nil
 	}
 
-	ticketID, err := s.attachmentTicketID(dto.EntityType, dto.EntityID)
+	ticketID, err := s.attachmentTicketID(ctx, dto.EntityType, dto.EntityID)
 	if err != nil {
 		return att, nil // доступа к тикету нет — уведомление всё равно некому рассылать
 	}
@@ -308,12 +308,12 @@ func (s *TicketService) UploadAttachment(ctx context.Context, tx postgres.Tx, dt
 
 // attachmentTicketID определяет ID родительского тикета сущности вложения: для тикета —
 // сам entityID, для подзадачи — ticketID родительского тикета.
-func (s *TicketService) attachmentTicketID(entityType string, entityID uuid.UUID) (uuid.UUID, error) {
+func (s *TicketService) attachmentTicketID(ctx context.Context, entityType string, entityID uuid.UUID) (uuid.UUID, error) {
 	switch entityType {
 	case "ticket":
 		return entityID, nil
 	case "subtask":
-		sub, err := s.subtasks.GetRawByID(context.Background(), &models.GetSubtaskDTO{ID: entityID})
+		sub, err := s.subtasks.GetRawByID(ctx, &models.GetSubtaskDTO{ID: entityID})
 		if err != nil {
 			return uuid.Nil, err
 		}
@@ -985,7 +985,7 @@ func (s *TicketService) Delete(ctx context.Context, dto *models.DeleteTicketDTO)
 			return fmt.Errorf("failed to load ticket: %w", loadErr)
 		}
 
-		snapshot := map[string]interface{}{
+		snapshot := map[string]any{
 			"title":    ticket.Title,
 			"status":   ticket.Status,
 			"priority": ticket.Priority,

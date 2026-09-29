@@ -94,7 +94,7 @@ var (
 // аргументов, избавляя от ручного ведения argIdx/args в построителе запроса.
 type whereBuilder struct {
 	clauses []string
-	args    []interface{}
+	args    []any
 	idx     int
 }
 
@@ -241,8 +241,8 @@ func inList[T any](w *whereBuilder, column string, values []T) {
 }
 
 // toAny конвертирует типизированный срез в срез пустых интерфейсов.
-func toAny[T any](vals []T) []interface{} {
-	out := make([]interface{}, len(vals))
+func toAny[T any](vals []T) []any {
+	out := make([]any, len(vals))
 	for i := range vals {
 		out[i] = vals[i]
 	}
@@ -466,7 +466,7 @@ func (r *TicketRepo) Create(ctx context.Context, tx Tx, dto *models.TicketDTO) e
 		Tables.Tickets,
 	)
 
-	var siteID, categoryID interface{}
+	var siteID, categoryID any
 	if dto.SiteID != uuid.Nil {
 		siteID = dto.SiteID
 	}
@@ -486,10 +486,10 @@ func (r *TicketRepo) Create(ctx context.Context, tx Tx, dto *models.TicketDTO) e
 
 func (r *TicketRepo) Update(ctx context.Context, tx Tx, dto *models.TicketDTO) error {
 	sets := make([]string, 0, 12)
-	args := []interface{}{dto.ID}
+	args := []any{dto.ID}
 	n := 1
 
-	add := func(jsonKey, column string, value interface{}) {
+	add := func(jsonKey, column string, value any) {
 		if !dto.HasField(jsonKey) {
 			return
 		}

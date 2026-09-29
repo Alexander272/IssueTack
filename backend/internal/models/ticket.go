@@ -203,7 +203,7 @@ type FieldChange struct {
 func (dto *TicketDTO) GetChanges(old *Ticket) []*FieldChange {
 	var changes []*FieldChange
 
-	toStr := func(v interface{}) string {
+	toStr := func(v any) string {
 		if v == nil {
 			return "none"
 		}

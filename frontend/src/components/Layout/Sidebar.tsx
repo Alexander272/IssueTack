@@ -250,10 +250,11 @@ export const Sidebar = ({ config, mobileOpen, onMobileClose }: SidebarProps) => 
 					img: { maxWidth: '100%' },
 				}}
 			>
-				<img
+				<Box
+					component='img'
 					src={collapsed ? LogoMini : Logo}
 					alt='logo'
-					style={{ maxHeight: collapsed ? 32 : 44, width: 'auto' }}
+					sx={{ maxHeight: collapsed ? 32 : 44, width: 'auto' }}
 				/>
 			</Box>
 			{renderRealm()}

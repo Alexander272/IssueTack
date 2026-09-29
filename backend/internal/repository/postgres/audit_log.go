@@ -114,14 +114,14 @@ func (r *auditRepo) CreateSeveral(ctx context.Context, tx Tx, dto []*models.Audi
 		return nil
 	}
 
-	rows := make([][]interface{}, len(dto))
+	rows := make([][]any, len(dto))
 
 	for i, v := range dto {
 		if v.ID == uuid.Nil {
 			v.ID = uuid.New()
 		}
 
-		rows[i] = []interface{}{
+		rows[i] = []any{
 			v.ID,
 			v.ChangedBy,
 			v.ChangedByName,

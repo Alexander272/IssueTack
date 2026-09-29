@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, memo } from 'react'
+import { Box } from '@mui/material'
 import type { CellProps } from 'react-datasheet-grid'
 
 export type TextAreaOptions = {
@@ -27,13 +28,14 @@ export const TextAreaComponent = memo(
 		}, [focus])
 
 		return (
-			<textarea
+			<Box
+				component='textarea'
 				ref={ref}
 				disabled={columnData?.disabled || !active}
 				placeholder={active ? columnData?.placeholder : undefined}
 				value={rowData ?? ''}
 				onChange={e => setRowData(e.target.value || null)}
-				style={{
+				sx={{
 					width: '100%',
 					height: '100%',
 					border: 'none',

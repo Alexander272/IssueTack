@@ -3,10 +3,10 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/pkg/auth"
+	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/google/uuid"
 )
 
@@ -150,7 +150,11 @@ func (s *SessionService) loadUserCapabilities(ctx context.Context, user *models.
 
 		managedGroups, memberGroups, isRealmAdmin, err := s.capabilitiesForRealm(ctx, user.ID, realmID)
 		if err != nil {
-			log.Printf("WARN: failed to get capabilities for user %s realm %s: %v", user.ID, realmIDStr, err)
+			logger.Warn("failed to get capabilities",
+				logger.StringAttr("user_id", user.ID.String()),
+				logger.StringAttr("realm", realmIDStr),
+				logger.ErrAttr(err),
+			)
 			managedGroups, memberGroups, isRealmAdmin = nil, nil, false
 		}
 

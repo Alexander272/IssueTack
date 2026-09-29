@@ -73,7 +73,7 @@ func (r *PermissionRepo) Sync(ctx context.Context, tx Tx, dto []*models.Permissi
 		return nil
 	}
 	values := []string{}
-	args := []interface{}{}
+	args := []any{}
 
 	for _, v := range dto {
 		values = append(values, fmt.Sprintf("($%d, $%d, $%d)", len(args)+1, len(args)+2, len(args)+3))
@@ -372,7 +372,7 @@ func (r *PermissionRepo) DeleteByKeys(ctx context.Context, tx Tx, dto []*models.
 	}
 
 	placeholders := make([]string, 0, len(dto)*2)
-	args := make([]interface{}, 0, len(dto)*2)
+	args := make([]any, 0, len(dto)*2)
 	for _, v := range dto {
 		placeholders = append(placeholders, fmt.Sprintf("($%d::text, $%d::text)", len(args)+1, len(args)+2))
 		args = append(args, v.Object, v.Action)
@@ -408,7 +408,7 @@ func (r *PermissionRepo) ReplacePermissions(ctx context.Context, tx Tx, roleID u
 	}
 
 	values := make([]string, 0, len(permissionIDs))
-	args := make([]interface{}, 0, len(permissionIDs)*2)
+	args := make([]any, 0, len(permissionIDs)*2)
 	for i, id := range permissionIDs {
 		values = append(values, fmt.Sprintf("($%d, $%d)", i*2+1, i*2+2))
 		args = append(args, roleID, id)

@@ -316,14 +316,14 @@ func (r *groupRepo) GetManagedGroups(ctx context.Context, userID uuid.UUID, real
 	baseQuery := fmt.Sprintf(`SELECT id FROM %s WHERE manager_id = $1`, Tables.Groups)
 
 	var query string
-	var args []interface{}
+	var args []any
 
 	if realmID != nil {
 		query = baseQuery + ` AND realm_id = $2`
-		args = []interface{}{userID, *realmID}
+		args = []any{userID, *realmID}
 	} else {
 		query = baseQuery
-		args = []interface{}{userID}
+		args = []any{userID}
 	}
 
 	rows, err := r.db.Query(ctx, query, args...)
@@ -350,14 +350,14 @@ func (r *groupRepo) GetMemberGroups(ctx context.Context, userID uuid.UUID, realm
 	baseQuery := fmt.Sprintf(`SELECT gm.group_id FROM %s gm`, Tables.GroupMembers)
 
 	var query string
-	var args []interface{}
+	var args []any
 
 	if realmID != nil {
 		query = fmt.Sprintf(`%s JOIN %s g ON g.id = gm.group_id WHERE gm.user_id = $1 AND g.realm_id = $2`, baseQuery, Tables.Groups)
-		args = []interface{}{userID, *realmID}
+		args = []any{userID, *realmID}
 	} else {
 		query = fmt.Sprintf(`%s WHERE gm.user_id = $1`, baseQuery)
-		args = []interface{}{userID}
+		args = []any{userID}
 	}
 
 	rows, err := r.db.Query(ctx, query, args...)

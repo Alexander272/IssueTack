@@ -224,9 +224,9 @@ func (r *UserRealmRepo) CreateSeveral(ctx context.Context, tx Tx, dto []*models.
 		return nil
 	}
 
-	rows := make([][]interface{}, len(dto))
+	rows := make([][]any, len(dto))
 	for i, v := range dto {
-		rows[i] = []interface{}{
+		rows[i] = []any{
 			uuid.New(),
 			v.UserID,
 			v.RealmID,

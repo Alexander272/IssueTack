@@ -367,7 +367,7 @@ func (s *SubtaskService) Delete(ctx context.Context, tx postgres.Tx, dto *models
 		return fmt.Errorf("failed to delete subtask: %w", err)
 	}
 
-	snapshot := map[string]interface{}{
+	snapshot := map[string]any{
 		"title":    old.Title,
 		"status":   old.Status,
 		"priority": old.Priority,

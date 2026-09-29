@@ -1,13 +1,13 @@
 package ws
 
 import (
-	"log"
 	"net/http"
 	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/constants"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
+	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/Alexander272/IssueTrack/backend/pkg/ws_hub"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -63,7 +63,7 @@ func (h *WsHandler) HandleWS(c *gin.Context) {
 
 	conn, err := h.upgrader().Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		log.Printf("failed to upgrade ws connection: %v", err)
+		logger.Warn("failed to upgrade ws connection", logger.ErrAttr(err))
 		return
 	}
 
@@ -72,7 +72,7 @@ func (h *WsHandler) HandleWS(c *gin.Context) {
 	client.Subscribe("user:" + user.ID.String())
 
 	if err := h.services.Notifications.SendUnread(c.Request.Context(), client); err != nil {
-		log.Printf("failed to send unread notifications: %v", err)
+		logger.Warn("failed to send unread notifications", logger.ErrAttr(err))
 	}
 
 	go client.WritePump(30*time.Second, 10*time.Second)

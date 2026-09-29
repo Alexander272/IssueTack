@@ -90,7 +90,7 @@ type DelSubtaskDTO struct {
 func (dto *SubtaskDTO) GetChanges(old *Subtask) []*FieldChange {
 	var changes []*FieldChange
 
-	toStr := func(v interface{}) string {
+	toStr := func(v any) string {
 		if v == nil {
 			return "none"
 		}

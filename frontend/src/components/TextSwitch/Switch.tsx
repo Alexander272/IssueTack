@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type FC } from 'react'
-import { FormControl, type SxProps, type Theme } from '@mui/material'
+import { Box, FormControl, type SxProps, type Theme } from '@mui/material'
 
 type Props = {
 	value: boolean
@@ -47,9 +47,9 @@ export const Switch: FC<Props> = ({ value, onChange, labels = ['Нет', 'Да']
 				},
 			}}
 		>
-			<div
+			<Box
 				ref={containerRef}
-				style={{
+				sx={{
 					position: 'relative',
 					display: 'flex',
 					height: '100%',
@@ -57,13 +57,13 @@ export const Switch: FC<Props> = ({ value, onChange, labels = ['Нет', 'Да']
 					zIndex: 2,
 				}}
 			>
-				<div
+				<Box
 					className='switch-slider'
-					style={{
+					sx={{
 						position: 'absolute',
 						top: 2,
 						left: 2,
-						width: `calc(50% - 2px)`,
+						width: 'calc(50% - 2px)',
 						height: 'calc(100% - 4px)',
 						backgroundColor: value ? '#0432a5' : '#ffffff',
 						borderRadius: 'calc(var(--current-radius, 22px) - 2px)',
@@ -74,11 +74,12 @@ export const Switch: FC<Props> = ({ value, onChange, labels = ['Нет', 'Да']
 						zIndex: 1,
 					}}
 				/>
-				<button
+				<Box
+					component='button'
 					type='button'
 					className='switch-btn'
 					onClick={() => onChange(false)}
-					style={{
+					sx={{
 						flex: 1,
 						border: 'none',
 						background: 'transparent',
@@ -93,12 +94,13 @@ export const Switch: FC<Props> = ({ value, onChange, labels = ['Нет', 'Да']
 					}}
 				>
 					{labels[0]}
-				</button>
-				<button
+				</Box>
+				<Box
+					component='button'
 					type='button'
 					className='switch-btn'
 					onClick={() => onChange(true)}
-					style={{
+					sx={{
 						flex: 1,
 						border: 'none',
 						background: 'transparent',
@@ -113,8 +115,8 @@ export const Switch: FC<Props> = ({ value, onChange, labels = ['Нет', 'Да']
 					}}
 				>
 					{labels[1]}
-				</button>
-			</div>
+				</Box>
+			</Box>
 		</FormControl>
 	)
 }

@@ -131,7 +131,7 @@ func (s *NotificationService) NotifyOverdue(ctx context.Context, ticket *models.
 		}
 	}
 
-	data, err := json.Marshal(map[string]interface{}{
+	data, err := json.Marshal(map[string]any{
 		"ticket_id": ticket.ID.String(),
 		"title":     ticket.Title,
 	})
@@ -236,7 +236,7 @@ func (s *NotificationService) TicketCreated(ctx context.Context, ticket *models.
 		return nil
 	}
 
-	data, err := json.Marshal(map[string]interface{}{
+	data, err := json.Marshal(map[string]any{
 		"ticket_id": ticket.ID.String(),
 		"title":     ticket.Title,
 	})
@@ -332,7 +332,7 @@ func (s *NotificationService) TicketUpdated(ctx context.Context, ticket *models.
 	if err != nil {
 		return fmt.Errorf("failed to marshal changes: %w", err)
 	}
-	data, err := json.Marshal(map[string]interface{}{
+	data, err := json.Marshal(map[string]any{
 		"ticket_id": ticket.ID.String(),
 		"title":     ticket.Title,
 		"changes":   string(changesData),
@@ -381,7 +381,7 @@ func (s *NotificationService) TicketDeleted(ctx context.Context, ticket *models.
 		return nil
 	}
 
-	data, err := json.Marshal(map[string]interface{}{
+	data, err := json.Marshal(map[string]any{
 		"ticket_id": ticket.ID.String(),
 		"title":     ticket.Title,
 	})
@@ -438,7 +438,7 @@ func (s *NotificationService) TicketCommented(ctx context.Context, ticket *model
 		return nil
 	}
 
-	data, err := json.Marshal(map[string]interface{}{
+	data, err := json.Marshal(map[string]any{
 		"ticket_id": ticket.ID.String(),
 		"title":     ticket.Title,
 	})
@@ -484,7 +484,7 @@ func (s *NotificationService) AttachmentAdded(ctx context.Context, ticket *model
 		return nil
 	}
 
-	data, err := json.Marshal(map[string]interface{}{
+	data, err := json.Marshal(map[string]any{
 		"ticket_id": ticket.ID.String(),
 		"title":     ticket.Title,
 	})
@@ -541,7 +541,7 @@ func (s *NotificationService) NotifyDeadlineSoon(ctx context.Context, ticket *mo
 			continue
 		}
 
-		data, err := json.Marshal(map[string]interface{}{
+		data, err := json.Marshal(map[string]any{
 			"ticket_id":     ticket.ID.String(),
 			"title":         ticket.Title,
 			"remind_before": before,

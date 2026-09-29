@@ -35,7 +35,7 @@ type Checklists interface {
 
 func (r *ChecklistRepo) Get(ctx context.Context, req *models.GetChecklistTemplatesDTO) ([]*models.ChecklistTemplate, error) {
 	query := fmt.Sprintf(`SELECT id, realm_id, title, description, created_by, created_at, updated_at FROM %s WHERE realm_id = $1`, Tables.ChecklistTemplates)
-	args := []interface{}{req.RealmID}
+	args := []any{req.RealmID}
 	if req.OwnerID != nil {
 		query += " AND created_by = $2"
 		args = append(args, *req.OwnerID)
@@ -130,7 +130,7 @@ func (r *ChecklistRepo) Create(ctx context.Context, dto *models.ChecklistTemplat
 // При ownerID != nil проверка выполняется только среди шаблонов этого владельца.
 func (r *ChecklistRepo) ExistsByTitle(ctx context.Context, realmID uuid.UUID, title string, ownerID *uuid.UUID) (bool, error) {
 	query := fmt.Sprintf(`SELECT EXISTS(SELECT 1 FROM %s WHERE realm_id = $1 AND title = $2`, Tables.ChecklistTemplates)
-	args := []interface{}{realmID, title}
+	args := []any{realmID, title}
 	if ownerID != nil {
 		query += " AND created_by = $3"
 		args = append(args, *ownerID)
@@ -175,12 +175,12 @@ func (r *ChecklistRepo) SetItems(ctx context.Context, tx Tx, templateID uuid.UUI
 		return nil
 	}
 
-	rows := make([][]interface{}, len(items))
+	rows := make([][]any, len(items))
 	for i, v := range items {
 		if v.ID == uuid.Nil {
 			v.ID = uuid.New()
 		}
-		rows[i] = []interface{}{v.ID, templateID, v.Title, v.Description, v.SortOrder}
+		rows[i] = []any{v.ID, templateID, v.Title, v.Description, v.SortOrder}
 	}
 
 	columns := []string{"id", "template_id", "title", "description", "sort_order"}

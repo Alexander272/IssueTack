@@ -271,7 +271,7 @@ func (r *RoleHierarchyRepo) AddInheritances(ctx context.Context, tx Tx, realmID 
 	}
 
 	values := make([]string, 0, len(parentRoleIDs))
-	args := make([]interface{}, 0, len(parentRoleIDs)*3)
+	args := make([]any, 0, len(parentRoleIDs)*3)
 	for i, parentID := range parentRoleIDs {
 		values = append(values, fmt.Sprintf("($%d, $%d, $%d)", i*3+1, i*3+2, i*3+3))
 		args = append(args, roleID, parentID, realmID)
@@ -293,7 +293,7 @@ func (r *RoleHierarchyRepo) RemoveInheritances(ctx context.Context, tx Tx, roleI
 	}
 
 	placeholders := make([]string, 0, len(parentRoleIDs))
-	args := []interface{}{roleID}
+	args := []any{roleID}
 	for _, parentID := range parentRoleIDs {
 		placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)+1))
 		args = append(args, parentID)
