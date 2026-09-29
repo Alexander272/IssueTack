@@ -3,7 +3,9 @@ package services
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/events"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
@@ -50,7 +52,7 @@ func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uui
 		return &models.UserData{ID: userID, Username: username, SiteID: userSiteByID(sysUsers, userID)}, nil
 	}
 
-	mmFio := buildFIO(mmUser.FirstName, mmUser.LastName)
+	mmFio := buildFIO(mmUser.FirstName, cleanMMLastName(mmUser.LastName))
 	if mmFio != "" {
 		for _, sysU := range sysUsers {
 			if buildFIO(sysU.FirstName, sysU.LastName) == mmFio {
@@ -68,7 +70,7 @@ func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uui
 		SiteID:       siteID,
 		Username:     mmUser.Username,
 		FirstName:    mmUser.FirstName,
-		LastName:     mmUser.LastName,
+		LastName:     cleanMMLastName(mmUser.LastName),
 		Email:        mmUser.Email,
 		IsActive:     true,
 	}
@@ -225,6 +227,43 @@ func buildFIO(firstName, lastName string) string {
 	return strings.ToLower(strings.TrimSpace(firstName + " " + lastName))
 }
 
+// lastNamePhoneLabelRe — хвостовая надпись перед телефоном, которую добавляют к фамилии:
+// «тел.», «телефон», «моб.», «phone», «ext».
+var lastNamePhoneLabelRe = regexp.MustCompile(`(?i)\s*(?:тел|телефон|моб|phone|ext)\s*\.?\s*$`)
+
+// cleanMMLastName очищает фамилию Mattermost от «хвостов» с цифрами, которые пользователи
+// дописывают в last_name: телефон («Иванов +7 999 123-45-67», «Иванов, тел. 89991234567»)
+// или внутренние номера в скобках («Хасанова (603, 604)»).
+// Отрезает всё от первого символа, который цифра или «+», затем снимает хвостовые
+// разделители и надписи (тел/телефон/моб/phone/ext). Если после обрезки ничего не
+// осталось (вся фамилия — телефон), возвращает исходное значение, чтобы не создавать
+// пользователя без фамилии. В отличие от Keycloak-синка (extractInternalNumber) номера
+// из скобок не сохраняются: для пользователей из Mattermost внутренний номер не заводится.
+func cleanMMLastName(lastName string) string {
+	trimmed := strings.TrimSpace(lastName)
+	cut := strings.IndexFunc(trimmed, func(r rune) bool {
+		return r == '+' || unicode.IsDigit(r)
+	})
+	if cut < 0 {
+		return trimmed
+	}
+
+	head := trimmed[:cut]
+	for {
+		head = lastNamePhoneLabelRe.ReplaceAllString(head, "")
+		head = strings.TrimSpace(strings.Trim(head, " \t,;:-–—()[]"))
+		head = strings.Join(strings.Fields(head), " ")
+		if lastNamePhoneLabelRe.MatchString(head) {
+			continue
+		}
+		break
+	}
+	if head == "" {
+		return trimmed
+	}
+	return head
+}
+
 // handleSync — обработчик команды «синхронизировать [команды]»: сопоставляет
 // пользователей Mattermost с системными (по email/username/ФИО) и создаёт
 // недостающих локальных пользователей в указанном realm. Доступна только
@@ -321,7 +360,7 @@ func (s *MattermostService) handleSync(ctx context.Context, ch *mmChannel, messa
 		}
 
 		if !matched {
-			if fio := buildFIO(mmU.FirstName, mmU.LastName); fio != "" {
+			if fio := buildFIO(mmU.FirstName, cleanMMLastName(mmU.LastName)); fio != "" {
 				if sysU, ok := sysByFIO[fio]; ok {
 					s.ensureLinkAndRealm(ctx, ch.Settings.RealmID, sysU.ID, mmU.Id, nil, sender.ID, sender.Username)
 					linked++
@@ -341,7 +380,7 @@ func (s *MattermostService) handleSync(ctx context.Context, ch *mmChannel, messa
 			MattermostID: &mattermostID,
 			Username:     mmU.Username,
 			FirstName:    mmU.FirstName,
-			LastName:     mmU.LastName,
+			LastName:     cleanMMLastName(mmU.LastName),
 			Email:        mmU.Email,
 			IsActive:     true,
 		}
