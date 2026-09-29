@@ -107,7 +107,7 @@ export const Switch: FC<Props> = ({ value, onChange, labels = ['Нет', 'Да']
 						borderRadius: '20px',
 						color: value ? '#ffffff' : '#64748b',
 						fontSize: 13,
-						fontWeight: value ? 500 : 500,
+						fontWeight: value ? 600 : 500,
 						cursor: 'pointer',
 						transition: 'color 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
 						position: 'relative',
