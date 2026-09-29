@@ -20,12 +20,12 @@
 - `backend/internal/services/` — бизнес-логика. Внутри пакета интерфейсы сервисов (см. `services.go`, а также интерфейсы в самих файлах сервисов).
 - `backend/internal/transport/http/handlers/` — HTTP-обработчики. Роуты регистрируются через `access.Reg.R(Resource).Read()/Write()/Delete()` + Casbin-мидлвар.
 - `backend/internal/transport/middleware/` — проверка прав, извлечение actor/user из контекста.
-- `frontend/src/features/` — фичи (tasks, groups, categories, access, auth, realms, sites, user). Внутри: `components/`, `pages/`, `apiSlice.ts`, `types/`.
+- `frontend/src/features/` — фичи (tasks, groups, categories, access, auth, realms, sites, user). Внутри: `components/`, `types/` и API-слайс `<feature>ApiSlice.ts` (напр. `tasksApiSlice.ts`). `pages/` есть не у всех фич — часть страниц лежит в общем `frontend/src/pages/`.
 - API-эндпоинты собраны в `frontend/src/app/api.ts`.
 
 ## Ключевые конвенции
 
-- **Иконки**: только `lucide-mui` (MUI SvgIcon). НЕ использовать самописные `@/components/Icons/*` в новом коде. Цвет — через `sx={{ color }}` (не `fill`), размер — `sx={{ fontSize }}`.
+- **Иконки**: только `lucide-mui` (MUI SvgIcon). НЕ использовать самописные `@/components/Icons/*` в новом коде. Цвет — через `sx={{ color }}` (не `fill`), размер — `sx={{ fontSize }}`. Исключение — brand-иконки (логотипы браузеров/ОС): в `lucide-mui` их нет, поэтому для них самописные иконки допустимы (`LoginsModal.tsx`).
 - **Стили**: MUI `sx`, не Tailwind.
 - **Go**: следуй существующим паттернам сервисов/репозиториев; ошибки доступа — `models.ErrPermissionDenied` (код AU002).
 - Планы фич лежат в `.opencode/plans/*.md`, живой список задач — в `TODO.md`.
