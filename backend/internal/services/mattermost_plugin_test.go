@@ -5,12 +5,16 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
+	"github.com/Alexander272/IssueTrack/backend/pkg/mattermost"
+	json "github.com/goccy/go-json"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -66,6 +70,11 @@ func pluginMocks() (*MockMattermostRepo, *MockUserService, *MockUserRealmsServic
 	return new(MockMattermostRepo), new(MockUserService), new(MockUserRealmsService), new(MockTicketsService)
 }
 
+// pluginScopeFixture — scope обычного (привязанного) канала без бота.
+func pluginScopeFixture(channelID string) models.PluginScope {
+	return models.PluginScope{ChannelID: channelID, MmUserID: "mm1"}
+}
+
 // expectExistingUser готовит моки пути «пользователь уже есть по mattermost_id».
 // UpdateMMAndSite здесь намеренно не ожидается: fast-path не должен писать в
 // users, если site_id не передан (см. TestPluginContext_KnownUser_NoWrite).
@@ -98,7 +107,7 @@ func TestPluginListMine_HappyPath(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
 
-	list, err := svc.PluginListMine(context.Background(), "ch1", "mm1")
+	list, err := svc.PluginListMine(context.Background(), pluginScopeFixture("ch1"))
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 	assert.Equal(t, num, list[0].Number)
@@ -119,7 +128,7 @@ func TestPluginListMine_Statuses(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
 
-	_, err := svc.PluginListMine(context.Background(), "ch1", "mm1")
+	_, err := svc.PluginListMine(context.Background(), pluginScopeFixture("ch1"))
 	require.NoError(t, err)
 
 	var filter *models.TicketFilter
@@ -154,7 +163,7 @@ func TestPluginContext_UnboundChannel(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo})
 
-	ctx, err := svc.PluginContext(context.Background(), "ch1", "mm1")
+	ctx, err := svc.PluginContext(context.Background(), pluginScopeFixture("ch1"))
 	require.NoError(t, err)
 	require.NotNil(t, ctx)
 	assert.False(t, ctx.Bound)
@@ -167,7 +176,7 @@ func TestPluginContext_InactiveChannel(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo})
 
-	ctx, err := svc.PluginContext(context.Background(), "ch1", "mm1")
+	ctx, err := svc.PluginContext(context.Background(), pluginScopeFixture("ch1"))
 	require.NoError(t, err)
 	require.NotNil(t, ctx)
 	assert.False(t, ctx.Bound)
@@ -200,7 +209,7 @@ func TestPluginContext_HappyPath(t *testing.T) {
 		Realms: realms, Categories: categories, Sites: sites,
 	})
 
-	result, err := svc.PluginContext(context.Background(), "ch1", "mm1")
+	result, err := svc.PluginContext(context.Background(), pluginScopeFixture("ch1"))
 	require.NoError(t, err)
 	assert.Equal(t, true, result.Bound)
 	assert.Equal(t, realmID, result.RealmID)
@@ -243,7 +252,7 @@ func TestPluginContext_KnownUser_NoWrite(t *testing.T) {
 
 	// Два вызова подряд — как два переключения канала одним пользователем.
 	for i := 0; i < 2; i++ {
-		result, err := svc.PluginContext(context.Background(), "ch1", "mm1")
+		result, err := svc.PluginContext(context.Background(), pluginScopeFixture("ch1"))
 		require.NoError(t, err)
 		require.True(t, result.Bound)
 		require.Equal(t, userID, result.User.ID)
@@ -303,8 +312,7 @@ func TestPluginCreateTicket_HappyPath(t *testing.T) {
 	})
 
 	input := &models.PluginCreateTicketInput{
-		ChannelID:   "ch1",
-		MmUserID:    "mm1",
+		PluginScope: pluginScopeFixture("ch1"),
 		Title:       "Новая заявка",
 		Description: "Описание",
 		CategoryID:  categoryID,
@@ -331,7 +339,7 @@ func TestPluginCreateTicket_UnboundChannel(t *testing.T) {
 	svc := NewMattermostService(&MattermostDeps{Repo: repo})
 
 	_, err := svc.PluginCreateTicket(context.Background(), &models.PluginCreateTicketInput{
-		ChannelID: "ch1", MmUserID: "mm1", Title: "Заявка",
+		PluginScope: pluginScopeFixture("ch1"), Title: "Заявка",
 	})
 	assert.ErrorIs(t, err, models.ErrChannelNotBound)
 }
@@ -367,7 +375,7 @@ func TestPluginGetTicket_HappyPath(t *testing.T) {
 		Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets,
 	})
 
-	detail, err := svc.PluginGetTicket(context.Background(), "ch1", "mm1", ticketID.String())
+	detail, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture("ch1"), ticketID.String())
 	require.NoError(t, err)
 	require.NotNil(t, detail)
 	assert.Equal(t, ticketID, detail.ID)
@@ -481,7 +489,7 @@ func TestPluginGetTicket_InvalidID(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo})
 
-	_, err := svc.PluginGetTicket(context.Background(), "ch1", "mm1", "not-a-uuid")
+	_, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture("ch1"), "not-a-uuid")
 	assert.ErrorIs(t, err, models.ErrInvalidInput)
 }
 
@@ -526,7 +534,7 @@ func TestPluginGetComments_FiltersInternal(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Comments: comments})
 
-	list, err := svc.PluginGetComments(context.Background(), "ch1", "mm1", ticketID.String())
+	list, err := svc.PluginGetComments(context.Background(), pluginScopeFixture("ch1"), ticketID.String())
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 	assert.Equal(t, "публичный", list[0].Text)
@@ -561,10 +569,9 @@ func TestPluginCreateComment_HappyPath(t *testing.T) {
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Comments: comments})
 
 	out, err := svc.PluginCreateComment(context.Background(), &models.PluginCreateCommentInput{
-		ChannelID: "ch1",
-		MmUserID:  "mm1",
-		TicketID:  ticketID.String(),
-		Text:      "Всем привет",
+		PluginScope: pluginScopeFixture("ch1"),
+		TicketID:    ticketID.String(),
+		Text:        "Всем привет",
 		Files: []models.PluginFile{
 			{FileName: "f.txt", FileSize: 3, MimeType: "text/plain", Content: bytes.NewReader([]byte("abc"))},
 		},
@@ -583,7 +590,7 @@ func TestPluginCreateComment_EmptyFails(t *testing.T) {
 	svc := NewMattermostService(&MattermostDeps{Repo: repo})
 
 	_, err := svc.PluginCreateComment(context.Background(), &models.PluginCreateCommentInput{
-		ChannelID: "ch1", MmUserID: "mm1", TicketID: uuid.New().String(),
+		PluginScope: pluginScopeFixture("ch1"), TicketID: uuid.New().String(),
 	})
 	assert.ErrorIs(t, err, models.ErrInvalidInput)
 }
@@ -618,7 +625,7 @@ func TestPluginGetAttachmentContent(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Attachments: attachments})
 
-	got, rc, err := svc.PluginGetAttachmentContent(context.Background(), "ch1", "mm1", attID.String())
+	got, rc, err := svc.PluginGetAttachmentContent(context.Background(), pluginScopeFixture("ch1"), attID.String())
 	require.NoError(t, err)
 	defer rc.Close()
 	assert.Equal(t, attID, got.ID)
@@ -626,7 +633,7 @@ func TestPluginGetAttachmentContent(t *testing.T) {
 	data, _ := io.ReadAll(rc)
 	assert.Equal(t, "content", string(data))
 
-	attBody, _, err := svc.PluginGetAttachmentContent(context.Background(), "ch1", "mm1", "bad-id")
+	attBody, _, err := svc.PluginGetAttachmentContent(context.Background(), pluginScopeFixture("ch1"), "bad-id")
 	assert.ErrorIs(t, err, models.ErrInvalidInput)
 	assert.Nil(t, attBody)
 }
@@ -653,7 +660,7 @@ func TestPluginGetTicket_OwnerFlags(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
 
-	detail, err := svc.PluginGetTicket(context.Background(), "ch1", "mm1", ticketID.String())
+	detail, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture("ch1"), ticketID.String())
 	require.NoError(t, err)
 	assert.True(t, detail.CanConfirm)
 	assert.True(t, detail.CanReopen)
@@ -674,7 +681,7 @@ func TestPluginGetTicket_OwnerOpenCanCancel(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
 
-	detail, err := svc.PluginGetTicket(context.Background(), "ch1", "mm1", ticketID.String())
+	detail, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture("ch1"), ticketID.String())
 	require.NoError(t, err)
 	assert.False(t, detail.CanConfirm)
 	assert.False(t, detail.CanReopen)
@@ -695,7 +702,7 @@ func TestPluginGetTicket_OwnerInProgressNoCancel(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
 
-	detail, err := svc.PluginGetTicket(context.Background(), "ch1", "mm1", ticketID.String())
+	detail, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture("ch1"), ticketID.String())
 	require.NoError(t, err)
 	assert.False(t, detail.CanConfirm)
 	assert.False(t, detail.CanReopen)
@@ -717,7 +724,7 @@ func TestPluginGetTicket_NotOwnerNoFlags(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
 
-	detail, err := svc.PluginGetTicket(context.Background(), "ch1", "mm1", ticketID.String())
+	detail, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture("ch1"), ticketID.String())
 	require.NoError(t, err)
 	assert.False(t, detail.CanConfirm)
 	assert.False(t, detail.CanReopen)
@@ -753,7 +760,7 @@ func TestPluginChangeStatus_HappyPaths(t *testing.T) {
 
 			svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
 
-			err := svc.PluginChangeStatus(context.Background(), "ch1", "mm1", ticketID.String(), string(status))
+			err := svc.PluginChangeStatus(context.Background(), pluginScopeFixture("ch1"), ticketID.String(), string(status))
 			require.NoError(t, err)
 		})
 	}
@@ -771,7 +778,7 @@ func TestPluginChangeStatus_PermissionDeniedPropagated(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
 
-	err := svc.PluginChangeStatus(context.Background(), "ch1", "mm1", ticketID.String(), string(models.StatusClosed))
+	err := svc.PluginChangeStatus(context.Background(), pluginScopeFixture("ch1"), ticketID.String(), string(models.StatusClosed))
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 }
 
@@ -781,10 +788,10 @@ func TestPluginChangeStatus_Invalid(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo})
 
-	err := svc.PluginChangeStatus(context.Background(), "ch1", "mm1", uuid.New().String(), "bogus")
+	err := svc.PluginChangeStatus(context.Background(), pluginScopeFixture("ch1"), uuid.New().String(), "bogus")
 	assert.ErrorIs(t, err, models.ErrInvalidInput)
 
-	err = svc.PluginChangeStatus(context.Background(), "ch1", "mm1", "not-a-uuid", string(models.StatusClosed))
+	err = svc.PluginChangeStatus(context.Background(), pluginScopeFixture("ch1"), "not-a-uuid", string(models.StatusClosed))
 	assert.ErrorIs(t, err, models.ErrInvalidInput)
 }
 
@@ -794,6 +801,174 @@ func TestPluginChangeStatus_UnboundChannel(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo})
 
-	err := svc.PluginChangeStatus(context.Background(), "ch1", "mm1", uuid.New().String(), string(models.StatusClosed))
+	err := svc.PluginChangeStatus(context.Background(), pluginScopeFixture("ch1"), uuid.New().String(), string(models.StatusClosed))
+	assert.ErrorIs(t, err, models.ErrChannelNotBound)
+}
+
+// dmScopeServer отдаёт состав участников канала для проверки scope личного
+// диалога. Endpoint members/ids — POST с телом-списком id: он ничего не
+// меняет, только возвращает участников.
+func dmScopeServer(t *testing.T, members ...string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Contains(t, r.URL.Path, "/channels/dm1/members/ids")
+
+		var requested []string
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&requested))
+		assert.ElementsMatch(t, []string{"bot1", "mm1"}, requested)
+
+		out := make([]map[string]any, 0, len(members))
+		for _, id := range members {
+			out = append(out, map[string]any{"user_id": id})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		assert.NoError(t, json.NewEncoder(w).Encode(out))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// dmScopeFixture — scope личного диалога: канал не привязан к реалму, реалм
+// определяется по боту, участники подтверждаются запросом members.
+func dmScopeFixture() models.PluginScope {
+	return models.PluginScope{ChannelID: "dm1", MmUserID: "mm1", BotUserID: "bot1"}
+}
+
+func dmSettings(realmID uuid.UUID) *models.RealmMattermost {
+	return &models.RealmMattermost{
+		RealmID: realmID, BotUserID: "bot1", BotToken: "tok", IsActive: true,
+	}
+}
+
+func dmMocks(t *testing.T, members ...string) (*MockMattermostRepo, *MockUserService, *MockUserRealmsService, *MockTicketsService, *mattermost.Most) {
+	t.Helper()
+	repo, users, userRealms, tickets := pluginMocks()
+	repo.On("GetByChannelID", mock.Anything, "dm1").Return(nil, errors.New("no rows"))
+	most := &mattermost.Most{Client: mattermost.NewClient(dmScopeServer(t, members...).URL)}
+	return repo, users, userRealms, tickets, most
+}
+
+func TestPluginContext_DMWithBot(t *testing.T) {
+	realmID := uuid.New()
+	userID := uuid.New()
+	categoryID := uuid.New()
+	siteID := uuid.New()
+	repo, users, userRealms, _, most := dmMocks(t, "bot1", "mm1")
+
+	repo.On("GetByBotUserID", mock.Anything, "bot1").Return(dmSettings(realmID), nil)
+	expectExistingUser(users, userRealms, userID, realmID)
+
+	realms := &fakeRealmsSvc{getByID: func(_ context.Context, req *models.GetRealmByIdDTO) (*models.Realm, error) {
+		assert.Equal(t, realmID, req.ID)
+		return &models.Realm{ID: realmID, Name: "Риалм"}, nil
+	}}
+	categories := &fakeCategoriesSvc{get: func(_ context.Context, req *models.GetCategoriesDTO) ([]*models.Category, error) {
+		assert.Equal(t, realmID, req.RealmID)
+		return []*models.Category{{ID: categoryID, Name: "Категория"}}, nil
+	}}
+	sites := &fakeSitesSvc{get: func(_ context.Context, _ *models.GetSitesDTO) ([]*models.Site, error) {
+		return []*models.Site{{ID: siteID, Name: "Площадка"}}, nil
+	}}
+
+	svc := NewMattermostService(&MattermostDeps{
+		Repo: repo, Users: users, UserRealms: userRealms, Most: most,
+		Realms: realms, Categories: categories, Sites: sites,
+	})
+
+	result, err := svc.PluginContext(context.Background(), dmScopeFixture())
+	require.NoError(t, err)
+	assert.True(t, result.Bound)
+	assert.Equal(t, realmID, result.RealmID)
+	assert.Equal(t, userID, result.User.ID)
+	assert.Len(t, result.Categories, 1)
+}
+
+func TestPluginContext_DMWithoutBotInChannel(t *testing.T) {
+	// В диалоге только бот и сам пользователь не состоят: канал не его диалог.
+	repo, _, _, _, most := dmMocks(t, "bot1")
+	repo.On("GetByBotUserID", mock.Anything, "bot1").Return(dmSettings(uuid.New()), nil)
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo, Most: most})
+
+	result, err := svc.PluginContext(context.Background(), dmScopeFixture())
+	require.NoError(t, err)
+	assert.False(t, result.Bound)
+}
+
+func TestPluginContext_DMExtraMember(t *testing.T) {
+	// Три участника — это групповой канал, а не личный диалог.
+	repo, _, _, _, most := dmMocks(t, "bot1", "mm1", "third")
+	repo.On("GetByBotUserID", mock.Anything, "bot1").Return(dmSettings(uuid.New()), nil)
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo, Most: most})
+
+	result, err := svc.PluginContext(context.Background(), dmScopeFixture())
+	require.NoError(t, err)
+	assert.False(t, result.Bound)
+}
+
+func TestPluginContext_DMUnknownBot(t *testing.T) {
+	repo, _, _, _, most := dmMocks(t, "bot1", "mm1")
+	repo.On("GetByBotUserID", mock.Anything, "bot1").Return(nil, errors.New("no rows"))
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo, Most: most})
+
+	result, err := svc.PluginContext(context.Background(), dmScopeFixture())
+	require.NoError(t, err)
+	assert.False(t, result.Bound)
+}
+
+func TestPluginContext_DMWithoutMostClient(t *testing.T) {
+	// Без клиента Mattermost подтвердить состав участников нечем.
+	repo, _, _, _ := pluginMocks()
+	repo.On("GetByChannelID", mock.Anything, "dm1").Return(nil, errors.New("no rows"))
+	repo.On("GetByBotUserID", mock.Anything, "bot1").Return(dmSettings(uuid.New()), nil)
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo})
+
+	result, err := svc.PluginContext(context.Background(), dmScopeFixture())
+	require.NoError(t, err)
+	assert.False(t, result.Bound)
+}
+
+func TestPluginListMine_DMWithBot(t *testing.T) {
+	realmID := uuid.New()
+	userID := uuid.New()
+	repo, users, userRealms, tickets, most := dmMocks(t, "bot1", "mm1")
+
+	repo.On("GetByBotUserID", mock.Anything, "bot1").Return(dmSettings(realmID), nil)
+	expectExistingUser(users, userRealms, userID, realmID)
+
+	num := 11
+	tickets.On("Get", mock.Anything, mock.Anything).Return([]*models.Ticket{
+		{ID: uuid.New(), Title: "Заявка из DM", Status: models.StatusOpen, Priority: models.PriorityHigh, TicketNumber: &num, CreatedAt: time.Now()},
+	}, 1, nil)
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets, Most: most})
+
+	list, err := svc.PluginListMine(context.Background(), dmScopeFixture())
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, num, list[0].Number)
+
+	var filter *models.TicketFilter
+	for _, call := range tickets.Calls {
+		if call.Method == "Get" {
+			filter = call.Arguments.Get(1).(*models.TicketFilter)
+		}
+	}
+	require.NotNil(t, filter)
+	require.NotNil(t, filter.RealmID)
+	assert.Equal(t, realmID, *filter.RealmID)
+}
+
+func TestPluginListMine_DMNotADirectDialog(t *testing.T) {
+	repo, users, userRealms, tickets, most := dmMocks(t, "bot1", "mm1", "third")
+	repo.On("GetByBotUserID", mock.Anything, "bot1").Return(dmSettings(uuid.New()), nil)
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets, Most: most})
+
+	_, err := svc.PluginListMine(context.Background(), dmScopeFixture())
 	assert.ErrorIs(t, err, models.ErrChannelNotBound)
 }

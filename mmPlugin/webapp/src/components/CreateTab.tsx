@@ -1,15 +1,17 @@
 import React, { useState } from 'react'
 
 import { ApiError, createTicket } from '../api'
-import type { PluginCategory, PluginContextResult, PluginCreateResult, PluginSite } from '../types'
-import { formatBytes, priorityMeta } from '../labels'
+import type { PluginCategory, PluginContextResult, PluginCreateResult, PluginScope, PluginSite } from '../types'
+import { formatBytes } from '../labels'
 import { FileIcon } from './icons'
 
 interface CreateTabProps {
-	channelId: string
-	userId: string
+	scope: PluginScope
 	context: PluginContextResult
 	onCreated: () => void
+	// onOpen открывает только что созданную заявку в карточке внутри этой же
+	// модалки, без перехода в веб-приложение.
+	onOpen: (ticketId: string) => void
 }
 
 interface FieldErrors {
@@ -18,7 +20,7 @@ interface FieldErrors {
 	siteId?: string
 }
 
-export default function CreateTab({ channelId, userId, context, onCreated }: CreateTabProps) {
+export default function CreateTab({ scope, context, onCreated, onOpen }: CreateTabProps) {
 	const userSiteId =
 		context.user?.siteId && (context.sites || []).some(s => s.id === context.user.siteId) ? context.user.siteId : ''
 	const [title, setTitle] = useState('')
@@ -34,7 +36,6 @@ export default function CreateTab({ channelId, userId, context, onCreated }: Cre
 
 	const categories = (context.categories || []).filter((c: PluginCategory) => c.isActive !== false)
 	const sites = context.sites || []
-	const selectedCategory = categories.find(c => c.id === categoryId) || null
 	const selectedSite = sites.find(s => s.id === siteId) || null
 
 	const reset = () => {
@@ -81,7 +82,7 @@ export default function CreateTab({ channelId, userId, context, onCreated }: Cre
 		setSubmitting(true)
 		setError(null)
 		try {
-			const res = await createTicket(channelId, userId, {
+			const res = await createTicket(scope, {
 				title: title.trim(),
 				description: description.trim(),
 				categoryId: categoryId || null,
@@ -101,13 +102,21 @@ export default function CreateTab({ channelId, userId, context, onCreated }: Cre
 			<div className='it-ticket-success'>
 				<div className='it-ticket-success__title'>Заявка №{result.number || ''} создана</div>
 				<div className='it-ticket-success__actions'>
-					<button type='button' className='it-btn it-btn--primary' onClick={onCreated}>
+					<button type='button' className='it-btn it-btn--primary' onClick={() => onOpen(result.id)}>
+						Открыть заявку
+					</button>
+					<button type='button' className='it-btn' onClick={onCreated}>
 						К моим заявкам
 					</button>
 					<button type='button' className='it-btn' onClick={reset}>
 						Создать ещё
 					</button>
 				</div>
+				{result.link ? (
+					<a className='it-ticket-success__link' href={result.link} target='_blank' rel='noreferrer'>
+						Открыть в веб-приложении
+					</a>
+				) : null}
 			</div>
 		)
 	}
@@ -147,11 +156,6 @@ export default function CreateTab({ channelId, userId, context, onCreated }: Cre
 							</select>
 							{fieldErrors.categoryId ? (
 								<span className='it-f__err'>{fieldErrors.categoryId}</span>
-							) : null}
-							{selectedCategory ? (
-								<span className='it-f-label__hint'>
-									Приоритет: {priorityMeta(selectedCategory.priority).label}
-								</span>
 							) : null}
 						</label>
 

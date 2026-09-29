@@ -50,6 +50,19 @@ func (h *Handler) registerPluginRoutes(r *gin.RouterGroup, cfg config.Mattermost
 type pluginContextRequest struct {
 	ChannelID string `json:"channelId" binding:"required"`
 	UserID    string `json:"userId" binding:"required"`
+	BotUserID string `json:"botUserId"`
+}
+
+// pluginScope собирает контекст запроса плагина из query. botUserId приходит
+// только для личного диалога с ботом реалма: такие каналы не привязаны к реалму,
+// и он определяется по собеседнику. Значение проверяется сервисом по составу
+// участников канала.
+func pluginScope(c *gin.Context) models.PluginScope {
+	return models.PluginScope{
+		ChannelID: c.Query("channelId"),
+		MmUserID:  c.Query("userId"),
+		BotUserID: c.Query("botUserId"),
+	}
 }
 
 // handlePluginContext возвращает контекст канала (реалм, справочники,
@@ -62,7 +75,11 @@ func (h *Handler) handlePluginContext(c *gin.Context) {
 		return
 	}
 
-	ctx, err := h.service.PluginContext(c, req.ChannelID, req.UserID)
+	ctx, err := h.service.PluginContext(c, models.PluginScope{
+		ChannelID: req.ChannelID,
+		MmUserID:  req.UserID,
+		BotUserID: req.BotUserID,
+	})
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -72,14 +89,13 @@ func (h *Handler) handlePluginContext(c *gin.Context) {
 }
 
 func (h *Handler) handlePluginListMine(c *gin.Context) {
-	channelID := c.Query("channelId")
-	userID := c.Query("userId")
-	if channelID == "" || userID == "" {
+	scope := pluginScope(c)
+	if scope.ChannelID == "" || scope.MmUserID == "" {
 		response.SendError(c, models.ErrInvalidInput)
 		return
 	}
 
-	list, err := h.service.PluginListMine(c, channelID, userID)
+	list, err := h.service.PluginListMine(c, scope)
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -89,9 +105,8 @@ func (h *Handler) handlePluginListMine(c *gin.Context) {
 }
 
 func (h *Handler) handlePluginGetTicket(c *gin.Context) {
-	channelID := c.Query("channelId")
-	userID := c.Query("userId")
-	if channelID == "" || userID == "" {
+	scope := pluginScope(c)
+	if scope.ChannelID == "" || scope.MmUserID == "" {
 		response.SendError(c, models.ErrInvalidInput)
 		return
 	}
@@ -101,7 +116,7 @@ func (h *Handler) handlePluginGetTicket(c *gin.Context) {
 		return
 	}
 
-	detail, err := h.service.PluginGetTicket(c, channelID, userID, ticketID)
+	detail, err := h.service.PluginGetTicket(c, scope, ticketID)
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -148,8 +163,11 @@ func (h *Handler) handlePluginCreateTicket(c *gin.Context) {
 	}
 
 	input := &models.PluginCreateTicketInput{
-		ChannelID:   c.Request.FormValue("channelId"),
-		MmUserID:    c.Request.FormValue("userId"),
+		PluginScope: models.PluginScope{
+			ChannelID: c.Request.FormValue("channelId"),
+			MmUserID:  c.Request.FormValue("userId"),
+			BotUserID: c.Request.FormValue("botUserId"),
+		},
 		Title:       strings.TrimSpace(c.Request.FormValue("title")),
 		Description: strings.TrimSpace(c.Request.FormValue("description")),
 	}
@@ -218,6 +236,7 @@ func (h *Handler) handlePluginCreateTicket(c *gin.Context) {
 type pluginChangeStatusRequest struct {
 	ChannelID string `json:"channelId" binding:"required"`
 	UserID    string `json:"userId" binding:"required"`
+	BotUserID string `json:"botUserId"`
 	Status    string `json:"status" binding:"required"`
 }
 
@@ -230,7 +249,8 @@ func (h *Handler) handlePluginChangeStatus(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.PluginChangeStatus(c, req.ChannelID, req.UserID, c.Param("id"), req.Status); err != nil {
+	scope := models.PluginScope{ChannelID: req.ChannelID, MmUserID: req.UserID, BotUserID: req.BotUserID}
+	if err := h.service.PluginChangeStatus(c, scope, c.Param("id"), req.Status); err != nil {
 		response.SendError(c, err)
 		return
 	}
@@ -239,15 +259,14 @@ func (h *Handler) handlePluginChangeStatus(c *gin.Context) {
 }
 
 func (h *Handler) handlePluginGetComments(c *gin.Context) {
-	channelID := c.Query("channelId")
-	userID := c.Query("userId")
-	if channelID == "" || userID == "" {
+	scope := pluginScope(c)
+	if scope.ChannelID == "" || scope.MmUserID == "" {
 		response.SendError(c, models.ErrInvalidInput)
 		return
 	}
 	ticketID := c.Param("id")
 
-	comments, err := h.service.PluginGetComments(c, channelID, userID, ticketID)
+	comments, err := h.service.PluginGetComments(c, scope, ticketID)
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -270,10 +289,13 @@ func (h *Handler) handlePluginCreateComment(c *gin.Context) {
 	}
 
 	input := &models.PluginCreateCommentInput{
-		ChannelID: c.Request.FormValue("channelId"),
-		MmUserID:  c.Request.FormValue("userId"),
-		TicketID:  c.Param("id"),
-		Text:      strings.TrimSpace(c.Request.FormValue("text")),
+		PluginScope: models.PluginScope{
+			ChannelID: c.Request.FormValue("channelId"),
+			MmUserID:  c.Request.FormValue("userId"),
+			BotUserID: c.Request.FormValue("botUserId"),
+		},
+		TicketID: c.Param("id"),
+		Text:     strings.TrimSpace(c.Request.FormValue("text")),
 	}
 
 	if input.ChannelID == "" || input.MmUserID == "" {
@@ -316,14 +338,13 @@ func (h *Handler) handlePluginCreateComment(c *gin.Context) {
 }
 
 func (h *Handler) handlePluginAttachmentContent(c *gin.Context) {
-	channelID := c.Query("channelId")
-	userID := c.Query("userId")
-	if channelID == "" || userID == "" {
+	scope := pluginScope(c)
+	if scope.ChannelID == "" || scope.MmUserID == "" {
 		response.SendError(c, models.ErrInvalidInput)
 		return
 	}
 
-	att, reader, err := h.service.PluginGetAttachmentContent(c, channelID, userID, c.Param("id"))
+	att, reader, err := h.service.PluginGetAttachmentContent(c, scope, c.Param("id"))
 	if err != nil {
 		response.SendError(c, err)
 		return

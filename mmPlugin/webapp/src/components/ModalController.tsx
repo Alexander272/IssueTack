@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from 'react'
 
-import type { PluginContextResult } from '../types'
+import type { PluginContextResult, PluginScope } from '../types'
 import CreateTab from './CreateTab'
 import MyTicketsTab from './MyTicketsTab'
 import { CloseIcon } from './icons'
 
 interface ModalControllerProps {
-	channelId: string
-	userId: string
+	scope: PluginScope
 	context: PluginContextResult
 	onClose: () => void
 }
@@ -19,8 +18,13 @@ const TABS: { id: TabId; label: string }[] = [
 	{ id: 'mine', label: 'Мои заявки' },
 ]
 
-export default function ModalController({ channelId, userId, context, onClose }: ModalControllerProps) {
+export default function ModalController({ scope, context, onClose }: ModalControllerProps) {
 	const [tab, setTab] = useState<TabId>('create')
+	// Заявка, которую нужно открыть сразу после переключения на «Мои заявки»:
+	// её id приходит с экрана успеха CreateTab. Хранится здесь, а не в MyTicketsTab,
+	// чтобы источник открытия (создание или клик в списке) не зависел от внутреннего
+	// состояния вкладки.
+	const [pendingOpenId, setPendingOpenId] = useState<string | null>(null)
 
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
@@ -62,13 +66,20 @@ export default function ModalController({ channelId, userId, context, onClose }:
 				<div className='it-ticket-modal__body'>
 					{tab === 'create' ? (
 						<CreateTab
-							channelId={channelId}
-							userId={userId}
+							scope={scope}
 							context={context}
 							onCreated={() => setTab('mine')}
+							onOpen={id => {
+								setTab('mine')
+								setPendingOpenId(id)
+							}}
 						/>
 					) : (
-						<MyTicketsTab channelId={channelId} userId={userId} />
+						<MyTicketsTab
+							scope={scope}
+							pendingOpenId={pendingOpenId}
+							onPendingOpenHandled={() => setPendingOpenId(null)}
+						/>
 					)}
 				</div>
 			</div>

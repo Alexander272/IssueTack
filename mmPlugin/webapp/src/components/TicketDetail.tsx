@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 
 import { ApiError, attachmentUrl, getComments, getTicket, postComment, setTicketStatus } from '../api'
-import type { PluginComment, PluginCommentAttachment, PluginTicketDetail, PluginUserShort } from '../types'
+import type { PluginComment, PluginCommentAttachment, PluginScope, PluginTicketDetail, PluginUserShort } from '../types'
 import { formatBytes, formatDate, statusMeta } from '../labels'
 import { OpenExternalIcon, TrashIcon } from './icons'
 
@@ -16,8 +16,7 @@ function userName(u?: PluginUserShort): string {
 }
 
 interface TicketDetailProps {
-    channelId: string
-    userId: string
+    scope: PluginScope
     ticketId: string
     onBack: () => void
     onChanged: () => void
@@ -26,7 +25,7 @@ interface TicketDetailProps {
     backLabel?: string
 }
 
-export default function TicketDetail({ channelId, userId, ticketId, onBack, onChanged, backLabel }: TicketDetailProps) {
+export default function TicketDetail({ scope, ticketId, onBack, onChanged, backLabel }: TicketDetailProps) {
     const [detail, setDetail] = useState<PluginTicketDetail | null>(null)
     const [detailError, setDetailError] = useState<string | null>(null)
 
@@ -51,7 +50,7 @@ export default function TicketDetail({ channelId, userId, ticketId, onBack, onCh
         const reqId = ++commentReqRef.current
         setComments(null)
         setCommentsError(null)
-        getComments(channelId, userId, ticketId)
+        getComments(scope, ticketId)
             .then(list => {
                 if (reqId === commentReqRef.current) {
                     setComments(list || [])
@@ -62,13 +61,13 @@ export default function TicketDetail({ channelId, userId, ticketId, onBack, onCh
                     setCommentsError(err instanceof ApiError ? err.message : 'Не удалось загрузить комментарии')
                 }
             })
-    }, [channelId, userId, ticketId])
+    }, [scope, ticketId])
 
     useEffect(() => {
         const reqId = ++detailReqRef.current
         setDetail(null)
         setDetailError(null)
-        getTicket(channelId, userId, ticketId)
+        getTicket(scope, ticketId)
             .then(d => {
                 if (reqId === detailReqRef.current) {
                     setDetail(d)
@@ -80,7 +79,7 @@ export default function TicketDetail({ channelId, userId, ticketId, onBack, onCh
                 }
             })
         loadComments()
-    }, [channelId, userId, ticketId, loadComments])
+    }, [scope, ticketId, loadComments])
 
     // Смена статуса из плагина (действия владельца). При «Вернуть в работу»
     // (resolved → in_progress) сначала меняем статус и только потом постим
@@ -90,7 +89,7 @@ export default function TicketDetail({ channelId, userId, ticketId, onBack, onCh
             setChangingStatus(true)
             setStatusError(null)
             try {
-                await setTicketStatus(channelId, userId, ticketId, status)
+                await setTicketStatus(scope, ticketId, status)
             } catch (err) {
                 setStatusError(err instanceof ApiError ? err.message : 'Не удалось изменить статус')
                 setChangingStatus(false)
@@ -98,7 +97,7 @@ export default function TicketDetail({ channelId, userId, ticketId, onBack, onCh
             }
             if (reason) {
                 try {
-                    await postComment(channelId, userId, ticketId, reason, [])
+                    await postComment(scope, ticketId, reason, [])
                 } catch (err) {
                     setStatusError(
                         err instanceof ApiError ? err.message : 'Статус изменён, но причину не удалось отправить',
@@ -107,14 +106,14 @@ export default function TicketDetail({ channelId, userId, ticketId, onBack, onCh
             }
             setReasonOpen(false)
             setReasonText('')
-            getTicket(channelId, userId, ticketId)
+            getTicket(scope, ticketId)
                 .then(d => setDetail(d))
                 .catch(() => undefined)
             loadComments()
             onChanged()
             setChangingStatus(false)
         },
-        [channelId, userId, ticketId, loadComments, onChanged],
+        [scope, ticketId, loadComments, onChanged],
     )
 
     const sendComment = useCallback(() => {
@@ -123,7 +122,7 @@ export default function TicketDetail({ channelId, userId, ticketId, onBack, onCh
         }
         setSending(true)
         setSendError(null)
-        postComment(channelId, userId, ticketId, commentText, commentFiles)
+        postComment(scope, ticketId, commentText, commentFiles)
             .then(() => {
                 setCommentText('')
                 setCommentFiles([])
@@ -136,7 +135,7 @@ export default function TicketDetail({ channelId, userId, ticketId, onBack, onCh
                 setSendError(err instanceof ApiError ? err.message : 'Не удалось отправить комментарий'),
             )
             .finally(() => setSending(false))
-    }, [channelId, userId, ticketId, commentText, commentFiles, loadComments])
+    }, [scope, ticketId, commentText, commentFiles, loadComments])
 
     const onPickFiles = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         const picked = Array.from(e.target.files || [])
@@ -287,7 +286,7 @@ export default function TicketDetail({ channelId, userId, ticketId, onBack, onCh
                                 <li key={att.id} className='it-attachment'>
                                     <a
                                         className='it-attachment__link'
-                                        href={attachmentUrl(channelId, userId, att.id)}
+                                        href={attachmentUrl(scope, att.id)}
                                         target='_blank'
                                         rel='noreferrer'
                                     >
@@ -324,7 +323,7 @@ export default function TicketDetail({ channelId, userId, ticketId, onBack, onCh
                                             <a
                                                 key={att.id}
                                                 className='it-attachment__link it-attachment__link--inline'
-                                                href={attachmentUrl(channelId, userId, att.id)}
+                                                href={attachmentUrl(scope, att.id)}
                                                 target='_blank'
                                                 rel='noreferrer'
                                             >

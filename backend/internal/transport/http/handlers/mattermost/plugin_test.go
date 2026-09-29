@@ -133,8 +133,8 @@ func (s stubCreateMattermost) PluginCreateTicket(context.Context, *models.Plugin
 }
 
 // TestPluginCreateTicketReturnsDeepLink защищает от регрессии, при которой хендлер
-// собирает ответ вручную через gin.H и теряет deepLink: без него подтверждение о
-// создании заявки в Mattermost не содержит ссылки «Открыть в плагине».
+// собирает ответ вручную через gin.H и теряет deepLink: без него webapp-плагин
+// не получает site-relative ссылку на заявку внутри Mattermost.
 func TestPluginCreateTicketReturnsDeepLink(t *testing.T) {
 	ticketID := uuid.MustParse("b80349e7-9344-4217-8548-2860e381f2fd")
 	deepLink := models.PluginRoutePrefix + "/ticket/" + ticketID.String()
@@ -176,4 +176,39 @@ func TestPluginCreateTicketReturnsDeepLink(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.NotEmpty(t, resp.Data.Link)
 	assert.Equal(t, deepLink, resp.Data.DeepLink)
+}
+
+// stubScopeMattermost захватывает scope, дошедший до сервиса, — так проверяется
+// проброс botUserId из личного диалога.
+type stubScopeMattermost struct {
+	services.Mattermost
+	got models.PluginScope
+}
+
+func (s *stubScopeMattermost) PluginContext(_ context.Context, scope models.PluginScope) (*models.PluginContextResult, error) {
+	s.got = scope
+	return &models.PluginContextResult{Bound: false}, nil
+}
+
+// TestPluginContextPassesBotUserID проверяет, что хендлер /plugin/context
+// доносит botUserId собеседника: по нему сервис определяет реалм для личного
+// диалога, который не привязан к каналу.
+func TestPluginContextPassesBotUserID(t *testing.T) {
+	engine := gin.New()
+	stub := &stubScopeMattermost{}
+	h := &Handler{service: stub}
+	h.registerPluginRoutes(engine.Group("/api/v1"), config.MattermostConfig{
+		PluginToken:      "secret",
+		AllowedServerIPs: []string{"192.0.2.0/24"},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/plugin/context",
+		strings.NewReader(`{"channelId":"dm1","userId":"u1","botUserId":"bot1"}`))
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, models.PluginScope{ChannelID: "dm1", MmUserID: "u1", BotUserID: "bot1"}, stub.got)
 }

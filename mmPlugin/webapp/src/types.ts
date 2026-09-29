@@ -30,6 +30,16 @@ export interface PluginSite {
     updatedAt: string;
 }
 
+// PluginScope — контекст вызова плагина: канал и Mattermost-пользователь.
+// botUserId заполняется только для личного диалога с ботом реалма: такие каналы
+// не привязаны к реалму, и сервер определяет его по собеседнику (проверяя состав
+// участников канала).
+export interface PluginScope {
+    channelId: string;
+    userId: string;
+    botUserId?: string;
+}
+
 export interface PluginContextResult {
     bound: boolean;
     realmId: string;

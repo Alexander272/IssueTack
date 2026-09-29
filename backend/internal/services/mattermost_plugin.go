@@ -39,16 +39,77 @@ func (s *MattermostService) pluginAttachmentDTO(a *models.Attachment) *models.Pl
 	}
 }
 
+// resolvePluginSettings определяет настройки интеграции Mattermost по контексту
+// запроса плагина. Обычный канал ищется по привязке channel_id, а личный диалог
+// с ботом (scope.BotUserID) — по боту реалма, с которым переписывается
+// пользователь: такие каналы привязки не имеют. Для диалога дополнительно
+// проверяется состав участников, т.к. BotUserID приходит от клиента.
+// Положительный результат кэшируется на минуту, чтобы шапка канала не била в
+// БД и Mattermost API при каждом запросе.
+func (s *MattermostService) resolvePluginSettings(ctx context.Context, scope models.PluginScope) (*models.RealmMattermost, error) {
+	cacheKey := pluginScopeCacheKey(scope)
+	if settings, ok := s.pluginCache.getSettings(cacheKey); ok {
+		return settings, nil
+	}
+	settings, err := s.resolvePluginSettingsUncached(ctx, scope)
+	if err != nil {
+		return nil, err
+	}
+	s.pluginCache.setSettings(cacheKey, settings)
+	return settings, nil
+}
+
+func (s *MattermostService) resolvePluginSettingsUncached(ctx context.Context, scope models.PluginScope) (*models.RealmMattermost, error) {
+	if scope.ChannelID != "" {
+		if settings, err := s.repo.GetByChannelID(ctx, scope.ChannelID); err == nil {
+			if !settings.IsActive {
+				return nil, models.ErrChannelNotBound
+			}
+			return settings, nil
+		}
+	}
+	if scope.BotUserID != "" {
+		settings, err := s.repo.GetByBotUserID(ctx, scope.BotUserID)
+		if err != nil {
+			return nil, models.ErrChannelNotBound
+		}
+		if !settings.IsActive {
+			return nil, models.ErrChannelNotBound
+		}
+		if err := s.verifyDMScope(ctx, settings, scope); err != nil {
+			return nil, err
+		}
+		return settings, nil
+	}
+	return nil, models.ErrChannelNotBound
+}
+
+// verifyDMScope подтверждает, что канал из scope — именно личный диалог бота
+// реалма с заявителем: в нём состоят ровно эти двое. Проверка защищает от
+// подстановки чужого botUserId или userId в запрос плагина.
+func (s *MattermostService) verifyDMScope(ctx context.Context, settings *models.RealmMattermost, scope models.PluginScope) error {
+	if s.most == nil || s.most.Client == nil {
+		return models.ErrChannelNotBound
+	}
+	members, err := s.most.Client.GetChannelMemberIDs(settings.BotToken, scope.ChannelID, settings.BotUserID, scope.MmUserID)
+	if err != nil {
+		logger.Warn("failed to verify plugin dm scope", logger.ErrAttr(err))
+		return models.ErrChannelNotBound
+	}
+	if len(members) != 2 {
+		return models.ErrChannelNotBound
+	}
+	return nil
+}
+
 // PluginGetTicket возвращает заявку по ID с проверкой права чтения.
 // Пользователь, не имеющий доступа к заявке, получает ErrPermissionDenied.
-func (s *MattermostService) PluginGetTicket(ctx context.Context, channelID, mmUserID, ticketID string) (*models.PluginTicketDetail, error) {
-	settings, err := s.repo.GetByChannelID(ctx, channelID)
+func (s *MattermostService) PluginGetTicket(ctx context.Context, scope models.PluginScope, ticketID string) (*models.PluginTicketDetail, error) {
+	settings, err := s.resolvePluginSettings(ctx, scope)
 	if err != nil {
-		return nil, models.ErrChannelNotBound
+		return nil, err
 	}
-	if !settings.IsActive {
-		return nil, models.ErrChannelNotBound
-	}
+	mmUserID := scope.MmUserID
 
 	id, err := uuid.Parse(ticketID)
 	if err != nil {
@@ -129,7 +190,10 @@ func (s *MattermostService) PluginGetTicketLinkContext(ctx context.Context, mmUs
 		return nil, models.ErrChannelNotBound
 	}
 
-	detail, err := s.PluginGetTicket(ctx, settings.ChannelID, mmUserID, ticketID)
+	detail, err := s.PluginGetTicket(ctx, models.PluginScope{
+		ChannelID: settings.ChannelID,
+		MmUserID:  mmUserID,
+	}, ticketID)
 	if err != nil {
 		return nil, err
 	}
@@ -146,14 +210,12 @@ func (s *MattermostService) PluginGetTicketLinkContext(ctx context.Context, mmUs
 // Все правила перехода и прав доступа (canChangeStatus / ownerTransitionAllowed,
 // терминальные статусы, закрытие только из resolved и т.д.) применяет
 // TicketService.Update.
-func (s *MattermostService) PluginChangeStatus(ctx context.Context, channelID, mmUserID, ticketID, status string) error {
-	settings, err := s.repo.GetByChannelID(ctx, channelID)
+func (s *MattermostService) PluginChangeStatus(ctx context.Context, scope models.PluginScope, ticketID, status string) error {
+	settings, err := s.resolvePluginSettings(ctx, scope)
 	if err != nil {
-		return models.ErrChannelNotBound
+		return err
 	}
-	if !settings.IsActive {
-		return models.ErrChannelNotBound
-	}
+	mmUserID := scope.MmUserID
 
 	id, err := uuid.Parse(ticketID)
 	if err != nil {
@@ -183,14 +245,12 @@ func (s *MattermostService) PluginChangeStatus(ctx context.Context, channelID, m
 
 // PluginGetComments возвращает общедоступные комментарии заявки (в порядке
 // создания — как диалог). Внутренние комментарии плагину не отдаются.
-func (s *MattermostService) PluginGetComments(ctx context.Context, channelID, mmUserID, ticketID string) ([]models.PluginComment, error) {
-	settings, err := s.repo.GetByChannelID(ctx, channelID)
+func (s *MattermostService) PluginGetComments(ctx context.Context, scope models.PluginScope, ticketID string) ([]models.PluginComment, error) {
+	settings, err := s.resolvePluginSettings(ctx, scope)
 	if err != nil {
-		return nil, models.ErrChannelNotBound
+		return nil, err
 	}
-	if !settings.IsActive {
-		return nil, models.ErrChannelNotBound
-	}
+	mmUserID := scope.MmUserID
 
 	id, err := uuid.Parse(ticketID)
 	if err != nil {
@@ -241,12 +301,9 @@ func (s *MattermostService) PluginGetComments(ctx context.Context, channelID, mm
 // work-доступа и файлы — через CommentService.Create, атомарно). Требуется
 // текст или хотя бы один файл.
 func (s *MattermostService) PluginCreateComment(ctx context.Context, input *models.PluginCreateCommentInput) (*models.PluginComment, error) {
-	settings, err := s.repo.GetByChannelID(ctx, input.ChannelID)
+	settings, err := s.resolvePluginSettings(ctx, input.PluginScope)
 	if err != nil {
-		return nil, models.ErrChannelNotBound
-	}
-	if !settings.IsActive {
-		return nil, models.ErrChannelNotBound
+		return nil, err
 	}
 
 	ticketID, err := uuid.Parse(input.TicketID)
@@ -302,14 +359,12 @@ func (s *MattermostService) PluginCreateComment(ctx context.Context, input *mode
 
 // PluginGetAttachmentContent возвращает вложение заявки и поток его файла
 // (доступ проверяется внутри AttachmentService.GetContent).
-func (s *MattermostService) PluginGetAttachmentContent(ctx context.Context, channelID, mmUserID, attachmentID string) (*models.Attachment, io.ReadCloser, error) {
-	settings, err := s.repo.GetByChannelID(ctx, channelID)
+func (s *MattermostService) PluginGetAttachmentContent(ctx context.Context, scope models.PluginScope, attachmentID string) (*models.Attachment, io.ReadCloser, error) {
+	settings, err := s.resolvePluginSettings(ctx, scope)
 	if err != nil {
-		return nil, nil, models.ErrChannelNotBound
+		return nil, nil, err
 	}
-	if !settings.IsActive {
-		return nil, nil, models.ErrChannelNotBound
-	}
+	mmUserID := scope.MmUserID
 
 	id, err := uuid.Parse(attachmentID)
 	if err != nil {
@@ -324,35 +379,23 @@ func (s *MattermostService) PluginGetAttachmentContent(ctx context.Context, chan
 	return s.attachments.GetContent(ctx, id, user.ID, settings.RealmID.String())
 }
 
-// PluginContext возвращает контекст канала плагина: реалм по каналу,
-// справочники и пользователя (с автосозданием при первом обращении).
-// Канал, не привязанный ни к одному реалму (или с неактивной привязкой), —
-// не ошибка: возвращается ответ с Bound=false, чтобы webapp просто скрыл иконку.
-func (s *MattermostService) PluginContext(ctx context.Context, channelID, mmUserID string) (*models.PluginContextResult, error) {
-	settings, err := s.repo.GetByChannelID(ctx, channelID)
+// PluginContext возвращает контекст канала плагина: реалм (по привязке канала
+// либо по боту личного диалога), справочники и пользователя (с автосозданием
+// при первом обращении). Канал, не привязанный ни к одному реалму (или с
+// неактивной привязкой), — не ошибка: возвращается ответ с Bound=false, чтобы
+// webapp просто скрыл иконку.
+func (s *MattermostService) PluginContext(ctx context.Context, scope models.PluginScope) (*models.PluginContextResult, error) {
+	settings, err := s.resolvePluginSettings(ctx, scope)
 	if err != nil {
 		return &models.PluginContextResult{Bound: false}, nil
 	}
-	if !settings.IsActive {
-		return &models.PluginContextResult{Bound: false}, nil
-	}
 
-	realm, err := s.realms.GetByID(ctx, &models.GetRealmByIdDTO{ID: settings.RealmID})
+	realmName, categories, sites, err := s.pluginRealmData(ctx, settings.RealmID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get realm: %w", err)
+		return nil, err
 	}
 
-	categories, err := s.categories.Get(ctx, &models.GetCategoriesDTO{RealmID: settings.RealmID})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get categories: %w", err)
-	}
-
-	sites, err := s.sites.Get(ctx, &models.GetSitesDTO{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get sites: %w", err)
-	}
-
-	user, err := s.resolveOrCreateUser(ctx, settings.RealmID, mmUserID, nil)
+	user, err := s.resolveOrCreateUser(ctx, settings.RealmID, scope.MmUserID, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve user: %w", err)
 	}
@@ -360,23 +403,47 @@ func (s *MattermostService) PluginContext(ctx context.Context, channelID, mmUser
 	return &models.PluginContextResult{
 		Bound:      true,
 		RealmID:    settings.RealmID,
-		RealmName:  realm.Name,
+		RealmName:  realmName,
 		User:       models.PluginUser{ID: user.ID, Username: user.Username, SiteID: user.SiteID},
 		Categories: categories,
 		Sites:      sites,
 	}, nil
 }
 
+// pluginRealmData отдаёт название реалма и его общие справочники (категории,
+// площадки). Они одинаковы для всех пользователей реалма, поэтому кэшируются,
+// чтобы всплеск /plugin/context не перечитывал их из БД на каждый запрос.
+func (s *MattermostService) pluginRealmData(ctx context.Context, realmID uuid.UUID) (string, []*models.Category, []*models.Site, error) {
+	if ent, ok := s.pluginCache.getRealm(realmID); ok {
+		return ent.realmName, ent.categories, ent.sites, nil
+	}
+
+	realm, err := s.realms.GetByID(ctx, &models.GetRealmByIdDTO{ID: realmID})
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("failed to get realm: %w", err)
+	}
+
+	categories, err := s.categories.Get(ctx, &models.GetCategoriesDTO{RealmID: realmID})
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("failed to get categories: %w", err)
+	}
+
+	sites, err := s.sites.Get(ctx, &models.GetSitesDTO{})
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("failed to get sites: %w", err)
+	}
+
+	s.pluginCache.setRealm(realmID, realm.Name, categories, sites)
+	return realm.Name, categories, sites, nil
+}
+
 // PluginCreateTicket создаёт заявку из формы плагина (аналог
 // HandleDialogSubmission) и прикрепляет загруженные файлы. Возвращает результат
 // с ID, номером и ссылкой на страницу заявки.
 func (s *MattermostService) PluginCreateTicket(ctx context.Context, input *models.PluginCreateTicketInput) (*models.PluginCreateTicketResult, error) {
-	settings, err := s.repo.GetByChannelID(ctx, input.ChannelID)
+	settings, err := s.resolvePluginSettings(ctx, input.PluginScope)
 	if err != nil {
-		return nil, models.ErrChannelNotBound
-	}
-	if !settings.IsActive {
-		return nil, models.ErrChannelNotBound
+		return nil, err
 	}
 
 	var siteID *uuid.UUID
@@ -482,14 +549,12 @@ func (s *MattermostService) PluginCreateTicket(ctx context.Context, input *model
 
 // PluginListMine возвращает активные заявки пользователя в реалме канала —
 // созданные им и ещё не завершённые (open/in_progress/pending/on_hold).
-func (s *MattermostService) PluginListMine(ctx context.Context, channelID, mmUserID string) ([]models.PluginTicketShort, error) {
-	settings, err := s.repo.GetByChannelID(ctx, channelID)
+func (s *MattermostService) PluginListMine(ctx context.Context, scope models.PluginScope) ([]models.PluginTicketShort, error) {
+	settings, err := s.resolvePluginSettings(ctx, scope)
 	if err != nil {
-		return nil, models.ErrChannelNotBound
+		return nil, err
 	}
-	if !settings.IsActive {
-		return nil, models.ErrChannelNotBound
-	}
+	mmUserID := scope.MmUserID
 
 	user, err := s.resolveOrCreateUser(ctx, settings.RealmID, mmUserID, nil)
 	if err != nil {

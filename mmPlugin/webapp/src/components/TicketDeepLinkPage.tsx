@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { ApiError, getCurrentUserId, getTicketLinkContext, subscribeCurrentUser } from '../api'
+import type { PluginScope } from '../types'
 import TicketDetail from './TicketDetail'
 
 // TicketDeepLinkPage — страница заявки, открытая по ссылке
@@ -41,6 +42,10 @@ export default function TicketDeepLinkPage() {
     const [ticketId] = useState<string | null>(() => readTicketIdFromPath())
     const [userId, setUserId] = useState<string | null>(() => getCurrentUserId())
     const [channelId, setChannelId] = useState<string | null>(null)
+    // Страница открыта вне канала, поэтому бота диалога здесь нет: scope
+    // строится только из канала реалма и текущего пользователя. Мемоизируется,
+    // иначе новый объект на каждом рендере перезапускал бы загрузку заявки.
+    const scope = useMemo<PluginScope | null>(() => (channelId && userId ? { channelId, userId } : null), [channelId, userId])
     const [error, setError] = useState<string | null>(null)
     const [loading, setLoading] = useState(true)
 
@@ -126,12 +131,11 @@ export default function TicketDeepLinkPage() {
                 </>
             ) : null}
 
-            {loading && !channelId && !error ? <div className='it-ticket-detail__loading'>Загрузка…</div> : null}
+            {loading && !scope && !error ? <div className='it-ticket-detail__loading'>Загрузка…</div> : null}
 
-            {channelId && ticketId ? (
+            {scope && ticketId ? (
                 <TicketDetail
-                    channelId={channelId}
-                    userId={userId}
+                    scope={scope}
                     ticketId={ticketId}
                     onBack={handleBack}
                     onChanged={handleChanged}

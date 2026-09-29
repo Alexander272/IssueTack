@@ -424,6 +424,16 @@
     font-weight: 600;
 }
 
+.it-ticket-success__link {
+    color: var(--button-bg, #166de0);
+    font-size: 12px;
+    text-decoration: none;
+}
+
+.it-ticket-success__link:hover {
+    text-decoration: underline;
+}
+
 .it-ticket-success__actions {
     display: flex;
     gap: 10px;

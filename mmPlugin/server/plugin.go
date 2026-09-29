@@ -2,14 +2,12 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/mattermost/mattermost/server/public/model"
 	"github.com/mattermost/mattermost/server/public/plugin"
 )
 
@@ -21,7 +19,7 @@ const (
 	// contextNegCacheTTL — срок жизни негативного ответа /context (канал не
 	// привязан к реалму). Кэш общий на весь плагин, поэтому N пользователей
 	// одного непривязанного канала = 1 запрос на бэкенд за TTL.
-	contextNegCacheTTL = 60 * time.Second
+	contextNegCacheTTL = 5 * time.Minute
 )
 
 // configuration — настройки плагина (задаются в System Console).
@@ -39,7 +37,7 @@ type contextNegEntry struct {
 }
 
 // Plugin — серверная часть MM-плагина: прозрачный прокси в бэкенд IssueTrack
-// с сервисным токеном и эфемерным подтверждением создания заявки.
+// с сервисным токеном и негативным кэшем ответов /context.
 type Plugin struct {
 	plugin.MattermostPlugin
 
@@ -84,8 +82,7 @@ func (p *Plugin) config() *configuration {
 
 // ServeHTTP проксирует /api/* в бэкенд: /api/tickets → {backend}/api/v1/plugin/tickets.
 // Тело передаётся как есть (multipart поддерживается), добавляется заголовок
-// Authorization: Bearer <api_token>. После успешного создания заявки отправляет
-// пользователю эфемерный пост-подтверждение.
+// Authorization: Bearer <api_token>.
 func (p *Plugin) ServeHTTP(_ *plugin.Context, w http.ResponseWriter, r *http.Request) {
 	cfg := p.config()
 
@@ -155,15 +152,6 @@ func (p *Plugin) ServeHTTP(_ *plugin.Context, w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	if r.Method == http.MethodPost && rel == "/tickets" && resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		body, readErr := io.ReadAll(resp.Body)
-		if readErr == nil {
-			p.ephemeralCreateConfirmation(r, body)
-		}
-		_, _ = w.Write(body)
-		return
-	}
-
 	_, _ = io.Copy(w, resp.Body)
 }
 
@@ -217,46 +205,6 @@ func (p *Plugin) isUnboundContext(body []byte) bool {
 		return false
 	}
 	return res.Data.Bound != nil && !*res.Data.Bound
-}
-
-// ephemeralCreateConfirmation читает ответ создания заявки и шлёт эфемерный пост
-// автору в текущий канал. userId/channelId передаются webapp-плагином в query,
-// т.к. серверная часть не может получить их из тела запроса.
-func (p *Plugin) ephemeralCreateConfirmation(r *http.Request, body []byte) {
-	userID := r.URL.Query().Get("userId")
-	channelID := r.URL.Query().Get("channelId")
-	if userID == "" || channelID == "" {
-		return
-	}
-
-	var res struct {
-		Data struct {
-			ID       string `json:"id"`
-			Number   int    `json:"number"`
-			Title    string `json:"title"`
-			Link     string `json:"link"`
-			DeepLink string `json:"deepLink"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(body, &res); err != nil || res.Data.ID == "" {
-		return
-	}
-
-	msg := fmt.Sprintf("Заявка №%d создана.\n**Заголовок:** %s", res.Data.Number, res.Data.Title)
-	if res.Data.Link != "" {
-		msg += "\nОткрыть в веб-приложении: " + res.Data.Link
-	}
-	// Вторая ссылка открывает заявку внутри Mattermost (маршрут плагина).
-	// Путь приходит с бэкенда, здесь не хардкодится.
-	if res.Data.DeepLink != "" {
-		msg += "\nОткрыть в плагине: " + res.Data.DeepLink
-	}
-
-	post := &model.Post{ChannelId: channelID, Message: msg}
-	// SendEphemeralPost возвращает nil при ошибке отправки.
-	if p.API.SendEphemeralPost(userID, post) == nil {
-		p.API.LogError("failed to send ephemeral create confirmation", "user_id", userID)
-	}
 }
 
 // stripHopByHopHeaders удаляет hop-by-hop заголовки, Content-Length и

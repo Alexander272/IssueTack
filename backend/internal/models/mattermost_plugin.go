@@ -27,6 +27,20 @@ type PluginContextResult struct {
 	Sites      []*Site     `json:"sites"`
 }
 
+// PluginScope — контекст запроса webapp-плагина, из которого определяется
+// реалм. ChannelID — канал, в котором открыт плагин, MmUserID — Mattermost-
+// пользователь, инициировавший запрос.
+//
+// BotUserID заполняется только для личного диалога с ботом (channel.type == "D"):
+// такие каналы не привязаны к реалму, поэтому реалм определяется по боту, с
+// которым переписывается пользователь. Значение приходит от клиента, поэтому
+// дополнительно проверяется, что в канале состоят ровно этот бот и MmUserID.
+type PluginScope struct {
+	ChannelID string
+	BotUserID string
+	MmUserID  string
+}
+
 // PluginUser — краткое представление системного пользователя для плагина.
 type PluginUser struct {
 	ID       uuid.UUID `json:"id"`
@@ -54,8 +68,7 @@ type PluginTicketLinkContext struct {
 // PluginCreateTicketInput — данные для создания заявки из плагина MM.
 // CategoryID/SiteID равны uuid.Nil, если не выбраны.
 type PluginCreateTicketInput struct {
-	ChannelID   string
-	MmUserID    string
+	PluginScope
 	Title       string
 	Description string
 	CategoryID  uuid.UUID
@@ -147,9 +160,8 @@ type PluginCommentAttachment struct {
 
 // PluginCreateCommentInput — входящие данные комментария из плагина.
 type PluginCreateCommentInput struct {
-	ChannelID string
-	MmUserID  string
-	TicketID  string
-	Text      string
-	Files     []PluginFile
+	PluginScope
+	TicketID string
+	Text     string
+	Files    []PluginFile
 }

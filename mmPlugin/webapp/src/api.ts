@@ -3,6 +3,7 @@ import type {
     PluginComment,
     PluginContextResult,
     PluginCreateResult,
+    PluginScope,
     PluginStore,
     PluginTicketDetail,
     PluginTicketLinkContext,
@@ -108,47 +109,71 @@ export interface CreateTicketPayload {
     files: File[];
 }
 
-const contextCache = new Map<string, {userId: string; ts: number; data: PluginContextResult}>();
+const contextCache = new Map<string, {scope: PluginScope; ts: number; data: PluginContextResult}>();
+// contextInflight дедуплицирует параллельные запросы /context одного канала:
+// шапка канала может ре-рендериться несколько раз, пока ответ ещё в пути.
+const contextInflight = new Map<string, Promise<PluginContextResult>>();
 const CONTEXT_TTL_MS = 5 * 60 * 1000;
 
-export function getCachedContext(channelId: string | null, userId: string | null): PluginContextResult | null {
-    if (!channelId || !userId) {
+// scopeQuery собирает query-параметры scope. botUserId уходит только для личного
+// диалога — на привязанных каналах сервер решает по channelId.
+function scopeQuery(scope: PluginScope): URLSearchParams {
+    const qs = new URLSearchParams({channelId: scope.channelId, userId: scope.userId});
+    if (scope.botUserId) {
+        qs.set('botUserId', scope.botUserId);
+    }
+    return qs;
+}
+
+export function getCachedContext(scope: PluginScope | null): PluginContextResult | null {
+    if (!scope || !scope.channelId || !scope.userId) {
         return null;
     }
-    const cached = contextCache.get(channelId);
-    if (cached && cached.userId === userId && Date.now() - cached.ts < CONTEXT_TTL_MS) {
+    const cached = contextCache.get(scope.channelId);
+    if (cached && cached.scope.userId === scope.userId && Date.now() - cached.ts < CONTEXT_TTL_MS) {
         return cached.data;
     }
     return null;
 }
 
-export async function getContext(channelId: string, userId: string): Promise<PluginContextResult> {
-    const cached = getCachedContext(channelId, userId);
+export async function getContext(scope: PluginScope): Promise<PluginContextResult> {
+    const cached = getCachedContext(scope);
     if (cached) {
         return cached;
     }
-    const data = await request<PluginContextResult>(`/plugins/issuetrack/api/context?${new URLSearchParams({channelId, userId})}`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({channelId, userId}),
-    });
-    contextCache.set(channelId, {userId, ts: Date.now(), data});
-    return data;
+    const inflight = contextInflight.get(scope.channelId);
+    if (inflight) {
+        return inflight;
+    }
+    const pending = (async () => {
+        const qs = scopeQuery(scope);
+        const data = await request<PluginContextResult>(`/plugins/issuetrack/api/context?${qs.toString()}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({channelId: scope.channelId, userId: scope.userId, botUserId: scope.botUserId || ''}),
+        });
+        contextCache.set(scope.channelId, {scope, ts: Date.now(), data});
+        return data;
+    })();
+    contextInflight.set(scope.channelId, pending);
+    try {
+        return await pending;
+    } finally {
+        contextInflight.delete(scope.channelId);
+    }
 }
 
-export async function getContextFresh(channelId: string, userId: string): Promise<PluginContextResult> {
-    contextCache.delete(channelId);
-    return getContext(channelId, userId);
+export async function getContextFresh(scope: PluginScope): Promise<PluginContextResult> {
+    contextCache.delete(scope.channelId);
+    return getContext(scope);
 }
 
-export async function getMyTickets(channelId: string, userId: string): Promise<PluginTicketShort[]> {
-    const qs = new URLSearchParams({channelId, userId});
-    return request<PluginTicketShort[]>(`/plugins/issuetrack/api/tickets?${qs.toString()}`);
+export async function getMyTickets(scope: PluginScope): Promise<PluginTicketShort[]> {
+    return request<PluginTicketShort[]>(`/plugins/issuetrack/api/tickets?${scopeQuery(scope).toString()}`);
 }
 
-export async function getTicket(channelId: string, userId: string, ticketId: string): Promise<PluginTicketDetail> {
-    const qs = new URLSearchParams({channelId, userId});
-    return request<PluginTicketDetail>(`/plugins/issuetrack/api/tickets/${encodeURIComponent(ticketId)}?${qs.toString()}`);
+export async function getTicket(scope: PluginScope, ticketId: string): Promise<PluginTicketDetail> {
+    return request<PluginTicketDetail>(`/plugins/issuetrack/api/tickets/${encodeURIComponent(ticketId)}?${scopeQuery(scope).toString()}`);
 }
 
 // getTicketLinkContext загружает заявку для страницы, открытой по deep-link
@@ -160,23 +185,25 @@ export async function getTicketLinkContext(userId: string, ticketId: string): Pr
     return request<PluginTicketLinkContext>(`/plugins/issuetrack/api/tickets/${encodeURIComponent(ticketId)}/link-context?${qs.toString()}`);
 }
 
-export async function setTicketStatus(channelId: string, userId: string, ticketId: string, status: string): Promise<void> {
+export async function setTicketStatus(scope: PluginScope, ticketId: string, status: string): Promise<void> {
     await request(`/plugins/issuetrack/api/tickets/${encodeURIComponent(ticketId)}/status`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({channelId, userId, status}),
+        body: JSON.stringify({channelId: scope.channelId, userId: scope.userId, botUserId: scope.botUserId || '', status}),
     });
 }
 
-export async function getComments(channelId: string, userId: string, ticketId: string): Promise<PluginComment[]> {
-    const qs = new URLSearchParams({channelId, userId});
-    return request<PluginComment[]>(`/plugins/issuetrack/api/tickets/${encodeURIComponent(ticketId)}/comments?${qs.toString()}`);
+export async function getComments(scope: PluginScope, ticketId: string): Promise<PluginComment[]> {
+    return request<PluginComment[]>(`/plugins/issuetrack/api/tickets/${encodeURIComponent(ticketId)}/comments?${scopeQuery(scope).toString()}`);
 }
 
-export async function postComment(channelId: string, userId: string, ticketId: string, text: string, files: File[]): Promise<PluginComment> {
+export async function postComment(scope: PluginScope, ticketId: string, text: string, files: File[]): Promise<PluginComment> {
     const fd = new FormData();
-    fd.append('channelId', channelId);
-    fd.append('userId', userId);
+    fd.append('channelId', scope.channelId);
+    fd.append('userId', scope.userId);
+    if (scope.botUserId) {
+        fd.append('botUserId', scope.botUserId);
+    }
     fd.append('text', text);
     for (const file of files || []) {
         fd.append('files', file);
@@ -184,15 +211,17 @@ export async function postComment(channelId: string, userId: string, ticketId: s
     return request<PluginComment>(`/plugins/issuetrack/api/tickets/${encodeURIComponent(ticketId)}/comments`, {method: 'POST', body: fd});
 }
 
-export function attachmentUrl(channelId: string, userId: string, attachmentId: string): string {
-    const qs = new URLSearchParams({channelId, userId});
-    return `/plugins/issuetrack/api/attachments/${encodeURIComponent(attachmentId)}?${qs.toString()}`;
+export function attachmentUrl(scope: PluginScope, attachmentId: string): string {
+    return `/plugins/issuetrack/api/attachments/${encodeURIComponent(attachmentId)}?${scopeQuery(scope).toString()}`;
 }
 
-export async function createTicket(channelId: string, userId: string, payload: CreateTicketPayload): Promise<PluginCreateResult> {
+export async function createTicket(scope: PluginScope, payload: CreateTicketPayload): Promise<PluginCreateResult> {
     const fd = new FormData();
-    fd.append('channelId', channelId);
-    fd.append('userId', userId);
+    fd.append('channelId', scope.channelId);
+    fd.append('userId', scope.userId);
+    if (scope.botUserId) {
+        fd.append('botUserId', scope.botUserId);
+    }
     fd.append('title', payload.title);
     if (payload.description) {
         fd.append('description', payload.description);
@@ -206,6 +235,5 @@ export async function createTicket(channelId: string, userId: string, payload: C
     for (const file of payload.files || []) {
         fd.append('files', file);
     }
-    const qs = new URLSearchParams({channelId, userId});
-    return request<PluginCreateResult>(`/plugins/issuetrack/api/tickets?${qs.toString()}`, {method: 'POST', body: fd});
+    return request<PluginCreateResult>(`/plugins/issuetrack/api/tickets?${scopeQuery(scope).toString()}`, {method: 'POST', body: fd});
 }

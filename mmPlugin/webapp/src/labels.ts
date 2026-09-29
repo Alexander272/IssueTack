@@ -1,4 +1,4 @@
-import type {Priority, TicketStatus} from './types';
+import type {TicketStatus} from './types';
 
 interface BadgeStyle {
     label: string;
@@ -16,21 +16,10 @@ export const STATUS_MAP: Record<TicketStatus, BadgeStyle> = {
     cancelled: {label: 'Отменена', bg: '#FFEBEE', text: '#B71C1C'},
 };
 
-export const PRIORITY_MAP: Record<Priority, BadgeStyle> = {
-    low: {label: 'Низкий', bg: '#ECFDF5', text: '#065F46'},
-    medium: {label: 'Средний', bg: '#FEF3C7', text: '#92400E'},
-    high: {label: 'Высокий', bg: '#FEE2E2', text: '#B91C1C'},
-    urgent: {label: 'Критичный', bg: '#FEF2F2', text: '#991B1B'},
-};
-
 const FALLBACK_BADGE: BadgeStyle = {label: '', bg: '#EEEEEE', text: '#424242'};
 
 export function statusMeta(status: TicketStatus): BadgeStyle {
     return STATUS_MAP[status] || {...FALLBACK_BADGE, label: status || ''};
-}
-
-export function priorityMeta(priority: Priority): BadgeStyle {
-    return PRIORITY_MAP[priority] || {...FALLBACK_BADGE, label: priority || ''};
 }
 
 export function formatDate(iso: string): string {

@@ -155,6 +155,23 @@ type UserInfo struct {
 	Username string `json:"username"`
 }
 
+// GetChannelMemberIDs возвращает id пользователей из userIDs, которые состоят в
+// канале. Используется read-only (endpoint members/ids только читает состав
+// участников), чтобы подтвердить, что канал — именно диалог бота с заявителем.
+// В отличие от GetDMChannel, ничего не создаёт.
+func (c *Client) GetChannelMemberIDs(botToken, channelID string, userIDs ...string) ([]string, error) {
+	api := c.newAPI(botToken)
+	members, _, err := api.GetChannelMembersByIds(context.Background(), channelID, userIDs)
+	if err != nil {
+		return nil, fmt.Errorf("get channel members: %w", err)
+	}
+	ids := make([]string, 0, len(members))
+	for _, m := range members {
+		ids = append(ids, m.UserId)
+	}
+	return ids, nil
+}
+
 func (c *Client) GetMe(botToken string) (*UserInfo, error) {
 	api := c.newAPI(botToken)
 	user, _, err := api.GetMe(context.Background(), "")

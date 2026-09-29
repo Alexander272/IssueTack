@@ -81,6 +81,7 @@ type MattermostService struct {
 	wsMu          sync.Mutex
 	pendingFiles  sync.Map
 	recentTickets sync.Map
+	pluginCache   *pluginContextCache
 }
 
 // NewMattermostService создаёт фасад Mattermost с переданными зависимостями.
@@ -102,6 +103,7 @@ func NewMattermostService(deps *MattermostDeps) *MattermostService {
 		most:        deps.Most,
 		baseURL:     deps.BaseURL,
 		wsClients:   make(map[string]*mattermost.WSClient),
+		pluginCache: newPluginContextCache(),
 	}
 }
 
@@ -118,16 +120,17 @@ type Mattermost interface {
 	HandleDialogSubmission(ctx context.Context, submission *model.SubmitDialogRequest) error
 	HandleInteractiveAction(ctx context.Context, input *models.InteractiveActionDTO) (*model.Post, error)
 
-	// Плагин MM (webapp + plugin-server → /api/v1/plugin/*)
-	PluginContext(ctx context.Context, channelID, mmUserID string) (*models.PluginContextResult, error)
+	// Плагин MM (webapp + plugin-server → /api/v1/plugin/*).
+	// Scope несёт канал, Mattermost-пользователя и бота реалма для личного диалога.
+	PluginContext(ctx context.Context, scope models.PluginScope) (*models.PluginContextResult, error)
 	PluginCreateTicket(ctx context.Context, input *models.PluginCreateTicketInput) (*models.PluginCreateTicketResult, error)
-	PluginListMine(ctx context.Context, channelID, mmUserID string) ([]models.PluginTicketShort, error)
-	PluginGetTicket(ctx context.Context, channelID, mmUserID, ticketID string) (*models.PluginTicketDetail, error)
+	PluginListMine(ctx context.Context, scope models.PluginScope) ([]models.PluginTicketShort, error)
+	PluginGetTicket(ctx context.Context, scope models.PluginScope, ticketID string) (*models.PluginTicketDetail, error)
 	PluginGetTicketLinkContext(ctx context.Context, mmUserID, ticketID string) (*models.PluginTicketLinkContext, error)
-	PluginGetComments(ctx context.Context, channelID, mmUserID, ticketID string) ([]models.PluginComment, error)
+	PluginGetComments(ctx context.Context, scope models.PluginScope, ticketID string) ([]models.PluginComment, error)
 	PluginCreateComment(ctx context.Context, input *models.PluginCreateCommentInput) (*models.PluginComment, error)
-	PluginChangeStatus(ctx context.Context, channelID, mmUserID, ticketID, status string) error
-	PluginGetAttachmentContent(ctx context.Context, channelID, mmUserID, attachmentID string) (*models.Attachment, io.ReadCloser, error)
+	PluginChangeStatus(ctx context.Context, scope models.PluginScope, ticketID, status string) error
+	PluginGetAttachmentContent(ctx context.Context, scope models.PluginScope, attachmentID string) (*models.Attachment, io.ReadCloser, error)
 
 	StartWSForRealm(ctx context.Context, realmID uuid.UUID) error
 	StopWSForRealm(realmID uuid.UUID)
