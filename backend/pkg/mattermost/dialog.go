@@ -30,6 +30,7 @@ type DialogElement struct {
 type OpenRequest struct {
 	TriggerID    string
 	RealmID      string // used to build the submission callback URL
+	CallbackID   string // optional: what the submission is about (defaults to RealmID)
 	Title        string
 	Introduction string
 	SubmitLabel  string
@@ -58,11 +59,17 @@ func toModelElements(els []DialogElement) []model.DialogElement {
 // Open opens an interactive dialog directed at the submission endpoint.
 func (s *Dialog) Open(botToken string, req OpenRequest) error {
 	reqURL := fmt.Sprintf("%s/api/v1/mattermost/dialog/%s", s.baseURL, req.RealmID)
+	// CallbackID — то, о чём сабмит: по умолчанию реалм (создание заявки),
+	// но диалог может нести свой признак действия, например «reopen:<id>».
+	callbackID := req.CallbackID
+	if callbackID == "" {
+		callbackID = req.RealmID
+	}
 	modelReq := &model.OpenDialogRequest{
 		TriggerId: req.TriggerID,
 		URL:       reqURL,
 		Dialog: model.Dialog{
-			CallbackId:       req.RealmID,
+			CallbackId:       callbackID,
 			Title:            req.Title,
 			IntroductionText: req.Introduction,
 			Elements:         toModelElements(req.Elements),

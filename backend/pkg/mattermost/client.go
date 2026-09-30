@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -52,15 +53,70 @@ func (c *Client) OpenDialog(botToken string, req *model.OpenDialogRequest) error
 
 func (c *Client) CreatePost(botToken string, post *model.Post) (*model.Post, error) {
 	api := c.newAPI(botToken)
-	created, _, err := api.CreatePost(context.Background(), post)
-	if err != nil {
-		logger.Error("mattermost create post failed",
+	var (
+		created *model.Post
+		err     error
+		resp    *model.Response
+	)
+	// Mattermost ограничивает частоту постов и отвечает 429. Список «Мои заявки»
+	// разбит на несколько сообщений, поэтому вместо молчаливой потери части
+	// списка ждём указанный сервером интервал и повторяем попытку.
+	for attempt := 1; attempt <= createPostAttempts; attempt++ {
+		created, resp, err = api.CreatePost(context.Background(), post)
+		if err == nil {
+			return created, nil
+		}
+		if !rateLimited(resp) {
+			break
+		}
+		delay := createPostRetryDelay * time.Duration(attempt)
+		if wait := retryAfter(resp); wait > delay {
+			delay = wait
+		}
+		logger.Warn("mattermost post rate limited, retrying",
+			logger.IntAttr("attempt", attempt),
 			logger.StringAttr("channel_id", post.ChannelId),
-			logger.ErrAttr(err),
 		)
-		return nil, fmt.Errorf("create post: %w", err)
+		time.Sleep(delay)
 	}
-	return created, nil
+	logger.Error("mattermost create post failed",
+		logger.StringAttr("channel_id", post.ChannelId),
+		logger.ErrAttr(err),
+	)
+	return nil, fmt.Errorf("create post: %w", err)
+}
+
+const (
+	// createPostAttempts — сколько раз пробуем создать пост при 429.
+	createPostAttempts = 3
+	// createPostRetryDelay — базовая пауза между попытками, растёт с номером.
+	createPostRetryDelay = 300 * time.Millisecond
+	// createPostMaxRetryAfter — потолок паузы из Retry-After, чтобы серверный
+	// заголовок не увел нас в бесконечный сон внутри HTTP-запроса.
+	createPostMaxRetryAfter = 3 * time.Second
+)
+
+func rateLimited(resp *model.Response) bool {
+	return resp != nil && resp.StatusCode == http.StatusTooManyRequests
+}
+
+func retryAfter(resp *model.Response) time.Duration {
+	if resp == nil {
+		return 0
+	}
+	raw := resp.Header.Get("Retry-After")
+	if raw == "" {
+		return 0
+	}
+	secs, err := strconv.Atoi(raw)
+	if err != nil || secs <= 0 {
+		return 0
+	}
+	wait := time.Duration(secs) * time.Second
+	if wait > createPostMaxRetryAfter {
+		return createPostMaxRetryAfter
+	}
+	return wait
 }
 
 func (c *Client) UpdatePost(botToken, postID string, patch *model.PostPatch) error {

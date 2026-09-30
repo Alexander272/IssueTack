@@ -150,8 +150,9 @@ func (s *MattermostService) handleWSEvent(ctx context.Context, realmID uuid.UUID
 		if len(event.Post.FileIds) > 0 {
 			s.pendingFiles.Store(channelID+":"+userID, event.Post.FileIds)
 		}
-		if err := s.sendCreateButton(settings.BotToken, channelID, realmID.String()); err != nil {
-			logger.Error("failed to send create button from WS",
+		if err := s.sendMenu(settings.BotToken, channelID, realmID.String(),
+			"Для оформления заявки нажмите на кнопку ниже"); err != nil {
+			logger.Error("failed to send bot menu from WS",
 				logger.StringAttr("user_id", userID),
 				logger.ErrAttr(err),
 			)
@@ -159,19 +160,12 @@ func (s *MattermostService) handleWSEvent(ctx context.Context, realmID uuid.UUID
 
 	case helpCommands.MatchString(msg):
 		isAdmin := s.checkIsAdmin(ctx, realmID, userID)
-		if err := s.sendHelpMessage(settings.BotToken, channelID, isAdmin); err != nil {
+		if err := s.sendHelpMessage(settings.BotToken, channelID, realmID.String(), isAdmin); err != nil {
 			logger.Error("failed to send help message from WS", logger.ErrAttr(err))
 		}
 
 	case statusCommands.MatchString(msg):
-		if _, err := s.resolveOrCreateUser(ctx, realmID, userID, nil); err != nil {
-			logger.Warn("failed to resolve user for status command",
-				logger.StringAttr("mm_user_id", userID),
-				logger.ErrAttr(err),
-			)
-			return
-		}
-		if err := s.sendStatusMessage(ch); err != nil {
+		if err := s.sendStatusMessage(ctx, ch); err != nil {
 			logger.Error("failed to send status message from WS", logger.ErrAttr(err))
 		}
 
@@ -212,7 +206,7 @@ func (s *MattermostService) handleWSEvent(ctx context.Context, realmID uuid.UUID
 			return
 		}
 		isAdmin := s.checkIsAdmin(ctx, realmID, userID)
-		if err := s.sendHelpMessage(settings.BotToken, channelID, isAdmin); err != nil {
+		if err := s.sendHelpMessage(settings.BotToken, channelID, realmID.String(), isAdmin); err != nil {
 			logger.Error("failed to send help message from WS", logger.ErrAttr(err))
 		}
 	}

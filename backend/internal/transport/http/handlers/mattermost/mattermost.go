@@ -3,6 +3,7 @@ package mattermost
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -136,7 +137,15 @@ func (h *Handler) handleDialogSubmission(c *gin.Context) {
 	}
 
 	if err := h.service.HandleDialogSubmission(c, &submission); err != nil {
-		response.SendError(c, fmt.Errorf("failed to create ticket: %w", err))
+		// Доменная ошибка («заявка уже закрыта», «укажите причину») — это ответ
+		// пользователю, а не сбой: Mattermost показывает error в диалоге и не
+		// закрывает его, чтобы можно было поправить и отправить снова.
+		var domainErr *models.DomainError
+		if errors.As(err, &domainErr) {
+			c.JSON(http.StatusOK, gin.H{"error": domainErr.Message()})
+			return
+		}
+		response.SendError(c, fmt.Errorf("failed to handle dialog submission: %w", err))
 		return
 	}
 
@@ -150,17 +159,24 @@ func (h *Handler) handleInteractiveAction(c *gin.Context) {
 		return
 	}
 
-	post, err := h.service.HandleInteractiveAction(c, &payload)
+	result, err := h.service.HandleInteractiveAction(c, &payload)
 	if err != nil {
 		response.SendError(c, fmt.Errorf("failed to handle interactive action: %w", err))
 		return
 	}
 
-	if post != nil {
-		c.JSON(http.StatusOK, gin.H{"update": post})
-	} else {
+	if result == nil {
 		c.Status(http.StatusOK)
+		return
 	}
+
+	// Mattermost ждёт ephemeral_text — сообщение только нажавшему: так сообщаем
+	// об ошибке, не засоряя общий список заявок.
+	if result.Ephemeral == "" {
+		c.Status(http.StatusOK)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ephemeral_text": result.Ephemeral})
 }
 
 func (h *Handler) handleWSEvent(c *gin.Context) {

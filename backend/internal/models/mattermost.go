@@ -33,10 +33,14 @@ type DialogOpenDTO struct {
 }
 
 // InteractiveActionDTO — данные события нажатия интерактивной кнопки
-// Mattermost (action в контексте, напр. «view_ticket»).
+// Mattermost (action в контексте, напр. «my_tickets», «ticket_cancel»).
+// TriggerID нужен, чтобы открыть диалог прямо с кнопки, PostID — чтобы
+// перерисовать исходный пост.
 type InteractiveActionDTO struct {
 	UserID    string            `json:"user_id"`
 	ChannelID string            `json:"channel_id"`
+	PostID    string            `json:"post_id"`
+	TriggerID string            `json:"trigger_id"`
 	Context   map[string]string `json:"context"`
 }
 

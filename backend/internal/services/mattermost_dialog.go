@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
@@ -59,7 +62,13 @@ func (s *MattermostService) HandleDialogOpen(ctx context.Context, input *models.
 	if len(categories) > 0 {
 		opts := make([]*model.PostActionOptions, 0, len(categories))
 		for _, c := range categories {
-			opts = append(opts, &model.PostActionOptions{Text: c.Name, Value: c.ID.String()})
+			// У диалогов Mattermost нет группировки опций, поэтому раздел
+			// попадает в подпись: «Раздел · Категория».
+			text := c.Name
+			if c.CategoryGroup != nil {
+				text = fmt.Sprintf("%s · %s", c.CategoryGroup.Name, c.Name)
+			}
+			opts = append(opts, &model.PostActionOptions{Text: text, Value: c.ID.String()})
 		}
 		elements = append(elements, mattermost.DialogElement{
 			DisplayName: "Категория", Name: "categoryId", Type: "select", Options: opts,
@@ -89,12 +98,21 @@ func (s *MattermostService) HandleDialogOpen(ctx context.Context, input *models.
 	return nil
 }
 
-// HandleDialogSubmission создаёт заявку из отправленного диалога: резолвит
-// пользователя Mattermost в систему, прикрепляет загруженные файлы и удаляет
-// исходный кнопочный пост. Отмена диалога обрабатывается отдельно (без создания).
+// HandleDialogSubmission обрабатывает отправку диалога: создание заявки либо
+// возврат заявки в работу (callback_id «reopen:<ticket_id>»). При создании
+// резолвит пользователя Mattermost в систему, прикрепляет загруженные файлы и
+// удаляет исходный кнопочный пост. Отмена диалога ничего не делает.
 func (s *MattermostService) HandleDialogSubmission(ctx context.Context, submission *model.SubmitDialogRequest) error {
 	if submission.Cancelled {
 		return nil
+	}
+
+	// Не наш диалог создания заявки — callback_id несёт действие над заявкой.
+	if action, ticketID, ok := parseTicketActionCallback(submission.CallbackId); ok {
+		if action == actionReopen {
+			return s.handleReopenSubmission(ctx, submission, ticketID)
+		}
+		return s.handleCancelSubmission(ctx, submission, action, ticketID)
 	}
 
 	realmID, err := uuid.Parse(submission.CallbackId)
@@ -185,10 +203,10 @@ func (s *MattermostService) HandleDialogSubmission(ctx context.Context, submissi
 	return nil
 }
 
-// HandleInteractiveAction обрабатывает нажатия интерактивных кнопок Mattermost
-// и возвращает пост-ответ (или nil, если ответ не нужен). Для «view_ticket»
-// формирует кнопку «Открыть», ведущую на страницу заявки во фронтенде.
-func (s *MattermostService) HandleInteractiveAction(ctx context.Context, input *models.InteractiveActionDTO) (*model.Post, error) {
+// HandleInteractiveAction обрабатывает нажатия интерактивных кнопок Mattermost:
+// показывает список «Мои заявки» и меняет статус заявки по кнопке карточки.
+// Возвращает ответ на нажатие (или nil, если ответ не нужен).
+func (s *MattermostService) HandleInteractiveAction(ctx context.Context, input *models.InteractiveActionDTO) (*ActionResult, error) {
 	if s.baseURL == "" {
 		return nil, fmt.Errorf("failed to handle action: http.base_url is not configured")
 	}
@@ -196,26 +214,398 @@ func (s *MattermostService) HandleInteractiveAction(ctx context.Context, input *
 	action := input.Context["action"]
 
 	switch action {
-	case "view_ticket":
-		ticketID := input.Context["ticket_id"]
-		realmID := input.Context["realm_id"]
-		return s.most.Post.Reply(
-			fmt.Sprintf("Откройте заявку: /tasks/%s", ticketID),
-			&mattermost.InteractiveButton{
-				Text:  "Открыть",
-				Style: "primary",
-				URL:   fmt.Sprintf("%s/api/v1/mattermost/action", s.baseURL),
-				Context: map[string]string{
-					"action":    "open_link",
-					"ticket_id": ticketID,
-					"realm_id":  realmID,
-				},
-			},
-		), nil
+	case "my_tickets":
+		// Кнопка «Мои заявки»: отвечаем тем же списком карточек, что и команда
+		// «мои», но отдельным сообщением в диалоге — ответ action'а вида
+		// {"update": post} заменил бы собой пост с кнопками, и меню пропало бы.
+		if err := s.sendMyTickets(ctx, input); err != nil {
+			return nil, err
+		}
+		return nil, nil
+
+	case actionCancel, actionConfirm, actionReopen:
+		return s.handleTicketStatusAction(ctx, action, input)
 
 	default:
 		return nil, nil
 	}
+}
+
+// handleTicketStatusAction отвечает на кнопку действия в карточке заявки из
+// списка «Мои заявки». Все три действия необратимы (cancelled и closed —
+// терминальные статусы), поэтому бот не меняет статус сразу: сначала открывает
+// диалог, а переход делает уже обработчик сабмита — handleCancelSubmission или
+// handleReopenSubmission. Правила перехода применяет TicketService.Update, здесь
+// только оркестрация: резолв реалма и открытие диалога.
+func (s *MattermostService) handleTicketStatusAction(ctx context.Context, action string, input *models.InteractiveActionDTO) (*ActionResult, error) {
+	ticketID, err := uuid.Parse(input.Context["ticket_id"])
+	if err != nil {
+		return nil, fmt.Errorf("invalid ticket_id: %w", err)
+	}
+	from, _ := strconv.Atoi(input.Context["from"])
+
+	realmID, err := s.tickets.GetRealmIDByTicketID(ctx, ticketID)
+	if err != nil {
+		logger.Warn("mattermost action: failed to resolve ticket realm", logger.ErrAttr(err))
+		return &ActionResult{Ephemeral: "Заявка не найдена"}, nil
+	}
+	settings, err := s.repo.GetByRealm(ctx, realmID)
+	if err != nil || settings == nil {
+		return nil, fmt.Errorf("failed to find realm settings: %w", err)
+	}
+
+	if action == actionReopen {
+		return s.openReopenDialog(ctx, settings, ticketID, realmID, from, input)
+	}
+	return s.openCancelDialog(ctx, settings, action, ticketID, realmID, from, input)
+}
+
+// openCancelDialog просит подтвердить необратимый переход: отмену заявки или
+// подтверждение её решения. Полей в диалоге нет — Mattermost сам показывает
+// пару Submit/Cancel, поэтому подтверждение выглядит так же, как модалка в
+// веб-плагине. Смещение среза и id сообщения едут в State: ответ диалога не
+// умеет обновлять посты, карточку правит сам handleCancelSubmission.
+func (s *MattermostService) openCancelDialog(ctx context.Context, settings *models.RealmMattermost, action string, ticketID, realmID uuid.UUID, from int, input *models.InteractiveActionDTO) (*ActionResult, error) {
+	if input.TriggerID == "" {
+		return &ActionResult{Ephemeral: "Не удалось открыть диалог: Mattermost не передал trigger_id"}, nil
+	}
+
+	req := mattermost.OpenRequest{
+		TriggerID:   input.TriggerID,
+		RealmID:     realmID.String(),
+		Title:       "Отменить заявку",
+		SubmitLabel: "Отменить заявку",
+		State:       fmt.Sprintf(`{"from":%d,"post_id":%q}`, from, input.PostID),
+	}
+	switch action {
+	case actionConfirm:
+		req.CallbackID = confirmCallbackPrefix + ticketID.String()
+		req.Title = "Подтвердить решение"
+		req.SubmitLabel = "Закрыть заявку"
+		req.Introduction = "Подтвердить решение и закрыть заявку? Действие необратимо."
+	default:
+		req.CallbackID = cancelCallbackPrefix + ticketID.String()
+		req.Introduction = "Отменить заявку? Действие необратимо."
+	}
+	if subject := s.ticketSubject(ctx, ticketID); subject != "" {
+		req.Introduction = subject + ". " + req.Introduction
+	}
+
+	if err := s.most.Dialog.Open(settings.BotToken, req); err != nil {
+		logger.Warn("failed to open confirmation dialog",
+			logger.StringAttr("action", action),
+			logger.ErrAttr(err),
+		)
+		return &ActionResult{Ephemeral: "Не удалось открыть диалог"}, nil
+	}
+	return nil, nil
+}
+
+// ticketSubject — «Заявка №12. Не открывается 1С» для диалогов над заявкой:
+// пользователь подтверждает необратимое действие и должен видеть, о какой
+// заявке речь, даже если карточка уже уехала из экрана.
+func (s *MattermostService) ticketSubject(ctx context.Context, ticketID uuid.UUID) string {
+	ticket, err := s.tickets.GetSummary(ctx, ticketID)
+	if err != nil || ticket == nil {
+		return ""
+	}
+	switch {
+	case ticket.TicketNumber != nil && cardSummary(ticket.Title) != "":
+		return fmt.Sprintf("Заявка №%d. %s", *ticket.TicketNumber, cardSummary(ticket.Title))
+	case ticket.TicketNumber != nil:
+		return fmt.Sprintf("Заявка №%d", *ticket.TicketNumber)
+	case cardSummary(ticket.Title) != "":
+		return fmt.Sprintf("Заявка «%s»", cardSummary(ticket.Title))
+	}
+	return ""
+}
+
+// actionDoneText — подтверждение выполненного действия для нажавшего.
+func actionDoneText(action string) string {
+	if action == actionConfirm {
+		return "Заявка закрыта."
+	}
+	return "Заявка отменена."
+}
+
+// changeTicketStatus переводит заявку в новый статус от имени пользователя
+// Mattermost. Права на переход, терминальные статусы и прочие правила
+// проверяет TicketService.Update.
+func (s *MattermostService) changeTicketStatus(ctx context.Context, user *models.UserData, realmID, ticketID uuid.UUID, status models.TicketStatus) error {
+	dto := &models.TicketDTO{
+		ID:      &ticketID,
+		Status:  status,
+		Actor:   &models.Actor{ID: user.ID, Name: user.Username},
+		RealmID: &realmID,
+	}
+	dto.MarkProvided("status")
+	return s.tickets.Update(ctx, dto)
+}
+
+// openReopenDialog спрашивает причину возврата заявки в работу. Порядок как в
+// плагине: сначала меняем статус, потом пишем комментарий с причиной — на
+// «решённой» заявке внешний комментарий запрещён.
+func (s *MattermostService) openReopenDialog(ctx context.Context, settings *models.RealmMattermost, ticketID, realmID uuid.UUID, from int, input *models.InteractiveActionDTO) (*ActionResult, error) {
+	if input.TriggerID == "" {
+		return &ActionResult{Ephemeral: "Не удалось открыть диалог: Mattermost не передал trigger_id"}, nil
+	}
+
+	intro := "Укажите причину возврата заявки в работу."
+	if subject := s.ticketSubject(ctx, ticketID); subject != "" {
+		intro = subject + ". " + intro
+	}
+
+	err := s.most.Dialog.Open(settings.BotToken, mattermost.OpenRequest{
+		TriggerID:    input.TriggerID,
+		RealmID:      realmID.String(),
+		CallbackID:   reopenCallbackPrefix + ticketID.String(),
+		Title:        "Вернуть заявку в работу",
+		Introduction: intro,
+		SubmitLabel:  "Вернуть в работу",
+		Elements: []mattermost.DialogElement{{
+			DisplayName: "Причина",
+			Name:        "reason",
+			Type:        "textarea",
+			MaxLength:   1000,
+			Placeholder: "Например: причина обращения не устранена",
+		}},
+		// post_id кладём в State: в SubmitDialogRequest его нет, а после
+		// возврата в работу карточку в списке надо перерисовать.
+		State: fmt.Sprintf(`{"from":%d,"post_id":%q}`, from, input.PostID),
+	})
+	if err != nil {
+		logger.Warn("failed to open reopen dialog", logger.ErrAttr(err))
+		return &ActionResult{Ephemeral: "Не удалось открыть диалог"}, nil
+	}
+	return nil, nil
+}
+
+// handleReopenSubmission обрабатывает отправку диалога «Вернуть в работу»:
+// переводит заявку в работу и сохраняет причину комментарием от владельца.
+func (s *MattermostService) handleReopenSubmission(ctx context.Context, submission *model.SubmitDialogRequest, ticketID uuid.UUID) error {
+	reason, _ := submission.Submission["reason"].(string)
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return models.ErrReasonRequired
+	}
+
+	realmID, err := s.tickets.GetRealmIDByTicketID(ctx, ticketID)
+	if err != nil {
+		return fmt.Errorf("failed to resolve ticket realm: %w", err)
+	}
+	user, err := s.resolveOrCreateUser(ctx, realmID, submission.UserId, nil)
+	if err != nil {
+		return fmt.Errorf("failed to resolve user: %w", err)
+	}
+
+	if err := s.changeTicketStatus(ctx, user, realmID, ticketID, models.StatusInProgress); err != nil {
+		return fmt.Errorf("failed to reopen ticket: %w", err)
+	}
+
+	// Комментарий с причиной — отдельным шагом: если он не прошёл, заявка всё
+	// равно уже в работе, и молчаливую потерю причины лучше залогировать.
+	if _, err := s.comments.Create(ctx, nil, &models.CreateCommentDTO{
+		Text:     "Заявка возвращена в работу: " + reason,
+		TicketID: ticketID,
+		UserID:   user.ID,
+		Realm:    realmID.String(),
+	}); err != nil {
+		logger.Warn("failed to save reopen reason comment",
+			logger.StringAttr("ticket_id", ticketID.String()),
+			logger.ErrAttr(err),
+		)
+	}
+
+	settings, err := s.repo.GetByRealm(ctx, realmID)
+	if err != nil || settings == nil || settings.BotToken == "" {
+		return nil
+	}
+
+	msg := "Заявка возвращена в работу. Причина: " + reason
+	if _, err := s.most.Post.Create(settings.BotToken, mattermost.CreatePostDTO{
+		ChannelID: submission.ChannelId,
+		Message:   msg,
+	}); err != nil {
+		logger.Warn("failed to send reopen confirmation", logger.ErrAttr(err))
+	}
+
+	// Заявка осталась в списке активных: обновляем её карточку на месте —
+	// снятые после возврата кнопки с «решённого» статуса больше не нажмут.
+	state := parseDialogState(submission.State)
+	if err := s.applyListEdit(ctx, settings, realmID, user, state, false); err != nil {
+		logger.Warn("failed to update list post after reopen",
+			logger.StringAttr("post_id", state.PostID),
+			logger.ErrAttr(err),
+		)
+	}
+	return nil
+}
+
+// handleCancelSubmission обрабатывает подтверждение необратимого перехода:
+// отмены заявки (ticket_cancel) или подтверждения её решения (ticket_confirm).
+// Полей в этом диалоге нет, поэтому кроме состояния диалога проверять нечего:
+// меняем статус и убираем карточку из списка.
+func (s *MattermostService) handleCancelSubmission(ctx context.Context, submission *model.SubmitDialogRequest, action string, ticketID uuid.UUID) error {
+	realmID, err := s.tickets.GetRealmIDByTicketID(ctx, ticketID)
+	if err != nil {
+		return fmt.Errorf("failed to resolve ticket realm: %w", err)
+	}
+	user, err := s.resolveOrCreateUser(ctx, realmID, submission.UserId, nil)
+	if err != nil {
+		return fmt.Errorf("failed to resolve user: %w", err)
+	}
+
+	// Отказ сервиса тикетов (заявку уже закрыли, сняли права и т.п.) показываем
+	// в диалоге: карточку в ленте не трогаем, список обновится при следующем
+	// «Мои заявки».
+	if err := s.changeTicketStatus(ctx, user, realmID, ticketID, actionTargetStatus(action)); err != nil {
+		logger.Info("mattermost ticket action rejected",
+			logger.StringAttr("action", action),
+			logger.StringAttr("ticket_id", ticketID.String()),
+			logger.ErrAttr(err),
+		)
+		return err
+	}
+
+	settings, err := s.repo.GetByRealm(ctx, realmID)
+	if err != nil || settings == nil || settings.BotToken == "" {
+		return nil
+	}
+
+	// Отменённая и закрытая заявка уходят из активного списка: карточка
+	// убирается из своего сообщения.
+	state := parseDialogState(submission.State)
+	if err := s.applyListEdit(ctx, settings, realmID, user, state, true); err != nil {
+		logger.Warn("failed to update list post after cancel",
+			logger.StringAttr("action", action),
+			logger.StringAttr("post_id", state.PostID),
+			logger.ErrAttr(err),
+		)
+	}
+
+	// Ответ диалога не умеет отправлять сообщения нажавшему, поэтому итог
+	// подтверждения уходит обычным постом в канал — как при возврате в работу.
+	if _, err := s.most.Post.Create(settings.BotToken, mattermost.CreatePostDTO{
+		ChannelID: submission.ChannelId,
+		Message:   actionDoneText(action),
+	}); err != nil {
+		logger.Warn("failed to send cancel confirmation",
+			logger.StringAttr("action", action),
+			logger.ErrAttr(err),
+		)
+	}
+	return nil
+}
+
+// applyListEdit приводит сообщение списка «Мои заявки» в соответствие с новым
+// составом заявок пользователя. Общий путь для сабмитов диалогов: ответ диалога
+// не умеет обновлять посты (SubmitDialogResponse знает только error), поэтому
+// карточку правим сами.
+//
+// removed=true — заявка ушла из активных (отмена, подтверждение решения):
+// карточка убирается из своего сообщения, соседи остаются на местах, ничего из
+// следующего сообщения не подтягивается; если карточка была единственной,
+// сообщение удаляется. removed=false — заявка осталась в списке (возврат в
+// работу): срез перерисовывается целиком, карточка получает новый статус.
+func (s *MattermostService) applyListEdit(ctx context.Context, settings *models.RealmMattermost, realmID uuid.UUID, user *models.UserData, state dialogState, removed bool) error {
+	if state.PostID == "" {
+		// Диалог мог быть открыт до того, как бот начал класть post_id в State.
+		return nil
+	}
+
+	tickets, err := s.myActiveTickets(ctx, realmID, user)
+	if err != nil {
+		return fmt.Errorf("failed to reload user tickets: %w", err)
+	}
+
+	chunk, ok := s.myTicketsChunkAfterEdit(tickets, state.From, removed, user.ID)
+	if !ok {
+		// Сообщение опустело только когда карточка была в нём единственной,
+		// то есть смещение ровно совпало с новым концом списка. Смещение больше
+		// конца списка — это битое значение в State, удалять по нему пост нельзя:
+		// показываем начало списка.
+		if state.From == len(tickets) {
+			return s.most.Post.Delete(settings.BotToken, state.PostID)
+		}
+		chunk, ok = s.myTicketsChunkAt(tickets, 0, user.ID)
+		if !ok {
+			return nil
+		}
+	}
+	return s.most.Post.UpdateCards(settings.BotToken, state.PostID, chunk.message, chunk.cards)
+}
+
+// dialogState — то, что бот кладёт в State диалога: смещение среза списка и id
+// сообщения, из которого диалог открыт.
+type dialogState struct {
+	From   int    `json:"from"`
+	PostID string `json:"post_id"`
+}
+
+func parseDialogState(raw string) dialogState {
+	var state dialogState
+	if raw == "" {
+		return state
+	}
+	if err := json.Unmarshal([]byte(raw), &state); err != nil {
+		logger.Warn("invalid dialog state", logger.StringAttr("state", raw), logger.ErrAttr(err))
+		return dialogState{}
+	}
+	return state
+}
+
+// parseTicketActionCallback разбирает callback_id диалогов над заявкой:
+// «ticket_cancel:<id>», «ticket_confirm:<id>», «ticket_reopen:<id>».
+func parseTicketActionCallback(callbackID string) (string, uuid.UUID, bool) {
+	action, raw, ok := strings.Cut(callbackID, ":")
+	if !ok {
+		return "", uuid.Nil, false
+	}
+	switch action {
+	case actionCancel, actionConfirm, actionReopen:
+	default:
+		return "", uuid.Nil, false
+	}
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return "", uuid.Nil, false
+	}
+	return action, id, true
+}
+
+// actionErrorMessage переводит ошибку сервиса в текст для нажавшего кнопку:
+// доменные ошибки уже несут человеческий текст, остальное — общий fallback.
+func actionErrorMessage(err error) string {
+	var domainErr *models.DomainError
+	if errors.As(err, &domainErr) {
+		return domainErr.Message()
+	}
+	return "Не удалось изменить статус заявки"
+}
+
+// sendMyTickets отвечает на нажатие «Мои заявки»: находит realm по context,
+// разрешает пользователя Mattermost в ApplicationUser и отправляет в диалог
+// карточки его активных заявок.
+func (s *MattermostService) sendMyTickets(ctx context.Context, input *models.InteractiveActionDTO) error {
+	realmID, err := uuid.Parse(input.Context["realm_id"])
+	if err != nil {
+		return fmt.Errorf("failed to send my tickets: invalid realm_id: %w", err)
+	}
+
+	settings, err := s.repo.GetByRealm(ctx, realmID)
+	if err != nil {
+		return fmt.Errorf("failed to find realm settings: %w", err)
+	}
+	if settings == nil {
+		return fmt.Errorf("failed to send my tickets: mattermost is not configured for realm %s", realmID)
+	}
+
+	ch := &mmChannel{
+		Settings:  settings,
+		MmUserID:  input.UserID,
+		ChannelID: input.ChannelID,
+	}
+	return s.sendStatusMessage(ctx, ch)
 }
 
 // sendTicketCreatedDM отправляет пользователю личное сообщение с подтверждением

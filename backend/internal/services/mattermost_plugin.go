@@ -232,15 +232,7 @@ func (s *MattermostService) PluginChangeStatus(ctx context.Context, scope models
 		return fmt.Errorf("failed to resolve user: %w", err)
 	}
 
-	dto := &models.TicketDTO{
-		ID:      &id,
-		Status:  next,
-		Actor:   &models.Actor{ID: user.ID, Name: user.Username},
-		RealmID: &settings.RealmID,
-	}
-	dto.MarkProvided("status")
-
-	return s.tickets.Update(ctx, dto)
+	return s.changeTicketStatus(ctx, user, settings.RealmID, id, next)
 }
 
 // PluginGetComments возвращает общедоступные комментарии заявки (в порядке
