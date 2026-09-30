@@ -3,6 +3,8 @@ import { Box, Button, Typography, useTheme } from '@mui/material'
 
 import type { ICategory, ICategoryDTO } from '../types/category'
 import { useGetAllCategoriesQuery } from '../categoriesApiSlice'
+import { useGetAllCategoryGroupsQuery } from '@/features/categoryGroups/categoryGroupsApiSlice'
+import { CategoryGroupsSection } from '@/features/categoryGroups/components/CategoryGroupsSection'
 import { useGetAllGroupsQuery } from '@/features/groups/groupsApiSlice'
 import { useDebounce } from '@/hooks/useDebounce'
 import { PlusIcon } from 'lucide-mui'
@@ -28,6 +30,7 @@ export const CategoriesView: FC = () => {
 	const debouncedSearch = useDebounce(filters.search, 300) as string
 
 	const { data: categories } = useGetAllCategoriesQuery()
+	const { data: categoryGroups } = useGetAllCategoryGroupsQuery()
 	const { data: groups } = useGetAllGroupsQuery()
 
 	const groupsMap = useMemo(() => {
@@ -59,6 +62,7 @@ export const CategoriesView: FC = () => {
 			name: cat.name,
 			description: cat.description,
 			groupId: cat.groupId,
+			categoryGroupId: cat.categoryGroupId ?? null,
 			priority: cat.priority,
 			isActive: cat.isActive,
 		})
@@ -95,7 +99,7 @@ export const CategoriesView: FC = () => {
 						Категории задач
 					</Typography>
 					<Typography variant='body2' sx={{ color: '#6b7280', display: { xs: 'none', sm: 'block' } }}>
-						Управление категориями и их привязкой к группам исполнителей
+						Управление разделами и категориями, их привязкой к группам исполнителей
 					</Typography>
 				</Box>
 				<Button
@@ -112,6 +116,8 @@ export const CategoriesView: FC = () => {
 					Создать категорию
 				</Button>
 			</Box>
+
+			<CategoryGroupsSection categories={categories?.data || []} />
 
 			<CategoryFilters
 				groups={groups?.data || []}
@@ -146,6 +152,7 @@ export const CategoriesView: FC = () => {
 			<CategoryDialog
 				category={category || undefined}
 				groups={groups?.data || []}
+				categoryGroups={categoryGroups?.data || []}
 				open={open}
 				onClose={closeDialog}
 			/>

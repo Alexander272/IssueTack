@@ -72,6 +72,7 @@ export const apiSlice = createApi({
 		'SearchLogs',
 		'Realms',
 		'Categories',
+		'CategoryGroups',
 		'Groups',
 		'Sites',
 		'Comments',

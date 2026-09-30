@@ -1,16 +1,20 @@
 import { Autocomplete, Box, TextField, Typography } from '@mui/material'
 import { Controller, useFormContext } from 'react-hook-form'
-import { Building2, Layers } from 'lucide-mui'
+import { Building2, Layers, ListTreeIcon } from 'lucide-mui'
 import type { ICategory } from '@/features/categories/types/category'
 import type { ISite } from '@/features/sites/types/site'
 import { SectionCard } from './SectionCard'
 import { fieldLabelSx } from './styles'
 import type { FormValues } from './types'
+import { Stack } from '@mui/system'
 
 type Props = {
 	categories: ICategory[]
 	sites: ISite[]
 }
+
+// Ключ группировки для Autocomplete: раздел категории либо «Без раздела».
+const sectionOfCategory = (category: ICategory) => category.categoryGroup?.name || 'Без раздела'
 
 export const CategoryAndSiteSection = ({ categories, sites }: Props) => {
 	const { control } = useFormContext<FormValues>()
@@ -37,37 +41,94 @@ export const CategoryAndSiteSection = ({ categories, sites }: Props) => {
 							<Autocomplete
 								options={categories}
 								getOptionLabel={o => o.name}
+								getOptionKey={o => o.id}
 								value={categories.find(c => c.id === field.value) ?? null}
 								onChange={(_, value) => field.onChange(value?.id ?? '')}
 								noOptionsText='Нет категорий'
-								renderOption={(props, option) => (
-									<Box component='li' {...props}>
-										<Box
+								groupBy={sectionOfCategory}
+								renderGroup={params => (
+									<Box component='li' key={params.key}>
+										<Stack
+											direction='row'
+											spacing={1}
 											sx={{
-												width: 32,
-												height: 32,
-												borderRadius: '8px',
-												bgcolor: '#dbeafe',
-												color: 'primary.main',
-												display: 'flex',
 												alignItems: 'center',
-												justifyContent: 'center',
-												mr: 1.5,
-												flexShrink: 0,
+												mb: 0.5,
+												position: 'sticky',
+												px: 1,
+												py: 0.5,
+												mt: 0.5,
 											}}
 										>
-											<Layers sx={{ fontSize: 16 }} />
-										</Box>
-										<Box sx={{ minWidth: 0 }}>
-											<Typography sx={{ fontSize: '0.8125rem', fontWeight: 500 }}>{option.name}</Typography>
-											{option.description && (
-												<Typography sx={{ fontSize: '0.6875rem', color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-													{option.description}
-												</Typography>
-											)}
+											<Box
+												sx={{
+													width: 30,
+													height: 30,
+													borderRadius: '8px',
+													bgcolor: '#dbeafe',
+													color: 'primary.main',
+													display: 'flex',
+													alignItems: 'center',
+													justifyContent: 'center',
+													mr: 1.5,
+													flexShrink: 0,
+												}}
+											>
+												<ListTreeIcon sx={{ fontSize: 16 }} />
+											</Box>
+											<Typography
+												sx={{ fontSize: '0.75rem', fontWeight: 600, color: 'text.secondary' }}
+											>
+												{params.group}
+											</Typography>
+										</Stack>
+
+										<Box component='ul' sx={{ p: 0 }}>
+											{params.children}
 										</Box>
 									</Box>
 								)}
+								renderOption={(props, option) => {
+									const { key, ...rest } = props
+									return (
+										<Box component='li' key={key} {...rest}>
+											<Box
+												sx={{
+													width: 32,
+													height: 32,
+													borderRadius: '8px',
+													bgcolor: '#dbeafe',
+													color: 'primary.main',
+													display: 'flex',
+													alignItems: 'center',
+													justifyContent: 'center',
+													mr: 1.5,
+													flexShrink: 0,
+												}}
+											>
+												<Layers sx={{ fontSize: 16 }} />
+											</Box>
+											<Box sx={{ minWidth: 0 }}>
+												<Typography sx={{ fontSize: '0.8125rem', fontWeight: 500 }}>
+													{option.name}
+												</Typography>
+												{option.description && (
+													<Typography
+														sx={{
+															fontSize: '0.6875rem',
+															color: '#9ca3af',
+															overflow: 'hidden',
+															textOverflow: 'ellipsis',
+															whiteSpace: 'nowrap',
+														}}
+													>
+														{option.description}
+													</Typography>
+												)}
+											</Box>
+										</Box>
+									)
+								}}
 								renderInput={params => (
 									<TextField
 										{...params}
@@ -97,37 +158,51 @@ export const CategoryAndSiteSection = ({ categories, sites }: Props) => {
 							<Autocomplete
 								options={sites}
 								getOptionLabel={o => o.name}
+								getOptionKey={o => o.id}
 								value={sites.find(s => s.id === field.value) ?? null}
 								onChange={(_, value) => field.onChange(value?.id ?? '')}
 								noOptionsText='Нет площадок'
-								renderOption={(props, option) => (
-									<Box component='li' {...props}>
-										<Box
-											sx={{
-												width: 32,
-												height: 32,
-												borderRadius: '8px',
-												bgcolor: '#dbeafe',
-												color: 'primary.main',
-												display: 'flex',
-												alignItems: 'center',
-												justifyContent: 'center',
-												mr: 1.5,
-												flexShrink: 0,
-											}}
-										>
-											<Building2 sx={{ fontSize: 16 }} />
-										</Box>
-										<Box sx={{ minWidth: 0 }}>
-											<Typography sx={{ fontSize: '0.8125rem', fontWeight: 500 }}>{option.name}</Typography>
-											{option.address && (
-												<Typography sx={{ fontSize: '0.6875rem', color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-													{option.address}
+								renderOption={(props, option) => {
+									const { key, ...rest } = props
+									return (
+										<Box component='li' key={key} {...rest}>
+											<Box
+												sx={{
+													width: 32,
+													height: 32,
+													borderRadius: '8px',
+													bgcolor: '#dbeafe',
+													color: 'primary.main',
+													display: 'flex',
+													alignItems: 'center',
+													justifyContent: 'center',
+													mr: 1.5,
+													flexShrink: 0,
+												}}
+											>
+												<Building2 sx={{ fontSize: 16 }} />
+											</Box>
+											<Box sx={{ minWidth: 0 }}>
+												<Typography sx={{ fontSize: '0.8125rem', fontWeight: 500 }}>
+													{option.name}
 												</Typography>
-											)}
+												{option.address && (
+													<Typography
+														sx={{
+															fontSize: '0.6875rem',
+															color: '#9ca3af',
+															overflow: 'hidden',
+															textOverflow: 'ellipsis',
+															whiteSpace: 'nowrap',
+														}}
+													>
+														{option.address}
+													</Typography>
+												)}
+											</Box>
 										</Box>
-									</Box>
-								)}
+									)
+								}}
 								renderInput={params => (
 									<TextField
 										{...params}

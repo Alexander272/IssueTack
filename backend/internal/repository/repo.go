@@ -44,6 +44,9 @@ type Groups interface {
 type Categories interface {
 	postgres.Categories
 }
+type CategoryGroups interface {
+	postgres.CategoryGroups
+}
 type Sites interface {
 	postgres.Sites
 }
@@ -90,6 +93,7 @@ type Repository struct {
 	SessionCache
 	Groups
 	Categories
+	CategoryGroups
 	Sites
 	Tickets
 	Subtasks
@@ -120,6 +124,7 @@ func NewRepository(pool *pgxpool.Pool, memDB *redis.Client, conf config.AuthConf
 
 		Groups:              postgres.NewGroupRepo(pool, transaction),
 		Categories:          postgres.NewCategoryRepo(pool),
+		CategoryGroups:      postgres.NewCategoryGroupRepo(pool),
 		Sites:               postgres.NewSiteRepo(pool),
 		Tickets:             postgres.NewTicketRepo(pool, transaction),
 		Subtasks:            postgres.NewSubtaskRepo(pool, transaction),

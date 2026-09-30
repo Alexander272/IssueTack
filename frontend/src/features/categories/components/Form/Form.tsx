@@ -3,6 +3,7 @@ import { MenuItem, Stack, TextField, Typography } from '@mui/material'
 import { Controller, type Control } from 'react-hook-form'
 
 import type { ICategoryDTO } from '../../types/category'
+import type { ICategoryGroup } from '@/features/categoryGroups/types/categoryGroup'
 import type { IGroup } from '@/features/groups/types/group'
 import { PRIORITY_MAP } from '@/features/tasks/constants/taskMaps'
 import { Switch } from '@/components/TextSwitch/Switch'
@@ -10,9 +11,10 @@ import { Switch } from '@/components/TextSwitch/Switch'
 type Props = {
 	control: Control<ICategoryDTO>
 	groups: IGroup[]
+	categoryGroups: ICategoryGroup[]
 }
 
-export const Form: FC<Props> = ({ control, groups }) => {
+export const Form: FC<Props> = ({ control, groups, categoryGroups }) => {
 	return (
 		<Stack spacing={2}>
 			<Stack>
@@ -70,6 +72,32 @@ export const Form: FC<Props> = ({ control, groups }) => {
 							{groups.map(g => (
 								<MenuItem key={g.id} value={g.id}>
 									{g.name}
+								</MenuItem>
+							))}
+						</TextField>
+					)}
+				/>
+			</Stack>
+
+			<Stack>
+				<Typography variant='caption' sx={{ fontWeight: 600, mb: 0.5, display: 'block' }}>
+					Раздел категорий
+				</Typography>
+				<Controller
+					control={control}
+					name='categoryGroupId'
+					render={({ field }) => (
+						<TextField
+							{...field}
+							select
+							fullWidth
+							value={field.value ?? ''}
+							onChange={e => field.onChange(e.target.value === '' ? null : e.target.value)}
+						>
+							<MenuItem value=''>Без раздела</MenuItem>
+							{categoryGroups.map(cg => (
+								<MenuItem key={cg.id} value={cg.id}>
+									{cg.name}
 								</MenuItem>
 							))}
 						</TextField>

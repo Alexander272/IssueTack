@@ -12,6 +12,7 @@ export interface ISiteShort {
 export interface ICategoryShort {
 	id: string
 	name: string
+	categoryGroupName?: string | null
 }
 
 export interface IGroupShort {

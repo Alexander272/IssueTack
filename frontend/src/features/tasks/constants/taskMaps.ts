@@ -112,6 +112,7 @@ export const GROUP_BY_OPTIONS = [
 	{ value: 'creator', label: 'По заказчику' },
 	{ value: 'dueDate', label: 'По сроку (неделям)' },
 	{ value: 'category', label: 'По категории' },
+	{ value: 'categoryGroup', label: 'По разделу' },
 ] as const
 
 export type GroupByField = (typeof GROUP_BY_OPTIONS)[number]['value']

@@ -15,6 +15,10 @@ export interface PluginCategory {
     name: string;
     description: string;
     groupId: string;
+    // Раздел категории (таксономия), заполняется сервером, если категория
+    // привязана к разделу.
+    categoryGroupId?: string | null;
+    categoryGroup?: {id: string; name: string};
     priority: Priority;
     isActive: boolean;
     realmId: string;

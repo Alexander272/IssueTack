@@ -103,7 +103,7 @@ export const CategoriesCard: FC = () => {
 
 	const renderEmpty: ReactNode = (
 		<TableRow>
-			<TableCell colSpan={CATEGORY_EVENTS.length + 1} align='center'>
+			<TableCell colSpan={CATEGORY_EVENTS.length + 2} align='center'>
 				<Typography color={palette.text.secondary}>Категории не найдены</Typography>
 			</TableCell>
 		</TableRow>
@@ -122,6 +122,7 @@ export const CategoriesCard: FC = () => {
 					<TableHead>
 						<TableRow sx={{ bgcolor: '#f9fafb' }}>
 							<TableCell sx={{ width: 260, fontWeight: 600 }}>Категория</TableCell>
+							<TableCell sx={{ width: 160, fontWeight: 600 }}>Раздел</TableCell>
 							{CATEGORY_EVENTS.map(e => (
 								<TableCell key={e.key} align='center' sx={{ fontWeight: 600 }}>
 									<Box
@@ -166,7 +167,7 @@ export const CategoriesCard: FC = () => {
 												</Stack>
 											</Stack>
 										</TableCell>
-										<TableCell colSpan={4}>
+										<TableCell colSpan={CATEGORY_EVENTS.length + 1}>
 											<SelectButtons
 												disabled={disabled}
 												onSetAll={value => setAllGroup(value, group.id)}
@@ -198,6 +199,11 @@ export const CategoriesCard: FC = () => {
 															</Typography>
 														</Stack>
 													</Stack>
+												</TableCell>
+												<TableCell sx={{ py: 0.5 }}>
+													<Typography variant='caption' sx={{ color: '#6b7280' }}>
+														{cat.categoryGroup?.name || '—'}
+													</Typography>
 												</TableCell>
 												{CATEGORY_EVENTS.map(e => (
 													<TableCell key={e.key} align='center'>

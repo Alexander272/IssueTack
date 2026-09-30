@@ -1,6 +1,6 @@
 import { type FC } from 'react'
 import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material'
-import { EditIcon, EyeIcon, UsersIcon } from 'lucide-mui'
+import { EditIcon, EyeIcon, FolderIcon, UsersIcon } from 'lucide-mui'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ru'
 
@@ -95,6 +95,30 @@ export const CategoryCardList: FC<Props> = ({ categories, groupsMap, onView, onE
 							</Box>
 
 							<Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 1.5 }}>
+								<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+									<Typography sx={{ fontSize: '0.75rem', color: '#6b7280' }}>Раздел</Typography>
+									<Box
+										sx={{
+											display: 'inline-flex',
+											alignItems: 'center',
+											gap: 0.75,
+											px: 1.5,
+											py: 0.5,
+											borderRadius: '6px',
+											fontSize: '0.75rem',
+											fontWeight: 500,
+											bgcolor: cat.categoryGroup ? '#f5f3ff' : '#f3f4f6',
+											color: cat.categoryGroup ? '#6d28d9' : '#6b7280',
+											border: '1px solid',
+											borderColor: cat.categoryGroup ? '#ddd6fe' : '#e5e7eb',
+										}}
+									>
+										<FolderIcon
+											sx={{ fontSize: 16, mr: 0.5, color: cat.categoryGroup ? '#6d28d9' : '#9ca3af' }}
+										/>
+										{cat.categoryGroup?.name || 'Без раздела'}
+									</Box>
+								</Box>
 								<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
 									<Typography sx={{ fontSize: '0.75rem', color: '#6b7280' }}>
 										Группа-владелец

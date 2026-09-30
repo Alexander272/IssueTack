@@ -27,6 +27,7 @@ type Services struct {
 	// Домен (каталог, группы, заявки)
 	Groups
 	Categories
+	CategoryGroups
 	Sites
 	Tickets
 	Subtasks
@@ -108,6 +109,7 @@ func NewServices(deps *Deps) *Services {
 	session := NewSessionService(deps.Keycloak, policies, userRealms, users, groups, access, cacheSvc)
 
 	categories := NewCategoryService(deps.Repo.Categories, deps.Repo.Tickets)
+	categoryGroups := NewCategoryGroupService(deps.Repo.CategoryGroups)
 	sites := NewSiteService(deps.Repo.Sites)
 	logs := NewActivityLogService(deps.Repo.ActivityLog, transaction)
 	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs, access)
@@ -189,6 +191,7 @@ func NewServices(deps *Deps) *Services {
 		// Домен
 		Groups:          groups,
 		Categories:      categories,
+		CategoryGroups:  categoryGroups,
 		Sites:           sites,
 		Tickets:         tickets,
 		Subtasks:        subtasks,

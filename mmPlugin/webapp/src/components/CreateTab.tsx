@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 
 import { ApiError, createTicket } from '../api'
 import type { PluginCategory, PluginContextResult, PluginCreateResult, PluginScope, PluginSite } from '../types'
@@ -35,6 +35,20 @@ export default function CreateTab({ scope, context, onCreated, onOpen }: CreateT
 	const [result, setResult] = useState<PluginCreateResult | null>(null)
 
 	const categories = (context.categories || []).filter((c: PluginCategory) => c.isActive !== false)
+	// Категории группируются по разделам (таксономия) — нативные optgroup.
+	const categorySections = useMemo(() => {
+		const sections = new Map<string, {name: string; items: PluginCategory[]}>();
+		categories.forEach(c => {
+			const name = c.categoryGroup?.name || 'Без раздела';
+			const bucket = sections.get(name);
+			if (bucket) {
+				bucket.items.push(c);
+			} else {
+				sections.set(name, {name, items: [c]});
+			}
+		});
+		return [...sections.values()];
+	}, [categories]);
 	const sites = context.sites || []
 	const selectedSite = sites.find(s => s.id === siteId) || null
 
@@ -148,10 +162,14 @@ export default function CreateTab({ scope, context, onCreated, onOpen }: CreateT
 								}}
 							>
 								<option value=''>— Выберите категорию —</option>
-								{categories.map(c => (
-									<option key={c.id} value={c.id}>
-										{c.name}
-									</option>
+								{categorySections.map(section => (
+									<optgroup key={section.name} label={section.name}>
+										{section.items.map(c => (
+											<option key={c.id} value={c.id}>
+												{c.name}
+											</option>
+										))}
+									</optgroup>
 								))}
 							</select>
 							{fieldErrors.categoryId ? (

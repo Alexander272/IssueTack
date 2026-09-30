@@ -5,6 +5,7 @@ import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
 import type { ICategoryDTO } from '../../types/category'
+import type { ICategoryGroup } from '@/features/categoryGroups/types/categoryGroup'
 import type { IGroup } from '@/features/groups/types/group'
 import {
 	useCreateCategoryMutation,
@@ -18,11 +19,12 @@ import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
 type Props = {
 	category?: ICategoryDTO
 	groups: IGroup[]
+	categoryGroups: ICategoryGroup[]
 	open: boolean
 	onClose: () => void
 }
 
-export const CategoryDialog: FC<Props> = ({ category, groups, open, onClose }) => {
+export const CategoryDialog: FC<Props> = ({ category, groups, categoryGroups, open, onClose }) => {
 	const [deleteOpen, setDeleteOpen] = useState(false)
 
 	const [create, { isLoading: isCreating }] = useCreateCategoryMutation()
@@ -35,6 +37,7 @@ export const CategoryDialog: FC<Props> = ({ category, groups, open, onClose }) =
 			name: '',
 			description: '',
 			groupId: '',
+			categoryGroupId: null,
 			priority: 'medium',
 			isActive: true,
 		},
@@ -91,7 +94,7 @@ export const CategoryDialog: FC<Props> = ({ category, groups, open, onClose }) =
 			</DialogTitle>
 
 			<DialogContent dividers sx={{ borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', py: 3 }}>
-				<Form control={control} groups={groups} />
+				<Form control={control} groups={groups} categoryGroups={categoryGroups} />
 			</DialogContent>
 
 			<DialogActions sx={{ p: 2, gap: 1, justifyContent: category?.id ? 'space-between' : 'flex-end' }}>

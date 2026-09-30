@@ -5,10 +5,17 @@ export interface ICategory {
 	name: string
 	description: string
 	groupId: string
+	categoryGroupId: string | null
+	categoryGroup?: ICategoryGroupShort
 	priority: Priority
 	isActive: boolean
 	createdAt: string
 	updatedAt: string
+}
+
+export interface ICategoryGroupShort {
+	id: string
+	name: string
 }
 
 export interface ICategoryDTO {
@@ -16,6 +23,7 @@ export interface ICategoryDTO {
 	name: string
 	description: string
 	groupId: string
+	categoryGroupId: string | null
 	priority: Priority
 	isActive: boolean
 }

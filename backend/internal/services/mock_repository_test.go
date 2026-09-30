@@ -488,6 +488,41 @@ func (m *MockCategoriesRepo) Delete(ctx context.Context, dto *models.DelCategory
 	return args.Error(0)
 }
 
+type MockCategoryGroupsRepo struct {
+	mock.Mock
+}
+
+func (m *MockCategoryGroupsRepo) Get(ctx context.Context, req *models.GetCategoryGroupsDTO) ([]*models.CategoryGroup, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.CategoryGroup), args.Error(1)
+}
+func (m *MockCategoryGroupsRepo) GetByID(ctx context.Context, req *models.GetCategoryGroupByIdDTO) (*models.CategoryGroup, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.CategoryGroup), args.Error(1)
+}
+func (m *MockCategoryGroupsRepo) Create(ctx context.Context, dto *models.CategoryGroupDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+func (m *MockCategoryGroupsRepo) Update(ctx context.Context, dto *models.CategoryGroupDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+func (m *MockCategoryGroupsRepo) Delete(ctx context.Context, dto *models.DelCategoryGroupDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+func (m *MockCategoryGroupsRepo) CountByCategory(ctx context.Context, id uuid.UUID) (int, error) {
+	args := m.Called(ctx, id)
+	return args.Int(0), args.Error(1)
+}
+
 type MockGroupRepo struct {
 	mock.Mock
 }
@@ -831,6 +866,32 @@ func (m *MockCommentsRepo) Create(ctx context.Context, tx postgres.Tx, dto *mode
 }
 func (m *MockCommentsRepo) Delete(ctx context.Context, tx postgres.Tx, id uuid.UUID) error {
 	args := m.Called(ctx, tx, id)
+	return args.Error(0)
+}
+
+// MockCommentsService — мок сервисного интерфейса Comments.
+type MockCommentsService struct {
+	mock.Mock
+}
+
+func (m *MockCommentsService) GetByTicket(ctx context.Context, ticketID uuid.UUID, userID uuid.UUID, realm string) ([]*models.Comment, error) {
+	args := m.Called(ctx, ticketID, userID, realm)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.Comment), args.Error(1)
+}
+
+func (m *MockCommentsService) Create(ctx context.Context, tx postgres.Tx, dto *models.CreateCommentDTO) (*models.Comment, error) {
+	args := m.Called(ctx, tx, dto)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Comment), args.Error(1)
+}
+
+func (m *MockCommentsService) Delete(ctx context.Context, tx postgres.Tx, dto *models.DeleteCommentDTO) error {
+	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
 }
 

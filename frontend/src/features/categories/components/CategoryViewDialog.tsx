@@ -10,7 +10,7 @@ import {
 	Stack,
 	Typography,
 } from '@mui/material'
-import { XIcon, UsersIcon } from 'lucide-mui'
+import { FolderIcon, XIcon, UsersIcon } from 'lucide-mui'
 
 import type { ICategory, ICategoryDTO } from '../types/category'
 import { getSmartDate } from '@/utils/date'
@@ -114,6 +114,35 @@ export const CategoryViewDialog: FC<Props> = ({ category, groupsMap, onClose, on
 										variant='caption'
 										sx={{ fontWeight: 600, display: 'block', color: 'text.secondary', mb: 0.5 }}
 									>
+										Раздел
+									</Typography>
+									<Typography
+										sx={{
+											display: 'inline-flex',
+											alignItems: 'center',
+											gap: 0.75,
+											px: 1.5,
+											py: 0.5,
+											borderRadius: '6px',
+											fontSize: '0.75rem',
+											fontWeight: 500,
+											bgcolor: category.categoryGroup ? '#f5f3ff' : '#f3f4f6',
+											color: category.categoryGroup ? '#6d28d9' : '#6b7280',
+											border: '1px solid',
+											borderColor: category.categoryGroup ? '#ddd6fe' : '#e5e7eb',
+										}}
+									>
+										<FolderIcon
+											sx={{ fontSize: 16, mr: 0.5, color: category.categoryGroup ? '#6d28d9' : '#9ca3af' }}
+										/>
+										{category.categoryGroup?.name || 'Без раздела'}
+									</Typography>
+								</Box>
+								<Box>
+									<Typography
+										variant='caption'
+										sx={{ fontWeight: 600, display: 'block', color: 'text.secondary', mb: 0.5 }}
+									>
 										Группа-владелец
 									</Typography>
 									<Typography
@@ -202,6 +231,7 @@ export const CategoryViewDialog: FC<Props> = ({ category, groupsMap, onClose, on
 									name: category.name,
 									description: category.description,
 									groupId: category.groupId,
+									categoryGroupId: category.categoryGroupId ?? null,
 									priority: category.priority,
 									isActive: category.isActive,
 								})

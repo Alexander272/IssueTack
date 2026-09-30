@@ -12,7 +12,7 @@ import {
 	Tooltip,
 	Typography,
 } from '@mui/material'
-import { EditIcon, EyeIcon, UsersIcon } from 'lucide-mui'
+import { EditIcon, EyeIcon, FolderIcon, UsersIcon } from 'lucide-mui'
 
 import type { ICategory } from '../types/category'
 import { getSmartDate } from '@/utils/date'
@@ -42,6 +42,7 @@ export const CategoryTable: FC<Props> = ({ categories, groupsMap, onView, onEdit
 					<TableRow sx={{ borderBottom: '1px solid #f3f4f6' }}>
 						<TableCell sx={thStyle}>Название</TableCell>
 						<TableCell sx={thStyle}>Описание</TableCell>
+						<TableCell sx={thStyle}>Раздел</TableCell>
 						<TableCell sx={thStyle}>Группа-владелец</TableCell>
 						<TableCell sx={thStyle}>Приоритет</TableCell>
 						<TableCell sx={thStyle}>Статус</TableCell>
@@ -78,6 +79,30 @@ export const CategoryTable: FC<Props> = ({ categories, groupsMap, onView, onEdit
 										}}
 									>
 										{cat.description}
+									</Typography>
+								</TableCell>
+
+								<TableCell sx={{ py: 1 }}>
+									<Typography
+										sx={{
+											display: 'inline-flex',
+											alignItems: 'center',
+											gap: 0.75,
+											px: 1.5,
+											py: 0.5,
+											borderRadius: '6px',
+											fontSize: '0.75rem',
+											fontWeight: 500,
+											bgcolor: cat.categoryGroup ? '#f5f3ff' : '#f3f4f6',
+											color: cat.categoryGroup ? '#6d28d9' : '#6b7280',
+											border: '1px solid',
+											borderColor: cat.categoryGroup ? '#ddd6fe' : '#e5e7eb',
+										}}
+									>
+										<FolderIcon
+											sx={{ fontSize: 16, mr: 0.5, color: cat.categoryGroup ? '#6d28d9' : '#9ca3af' }}
+										/>
+										{cat.categoryGroup?.name || 'Без раздела'}
 									</Typography>
 								</TableCell>
 
@@ -141,7 +166,7 @@ export const CategoryTable: FC<Props> = ({ categories, groupsMap, onView, onEdit
 					})}
 					{!categories.length ? (
 						<TableRow>
-							<TableCell colSpan={7} align='center' sx={{ py: 3, color: 'text.secondary' }}>
+							<TableCell colSpan={8} align='center' sx={{ py: 3, color: 'text.secondary' }}>
 								Категории не найдены.
 							</TableCell>
 						</TableRow>

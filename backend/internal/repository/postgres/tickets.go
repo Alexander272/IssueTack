@@ -257,7 +257,7 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 			u_assignee.id, u_assignee.username AS assignee_username, u_assignee.first_name AS assignee_first_name, u_assignee.last_name AS assignee_last_name, u_assignee.internal_number AS assignee_internal_number,
 			u_manager.id, u_manager.username AS manager_username, u_manager.first_name AS manager_first_name, u_manager.last_name AS manager_last_name, u_manager.internal_number AS manager_internal_number,
 			g.id, g.name,
-			c.id, c.name,
+			c.id, c.name, cg.name AS category_group_name,
 			s.id, s.name,
 			COUNT(*) OVER() AS total_count
 		FROM %s t
@@ -267,9 +267,10 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 		LEFT JOIN %s u_manager ON t.manager_id = u_manager.id
 		LEFT JOIN %s g ON t.group_id = g.id
 		JOIN %s c ON t.category_id = c.id
+		LEFT JOIN %s cg ON c.category_group_id = cg.id
 		JOIN %s s ON t.site_id = s.id`,
 		Tables.Tickets, Tables.Users, Tables.Users, Tables.Users, Tables.Users,
-		Tables.Groups, Tables.Categories, Tables.Sites,
+		Tables.Groups, Tables.Categories, Tables.CategoryGroups, Tables.Sites,
 	)
 
 	w := &whereBuilder{}
@@ -355,7 +356,7 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 			&assoc.AssigneeID, &assoc.AssigneeUsername, &assoc.AssigneeFirstName, &assoc.AssigneeLastName, &assoc.AssigneeInternalNumber,
 			&assoc.ManagerID, &assoc.ManagerUsername, &assoc.ManagerFirstName, &assoc.ManagerLastName, &assoc.ManagerInternalNumber,
 			&assoc.GroupID, &assoc.GroupName,
-			&ticket.Category.ID, &ticket.Category.Name,
+			&ticket.Category.ID, &ticket.Category.Name, &ticket.Category.CategoryGroupName,
 			&ticket.Site.ID, &ticket.Site.Name,
 			&total,
 		); err != nil {
@@ -387,7 +388,7 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 			-- Данные группы
 			g.id, g.name,
 			-- Данные категории
-			c.id, c.name,
+			c.id, c.name, cg.name AS category_group_name,
 			-- Данные площадки
 			s.id, s.name
 		FROM %s t
@@ -397,10 +398,11 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 		LEFT JOIN %s u_manager ON t.manager_id = u_manager.id
 		LEFT JOIN %s g ON t.group_id = g.id
 		JOIN %s c ON t.category_id = c.id
+		LEFT JOIN %s cg ON c.category_group_id = cg.id
 		JOIN %s s ON t.site_id = s.id
 		WHERE t.id = $1;`,
 		Tables.Tickets, Tables.Users, Tables.Users, Tables.Users, Tables.Users,
-		Tables.Groups, Tables.Categories, Tables.Sites,
+		Tables.Groups, Tables.Categories, Tables.CategoryGroups, Tables.Sites,
 	)
 
 	ticket := &models.Ticket{
@@ -419,7 +421,7 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 		&assoc.AssigneeID, &assoc.AssigneeUsername, &assoc.AssigneeFirstName, &assoc.AssigneeLastName, &assoc.AssigneeInternalNumber,
 		&assoc.ManagerID, &assoc.ManagerUsername, &assoc.ManagerFirstName, &assoc.ManagerLastName, &assoc.ManagerInternalNumber,
 		&assoc.GroupID, &assoc.GroupName,
-		&ticket.Category.ID, &ticket.Category.Name,
+		&ticket.Category.ID, &ticket.Category.Name, &ticket.Category.CategoryGroupName,
 		&ticket.Site.ID, &ticket.Site.Name,
 	); err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))

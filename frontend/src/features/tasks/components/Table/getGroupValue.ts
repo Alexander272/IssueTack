@@ -6,6 +6,8 @@ export function getGroupValue(task: ITask, groupBy: GroupByField): string {
 	switch (groupBy) {
 		case 'category':
 			return task.category.name
+		case 'categoryGroup':
+			return task.category.categoryGroupName || 'Без раздела'
 		case 'status':
 			return STATUS_MAP[task.status]?.label ?? task.status
 		case 'priority':

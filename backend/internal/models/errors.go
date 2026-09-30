@@ -54,6 +54,8 @@ var (
 	ErrCloseRequiresResolved = NewDomainError(errors.New("cannot close ticket that is not resolved"), http.StatusConflict, "TK002", "Нельзя закрыть нерешённую задачу. Задачу можно только отменить")
 	ErrTicketFrozen          = NewDomainError(errors.New("ticket is resolved/closed/cancelled"), http.StatusConflict, "TK003", "Заявка решена, закрыта или отменена — изменение данных недоступно")
 	ErrOwnerRequired         = NewDomainError(errors.New("customer (owner) is required"), http.StatusBadRequest, "TK004", "Необходимо указать заказчика")
+	// ErrReasonRequired — диалог «Вернуть заявку в работу» отправлен без причины.
+	ErrReasonRequired = NewDomainError(errors.New("reason is required"), http.StatusBadRequest, "TK005", "Укажите причину возврата заявки в работу")
 
 	// 409 Conflict (шаблоны чек-листов)
 	ErrTemplateNameExists = NewDomainError(errors.New("checklist template with this title already exists"), http.StatusConflict, "CL001", "Шаблон с таким названием уже существует")
@@ -61,6 +63,7 @@ var (
 	// 409 Conflict (удаление справочников)
 	ErrGroupHasOpenTickets    = NewDomainError(errors.New("group has open tickets"), http.StatusConflict, "GR001", "Нельзя удалить группу, пока в ней есть незакрытые заявки")
 	ErrCategoryHasOpenTickets = NewDomainError(errors.New("category has open tickets"), http.StatusConflict, "CT001", "Нельзя удалить категорию, пока в ней есть незакрытые заявки")
+	ErrCategoryGroupInUse     = NewDomainError(errors.New("category group has categories"), http.StatusConflict, "CT002", "Нельзя удалить раздел, пока в нём есть категории")
 
 	// 400 Bad Request
 	ErrInvalidInput          = NewDomainError(errors.New("invalid input data"), http.StatusBadRequest, "BR001", "Переданы некорректные данные")
