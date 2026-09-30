@@ -227,6 +227,19 @@ func cardActionsByName(t *testing.T, card model.StringInterface) []string {
 	return names
 }
 
+// cardActionIDs собирает action_id всех действий карточки — Mattermost ищет
+// действие по id в attachments поста и берёт первое совпадение, поэтому id
+// обязан быть непустым и уникальным в пределах поста.
+func cardActionIDs(t *testing.T, card model.StringInterface) []string {
+	t.Helper()
+	ids := make([]string, 0)
+	for _, action := range postCardActions(t, card) {
+		id, _ := action["id"].(string)
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 // dmService собирает сервис с перехватом постов Mattermost.
 func dmService(t *testing.T, captured *[]capturedPost) (*MattermostService, *MockMattermostRepo, *MockUserService, *MockUserRealmsService, *MockTicketsService) {
 	t.Helper()
@@ -353,7 +366,7 @@ func TestSendStatusMessage_PostsTicketCards(t *testing.T) {
 	card := cards[0]
 	assert.Equal(t, "№7 — Сломалась дверь", card["title"])
 	assert.Equal(t, mmStatusColors[models.StatusOpen], card["color"])
-	assert.Equal(t, testBaseURL+"/tasks/"+ticketID.String(), card["url"], "карточка кликабельна целиком")
+	assert.Equal(t, testBaseURL+"/tasks/"+ticketID.String(), card["title_link"], "заголовок ведёт на заявку")
 
 	fields := postObjects(t, card["fields"])
 	require.Len(t, fields, 3)
@@ -366,6 +379,7 @@ func TestSendStatusMessage_PostsTicketCards(t *testing.T) {
 
 	// Отдельной кнопки «Открыть заявку» больше нет — вместо неё действие владельца.
 	assert.Equal(t, []string{"Отменить заявку:ticket_cancel"}, cardActionsByName(t, card))
+	assert.Equal(t, []string{ticketActionID(ticketID, actionCancel)}, cardActionIDs(t, card))
 }
 
 func TestSendStatusMessage_WithoutTickets(t *testing.T) {
@@ -432,7 +446,7 @@ func TestHandleInteractiveAction_MyTickets(t *testing.T) {
 	cards := postCards(t, posts[0].props)
 	require.Len(t, cards, 1)
 	assert.Equal(t, "Заявка", cards[0]["title"])
-	assert.Equal(t, testBaseURL+"/tasks/"+ticketID.String(), cards[0]["url"])
+	assert.Equal(t, testBaseURL+"/tasks/"+ticketID.String(), cards[0]["title_link"])
 }
 
 func TestHandleInteractiveAction_MyTickets_InvalidRealm(t *testing.T) {
@@ -1019,10 +1033,40 @@ func TestMyTicketActionButtons_ByStatusAndOwner(t *testing.T) {
 				assert.Equal(t, testBaseURL+"/api/v1/mattermost/action", b.URL)
 				assert.Equal(t, ticket.ID.String(), b.Context["ticket_id"])
 				assert.Equal(t, "0", b.Context["from"], "смещение нужно для перерисовки того же среза")
+				assert.Equal(t, ticketActionID(ticket.ID, b.Context["action"]), b.ID)
+				assert.Regexp(t, `^[A-Za-z0-9]+$`, b.ID, "id попадает в роут /posts/{id}/actions/{action_id}")
 			}
 			assert.Equal(t, tt.want, names)
 		})
 	}
+}
+
+// action_id действий должен быть уникален в пределах поста: Mattermost ищет
+// действие по id в attachments поста и берёт первое совпадение, поэтому общий id
+// у карточек увёл бы нажатие на чужую заявку.
+func TestMyTicketsChunkAt_UniqueButtonIDs(t *testing.T) {
+	svc := NewMattermostService(&MattermostDeps{BaseURL: testBaseURL})
+	ownerID := uuid.New()
+
+	tickets := make([]*models.Ticket, 0, 4)
+	for i := 0; i < 4; i++ {
+		tickets = append(tickets, ticketFixture(i, models.StatusResolved, ownerID))
+	}
+
+	chunk, ok := svc.myTicketsChunkAt(tickets, 0, ownerID)
+	require.True(t, ok)
+	require.Len(t, chunk.cards, 4)
+
+	seen := map[string]bool{}
+	for i, card := range chunk.cards {
+		require.Len(t, card.Buttons, 2, "у решённой заявки два действия")
+		for _, b := range card.Buttons {
+			require.NotEmpty(t, b.ID, "карточка %d: действие без id", i)
+			assert.Falsef(t, seen[b.ID], "id %q повторяется в посте", b.ID)
+			seen[b.ID] = true
+		}
+	}
+	assert.Len(t, seen, 8)
 }
 
 // Смещение кнопки должно совпадать с позицией заявки в её сообщении, иначе
@@ -1089,7 +1133,7 @@ func TestMyTicketsChunks_WithoutBaseURL(t *testing.T) {
 
 	require.Len(t, chunks, 1)
 	require.Len(t, chunks[0].cards, 1)
-	assert.Empty(t, chunks[0].cards[0].URL, "без base_url ссылка на заявку не строится")
+	assert.Empty(t, chunks[0].cards[0].TitleLink, "без base_url ссылка на заявку не строится")
 }
 
 func TestMyTicketsChunks_TitleWithoutNumber(t *testing.T) {

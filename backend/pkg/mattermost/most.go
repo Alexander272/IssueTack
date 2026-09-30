@@ -1,6 +1,9 @@
 package mattermost
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
@@ -32,18 +35,26 @@ func NewMost(cfg MostConfig) *Most {
 // InteractiveButton describes an action button attached to a post. URL points
 // to our backend: Mattermost posts the press there with the Context, so the
 // action is dispatched server-side.
+//
+// ID is the action_id Mattermost uses to route the press: the server looks the
+// action up in the post's own attachments (Post.GetAction) and sends that
+// action's integration URL and Context. It is therefore mandatory and must be
+// unique inside the post. Left empty, postProps assigns a positional one.
 type InteractiveButton struct {
 	Text    string
 	Style   string
 	URL     string
 	Context map[string]string
+	ID      string
 }
 
 // LinkAction describes a plain link attached to a card: unlike InteractiveButton
-// it posts nothing back, it just opens the URL (a page of the web app).
+// it posts nothing back, it just opens the URL (a page of the web app). ID is
+// handled exactly like InteractiveButton.ID.
 type LinkAction struct {
 	Text string
 	URL  string
+	ID   string
 }
 
 // AttachmentField is a short "label: value" line of a card.
@@ -53,17 +64,21 @@ type AttachmentField struct {
 	Short bool
 }
 
-// Attachment is a card attached to a post. URL makes the whole card clickable,
-// Actions adds buttons to it. Both web and mobile clients render the same card
-// format, so a post with cards looks identical on a phone and on a desktop.
+// Attachment is a card attached to a post. TitleLink makes the title a link to
+// the ticket, Actions adds buttons to it. Both web and mobile clients render
+// the same card format, so a post with cards looks identical on a phone and on
+// a desktop.
+//
+// TitleLink, not "url": there is no whole-card link in the attachment schema —
+// clients only know title_link/author_link, so a card is opened by its title.
 type Attachment struct {
-	Title   string
-	Text    string
-	Color   string
-	URL     string
-	Fields  []AttachmentField
-	Buttons []InteractiveButton
-	Links   []LinkAction
+	Title     string
+	TitleLink string
+	Text      string
+	Color     string
+	Fields    []AttachmentField
+	Buttons   []InteractiveButton
+	Links     []LinkAction
 }
 
 // postProps renders a post's "attachments" prop. It is the shared builder for
@@ -75,19 +90,19 @@ type Attachment struct {
 func postProps(cards []Attachment) model.StringInterface {
 	attachments := make([]model.StringInterface, 0, len(cards))
 
-	for _, card := range cards {
+	for cardIdx, card := range cards {
 		entry := model.StringInterface{}
 		if card.Title != "" {
 			entry["title"] = card.Title
+		}
+		if card.TitleLink != "" {
+			entry["title_link"] = card.TitleLink
 		}
 		if card.Text != "" {
 			entry["text"] = card.Text
 		}
 		if card.Color != "" {
 			entry["color"] = card.Color
-		}
-		if card.URL != "" {
-			entry["url"] = card.URL
 		}
 		if len(card.Fields) > 0 {
 			fields := make([]model.StringInterface, 0, len(card.Fields))
@@ -100,7 +115,7 @@ func postProps(cards []Attachment) model.StringInterface {
 			}
 			entry["fields"] = fields
 		}
-		if actions := cardActions(card); len(actions) > 0 {
+		if actions := cardActions(card, cardIdx); len(actions) > 0 {
 			entry["actions"] = actions
 		}
 		// Карточка, у которой кроме кнопок ничего нет, — это ряд кнопок
@@ -119,11 +134,12 @@ func postProps(cards []Attachment) model.StringInterface {
 // cardActions builds the action row of a single card: interactive buttons
 // first, then plain links. Both kinds are rendered by Mattermost as the buttons
 // of that card, so a card can offer its own actions without affecting others.
-func cardActions(card Attachment) []model.StringInterface {
+func cardActions(card Attachment, cardIdx int) []model.StringInterface {
 	actions := make([]model.StringInterface, 0, len(card.Buttons)+len(card.Links))
 	// Пустой style не отправляем: Mattermost подставит дефолтный сам.
-	for _, btn := range card.Buttons {
+	for i, btn := range card.Buttons {
 		action := model.StringInterface{
+			"id":   actionID(btn.ID, cardIdx, i),
 			"name": btn.Text,
 			"type": "button",
 			"integration": model.StringInterface{
@@ -136,8 +152,9 @@ func cardActions(card Attachment) []model.StringInterface {
 		}
 		actions = append(actions, action)
 	}
-	for _, l := range card.Links {
+	for i, l := range card.Links {
 		actions = append(actions, model.StringInterface{
+			"id":   actionID(l.ID, cardIdx, len(card.Buttons)+i),
 			"name": l.Text,
 			"type": "link",
 			"url":  l.URL,
@@ -147,6 +164,36 @@ func cardActions(card Attachment) []model.StringInterface {
 		return nil
 	}
 	return actions
+}
+
+// actionID returns the action_id for a button or a link of a card.
+//
+// Two rules make this mandatory rather than cosmetic:
+//   - Mattermost routes the press by id: the client sends
+//     POST /posts/{post_id}/actions/{action_id} (the route accepts
+//     [A-Za-z0-9]+ only) and the server resolves it against the post's own
+//     attachments. An empty id 404s on current servers and makes the control
+//     disappear entirely on Mattermost 11.10+, whose Interactive Messages
+//     renderer drops actions without an id.
+//   - Post.GetAction returns the FIRST matching action, so ids must be unique
+//     within the post — otherwise a click on the third card would be dispatched
+//     with the first card's context.
+//
+// An explicit id wins; a positional one is the fallback and is unique by
+// construction. Explicit ids are stripped down to [A-Za-z0-9] so a caller can
+// pass a UUID or a readable name without breaking the route.
+func actionID(explicit string, cardIdx, actionIdx int) string {
+	var b strings.Builder
+	for _, r := range explicit {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		}
+	}
+	if b.Len() > 0 {
+		return b.String()
+	}
+	return fmt.Sprintf("c%da%d", cardIdx, actionIdx)
 }
 
 // buttonProps renders a post with a row of interactive action buttons and no

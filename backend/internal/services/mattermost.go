@@ -548,9 +548,9 @@ func myTicketsHeader(from, end, total int) string {
 	return fmt.Sprintf("Заявки %d–%d из %d:", from+1, end, total)
 }
 
-// myTicketCard собирает карточку заявки списка. Карточка кликабельна целиком
-// (url на карточке); отдельной кнопки «Открыть заявку» больше нет — вместо
-// неё у заявки владельца появляются действия по статусу.
+// myTicketCard собирает карточку заявки списка. Заголовок ведёт на заявку
+// (title_link) — отдельной кнопки «Открыть заявку» нет, вместо неё у заявки
+// владельца появляются действия по статусу.
 func (s *MattermostService) myTicketCard(t *models.Ticket, ownerID uuid.UUID, from int) mattermost.Attachment {
 	title := t.Title
 	if t.TicketNumber != nil {
@@ -566,14 +566,12 @@ func (s *MattermostService) myTicketCard(t *models.Ticket, ownerID uuid.UUID, fr
 	}
 
 	card := mattermost.Attachment{
-		Title:   title,
-		Text:    cardSummary(t.Description),
-		Color:   mmStatusColors[t.Status],
-		Fields:  fields,
-		Buttons: s.myTicketActionButtons(t, ownerID, from),
-	}
-	if link := s.taskLink(t.ID); link != "" {
-		card.URL = link
+		Title:     title,
+		TitleLink: s.taskLink(t.ID),
+		Text:      cardSummary(t.Description),
+		Color:     mmStatusColors[t.Status],
+		Fields:    fields,
+		Buttons:   s.myTicketActionButtons(t, ownerID, from),
 	}
 	return card
 }
@@ -614,21 +612,45 @@ func (s *MattermostService) myTicketActionButtons(t *models.Ticket, ownerID uuid
 		return []mattermost.InteractiveButton{{
 			Text: "Отменить заявку", Style: "danger",
 			URL: s.actionURL(), Context: btnCtx(actionCancel, models.StatusCancelled),
+			ID: ticketActionID(t.ID, actionCancel),
 		}}
 	case models.StatusResolved:
 		return []mattermost.InteractiveButton{
 			{
 				Text: "Подтвердить решение", Style: "primary",
 				URL: s.actionURL(), Context: btnCtx(actionConfirm, models.StatusClosed),
+				ID: ticketActionID(t.ID, actionConfirm),
 			},
 			{
 				Text: "Вернуть в работу",
 				URL:  s.actionURL(), Context: btnCtx(actionReopen, models.StatusInProgress),
+				ID: ticketActionID(t.ID, actionReopen),
 			},
 		}
 	default:
 		return nil
 	}
+}
+
+// ticketActionID — action_id кнопки заявки. Он должен быть уникален в посте
+// (сервер ищет действие по id в attachments поста и берёт первое совпадение, так
+// что общий id у карточек увёл бы нажатие на чужую заявку) и состоять только из
+// [A-Za-z0-9] — роут /posts/{id}/actions/{action_id} дефисы и подчёркивания не
+// принимает, поэтому uuid режем до hex-префикса, а из имени действия выкидываем
+// всё лишнее. Привязка к заявке, а не позиция в срезе: id не «едет», когда
+// карточка уезжает из списка.
+func ticketActionID(ticketID uuid.UUID, action string) string {
+	suffix := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			return r
+		}
+		return -1
+	}, strings.TrimPrefix(action, "ticket_"))
+	if suffix == "" {
+		suffix = "act"
+	}
+	return "t" + strings.ReplaceAll(ticketID.String(), "-", "")[:12] + suffix
 }
 
 // taskLink — абсолютная ссылка на заявку в веб-приложении. Абсолютная нужна для

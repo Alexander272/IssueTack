@@ -43,6 +43,7 @@ func TestButtonProps_SingleAndSeveral(t *testing.T) {
 		assert.Equal(t, "Создать заявку", actions[0]["name"])
 		assert.Equal(t, "button", actions[0]["type"])
 		assert.Equal(t, "primary", actions[0]["style"])
+		assert.Equal(t, "c0a0", actions[0]["id"])
 		integration, ok := actions[0]["integration"].(model.StringInterface)
 		require.True(t, ok)
 		assert.Equal(t, "https://app/api/dialog", integration["url"])
@@ -50,6 +51,7 @@ func TestButtonProps_SingleAndSeveral(t *testing.T) {
 
 		assert.Equal(t, "Мои заявки", actions[1]["name"])
 		assert.Equal(t, "button", actions[1]["type"])
+		assert.Equal(t, "c0a1", actions[1]["id"])
 		_, hasStyle := actions[1]["style"]
 		assert.False(t, hasStyle, "button without style must not send an empty style")
 	})
@@ -60,11 +62,11 @@ func TestPostProps_Cards(t *testing.T) {
 		assert.Nil(t, postProps(nil))
 	})
 
-	t.Run("card fields, url and link action", func(t *testing.T) {
+	t.Run("card fields, title link and link action", func(t *testing.T) {
 		props := postProps([]Attachment{{
-			Title: "№7 — Сломалась дверь",
-			Color: "#01579B",
-			URL:   "https://app/tasks/abc",
+			Title:     "№7 — Сломалась дверь",
+			Color:     "#01579B",
+			TitleLink: "https://app/tasks/abc",
 			Fields: []AttachmentField{
 				{Title: "Статус", Value: "Новая", Short: true},
 				{Title: "Создана", Value: "05.09.2026", Short: true},
@@ -78,7 +80,11 @@ func TestPostProps_Cards(t *testing.T) {
 		card := attachments[0]
 		assert.Equal(t, "№7 — Сломалась дверь", card["title"])
 		assert.Equal(t, "#01579B", card["color"])
-		assert.Equal(t, "https://app/tasks/abc", card["url"])
+		assert.Equal(t, "https://app/tasks/abc", card["title_link"])
+		// url в схеме вложений нет: клиенты его не рисуют, карточка открывается
+		// только по title_link.
+		_, hasURL := card["url"]
+		assert.False(t, hasURL, "attachment url не отправляем — его не знает ни один клиент")
 
 		fields, ok := card["fields"].([]model.StringInterface)
 		require.True(t, ok)
@@ -93,6 +99,7 @@ func TestPostProps_Cards(t *testing.T) {
 		assert.Equal(t, "Открыть заявку", links[0]["name"])
 		assert.Equal(t, "link", links[0]["type"])
 		assert.Equal(t, "https://app/tasks/abc", links[0]["url"])
+		assert.Equal(t, "c0a0", links[0]["id"])
 	})
 
 	t.Run("empty optional fields are omitted", func(t *testing.T) {
@@ -102,7 +109,7 @@ func TestPostProps_Cards(t *testing.T) {
 		require.Len(t, attachments, 1)
 
 		card := attachments[0]
-		for _, key := range []string{"text", "color", "url", "fields", "actions"} {
+		for _, key := range []string{"text", "color", "title_link", "url", "fields", "actions"} {
 			_, has := card[key]
 			assert.Falsef(t, has, "key %q must be omitted", key)
 		}
@@ -148,6 +155,72 @@ func TestPostProps_Cards(t *testing.T) {
 		assert.Equal(t, "danger", actions[0]["style"])
 		assert.Equal(t, "Открыть заявку", actions[1]["name"])
 		assert.Equal(t, "link", actions[1]["type"])
+	})
+}
+
+func TestPostProps_ActionIDs(t *testing.T) {
+	// Регресс-гард: Mattermost ищет действие по id в attachments поста и берёт
+	// первое совпадение, а роут /posts/{id}/actions/{action_id} принимает только
+	// [A-Za-z0-9]+. Пустой или повторяющийся id ломает нажатие (404 на текущих
+	// серверах, кнопка исчезает на 11.10+), поэтому проверяем оба свойства на
+	// любом наборе карточек.
+	t.Run("every action of every card has a unique id", func(t *testing.T) {
+		props := postProps([]Attachment{
+			{Title: "Первая", Buttons: []InteractiveButton{
+				{Text: "Отменить заявку", URL: "https://app/api/action", ID: "t0123456789abcancel"},
+				{Text: "Вернуть в работу", URL: "https://app/api/action"},
+			}},
+			{Title: "Вторая", Links: []LinkAction{{Text: "Открыть заявку", URL: "https://app/tasks/b"}}},
+			{Title: "Третья"},
+		})
+
+		seen := map[string]bool{}
+		for i, card := range propsAttachments(t, props) {
+			raw, ok := card["actions"].([]model.StringInterface)
+			if !ok {
+				continue
+			}
+			for j, action := range raw {
+				id, _ := action["id"].(string)
+				require.NotEmptyf(t, id, "card %d action %d must have an id", i, j)
+				assert.Regexp(t, `^[A-Za-z0-9]+$`, id, "id must match the action_id route")
+				assert.Falsef(t, seen[id], "id %q must be unique within the post", id)
+				seen[id] = true
+			}
+		}
+		require.Len(t, seen, 3, "кнопки первой карточки, её ссылка и ссылка второй")
+	})
+
+	t.Run("explicit id wins and is stripped to the route charset", func(t *testing.T) {
+		props := postProps([]Attachment{{
+			Title: "Заявка",
+			Buttons: []InteractiveButton{
+				{Text: "Отменить заявку", URL: "https://app/api/action", ID: "t0123456789ab-cancel"},
+			},
+		}})
+
+		actions, ok := propsAttachments(t, props)[0]["actions"].([]model.StringInterface)
+		require.True(t, ok)
+		require.Len(t, actions, 1)
+		assert.Equal(t, "t0123456789abcancel", actions[0]["id"])
+	})
+
+	t.Run("positional id separates cards of one post", func(t *testing.T) {
+		props := postProps([]Attachment{
+			{Buttons: []InteractiveButton{{Text: "Первая", URL: "https://app/api/action"}}},
+			{Buttons: []InteractiveButton{{Text: "Вторая", URL: "https://app/api/action"}}},
+		})
+
+		attachments := propsAttachments(t, props)
+		require.Len(t, attachments, 2)
+
+		first, ok := attachments[0]["actions"].([]model.StringInterface)
+		require.True(t, ok)
+		second, ok := attachments[1]["actions"].([]model.StringInterface)
+		require.True(t, ok)
+		assert.Equal(t, "c0a0", first[0]["id"])
+		assert.Equal(t, "c1a0", second[0]["id"])
+		assert.NotEqual(t, first[0]["id"], second[0]["id"])
 	})
 }
 
