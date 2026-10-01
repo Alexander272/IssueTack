@@ -75,10 +75,11 @@ export const usersApiSlice = apiSlice.injectEndpoints({
 			}),
 		}),
 
-		syncUsers: builder.mutation<null, void>({
-			query: () => ({
+		syncUsers: builder.mutation<null, { force?: boolean } | void>({
+			query: arg => ({
 				url: API.users.sync,
 				method: 'POST',
+				params: arg?.force ? { force: 1 } : undefined,
 			}),
 			invalidatesTags: [{ type: 'Users', id: 'All' }],
 		}),

@@ -34,16 +34,21 @@
 
 Реализована в `backend/internal/services/ticket_access.go` (`TicketAccessChecker`, `CheckAccess`, `CheckWorkAccess`).
 
-Порядок проверки `CheckAccess`:
+Порядок проверки `CheckAccess` (`CheckAccessOnTicket`):
 
-1. Сначала Casbin `policies.Enforce(user, realm, ticket, action)` — если да, доступ разрешён.
-2. Иначе логика по атрибутам тикета:
+1. Логика по атрибутам тикета (таблица ниже).
+2. Если атрибуты отказали — обход у **начальника области** (`IsRealmSupervisor`: realm-wide `category:write` или `site:write`). Больше ничего доступ не даёт: Casbin `Enforce(user, realm, ticket, action)` из этой проверки убран — его результат только гейтил supervisor-обход, а `ticket:read/write` есть у рядовых пользователей.
 
-| Действие | Разрешено                                                                                                                   |
-| -------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Read     | участник группы тикета, менеджер группы, **исполнитель (assignee)** тикета; для тикета **без группы** — также **создатель** |
-| Write    | создатель тикета, менеджер группы                                                                                           |
-| Delete   | только менеджер группы (создатель НЕ может удалять)                                                                         |
+Итого правило: **`атрибуты || IsRealmSupervisor`**. Та же формула в `CanManage`, `canChangeStatus`, `canAdministerTickets` и во фронтенде (`capabilities.isRealmAdmin`), поэтому рассинхрона «фронт показывает кнопку, бэкенд отказывает» больше нет. Web-роуты при этом дополнительно закрыты Casbin-мидлваром (`ticket:read`/`ticket:write`), то есть supervisor без coarse-прав не откроет страницу заявок, но на уровне сервиса (в т.ч. MM-бот и plugin-пути) видит всё.
+
+| Действие | Разрешено                                                                                          |
+| -------- | -------------------------------------------------------------------------------------------------- |
+| Read     | **создатель**, **исполнитель (assignee)**, участник группы тикета или **менеджер группы**          |
+| Write    | **создатель** тикета или **менеджер группы**                                                        |
+| Delete   | только **менеджер группы** (создатель и исполнитель НЕ могут удалять)                               |
+
+- Атрибутная матрица — это первый шаг; для **всех трёх действий** (включая Delete) поверх неё действует обход начальника области: `атрибуты || IsRealmSupervisor`. То есть supervisor может удалить чужой тикет не как менеджер его группы.
+- Обхода «realm-wide `ticket:read/write` открывает чужую заявку» нет: заявитель с общими правами не выходит за пределы собственных заявок, а участник группы сохраняет доступ и без coarse-прав. Матрица закреплена в `TestTicketService_CheckAccess_AttributeMatrix`, кейсы `supervisor_no_coarse` — часть модели.
 
 - **`CheckWorkAccess`** = `CheckAccess(Write)` ИЛИ исполнитель тикета. Используется для: создания/изменения подзадач и вложений, комментариев; **сам по себе права на смену статуса заявки уже не даёт** — смена статуса гейтится `canChangeStatus` (см. ниже).
 - **Смена статуса заявки** (`TicketService.canChangeStatus`, вызывается в `Update` и влияет на `computeAllowedStatuses`): только **автор, исполнитель, владелец, менеджер группы или админ реалма (realm supervisor)**. Политика Casbin `write` права на смену статуса не даёт — участник группы с realm-wide `ticket:write` переводить статусы не может. Исключения: закрытие/отмена (`closed`/`cancelled`) — только автор/менеджер/владелец (строгая проверка, `write`-права не спасают); терминальные `closed`/`cancelled` вообще неизменяемы.
@@ -75,6 +80,19 @@
 - **`HandleInteractiveAction` → `ActionResult{Ephemeral}`** (`mattermost_dialog.go`): ответ на нажатие — только `ephemeral_text` (нажавшему; текст ошибки из `DomainError.Message()`), поля `UpdatePost`/`Post.ReplyCards` больше нет — все действия уходят в диалоги, а `update` там недоступен.
 - **Сабмит диалогов** (`parseTicketActionCallback` → `handleCancelSubmission` / `handleReopenSubmission`): домен → пользователь → `changeTicketStatus` (`actionTargetStatus`) → `applyListEdit` (общий хеллер правки списка, `removed` = ушла ли заявка из активных) → пост-подтверждение в `submission.ChannelId` («Заявка отменена.» / «Заявка закрыта.» / «Заявка возвращена в работу. Причина: …»). У возврата в работу между сменой статуса и подтверждением идёт внешний комментарий «Заявка возвращена в работу: …» (порядок как в `TicketDetail.tsx`, т.к. на `resolved` внешние комментарии запрещены). Пустая причина — `models.ErrReasonRequired`. Ответ диалога не умеет обновлять посты (`SubmitDialogResponse` знает только `error`) и не несёт `post_id`, поэтому смещение и id сообщения кладутся в `State` диалога (`{"from":N,"post_id":"..."}`), а карточка правится прямым `Post.UpdateCards` (`PUT /posts/{id}/patch`) или удаляется `Post.Delete`. Хендлер сабмита (`handlers/mattermost`) на доменную ошибку отвечает `200 {"error": message}` — Mattermost держит диалог открытым и показывает текст.
 - `pkg/mattermost`: `postProps`/`cardActions` вешают `Buttons`/`Links` на **свою** карточку (не склеивают в ведущий ряд), `Post.Create` строит props одним вызовом с ведущей карточкой кнопок, `OpenRequest.CallbackID`, `CreatePost` ретраит 429 (`rateLimited`/`retryAfter`).
+
+### Заказчик в диалоге и синк пользователей Mattermost
+
+- **Диалог создания заявки умеет выбор заказчика** (`ownerId` → `tickets.owner_id`). Поле собирает `ownerSelectElement` и показывается по **той же формуле, что и веб-форма**: менеджерам (realm supervisor или управляющие группы) и исполнителям (участники групп) — `canPickOwner`. Чистому заявителю поле не нужно, у него заказчик = он сам. Список — активные `Users.GetByMembership(realmID, MembershipCustomers)` (вне групп), подпись `Фамилия Имя (username)` — `customerLabel`. Нет активных заказчиков → поле не показывается. Список длиннее `dialogCustomersWarnThreshold` (300) пишем в лог, но не режем: у диалогов MM нет документированного предела на число опций.
+- **Выбранного заказчика надо валидировать на сабмите** (`dialogOwnerID`): значение `ownerId` приходит из клиента, поэтому проверяются **оба** условия, как в `ownerSelectElement` — право выбирать заказчика у нажавшего (`canPickOwner`) и то, что заказчик — активный участник realm вне групп (`realmCustomers`). `TicketService.Create` проверяет только `OwnerID != nil` (tickets.go), членство в realm не проверяет. Любая неудача не ломает диалог: `OwnerID = nil` и заявка уходит на создателя.
+- **Импорт пользователей Mattermost** — `MattermostService.SyncRealmUsers(ctx, realmID, actor, teamNames)`: сопоставляет по `mattermost_id`, затем email/username/ФИО, создаёт недостающих с `Source: mattermost` и добавляет всех в realm. Пустой `teamNames` — все пользователи сервера. Возвращает `SyncUsersResult{Created, Linked, Failed}`. Запускается из двух мест: бот-команда «синхронизировать [команды]» (`handleSync`) и веб — кнопка «Синхронизировать пользователей» в настройках realm (`POST /realms/:id/mattermost/sync`, `handlers/realms`).
+- Права и активность интеграции проверяет сам `SyncRealmUsers`: только realm supervisor (`ErrPermissionDenied`), при выключенной интеграции или пустом `BotToken` — `ErrInvalidInput`. Боты и деактивированные пользователи Mattermost (`DeleteAt != 0`) пропускаются в `pkg/mattermost` (`isSyncableUser`). Частичные ошибки не проваливают синк, пользователи уходят в `Failed`; `Created` и `Failed` взаимоисключающие — созданный, но не добавленный в realm пользователь считается только неудачей.
+
+### Защита Keycloak-синхронизации (`POST /users/sync`)
+
+- `userService.Sync(ctx, actor, force)` удаляет пользователей, которых нет в группе Keycloak. `tickets.creator_id`/`owner_id` объявлены `ON DELETE CASCADE`, поэтому перед удалением среди **вычисленных** кандидатов (`toDelete`) одним запросом ищутся те, у кого есть заявки (`repository.Users.GetIDsWithTickets` — `UNION` по `creator_id`/`owner_id`); если они есть и `force=false` — `models.ErrKeycloakSyncLinkedUsers` (409, `SY001`) со списком до 10 имён, синхронизация не выполняется. Обход — `POST /users/sync?force=1` (`syncForceRequested`), во фронтенде — `ConfirmDialog` в `Users.tsx`. Список имён динамический, поэтому ошибка собирается функцией, а не sentinel-переменной.
+- Глобальная проверка `source='keycloak' AND mattermost_id<>''` не подходит: после `SyncRealmUsers` сотрудник остаётся `source=keycloak` с заполненным `mattermost_id`, и такой фильтр заблокировал бы синк навсегда. Поэтому защита не по связи с Mattermost, а по факту наличия заявок, и проверяются только записи из `toDelete`.
+- `comments.user_id` объявлен **без** `ON DELETE`: удаление пользователя с комментариями роняет всю транзакцию сырой FK-ошибкой, а не доменным отказом. Отдельная задача (tombstone/`SET NULL`), гарь её не ловит.
 
 ### Обязательный `action_id` и `title_link` (совместимость с MM)
 

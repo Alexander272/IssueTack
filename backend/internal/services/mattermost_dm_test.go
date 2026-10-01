@@ -30,12 +30,16 @@ type capturedPost struct {
 }
 
 // mmCapture перехватывает обращения бота к Mattermost: посты, открытие диалогов,
-// удаление и правку сообщений.
+// удаление и правку сообщений, а также список пользователей для синка.
 type mmCapture struct {
 	posts          *[]capturedPost
 	dialogs        []model.OpenDialogRequest
 	deletedPostIDs []string
 	patches        map[string]capturedPost
+	// users отдаётся на GET /api/v4/users (синк всех пользователей сервера),
+	// teamUsers — на тот же запрос с фильтром in_team (синк по командам).
+	users     []*model.User
+	teamUsers map[string][]*model.User
 }
 
 // mmServer поднимает Mattermost-заглушку: сохраняет отправленные посты и
@@ -85,12 +89,41 @@ func mmServer(t *testing.T, capture *mmCapture) *httptest.Server {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"status":"OK"}`))
 
+		case r.URL.Path == "/api/v4/channels/direct":
+			// Бот открывает DM-канал перед отправкой личного сообщения.
+			var sent []string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&sent))
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":"dm1"}`))
+
 		case r.URL.Path == "/api/v4/actions/dialogs/open":
 			var sent model.OpenDialogRequest
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&sent))
 			capture.dialogs = append(capture.dialogs, sent)
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"errors":null}`))
+
+		case r.URL.Path == "/api/v4/users":
+			// Синк пользователей. Запрос постраничный: клиент идёт по страницам,
+			// пока не отдаст меньше per_page записей, поэтому на первой странице
+			// отдаём весь список, на остальных — пусто.
+			page := r.URL.Query().Get("page")
+			list := capture.users
+			if teamID := r.URL.Query().Get("in_team"); teamID != "" {
+				list = capture.teamUsers[teamID]
+			}
+			if page != "0" {
+				list = nil
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(mustJSON(t, list)))
+
+		case strings.HasPrefix(r.URL.Path, "/api/v4/teams/name/"):
+			// Синк по конкретным командам: имя команды используется как её id,
+			// чтобы GetUsersInTeam(in_team=...) совпал с ключом teamUsers.
+			name := strings.TrimPrefix(r.URL.Path, "/api/v4/teams/name/")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(mustJSON(t, &model.Team{Id: name, Name: name})))
 
 		default:
 			require.Failf(t, "unexpected mattermost call", "%s %s", r.Method, r.URL.Path)
@@ -99,6 +132,14 @@ func mmServer(t *testing.T, capture *mmCapture) *httptest.Server {
 	}))
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+// mustJSON кодирует значение для ответа Mattermost-заглушки.
+func mustJSON(t *testing.T, v any) string {
+	t.Helper()
+	data, err := json.Marshal(v)
+	require.NoError(t, err)
+	return string(data)
 }
 
 // postsServer перехватывает POST /api/v4/posts и пишет отправленные посты в
@@ -1147,4 +1188,225 @@ func TestMyTicketsChunks_TitleWithoutNumber(t *testing.T) {
 	require.Len(t, chunks[0].cards, 1)
 	assert.Equal(t, "Без номера", chunks[0].cards[0].Title, "без номера заголовок остаётся как есть")
 	assert.Equal(t, mmStatusLabels[models.StatusPending], chunks[0].cards[0].Fields[0].Value)
+}
+
+// cardChannel — канал бота с включённой интеграцией.
+func cardChannel(realmID uuid.UUID) *mmChannel {
+	return &mmChannel{
+		Settings:  &models.RealmMattermost{RealmID: realmID, BotToken: "bot-token"},
+		MmUserID:  "mm1",
+		ChannelID: "ch1",
+	}
+}
+
+// expectNumberLookup готовит мок поиска заявки по номеру: Tickets.Get без
+// групп актора вернул бы заявку любого реалма с таким номером, поэтому дальше
+// обязателен GetByID с проверкой прав.
+func expectNumberLookup(tickets *MockTicketsService, number int, ticketID uuid.UUID) {
+	tickets.On("Get", mock.Anything, mock.MatchedBy(func(f *models.TicketFilter) bool {
+		return f.Number != nil && *f.Number == number
+	})).Return([]*models.Ticket{{ID: ticketID}}, 1, nil)
+}
+
+func TestHandleTicketCard_OwnerResolved_TwoButtons(t *testing.T) {
+	realmID, userID, ticketID := uuid.New(), uuid.New(), uuid.New()
+
+	var posts []capturedPost
+	svc, _, users, userRealms, tickets := dmService(t, &posts)
+	expectExistingUser(users, userRealms, userID, realmID)
+	expectNumberLookup(tickets, 42, ticketID)
+
+	due := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
+	tickets.On("GetByID", mock.Anything, mock.MatchedBy(func(d *models.GetTicketByIdDTO) bool {
+		return d.ID == ticketID && d.Actor != nil && d.Actor.ID == userID
+	})).Return(&models.Ticket{
+		ID:           ticketID,
+		Title:        "Не работает касса",
+		Description:  "Описание заявки",
+		Status:       models.StatusResolved,
+		Priority:     models.PriorityHigh,
+		CreatedAt:    time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC),
+		DueDate:      &due,
+		TicketNumber: ptr(42),
+		Category:     &models.CategoryShort{Name: "Касса"},
+		Site:         &models.SiteShort{Name: "Офис на Пушкина"},
+		Owner:        &models.UserShort{ID: userID, Username: "u1"},
+		Assignee:     &models.UserShort{ID: uuid.New(), Username: "executor"},
+	}, nil)
+
+	require.NoError(t, svc.handleTicketCard(context.Background(), cardChannel(realmID), "№42"))
+	require.Len(t, posts, 1)
+	assert.Equal(t, "Заявка №42", posts[0].message)
+
+	cards := postCards(t, posts[0].props)
+	require.Len(t, cards, 1)
+	card := cards[0]
+	assert.Equal(t, testBaseURL+"/tasks/"+ticketID.String(), card["title_link"])
+	assert.Equal(t, mmStatusColors[models.StatusResolved], card["color"])
+	assert.Equal(t, "Описание заявки", card["text"])
+
+	// Владелец решённой заявки: подтвердить решение и вернуть в работу.
+	assert.Equal(t, []string{
+		"Подтвердить решение:ticket_confirm",
+		"Вернуть в работу:ticket_reopen",
+	}, cardActionsByName(t, card))
+	assert.Equal(t, []string{
+		ticketActionID(ticketID, actionConfirm),
+		ticketActionID(ticketID, actionReopen),
+	}, cardActionIDs(t, card))
+
+	// post_id в контекст не кладём: карточка одиночная, править список нечего,
+	// а applyListEdit с пустым PostID выходит с return nil.
+	for _, action := range postCardActions(t, card) {
+		ctxMap := actionContext(t, action)
+		assert.NotContains(t, ctxMap, "post_id")
+		assert.Equal(t, ticketID.String(), ctxMap["ticket_id"])
+	}
+}
+
+func TestHandleTicketCard_Fields(t *testing.T) {
+	realmID, userID, ticketID := uuid.New(), uuid.New(), uuid.New()
+
+	var posts []capturedPost
+	svc, _, users, userRealms, tickets := dmService(t, &posts)
+	expectExistingUser(users, userRealms, userID, realmID)
+	expectNumberLookup(tickets, 5, ticketID)
+
+	tickets.On("GetByID", mock.Anything, mock.Anything).Return(&models.Ticket{
+		ID:           ticketID,
+		Title:        "Заявка",
+		Status:       models.StatusOpen,
+		Priority:     models.PriorityUrgent,
+		CreatedAt:    time.Date(2026, 9, 5, 12, 30, 0, 0, time.UTC),
+		TicketNumber: ptr(5),
+		Category:     &models.CategoryShort{Name: "Касса"},
+		Site:         &models.SiteShort{Name: "Офис"},
+		Owner:        &models.UserShort{ID: userID, Username: "u1"},
+	}, nil)
+
+	require.NoError(t, svc.handleTicketCard(context.Background(), cardChannel(realmID), "№5"))
+
+	card := postCards(t, posts[0].props)[0]
+	titles := map[string]string{}
+	for _, f := range postObjects(t, card["fields"]) {
+		titles[f["title"].(string)], _ = f["value"].(string)
+		assert.True(t, f["short"] == true, "поля карточки короткие")
+	}
+	assert.Equal(t, "Новая", titles["Статус"])
+	assert.Equal(t, "Срочный", titles["Приоритет"])
+	assert.Equal(t, "Касса", titles["Категория"])
+	assert.Equal(t, "Офис", titles["Площадка"])
+	assert.Equal(t, "05.09.2026 12:30", titles["Создана"])
+	assert.Equal(t, "u1", titles["Заказчик"])
+	assert.NotContains(t, titles, "Срок", "без срока поле не выводится")
+	assert.NotContains(t, titles, "Исполнитель", "без исполнителя поле не выводится")
+}
+
+func TestHandleTicketCard_NonOwner_NoButtons(t *testing.T) {
+	realmID, userID, ticketID := uuid.New(), uuid.New(), uuid.New()
+
+	var posts []capturedPost
+	svc, _, users, userRealms, tickets := dmService(t, &posts)
+	expectExistingUser(users, userRealms, userID, realmID)
+	expectNumberLookup(tickets, 9, ticketID)
+
+	// Заявка открыта, но заказчик — другой пользователь: действий нет.
+	tickets.On("GetByID", mock.Anything, mock.Anything).Return(&models.Ticket{
+		ID:           ticketID,
+		Title:        "Чужая заявка",
+		Status:       models.StatusOpen,
+		CreatedAt:    time.Now(),
+		TicketNumber: ptr(9),
+		Owner:        &models.UserShort{ID: uuid.New(), Username: "other"},
+	}, nil)
+
+	require.NoError(t, svc.handleTicketCard(context.Background(), cardChannel(realmID), "№9"))
+	card := postCards(t, posts[0].props)[0]
+	assert.Empty(t, cardActionsByName(t, card), "не-владелец не получает действий")
+}
+
+// Чужая заявка не должна ни показываться, ни подтверждать своё существование:
+// Get по номеру без групп актора находит её, но GetByID режет доступ.
+func TestHandleTicketCard_ForeignTicket_Denied(t *testing.T) {
+	realmID, userID, ticketID := uuid.New(), uuid.New(), uuid.New()
+
+	capture := &mmCapture{posts: &[]capturedPost{}}
+	svc, _, users, userRealms, tickets := dmFixtureService(t, capture, nil)
+	expectExistingUser(users, userRealms, userID, realmID)
+	expectNumberLookup(tickets, 77, ticketID)
+	tickets.On("GetByID", mock.Anything, mock.Anything).Return(nil, models.ErrPermissionDenied)
+
+	require.NoError(t, svc.handleTicketCard(context.Background(), cardChannel(realmID), "№77"))
+
+	// В канал карточка не уходит; вместо неё — личное «не найдена»: существование
+	// чужой заявки пользователю подтверждать нельзя.
+	require.Len(t, *capture.posts, 1)
+	dm := (*capture.posts)[0]
+	assert.Equal(t, "dm1", dm.channelID, "ответ уходит в личные сообщения, не в канал")
+	assert.Equal(t, "Заявка №77 не найдена", dm.message)
+	assert.NotContains(t, dm.props, "attachments", "карточка чужой заявки не публикуется")
+}
+
+func TestHandleTicketCard_NotFound(t *testing.T) {
+	realmID, userID := uuid.New(), uuid.New()
+
+	capture := &mmCapture{posts: &[]capturedPost{}}
+	svc, _, users, userRealms, tickets := dmFixtureService(t, capture, nil)
+	expectExistingUser(users, userRealms, userID, realmID)
+	tickets.On("Get", mock.Anything, mock.Anything).Return([]*models.Ticket{}, 0, nil)
+
+	require.NoError(t, svc.handleTicketCard(context.Background(), cardChannel(realmID), "№404"))
+	require.Len(t, *capture.posts, 1)
+	assert.Equal(t, "Заявка №404 не найдена", (*capture.posts)[0].message)
+	assert.NotContains(t, (*capture.posts)[0].props, "attachments")
+}
+
+func TestHandleTicketCard_LongDescriptionTruncated(t *testing.T) {
+	realmID, userID, ticketID := uuid.New(), uuid.New(), uuid.New()
+
+	var posts []capturedPost
+	svc, _, users, userRealms, tickets := dmService(t, &posts)
+	expectExistingUser(users, userRealms, userID, realmID)
+	expectNumberLookup(tickets, 3, ticketID)
+	tickets.On("GetByID", mock.Anything, mock.Anything).Return(&models.Ticket{
+		ID: ticketID, Title: "Заявка", Status: models.StatusOpen, CreatedAt: time.Now(),
+		TicketNumber: ptr(3),
+		Description:  strings.Repeat("а", cardDetailLimit+500),
+		Owner:        &models.UserShort{ID: userID, Username: "u1"},
+	}, nil)
+
+	require.NoError(t, svc.handleTicketCard(context.Background(), cardChannel(realmID), "№3"))
+	text, _ := postCards(t, posts[0].props)[0]["text"].(string)
+	assert.Len(t, []rune(text), cardDetailLimit+1, "описание обрезается с многоточием")
+	assert.True(t, strings.HasSuffix(text, "…"))
+}
+
+func TestDetailText(t *testing.T) {
+	assert.Equal(t, "", detailText("   \n\n  "), "пустое описание не даёт пустого текста")
+	assert.Equal(t, "первый абзац\nвторой абзац",
+		detailText("первый абзац\n\n\r\nвторой абзац\n"), "абзацы сохраняются, пустые убираются")
+}
+
+// Диспетчер: «№N текст» остаётся комментарием, «№N» с файлом — вложением,
+// голое «№N» — карточкой.
+func TestDispatch_NumberSyntaxes(t *testing.T) {
+	cases := []struct {
+		name string
+		msg  string
+	}{
+		{"bare number is a card", "№42"},
+		{"number without sign is a card", "42"},
+		{"number with text is a comment", "№42 почините"},
+		{"number with hash is a comment", "#42 почините"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.msg == "№42" || tc.msg == "42", attachCommands.MatchString(tc.msg))
+			assert.Equal(t, tc.msg == "№42 почините" || tc.msg == "#42 почините", commentCommands.MatchString(tc.msg))
+		})
+	}
+	// Кейс карточки в диспетчере стоит после комментария и вложения,
+	// иначе перехватил бы их: commentCommands проверяется раньше.
+	assert.False(t, commentCommands.MatchString("№42"), "голое «№42» не комментарий")
+	assert.False(t, attachCommands.MatchString("№42 почините"), "«№N текст» не номер")
 }

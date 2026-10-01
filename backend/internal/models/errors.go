@@ -2,7 +2,9 @@ package models
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 )
 
 // DomainError is a custom error type that carries HTTP response information.
@@ -105,3 +107,33 @@ var (
 	// 400 (вложения)
 	ErrFileTooLarge = NewDomainError(errors.New("file exceeds maximum allowed size"), http.StatusBadRequest, "UP001", "Файл превышает допустимый размер")
 )
+
+// ErrKeycloakSyncLinkedUsers — синхронизация из Keycloak остановлена, потому что среди
+// пользователей, которых она собирается удалить, есть те, у кого есть заявки. Удаление
+// такого пользователя унесло бы его заявки: tickets.creator_id/owner_id объявлены как
+// ON DELETE CASCADE. Список имён динамический, поэтому ошибка собирается функцией:
+// response.SendError отдаёт клиенту Message() и не различает обёрнутые ошибки,
+// так что статичный sentinel с пустым телом здесь не подошёл бы.
+//
+// Обход — явный force на POST /users/sync, то есть решение об удалении заявок принимает
+// человек, а не молчаливый прогон синхронизации.
+func ErrKeycloakSyncLinkedUsers(usernames []string, total int) *DomainError {
+	const shown = 10
+
+	listed := usernames
+	suffix := ""
+	if len(listed) > shown {
+		listed = listed[:shown]
+		suffix = " и другие"
+	}
+	message := fmt.Sprintf(
+		"Синхронизация остановлена: найдены пользователи с заявками, которых нет в группе Keycloak (всего: %d). "+
+			"Удаление унесёт их заявки. Устраните расхождение или повторите синхронизацию с параметром force=1: %s%s",
+		total, strings.Join(listed, ", "), suffix,
+	)
+
+	return NewDomainError(
+		fmt.Errorf("keycloak sync would delete %d users with tickets: %s", total, strings.Join(usernames, ", ")),
+		http.StatusConflict, "SY001", message,
+	)
+}

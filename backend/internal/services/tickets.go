@@ -325,14 +325,19 @@ func (s *TicketService) attachmentTicketID(ctx context.Context, entityType strin
 
 // GetByID возвращает тикет по идентификатору с проверкой права чтения,
 // дополняя его подзадачами, вложениями и флагами доступа.
+//
+// Тикет грузится до проверки доступа, а не после: атрибутная модель (создатель,
+// исполнитель, членство в группе) требует самого тикета, поэтому загрузка
+// предшествует гейту. Так заодно уходит двойное чтение — раньше CheckAccess
+// внутри себя грузил тикет, и следом его снова читал этот же метод.
 func (s *TicketService) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) (*models.Ticket, error) {
-	if err := s.access.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: req.ID, UserID: req.Actor.ID, Action: string(access.Read), Realm: req.RealmID}); err != nil {
-		return nil, err
-	}
-
 	data, err := s.repo.GetByID(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get ticket by id. error: %w", err)
+	}
+
+	if err := s.access.CheckAccessOnTicket(ctx, data, req.Actor.ID, string(access.Read), req.RealmID); err != nil {
+		return nil, err
 	}
 
 	subtasks, err := s.subtasks.GetByTicketID(ctx, data.ID, req.Actor.ID, req.RealmID)
@@ -638,14 +643,18 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 			}
 		}
 
-		// Тонкие права операций: смена группы заявки доступна только администратору
-		// реалма (Casbin write на тикеты), смена исполнителя — администратору или
-		// менеджеру группы тикета. Менеджер (manager_id) определяется менеджером
-		// группы автоматически — ручное изменение запрещено всем. Эти ограничения
-		// действуют поверх прочих прав — независимо от assignedOnly/ownerOnly и права
-		// правки полей (canEditFields). Эхо текущего значения (фронт передаёт его в
-		// каждом запросе) не создаёт change и проходит беспрепятственно.
-		isAdmin, err := s.access.CanCreateTicket(ctx, dto.Actor.ID, realmStr)
+		// Тонкие права операций: смена группы заявки доступна только начальнику
+		// области, смена исполнителя — начальнику области или менеджеру группы
+		// тикета. Начальником области считается пользователь с realm-wide правами
+		// управления областью (IsRealmSupervisor), а не обладатель ticket:write:
+		// последнее есть у рядовых сотрудников и заявителей, и по нему они не должны
+		// ни переносить заявку в другую группу, ни переназначать чужую. Менеджер
+		// (manager_id) определяется менеджером группы автоматически — ручное
+		// изменение запрещено всем. Эти ограничения действуют поверх прочих прав —
+		// независимо от assignedOnly/ownerOnly и права правки полей (canEditFields).
+		// Эхо текущего значения (фронт передаёт его в каждом запросе) не создаёт
+		// change и проходит беспрепятственно.
+		isAdmin, err := s.access.CanAdministerTickets(ctx, dto.Actor.ID, realmStr)
 		if err != nil {
 			return fmt.Errorf("failed to check admin access: %w", err)
 		}
@@ -1217,9 +1226,12 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 	}
 	flags.CanEditFields = canEdit
 
-	// IsAdmin — администратор реалма: наличие realm-wide write-политики (Casbin write)
-	// на ресурс тикетов. Такому пользователю разрешена смена группы заявки.
-	isAdmin, err := s.access.CanCreateTicket(ctx, userID, realm)
+	// IsAdmin — начальник области (realm supervisor): пользователь с realm-wide
+	// правами управления областью. Такому пользователю разрешены смена группы
+	// заявки и передача исполнителя мимо менеджера группы. Намеренно не через
+	// ticket:write — это право есть у рядовых сотрудников, и по нему фронт
+	// разблокировал бы смену группы на чужих заявках.
+	isAdmin, err := s.access.CanAdministerTickets(ctx, userID, realm)
 	if err != nil {
 		return nil, err
 	}

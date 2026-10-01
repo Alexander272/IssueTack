@@ -10,6 +10,7 @@ type Props = {
 	onConfirm: () => void
 	onCancel: () => void
 	loading?: boolean
+	loadingLabel?: string
 }
 
 export const ConfirmDialog: FC<Props> = ({
@@ -21,6 +22,7 @@ export const ConfirmDialog: FC<Props> = ({
 	onConfirm,
 	onCancel,
 	loading = false,
+	loadingLabel = 'Удаление...',
 }) => {
 	return (
 		<Dialog
@@ -51,7 +53,7 @@ export const ConfirmDialog: FC<Props> = ({
 					disabled={loading}
 					sx={{ textTransform: 'none' }}
 				>
-					{loading ? 'Удаление...' : confirmLabel}
+					{loading ? loadingLabel : confirmLabel}
 				</Button>
 			</DialogActions>
 		</Dialog>

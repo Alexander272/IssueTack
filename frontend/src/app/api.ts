@@ -9,6 +9,7 @@ export const API = {
 		base: '/realms',
 		byId: (id: string) => `/realms/${id}`,
 		mattermost: (id: string) => `/realms/${id}/mattermost`,
+		mattermostSync: (id: string) => `/realms/${id}/mattermost/sync`,
 	},
 
 	users: {

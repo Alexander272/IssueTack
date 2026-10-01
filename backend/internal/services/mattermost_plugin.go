@@ -109,13 +109,23 @@ func (s *MattermostService) PluginGetTicket(ctx context.Context, scope models.Pl
 	if err != nil {
 		return nil, err
 	}
-	mmUserID := scope.MmUserID
 
 	id, err := uuid.Parse(ticketID)
 	if err != nil {
 		return nil, models.ErrInvalidInput
 	}
 
+	return s.ticketDetail(ctx, settings, scope.MmUserID, id)
+}
+
+// ticketDetail собирает полный портрет заявки для клиента Mattermost (плагин или
+// бот). Проверка права чтения — не отдельный шаг, а следствие вызова
+// Tickets.GetByID от имени пользователя: он гоняет атрибутную модель доступа.
+// Поэтому вызывающий не может отрисовать чужую заявку, даже разыскав её по номеру.
+//
+// Вынесено из PluginGetTicket, чтобы плагин и бот читали заявку одним кодом:
+// набор полей и правила кнопок владельца тогда не могут разойтись.
+func (s *MattermostService) ticketDetail(ctx context.Context, settings *models.RealmMattermost, mmUserID string, id uuid.UUID) (*models.PluginTicketDetail, error) {
 	user, err := s.resolveOrCreateUser(ctx, settings.RealmID, mmUserID, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve user: %w", err)

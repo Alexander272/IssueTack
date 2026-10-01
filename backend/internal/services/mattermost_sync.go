@@ -73,6 +73,7 @@ func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uui
 		LastName:     cleanMMLastName(mmUser.LastName),
 		Email:        mmUser.Email,
 		IsActive:     true,
+		Source:       models.UserSourceMattermost,
 	}
 	if err := s.users.CreateSeveral(ctx, nil, []*models.UserDataDTO{userDTO}); err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
@@ -264,11 +265,11 @@ func cleanMMLastName(lastName string) string {
 	return head
 }
 
-// handleSync — обработчик команды «синхронизировать [команды]»: сопоставляет
-// пользователей Mattermost с системными (по email/username/ФИО) и создаёт
-// недостающих локальных пользователей в указанном realm. Доступна только
-// администратору realm; необязательными аргументами можно ограничить синк
-// конкретными командами Mattermost.
+// handleSync — обработчик команды «синхронизировать [команды]»: запускает
+// SyncRealmUsers и отчитывается результатом в DM. Доступна только администратору
+// realm; необязательными аргументами можно ограничить синк конкретными командами
+// Mattermost. Логика самого сопоставления пользователей живёт в SyncRealmUsers,
+// чтобы её же мог вызвать веб (кнопка в настройках realm).
 func (s *MattermostService) handleSync(ctx context.Context, ch *mmChannel, message string) error {
 	sender, err := s.resolveOrCreateUser(ctx, ch.Settings.RealmID, ch.MmUserID, nil)
 	if err != nil {
@@ -283,9 +284,8 @@ func (s *MattermostService) handleSync(ctx context.Context, ch *mmChannel, messa
 		return nil
 	}
 
-	parts := syncCommands.FindStringSubmatch(message)
 	teamNames := []string{}
-	if len(parts) > 1 && parts[1] != "" {
+	if parts := syncCommands.FindStringSubmatch(message); len(parts) > 1 && parts[1] != "" {
 		for _, t := range strings.Split(parts[1], ",") {
 			if t = strings.TrimSpace(t); t != "" {
 				teamNames = append(teamNames, t)
@@ -293,14 +293,52 @@ func (s *MattermostService) handleSync(ctx context.Context, ch *mmChannel, messa
 		}
 	}
 
-	mmUsers, err := s.fetchMMUsers(ch.Settings.BotToken, teamNames)
+	result, err := s.SyncRealmUsers(ctx, ch.Settings.RealmID, &models.Actor{ID: sender.ID, Name: sender.Username}, teamNames)
 	if err != nil {
 		return err
 	}
 
+	msg := fmt.Sprintf("Синхронизация завершена. Создано: %d, привязано: %d, с ошибкой: %d", result.Created, result.Linked, result.Failed)
+	if err := s.most.DM.Send(ch.Settings.BotToken, ch.Settings.BotUserID, ch.MmUserID, msg); err != nil {
+		bestEffortError("failed to send sync result", err, map[string]string{"mm_user_id": ch.MmUserID})
+	}
+	return nil
+}
+
+// SyncUsersResult — итог импорта пользователей Mattermost в realm.
+type SyncUsersResult struct {
+	Created int `json:"created"`
+	Linked  int `json:"linked"`
+	Failed  int `json:"failed"`
+}
+
+// SyncRealmUsers сопоставляет пользователей Mattermost с системными (по
+// mattermost_id, затем по email, username и ФИО) и создаёт недостающих
+// локальных пользователей в указанном realm. actor идёт в аудит привязок
+// пользователя к realm. Пустой teamNames означает «все пользователи сервера».
+// Запускается из бота (команда «синхронизировать») и из веба (кнопка в
+// настройках realm), поэтому синхронизация разрешена только администратору realm.
+func (s *MattermostService) SyncRealmUsers(ctx context.Context, realmID uuid.UUID, actor *models.Actor, teamNames []string) (*SyncUsersResult, error) {
+	if actor == nil || !s.isRealmSupervisor(ctx, actor.ID, realmID) {
+		return nil, models.ErrPermissionDenied
+	}
+
+	settings, err := s.repo.GetByRealm(ctx, realmID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get mattermost settings: %w", err)
+	}
+	if !settings.IsActive || settings.BotToken == "" {
+		return nil, fmt.Errorf("%w: интеграция Mattermost не настроена", models.ErrInvalidInput)
+	}
+
+	mmUsers, err := s.fetchMMUsers(settings.BotToken, teamNames)
+	if err != nil {
+		return nil, err
+	}
+
 	sysUsers, err := s.users.GetAll(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to get system users: %w", err)
+		return nil, fmt.Errorf("failed to get system users: %w", err)
 	}
 
 	sysByEmail := make(map[string]*models.UserData, len(sysUsers))
@@ -318,9 +356,8 @@ func (s *MattermostService) handleSync(ctx context.Context, ch *mmChannel, messa
 		}
 	}
 
+	result := &SyncUsersResult{}
 	seen := make(map[string]struct{}, len(mmUsers))
-	created := 0
-	linked := 0
 
 	for _, mmU := range mmUsers {
 		if _, ok := seen[mmU.Id]; ok {
@@ -330,13 +367,14 @@ func (s *MattermostService) handleSync(ctx context.Context, ch *mmChannel, messa
 
 		existing, existingErr := s.users.GetByMattermostID(ctx, mmU.Id)
 		if existingErr == nil {
-			if err := s.ensureRealmMembership(ctx, existing.ID, ch.Settings.RealmID, sender.ID, sender.Username); err != nil {
+			if err := s.ensureRealmMembership(ctx, existing.ID, realmID, actor.ID, actor.Name); err != nil {
 				logger.Warn("failed to add user to realm",
 					logger.StringAttr("mm_user_id", mmU.Id),
 					logger.ErrAttr(err),
 				)
+				result.Failed++
 			} else {
-				linked++
+				result.Linked++
 			}
 			continue
 		}
@@ -345,16 +383,16 @@ func (s *MattermostService) handleSync(ctx context.Context, ch *mmChannel, messa
 
 		if mmU.Email != "" {
 			if sysU, ok := sysByEmail[strings.ToLower(mmU.Email)]; ok {
-				s.ensureLinkAndRealm(ctx, ch.Settings.RealmID, sysU.ID, mmU.Id, nil, sender.ID, sender.Username)
-				linked++
+				s.ensureLinkAndRealm(ctx, realmID, sysU.ID, mmU.Id, nil, actor.ID, actor.Name)
+				result.Linked++
 				matched = true
 			}
 		}
 
 		if !matched && mmU.Username != "" {
 			if sysU, ok := sysByUsername[strings.ToLower(mmU.Username)]; ok {
-				s.ensureLinkAndRealm(ctx, ch.Settings.RealmID, sysU.ID, mmU.Id, nil, sender.ID, sender.Username)
-				linked++
+				s.ensureLinkAndRealm(ctx, realmID, sysU.ID, mmU.Id, nil, actor.ID, actor.Name)
+				result.Linked++
 				matched = true
 			}
 		}
@@ -362,8 +400,8 @@ func (s *MattermostService) handleSync(ctx context.Context, ch *mmChannel, messa
 		if !matched {
 			if fio := buildFIO(mmU.FirstName, cleanMMLastName(mmU.LastName)); fio != "" {
 				if sysU, ok := sysByFIO[fio]; ok {
-					s.ensureLinkAndRealm(ctx, ch.Settings.RealmID, sysU.ID, mmU.Id, nil, sender.ID, sender.Username)
-					linked++
+					s.ensureLinkAndRealm(ctx, realmID, sysU.ID, mmU.Id, nil, actor.ID, actor.Name)
+					result.Linked++
 					matched = true
 				}
 			}
@@ -383,28 +421,37 @@ func (s *MattermostService) handleSync(ctx context.Context, ch *mmChannel, messa
 			LastName:     cleanMMLastName(mmU.LastName),
 			Email:        mmU.Email,
 			IsActive:     true,
+			Source:       models.UserSourceMattermost,
 		}
 		if err := s.users.CreateSeveral(ctx, nil, []*models.UserDataDTO{userDTO}); err != nil {
 			logger.Warn("failed to create user from mattermost",
 				logger.StringAttr("mm_user_id", mmU.Id),
 				logger.ErrAttr(err),
 			)
+			result.Failed++
 			continue
 		}
-		if err := s.ensureRealmMembership(ctx, newUserID, ch.Settings.RealmID, sender.ID, sender.Username); err != nil {
+		if err := s.ensureRealmMembership(ctx, newUserID, realmID, actor.ID, actor.Name); err != nil {
 			logger.Warn("failed to add user to realm",
 				logger.StringAttr("mm_user_id", mmU.Id),
 				logger.ErrAttr(err),
 			)
+			// Пользователь создан, но в realm не добавлен: для вызывающего это
+			// неудача, поэтому в Created он не попадает — счётчики взаимоисключающие.
+			result.Failed++
+			continue
 		}
-		created++
+		result.Created++
 	}
 
-	msg := fmt.Sprintf("Синхронизация завершена. Создано: %d, привязано: %d", created, linked)
-	if err := s.most.DM.Send(ch.Settings.BotToken, ch.Settings.BotUserID, ch.MmUserID, msg); err != nil {
-		bestEffortError("failed to send sync result", err, map[string]string{"mm_user_id": ch.MmUserID})
-	}
-	return nil
+	logger.Info("mattermost users synced",
+		logger.StringAttr("realm_id", realmID.String()),
+		logger.Int32Attr("created", int32(result.Created)),
+		logger.Int32Attr("linked", int32(result.Linked)),
+		logger.Int32Attr("failed", int32(result.Failed)),
+	)
+
+	return result, nil
 }
 
 // fetchMMUsers получает список пользователей Mattermost для синка. Если

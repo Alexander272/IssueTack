@@ -9,6 +9,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -42,6 +43,7 @@ func Register(api *gin.RouterGroup, svc services.Realms, mmSvc services.Mattermo
 
 		realms.PUT("/:id/mattermost", handlers.saveMattermostSettings)
 		realms.DELETE("/:id/mattermost", handlers.deleteMattermostSettings)
+		realms.POST("/:id/mattermost/sync", handlers.syncMattermostUsers)
 
 		realms.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceRealm).Delete()))
 		realms.DELETE("/:id", handlers.delete)
@@ -182,4 +184,28 @@ func (h *Handler) deleteMattermostSettings(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// syncMattermostUsers импортирует пользователей Mattermost в realm: сопоставляет их
+// с системными и создаёт недостающих, чтобы их можно было выбирать заказчиками.
+// Пустое тело означает синк всех пользователей сервера.
+func (h *Handler) syncMattermostUsers(c *gin.Context) {
+	strId := c.Param("id")
+	id, err := uuid.Parse(strId)
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+
+	result, err := h.mattermost.SyncRealmUsers(c, id, actor, nil)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	response.SendData(c, result)
 }

@@ -49,7 +49,9 @@ type Users interface {
 	GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.UserData, error)
 	GetByMembership(ctx context.Context, realmID uuid.UUID, membership models.MembershipFilter) ([]*models.UserData, error)
 	CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.UserDataDTO) error
-	Sync(ctx context.Context, actor *models.Actor) error
+	// Sync синхронизирует пользователей с Keycloak. force снимает защиту от удаления
+	// пользователей, связанных с Mattermost: без него Sync вернёт SY001.
+	Sync(ctx context.Context, actor *models.Actor, force bool) error
 	UpdateAccount(ctx context.Context, dto *models.UpdateAccountDTO) error
 	UpdateMMAndSite(ctx context.Context, tx postgres.Tx, dto *models.UserDataDTO) error
 }

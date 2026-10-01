@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/events"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
@@ -16,7 +17,15 @@ import (
 var internalNumberRe = regexp.MustCompile(`^(.*?)\s*\((\d*)\)$`)
 
 // Sync синхронизирует пользователей из Keycloak с локальной БД: создаёт новых, обновляет изменённых и удаляет отсутствующих.
-func (s *userService) Sync(ctx context.Context, actor *models.Actor) error {
+//
+// force снимает защиту от удаления пользователей, у которых есть заявки (см. usersWithTickets).
+// Без него синхронизация останавливается с SY001: таких пользователей нет в группе
+// Keycloak, но tickets.creator_id/owner_id объявлены как ON DELETE CASCADE, поэтому
+// синк удалил бы их вместе с заявками. Проверка по факту наличия заявок, а не по
+// source/mattermost_id, потому что после бэкфилла связанный с Mattermost сотрудник
+// остаётся source=keycloak и в Keycloak не состоит — привязка к Mattermost не
+// защищает от удаления, а вот заявки защищают.
+func (s *userService) Sync(ctx context.Context, actor *models.Actor, force bool) error {
 	logger.Info("Sync users started")
 
 	token, err := s.keycloak.Login(ctx)
@@ -77,9 +86,10 @@ func (s *userService) Sync(ctx context.Context, actor *models.Actor) error {
 	toCreate := make([]*models.UserDataDTO, 0)
 	toUpdate := make([]*models.UserDataDTO, 0)
 	toDelete := make([]uuid.UUID, 0)
+	deleteUsernames := make(map[uuid.UUID]string, 0)
 
 	for _, dbU := range dbUsers {
-		if dbU.IsSystem {
+		if protectedFromKeycloakSync(dbU) {
 			continue
 		}
 		if kcData, exists := kcDataMap[dbU.ID]; exists {
@@ -103,7 +113,28 @@ func (s *userService) Sync(ctx context.Context, actor *models.Actor) error {
 				"email", dbU.Email,
 			)
 			toDelete = append(toDelete, dbU.ID)
+			deleteUsernames[dbU.ID] = dbU.Username
 		}
+	}
+
+	usersWithTickets := make([]string, 0)
+	if len(toDelete) > 0 {
+		ids, err := s.repo.GetIDsWithTickets(ctx, toDelete)
+		if err != nil {
+			return fmt.Errorf("failed to check users with tickets: %w", err)
+		}
+		for _, id := range ids {
+			if username, ok := deleteUsernames[id]; ok {
+				usersWithTickets = append(usersWithTickets, username)
+			}
+		}
+	}
+
+	if len(usersWithTickets) > 0 && !force {
+		logger.Warn("keycloak sync stopped: users with tickets would be deleted",
+			"count", len(usersWithTickets),
+			"usernames", strings.Join(usersWithTickets, ", "))
+		return models.ErrKeycloakSyncLinkedUsers(usersWithTickets, len(usersWithTickets))
 	}
 
 	for _, newU := range kcDataMap {
@@ -130,7 +161,8 @@ func (s *userService) Sync(ctx context.Context, actor *models.Actor) error {
 		logger.Info("Sync finished",
 			"created", len(toCreate),
 			"updated", len(toUpdate),
-			"deleted", len(toDelete))
+			"deleted", len(toDelete),
+			"deleted_with_tickets", len(usersWithTickets))
 		return nil
 	})
 
@@ -241,6 +273,24 @@ func (s *userService) nonNil(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+// protectedFromKeycloakSync сообщает, что пользователя синхронизация с Keycloak
+// не трогает: он остаётся в базе, даже если в Keycloak его нет.
+//
+//   - Системные пользователи исключены по прямому условию (историческое поведение).
+//   - Пользователи из Mattermost в Keycloak не состоят: у них нет ни учётной записи,
+//     ни id = Keycloak sub, поэтому в каталоге они не найдутся никогда. Удалять их
+//     нельзя — tickets.creator_id объявлен как ON DELETE CASCADE, и синхронизация
+//     унесла бы заявки заявителей вместе с комментариями и вложениями.
+//
+// Этот.source — первая линия защиты, но она держится только на бэкфилле:
+// после того как SyncRealmUsers свяжет сотрудника с Mattermost, его source навсегда
+// остаётся keycloak, а mattermost_id заполняется. Поэтому уход такого сотрудника из
+// Keycloak защита выше не видит — за это отвечает отдельная проверка по заявкам
+// (GetIDsWithTickets, см. Sync и ErrKeycloakSyncLinkedUsers).
+func protectedFromKeycloakSync(u *models.UserData) bool {
+	return u.IsSystem || u.Source.IsFromMattermost()
 }
 
 // isChanged сравнивает пользователя из БД с данными из Keycloak. Синхронизация идемпотентна:

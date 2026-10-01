@@ -35,6 +35,8 @@ export interface IUserData {
 	email: string
 	mattermostId: string
 	isActive: boolean
+	isSystem?: boolean
+	source?: 'keycloak' | 'mattermost'
 	createdAt: string
 
 	realms: IUserRealm[]
@@ -59,6 +61,8 @@ export interface IUserDataDTO {
 	email: string
 	mattermostId: string
 	isActive: boolean
+	isSystem?: boolean
+	source?: 'keycloak' | 'mattermost'
 
 	realms: IUserRealm[]
 }

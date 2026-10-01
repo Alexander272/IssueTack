@@ -16,6 +16,7 @@ type User struct {
 	SiteId           sql.NullString `db:"user_site_id"`
 	UserIsActive     sql.NullBool   `db:"user_is_active"`
 	UserIsSystem     sql.NullBool   `db:"user_is_system"`
+	UserSource       sql.NullString `db:"user_source"`
 	UserRealmId      sql.NullString `db:"ur_id"`
 	IsActive         sql.NullBool   `db:"is_active"`
 	RoleId           sql.NullString `db:"role_id"`

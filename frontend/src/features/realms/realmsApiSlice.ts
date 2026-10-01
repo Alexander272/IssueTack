@@ -2,7 +2,7 @@ import { toast } from 'react-toastify'
 
 import type { IBaseFetchError } from '@/app/types/error'
 import type { IRealm, IRealmDTO } from './types/realm'
-import type { IRealmMattermost, IRealmMattermostDTO } from './types/mattermost'
+import type { IRealmMattermost, IMattermostSyncResult, IRealmMattermostDTO } from './types/mattermost'
 import { apiSlice } from '@/app/apiSlice'
 import { API } from '@/app/api'
 
@@ -100,6 +100,18 @@ const realmsApiSlice = apiSlice.injectEndpoints({
 			}),
 			invalidatesTags: [{ type: 'Mattermost', id: 'ALL' }],
 		}),
+
+		syncMattermostUsers: builder.mutation<{ data: IMattermostSyncResult }, string>({
+			query: realmId => ({
+				url: API.realms.mattermostSync(realmId),
+				method: 'POST',
+			}),
+			invalidatesTags: [
+				{ type: 'Mattermost', id: 'ALL' },
+				{ type: 'Users', id: 'All' },
+				{ type: 'Users', id: 'available' },
+			],
+		}),
 	}),
 })
 
@@ -112,4 +124,5 @@ export const {
 	useGetMattermostSettingsQuery,
 	useSaveMattermostSettingsMutation,
 	useDeleteMattermostSettingsMutation,
+	useSyncMattermostUsersMutation,
 } = realmsApiSlice

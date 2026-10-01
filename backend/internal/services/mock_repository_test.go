@@ -809,8 +809,8 @@ func (m *MockUserService) GetByMembership(ctx context.Context, realmID uuid.UUID
 	args := m.Called(ctx, realmID, membership)
 	return args.Get(0).([]*models.UserData), args.Error(1)
 }
-func (m *MockUserService) Sync(ctx context.Context, actor *models.Actor) error {
-	args := m.Called(ctx, actor)
+func (m *MockUserService) Sync(ctx context.Context, actor *models.Actor, force bool) error {
+	args := m.Called(ctx, actor, force)
 	return args.Error(0)
 }
 func (m *MockUserService) UpdateAccount(ctx context.Context, dto *models.UpdateAccountDTO) error {
@@ -1048,6 +1048,11 @@ func (m *MockTicketAccessChecker) CanManage(ctx context.Context, userID uuid.UUI
 }
 
 func (m *MockTicketAccessChecker) CanCreateTicket(ctx context.Context, userID uuid.UUID, realm string) (bool, error) {
+	args := m.Called(ctx, userID, realm)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockTicketAccessChecker) CanAdministerTickets(ctx context.Context, userID uuid.UUID, realm string) (bool, error) {
 	args := m.Called(ctx, userID, realm)
 	return args.Bool(0), args.Error(1)
 }

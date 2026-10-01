@@ -3,6 +3,7 @@ package users
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
@@ -103,11 +104,24 @@ func (h *Handler) sync(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.Sync(c, actor); err != nil {
+	// force снимает защиту от удаления пользователей, связанных с Mattermost: такие
+	// удаления уносят их заявки (tickets.creator_id/owner_id — ON DELETE CASCADE),
+	// поэтому по умолчанию синхронизация на них останавливается с SY001.
+	if err := h.service.Sync(c, actor, syncForceRequested(c)); err != nil {
 		response.SendError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, response.IdResponse{Message: "Пользователи синхронизированы"})
+}
+
+// syncForceRequested разбирает query-параметр force: «1» и «true» (в любом регистре).
+func syncForceRequested(c *gin.Context) bool {
+	switch strings.ToLower(strings.TrimSpace(c.Query("force"))) {
+	case "1", "true":
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *Handler) updateAccount(c *gin.Context) {

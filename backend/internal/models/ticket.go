@@ -80,13 +80,13 @@ type TicketFilter struct {
 	CreatorID                  *uuid.UUID     `json:"-"`
 	// CreatedOrOwnedBy — внутренний фильтр «автор ИЛИ заказчик» (для Mattermost-плагина):
 	// тикеты, где пользователь является creator_id ИЛИ owner_id.
-	CreatedOrOwnedBy           *uuid.UUID     `json:"-"`
-	Archived                   *bool          `form:"archived" json:"archived"`
-	FavoritesByUser            *uuid.UUID     `json:"-"`
-	FavoriteType               *FavoriteType  `json:"-"`
-	MyWork                     *MyWorkFilter  `json:"-"`
-	Limit                      int            `json:"limit" db:"limit"`
-	Offset                     int            `json:"offset" db:"offset"`
+	CreatedOrOwnedBy *uuid.UUID    `json:"-"`
+	Archived         *bool         `form:"archived" json:"archived"`
+	FavoritesByUser  *uuid.UUID    `json:"-"`
+	FavoriteType     *FavoriteType `json:"-"`
+	MyWork           *MyWorkFilter `json:"-"`
+	Limit            int           `json:"limit" db:"limit"`
+	Offset           int           `json:"offset" db:"offset"`
 }
 
 // MyWorkFilter описывает фильтр «Мои задачи»: тикеты, где пользователь является

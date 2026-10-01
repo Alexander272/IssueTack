@@ -2,7 +2,7 @@ import { type FC } from 'react'
 import { Stack, TextField, Typography, Button, CircularProgress, Alert } from '@mui/material'
 import { useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
-import { TrashIcon, SaveIcon } from 'lucide-mui'
+import { TrashIcon, SaveIcon, RefreshCwIcon } from 'lucide-mui'
 
 import type { IFetchError } from '@/app/types/error'
 import type { IRealmMattermostDTO } from '@/features/realms/types/mattermost'
@@ -10,6 +10,7 @@ import {
 	useGetMattermostSettingsQuery,
 	useSaveMattermostSettingsMutation,
 	useDeleteMattermostSettingsMutation,
+	useSyncMattermostUsersMutation,
 } from '@/features/realms/realmsApiSlice'
 import { BoxFallback } from '@/components/Fallback/BoxFallback'
 
@@ -21,6 +22,7 @@ export const MattermostTab: FC<Props> = ({ realmId }) => {
 	const { data, isFetching } = useGetMattermostSettingsQuery(realmId, { skip: !realmId })
 	const [save, { isLoading: isSaving }] = useSaveMattermostSettingsMutation()
 	const [remove, { isLoading: isRemoving }] = useDeleteMattermostSettingsMutation()
+	const [syncUsers, { isLoading: isSyncing }] = useSyncMattermostUsersMutation()
 
 	const { control, handleSubmit, reset } = useForm<IRealmMattermostDTO>({
 		values: data?.data
@@ -49,9 +51,20 @@ export const MattermostTab: FC<Props> = ({ realmId }) => {
 		}
 	}
 
+	const onSyncUsers = async () => {
+		try {
+			const result = await syncUsers(realmId).unwrap()
+			toast.success(`Синхронизация завершена. Создано: ${result.data.created}, привязано: ${result.data.linked}`)
+		} catch (error) {
+			const err = error as IFetchError
+			toast.error(err.data?.message, { autoClose: false })
+		}
+	}
+
 	if (isFetching) return <BoxFallback />
 
 	const isConfigured = Boolean(data?.data)
+	const isBusy = isSaving || isRemoving || isSyncing
 
 	return (
 		<Stack spacing={3}>
@@ -90,7 +103,7 @@ export const MattermostTab: FC<Props> = ({ realmId }) => {
 				<Button
 					onClick={onSave}
 					variant='contained'
-					disabled={isSaving || isRemoving}
+					disabled={isBusy}
 					sx={{ textTransform: 'none', px: 3 }}
 					startIcon={isSaving ? <CircularProgress size={16} /> : <SaveIcon sx={{ fontSize: 16 }} />}
 				>
@@ -102,7 +115,7 @@ export const MattermostTab: FC<Props> = ({ realmId }) => {
 						onClick={onDelete}
 						variant='outlined'
 						color='error'
-						disabled={isSaving || isRemoving}
+						disabled={isBusy}
 						sx={{ textTransform: 'none' }}
 						startIcon={isRemoving ? <CircularProgress size={16} /> : <TrashIcon sx={{ fontSize: 16 }} />}
 					>
@@ -110,6 +123,27 @@ export const MattermostTab: FC<Props> = ({ realmId }) => {
 					</Button>
 				)}
 			</Stack>
+
+			{isConfigured && (
+				<Stack spacing={1} sx={{ pt: 1 }}>
+					<Typography variant='caption' sx={{ fontWeight: 600 }}>
+						Пользователи Mattermost
+					</Typography>
+					<Typography variant='body2' color='text.secondary'>
+						Импортирует всех пользователей Mattermost в область, чтобы их можно было выбирать
+						заказчиками заявок, даже если они ещё ни разу не заходили в приложение.
+					</Typography>
+					<Button
+						onClick={onSyncUsers}
+						variant='outlined'
+						disabled={isBusy}
+						sx={{ alignSelf: 'flex-start', textTransform: 'none', borderRadius: '8px' }}
+						startIcon={isSyncing ? <CircularProgress size={16} /> : <RefreshCwIcon sx={{ fontSize: 16 }} />}
+					>
+						Синхронизировать пользователей
+					</Button>
+				</Stack>
+			)}
 		</Stack>
 	)
 }

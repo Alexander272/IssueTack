@@ -31,6 +31,11 @@ type Users interface {
 	GetByMattermostID(ctx context.Context, mattermostID string) (*models.UserData, error)
 	GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.UserData, error)
 	GetByMembership(ctx context.Context, realmID uuid.UUID, membership models.MembershipFilter) ([]*models.UserData, error)
+	// GetIDsWithTickets возвращает подмножество переданных id, у которых есть
+	// хотя бы одна заявка (в качестве создателя или владельца). Нужно защите
+	// Keycloak-синхронизации: удаление такого пользователя унесёт его заявки
+	// (tickets.creator_id/owner_id объявлены ON DELETE CASCADE).
+	GetIDsWithTickets(ctx context.Context, ids []uuid.UUID) ([]uuid.UUID, error)
 	CreateSeveral(ctx context.Context, tx Tx, dto []*models.UserDataDTO) error
 	Update(ctx context.Context, tx Tx, dto *models.UserDataDTO) error
 	UpdateSeveral(ctx context.Context, tx Tx, dto []*models.UserDataDTO) error
@@ -75,6 +80,7 @@ func (r *userRepo) GetByID(ctx context.Context, id uuid.UUID) (*models.UserData,
 			u.mattermost_id,
 			u.is_active AS user_is_active,
 			u.is_system AS user_is_system,
+			u.source AS user_source,
 			u.site_id AS user_site_id,
 			u.internal_number AS internal_number,
 			ur.id AS ur_id, ur.is_active,
@@ -117,6 +123,7 @@ func (r *userRepo) GetByLogin(ctx context.Context, login string) (*models.UserDa
 			u.mattermost_id,
 			u.is_active AS user_is_active,
 			u.is_system AS user_is_system,
+			u.source AS user_source,
 			u.site_id AS user_site_id,
 			u.internal_number AS internal_number,
 			ur.id AS ur_id, ur.is_active,
@@ -159,6 +166,7 @@ func (r *userRepo) GetByMattermostID(ctx context.Context, mattermostID string) (
 			u.mattermost_id,
 			u.is_active AS user_is_active,
 			u.is_system AS user_is_system,
+			u.source AS user_source,
 			u.site_id AS user_site_id,
 			u.internal_number AS internal_number,
 			ur.id AS ur_id, ur.is_active,
@@ -201,6 +209,7 @@ func (r *userRepo) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.Us
 			u.mattermost_id,
 			u.is_active AS user_is_active,
 			u.is_system AS user_is_system,
+			u.source AS user_source,
 			u.site_id AS user_site_id,
 			u.internal_number AS internal_number,
 			ur.id AS ur_id, ur.is_active,
@@ -262,6 +271,7 @@ func (r *userRepo) GetByMembership(ctx context.Context, realmID uuid.UUID, membe
 			u.mattermost_id,
 			u.is_active AS user_is_active,
 			u.is_system AS user_is_system,
+			u.source AS user_source,
 			u.site_id AS user_site_id,
 			u.internal_number AS internal_number,
 			ur.id AS ur_id, ur.is_active,
@@ -304,7 +314,7 @@ func scanUserRows(rows pgx.Rows) ([]*pq_models.User, error) {
 		if err := rows.Scan(
 			&item.Id, &item.Username, &item.Email, &item.FirstName, &item.LastName, &item.CreatedAt,
 			&item.MattermostID,
-			&item.UserIsActive, &item.UserIsSystem,
+			&item.UserIsActive, &item.UserIsSystem, &item.UserSource,
 			&item.SiteId,
 			&item.InternalNumber,
 			&item.UserRealmId, &item.IsActive,
@@ -333,6 +343,23 @@ func mapMattermostID(id sql.NullString) *string {
 	return &value
 }
 
+// mapUserSource нормализует колонку source: пустое и NULL-значение (строки,
+// созданные до миграции) считаются каноническим источником 'keycloak'.
+// Любое другое неизвестное значение тоже схлопывается в 'keycloak' — при
+// отключённом CHECK это единственный безопасный вариант: неизвестное значение
+// не равно 'mattermost', а значит пользователь остался бы удаляемым вместе
+// со своими заявками.
+func mapUserSource(source sql.NullString) models.UserSource {
+	switch {
+	case !source.Valid || source.String == "":
+		return models.UserSourceKeycloak
+	case source.String == string(models.UserSourceMattermost):
+		return models.UserSourceMattermost
+	default:
+		return models.UserSourceKeycloak
+	}
+}
+
 func mapUsersData(rows []*pq_models.User) ([]*models.UserData, error) {
 	result := make([]*models.UserData, 0, 10)
 	userIndex := make(map[string]int)
@@ -352,6 +379,7 @@ func mapUsersData(rows []*pq_models.User) ([]*models.UserData, error) {
 					LastName:       u.LastName,
 					IsActive:       u.UserIsActive.Bool,
 					IsSystem:       u.UserIsSystem.Bool,
+					Source:         mapUserSource(u.UserSource),
 					SiteID:         mapMattermostID(u.SiteId),
 					InternalNumber: u.InternalNumber.String,
 					CreatedAt:      u.CreatedAt,
@@ -446,6 +474,15 @@ func mapUsersData(rows []*pq_models.User) ([]*models.UserData, error) {
 	return result, nil
 }
 
+// normalizeUserSource подставляет канонический источник, если поле не задано:
+// строка без source (синхронизация с Keycloak, ручное создание) считается keycloak.
+func normalizeUserSource(source models.UserSource) models.UserSource {
+	if source == "" {
+		return models.UserSourceKeycloak
+	}
+	return source
+}
+
 func (r *userRepo) CreateSeveral(ctx context.Context, tx Tx, dto []*models.UserDataDTO) error {
 	if len(dto) == 0 {
 		return nil
@@ -465,10 +502,11 @@ func (r *userRepo) CreateSeveral(ctx context.Context, tx Tx, dto []*models.UserD
 			v.IsActive,
 			v.IsSystem,
 			v.InternalNumber,
+			normalizeUserSource(v.Source),
 		}
 	}
 
-	columns := []string{"id", "username", "first_name", "last_name", "email", "mattermost_id", "site_id", "is_active", "is_system", "internal_number"}
+	columns := []string{"id", "username", "first_name", "last_name", "email", "mattermost_id", "site_id", "is_active", "is_system", "internal_number", "source"}
 	_, err := r.getExec(tx).CopyFrom(
 		ctx,
 		pgx.Identifier{Tables.Users},
@@ -597,4 +635,35 @@ func (r *userRepo) DeleteSeveral(ctx context.Context, tx Tx, ids []uuid.UUID) er
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
 	return nil
+}
+
+func (r *userRepo) GetIDsWithTickets(ctx context.Context, ids []uuid.UUID) ([]uuid.UUID, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	query := fmt.Sprintf(`SELECT creator_id AS id FROM %s WHERE creator_id = ANY($1)
+		UNION
+		SELECT owner_id AS id FROM %s WHERE owner_id = ANY($1)`,
+		Tables.Tickets, Tables.Tickets,
+	)
+
+	rows, err := r.db.Query(ctx, query, ids)
+	if err != nil {
+		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	defer rows.Close()
+
+	result := make([]uuid.UUID, 0)
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, MapError(fmt.Errorf("scan row error: %w", err))
+		}
+		result = append(result, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
+	return result, nil
 }

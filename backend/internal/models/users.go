@@ -65,6 +65,26 @@ type UserShort struct {
 	InternalNumber string    `json:"internalNumber,omitempty"`
 }
 
+// UserSource — происхождение пользователя. Определяет, кто владеет его учётной
+// записью и можно ли удалять его синхронизацией с Keycloak.
+type UserSource string
+
+const (
+	// UserSourceKeycloak — канонический источник, сотрудник синхронизируется
+	// из Keycloak и его id совпадает с Keycloak sub.
+	UserSourceKeycloak UserSource = "keycloak"
+	// UserSourceMattermost — пользователь создан из Mattermost (resolveOrCreateUser),
+	// учётной записи в Keycloak у него нет: в веб он не входит. Такие записи
+	// синхронизация с Keycloak удалять не должна — иначе по ON DELETE CASCADE
+	// исчезнут его заявки.
+	UserSourceMattermost UserSource = "mattermost"
+)
+
+// IsFromMattermost сообщает, что пользователь создан из Mattermost.
+func (s UserSource) IsFromMattermost() bool {
+	return s == UserSourceMattermost
+}
+
 type UserData struct {
 	ID           uuid.UUID `json:"id" db:"id"`
 	MattermostID *string   `json:"mattermostId" db:"mattermost_id"`
@@ -73,11 +93,12 @@ type UserData struct {
 	LastName     string    `json:"lastName" db:"last_name"`
 	Email        string    `json:"email" db:"email"`
 	// RoleId       string  `json:"roleId" db:"role_id"`
-	SiteID         *string   `json:"siteId" db:"site_id"`
-	IsActive       bool      `json:"isActive" db:"is_active"`
-	IsSystem       bool      `json:"isSystem" db:"is_system"`
-	InternalNumber string    `json:"internalNumber" db:"internal_number"`
-	CreatedAt      time.Time `json:"createdAt" db:"created_at"`
+	SiteID         *string    `json:"siteId" db:"site_id"`
+	IsActive       bool       `json:"isActive" db:"is_active"`
+	IsSystem       bool       `json:"isSystem" db:"is_system"`
+	InternalNumber string     `json:"internalNumber" db:"internal_number"`
+	Source         UserSource `json:"source" db:"source"`
+	CreatedAt      time.Time  `json:"createdAt" db:"created_at"`
 
 	Realms []*UserRealm `json:"realms,omitempty"`
 }
@@ -85,7 +106,7 @@ type UserData struct {
 type UserDataDTO struct {
 	ID             uuid.UUID  `json:"id" db:"id"`
 	MattermostID   *string    `json:"mattermostId" db:"mattermost_id"`
-	Username       string     `json:"username" db:"username"`
+	Username       string     `json:"username" db:"username" binding:"required"`
 	FirstName      string     `json:"firstName" db:"first_name"`
 	LastName       string     `json:"lastName" db:"last_name"`
 	Email          string     `json:"email" db:"email"`
@@ -93,8 +114,11 @@ type UserDataDTO struct {
 	IsActive       bool       `json:"isActive" db:"is_active"`
 	IsSystem       bool       `json:"isSystem" db:"is_system"`
 	InternalNumber string     `json:"internalNumber" db:"internal_number"`
-	Actor          *Actor
-	Realms         []*UserRealmDTO `json:"realms"`
+	// Source — происхождение пользователя. Пустое значение при вставке
+	// нормализуется в 'keycloak' (см. postgres.userRepo.CreateSeveral).
+	Source UserSource `json:"source" db:"source"`
+	Actor  *Actor
+	Realms []*UserRealmDTO `json:"realms"`
 }
 
 type UpdateAccountDTO struct {

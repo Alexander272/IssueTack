@@ -13,3 +13,9 @@ export interface IRealmMattermostDTO {
 	botToken: string
 	channelId: string
 }
+
+export interface IMattermostSyncResult {
+	created: number
+	linked: number
+	failed: number
+}

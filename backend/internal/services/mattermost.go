@@ -115,6 +115,11 @@ type Mattermost interface {
 	SaveSettings(ctx context.Context, realmID uuid.UUID, dto *models.RealmMattermostDTO) error
 	DeleteSettings(ctx context.Context, realmID uuid.UUID) error
 
+	// SyncRealmUsers импортирует пользователей Mattermost в realm: сопоставляет их
+	// с системными по mattermost_id/email/username/ФИО и создаёт недостающих.
+	// Доступно только администратору realm и только при активной интеграции.
+	SyncRealmUsers(ctx context.Context, realmID uuid.UUID, actor *models.Actor, teamNames []string) (*SyncUsersResult, error)
+
 	HandleDM(ctx context.Context, input *models.HandleDMInput) error
 	HandleDialogOpen(ctx context.Context, input *models.DialogOpenDTO) error
 	HandleDialogSubmission(ctx context.Context, submission *model.SubmitDialogRequest) error
@@ -282,6 +287,12 @@ func (s *MattermostService) HandleDM(ctx context.Context, input *models.HandleDM
 
 	case commentCommands.MatchString(msg):
 		return s.handleComment(ctx, ch, msg)
+
+	// Голое «№123» без текста и без файлов — карточка заявки. Кейс стоит после
+	// attachCommands (тот с файлами) и commentCommands (с текстом), иначе он
+	// перехватил бы их.
+	case attachCommands.MatchString(msg):
+		return s.handleTicketCard(ctx, ch, msg)
 
 	default:
 		if len(input.FileIDs) > 0 {
@@ -891,6 +902,191 @@ func (s *MattermostService) handleTextWithFiles(ctx context.Context, ch *mmChann
 		text = strings.TrimSpace(msg)
 	}
 	return s.handleAttachFiles(ctx, ch, number, fileIDs, text)
+}
+
+// handleTicketCard отвечает на голый номер заявки («№123») карточкой: статус,
+// приоритет, участники, срок и действия владельца.
+//
+// Право на просмотр здесь обязательно и обеспечивается двумя шагами. Поиск по
+// номеру идёт через Tickets.Get, который без групп актора вернул бы заявку
+// любого реалма с таким номером, поэтому найденный ID досматривается через
+// ticketDetail → Tickets.GetByID — он гоняет атрибутную модель доступа и вернёт
+// ErrPermissionDenied на чужую заявку. Отказ показываем тем же «не найдена», что и
+// для несуществующего номера: сообщать о существовании чужой заявки нельзя.
+func (s *MattermostService) handleTicketCard(ctx context.Context, ch *mmChannel, message string) error {
+	parts := attachCommands.FindStringSubmatch(message)
+	number, _ := strconv.Atoi(parts[1])
+
+	user, err := s.resolveOrCreateUser(ctx, ch.Settings.RealmID, ch.MmUserID, nil)
+	if err != nil {
+		return fmt.Errorf("failed to resolve user: %w", err)
+	}
+
+	found, _, err := s.tickets.Get(ctx, &models.TicketFilter{
+		Number:  &number,
+		RealmID: &ch.Settings.RealmID,
+		Actor:   &models.Actor{ID: user.ID, Name: user.Username},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to find ticket by number: %w", err)
+	}
+	if len(found) == 0 {
+		s.sendDMBestEffort(ch, fmt.Sprintf("Заявка №%d не найдена", number))
+		return nil
+	}
+
+	detail, err := s.ticketDetail(ctx, ch.Settings, ch.MmUserID, found[0].ID)
+	if err != nil {
+		if errors.Is(err, models.ErrPermissionDenied) {
+			s.sendDMBestEffort(ch, fmt.Sprintf("Заявка №%d не найдена", number))
+			return nil
+		}
+		return fmt.Errorf("failed to get ticket detail: %w", err)
+	}
+
+	if _, err := s.most.Post.Create(ch.Settings.BotToken, mattermost.CreatePostDTO{
+		ChannelID:   ch.ChannelID,
+		Message:     fmt.Sprintf("Заявка №%d", detail.Number),
+		Attachments: []mattermost.Attachment{s.ticketCard(detail)},
+	}); err != nil {
+		return fmt.Errorf("failed to send ticket card: %w", err)
+	}
+	return nil
+}
+
+// cardDetailLimit — лимит описания в карточке заявки. Выше cardSummary (200) для
+// одной заявки: карточка одна, растянуть ленту она не может, а обрезанное
+// описание бесполезно — за ним идут за полным текстом в веб-приложении.
+const cardDetailLimit = 1000
+
+var mmPriorityLabels = map[models.Priority]string{
+	models.PriorityLow:    "Низкий",
+	models.PriorityMedium: "Средний",
+	models.PriorityHigh:   "Высокий",
+	models.PriorityUrgent: "Срочный",
+}
+
+// ticketCard собирает карточку заявки для ответа на «№N». Заголовок ведёт на
+// заявку через title_link: отдельного поля url у вложения нет, клиенты рисуют
+// ссылкой только заголовок. Кнопки — те же, что у карточки в списке «Мои
+// заявки», но без post_id: applyListEdit правку списка не делает, а по
+// standalone-карточке её и нечего править, поэтому действие уходит в диалог
+// подтверждения и меняет статус через общий TicketService.Update.
+func (s *MattermostService) ticketCard(detail *models.PluginTicketDetail) mattermost.Attachment {
+	title := detail.Title
+	fields := []mattermost.AttachmentField{
+		{Title: "Статус", Value: mmStatusLabels[detail.Status], Short: true},
+		{Title: "Приоритет", Value: mmPriorityLabels[detail.Priority], Short: true},
+	}
+	if detail.Category != nil && detail.Category.Name != "" {
+		fields = append(fields, mattermost.AttachmentField{Title: "Категория", Value: detail.Category.Name, Short: true})
+	}
+	if detail.Site != nil && detail.Site.Name != "" {
+		fields = append(fields, mattermost.AttachmentField{Title: "Площадка", Value: detail.Site.Name, Short: true})
+	}
+	fields = append(fields, mattermost.AttachmentField{
+		Title: "Создана", Value: detail.CreatedAt.Format("02.01.2006 15:04"), Short: true,
+	})
+	if detail.DueDate != nil {
+		fields = append(fields, mattermost.AttachmentField{
+			Title: "Срок", Value: detail.DueDate.Format("02.01.2006"), Short: true,
+		})
+	}
+	if detail.Assignee != nil && detail.Assignee.Username != "" {
+		fields = append(fields, mattermost.AttachmentField{
+			Title: "Исполнитель", Value: detail.Assignee.Username, Short: true,
+		})
+	}
+	if detail.Owner != nil && detail.Owner.Username != "" {
+		fields = append(fields, mattermost.AttachmentField{
+			Title: "Заказчик", Value: detail.Owner.Username, Short: true,
+		})
+	}
+	if len(detail.Attachments) > 0 {
+		fields = append(fields, mattermost.AttachmentField{
+			Title: "Вложения", Value: strconv.Itoa(len(detail.Attachments)), Short: true,
+		})
+	}
+
+	card := mattermost.Attachment{
+		Title:   title,
+		Text:    detailText(detail.Description),
+		Color:   mmStatusColors[detail.Status],
+		Fields:  fields,
+		Buttons: s.detailActionButtons(detail),
+	}
+	if detail.Link != "" {
+		card.TitleLink = detail.Link
+	}
+	return card
+}
+
+// detailActionButtons — действия владельца на карточке заявки. Правила те же, что
+// в плагине: отмена только для новой заявки, подтверждение решения и возврат в
+// работу — только для решённой. Заявка не владельца остаётся без кнопок.
+func (s *MattermostService) detailActionButtons(detail *models.PluginTicketDetail) []mattermost.InteractiveButton {
+	if detail.Owner == nil {
+		return nil
+	}
+	btnCtx := func(action string, status models.TicketStatus) map[string]string {
+		return map[string]string{
+			"action":    action,
+			"ticket_id": detail.ID.String(),
+			"status":    string(status),
+		}
+	}
+
+	switch detail.Status {
+	case models.StatusOpen:
+		if !detail.CanCancel {
+			return nil
+		}
+		return []mattermost.InteractiveButton{{
+			Text: "Отменить заявку", Style: "danger",
+			URL: s.actionURL(), Context: btnCtx(actionCancel, models.StatusCancelled),
+			ID: ticketActionID(detail.ID, actionCancel),
+		}}
+	case models.StatusResolved:
+		var buttons []mattermost.InteractiveButton
+		if detail.CanConfirm {
+			buttons = append(buttons, mattermost.InteractiveButton{
+				Text: "Подтвердить решение", Style: "primary",
+				URL: s.actionURL(), Context: btnCtx(actionConfirm, models.StatusClosed),
+				ID: ticketActionID(detail.ID, actionConfirm),
+			})
+		}
+		if detail.CanReopen {
+			buttons = append(buttons, mattermost.InteractiveButton{
+				Text: "Вернуть в работу",
+				URL:  s.actionURL(), Context: btnCtx(actionReopen, models.StatusInProgress),
+				ID: ticketActionID(detail.ID, actionReopen),
+			})
+		}
+		return buttons
+	default:
+		return nil
+	}
+}
+
+// detailText — описание заявки для карточки: переносы схлопнуты в абзацы, а не
+// в одну строку (здесь, в отличие от списка, описание — содержание карточки),
+// и подрезано до cardDetailLimit.
+func detailText(text string) string {
+	paragraphs := strings.Split(strings.ReplaceAll(strings.TrimSpace(text), "\r\n", "\n"), "\n")
+	kept := make([]string, 0, len(paragraphs))
+	for _, p := range paragraphs {
+		if p = strings.TrimSpace(p); p != "" {
+			kept = append(kept, p)
+		}
+	}
+	if len(kept) == 0 {
+		return ""
+	}
+	out := strings.Join(kept, "\n")
+	if len([]rune(out)) <= cardDetailLimit {
+		return out
+	}
+	return string([]rune(out)[:cardDetailLimit]) + "…"
 }
 
 // handleComment создаёт комментарий к заявке из личного сообщения Mattermost.

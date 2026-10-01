@@ -18,7 +18,12 @@ export const TaskFilters: FC<TaskFiltersProps> = ({ filters, onChange, onReset, 
 
 	const siteOptions = useMemo(() => (sitesData?.data ?? []).map(s => ({ id: s.id, label: s.name })), [sitesData])
 	const userOptions = useMemo(
-		() => (usersData?.data ?? []).map(u => ({ id: u.id, label: `${u.lastName} ${u.firstName} (${u.username})` })),
+		() =>
+			(usersData?.data ?? [])
+				// Фильтр по исполнителю — только локальные пользователи: импортированные
+				// из Mattermost и системные в выборе исполнителя не участвуют.
+				.filter(u => u.source !== 'mattermost' && !u.isSystem)
+				.map(u => ({ id: u.id, label: `${u.lastName} ${u.firstName} (${u.username})` })),
 		[usersData],
 	)
 

@@ -249,6 +249,14 @@ func (c *Client) GetUser(botToken, userID string) (*model.User, error) {
 	return user, nil
 }
 
+// isSyncableUser отсеивает пользователей, которых не нужно импортировать в
+// систему: ботов и деактивированных (удалённых) пользователей Mattermost.
+// Деактивированных (DeleteAt != 0) пропускаем, иначе синк заводил бы их как
+// активных сотрудников и показывал в выборе исполнителя.
+func isSyncableUser(u *model.User) bool {
+	return u != nil && !u.IsBot && u.DeleteAt == 0
+}
+
 func (c *Client) GetUsersInTeam(botToken, teamID string) ([]*model.User, error) {
 	api := c.newAPI(botToken)
 	var allUsers []*model.User
@@ -260,7 +268,7 @@ func (c *Client) GetUsersInTeam(botToken, teamID string) ([]*model.User, error) 
 			return nil, fmt.Errorf("failed to get users in team page %d: %w", page, err)
 		}
 		for _, u := range users {
-			if !u.IsBot {
+			if isSyncableUser(u) {
 				allUsers = append(allUsers, u)
 			}
 		}
@@ -305,7 +313,7 @@ func (c *Client) GetAllUsers(botToken string) ([]*model.User, error) {
 			return nil, fmt.Errorf("failed to get users page %d: %w", page, err)
 		}
 		for _, u := range users {
-			if !u.IsBot {
+			if isSyncableUser(u) {
 				allUsers = append(allUsers, u)
 			}
 		}

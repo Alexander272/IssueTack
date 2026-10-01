@@ -21,6 +21,7 @@ import { useGetAllUsersQuery, useSyncUsersMutation } from '@/features/user/users
 import { useGetRolesQuery } from '@/features/user/roleApiSlice'
 import { UpdateModal } from '@/features/user/components/Update'
 import { BoxFallback } from '@/components/Fallback/BoxFallback'
+import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
 import { SearchIcon, RefreshCwIcon } from 'lucide-mui'
 import { UserCard } from './UserCard'
 
@@ -32,6 +33,10 @@ export const Users = () => {
 
 	const [modalType, setModalType] = useState<'edit' | 'logins'>('edit')
 	const [user, setUser] = useState<IUserData | null>(null)
+	// forceSyncMessage — текст ошибки SY001: синхронизация остановлена, потому что среди
+	// удаляемых есть связанные с Mattermost пользователи. Их удаление унесло бы заявки,
+	// поэтому повтор идёт только через явное подтверждение (force=1).
+	const [forceSyncMessage, setForceSyncMessage] = useState<string | null>(null)
 
 	const debouncedSearch = useDebounce(search, 300)
 
@@ -65,14 +70,24 @@ export const Users = () => {
 		})
 	}, [data, debouncedSearch, roleFilter, statusFilter])
 
-	const syncHandler = async () => {
+	const syncHandler = async (force = false) => {
 		try {
-			await sync().unwrap()
+			await sync({ force }).unwrap()
+			setForceSyncMessage(null)
 			toast.success('Пользователи синхронизированы')
 		} catch (error) {
 			const err = error as IFetchError
+			if (err.data?.code === 'SY001') {
+				setForceSyncMessage(err.data.message)
+				return
+			}
 			toast.error(err.data?.message, { autoClose: false })
 		}
+	}
+
+	const forceSyncHandler = () => {
+		setForceSyncMessage(null)
+		void syncHandler(true)
 	}
 
 	const roleHandler = (event: SelectChangeEvent<string[]>) => {
@@ -114,7 +129,7 @@ export const Users = () => {
 				<Button
 					variant='outlined'
 					sx={{ borderRadius: '8px', textTransform: 'none', background: '#fff' }}
-					onClick={syncHandler}
+					onClick={() => void syncHandler()}
 				>
 					{isLoading ? (
 						<CircularProgress size={16} sx={{ mr: 1.5 }} />
@@ -179,6 +194,17 @@ export const Users = () => {
 
 			{user && modalType == 'edit' ? <UpdateModal user={user} onClose={() => setUser(null)} /> : null}
 			{/* <LoginsModal user={modalType == 'logins' ? user : null} onClose={() => setUser(null)} /> */}
+
+			<ConfirmDialog
+				open={Boolean(forceSyncMessage)}
+				title='Синхронизация остановлена'
+				message={forceSyncMessage ?? ''}
+				confirmLabel='Всё равно удалить'
+				confirmColor='error'
+				loading={isLoading}
+				onConfirm={forceSyncHandler}
+				onCancel={() => setForceSyncMessage(null)}
+			/>
 
 			{/* Cards */}
 			<Stack spacing={2}>
