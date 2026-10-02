@@ -121,7 +121,7 @@ func NewServices(deps *Deps) *Services {
 		ServerURL: deps.Conf.Mattermost.URL,
 		BaseURL:   deps.Conf.Http.BaseURL,
 	})
-	notifChan := NewMattermostNotifier(deps.Repo.Mattermost, users, mmMost, deps.Conf.Http.BaseURL)
+	notifChan := NewMattermostNotifier(deps.Repo.Mattermost, users, mmMost, policies, deps.Conf.Http.BaseURL)
 	notifications := NewNotificationService(&NotificationDeps{
 		Repo:          deps.Repo.Notifications,
 		Subscriptions: subscriptionOps,

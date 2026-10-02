@@ -26,6 +26,22 @@ export function getCurrentUserId(): string | null {
         null;
 }
 
+// getCurrentTeamName — имя команды текущего пользователя. Нужно для адреса
+// канала: маршрут плагина живёт вне команд, а канал открывается как
+// /{team}/channels/{id}, и team мы знаем только из стора.
+export function getCurrentTeamName(): string | null {
+    if (!storeRef || typeof storeRef.getState !== 'function') {
+        return null;
+    }
+    const state = storeRef.getState();
+    const teams = state && state.entities ? state.entities.teams : undefined;
+    if (!teams || !teams.teams) {
+        return null;
+    }
+    const current = teams.currentTeamId ? teams.teams[teams.currentTeamId] : undefined;
+    return current && current.name ? current.name : null;
+}
+
 export function subscribeCurrentUser(listener: (userId: string | null) => void): () => void {
     if (!storeRef || typeof storeRef.subscribe !== 'function') {
         return () => undefined;

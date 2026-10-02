@@ -150,6 +150,12 @@ export interface PluginStore {
             users: {
                 currentUserId?: string;
             };
+            // Имя текущей команды нужно, чтобы увести ссылку с маршрута плагина в
+            // канал: маршрут плагина живёт вне команд, а адрес канала — /{team}/channels/{id}.
+            teams: {
+                currentTeamId?: string;
+                teams: Record<string, {id: string; name: string}>;
+            };
         };
     };
     subscribe: (listener: () => void) => () => void;

@@ -13,11 +13,19 @@ import (
 )
 
 func mattermostNotifierServiceFixtures() (*MockMattermostRepo, *MockUserService, *MockMMSender, *mattermostNotifier) {
+	return mattermostNotifierFixturesWithPolicy(true, nil)
+}
+
+// mattermostNotifierFixturesWithPolicy собирает нотификатор с заданным ответом
+// Enforce на coarse ticket:read, которым решается показ веб-ссылки в DM.
+func mattermostNotifierFixturesWithPolicy(allowed bool, enforceErr error) (*MockMattermostRepo, *MockUserService, *MockMMSender, *mattermostNotifier) {
 	mockMMRepo := new(MockMattermostRepo)
 	mockUsers := new(MockUserService)
 	mockSender := new(MockMMSender)
+	mockPolicies := new(MockAccessPolicies)
+	mockPolicies.On("Enforce", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(allowed, enforceErr)
 
-	svc := NewMattermostNotifier(mockMMRepo, mockUsers, mockSender, "http://localhost:9000")
+	svc := NewMattermostNotifier(mockMMRepo, mockUsers, mockSender, mockPolicies, "http://localhost:9000")
 	return mockMMRepo, mockUsers, mockSender, svc
 }
 
@@ -219,4 +227,154 @@ func TestMattermostNotifier_SendError_Returned(t *testing.T) {
 func TestMattermostNotifier_Name(t *testing.T) {
 	_, _, _, svc := mattermostNotifierServiceFixtures()
 	assert.Equal(t, "mattermost", svc.Name())
+}
+
+// Проверка гейта веб-ссылки: маршрут /tasks/:id закрыт Casbin-мидлваром
+// ticket:read, поэтому ссылка на веб включается только получателю с этим правом.
+// Plugin-ссылка не гейтится — её маршрут закрыт SourceGuard/PluginTokenGuard,
+// а доступ к заявке решается на уровне сервиса по атрибутам.
+func TestMattermostNotifier_Links_WebLinkGatedByTicketRead(t *testing.T) {
+	tests := []struct {
+		name        string
+		allowed     bool
+		enforceErr  error
+		wantWebLink bool
+	}{
+		{"есть ticket:read — веб-ссылка есть", true, nil, true},
+		{"нет ticket:read — только ссылка плагина", false, nil, false},
+		{"ошибка проверки — только ссылка плагина, DM доставлен", false, assert.AnError, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockMMRepo, mockUsers, mockSender, svc := mattermostNotifierFixturesWithPolicy(tt.allowed, tt.enforceErr)
+
+			userID := uuid.New()
+			mmID := "mm-user-links"
+			ticket := mmTicket()
+			realmID := *ticket.RealmID
+			dto := &models.CreateNotificationDTO{
+				Type:  string(models.NotificationTicketCreated),
+				Title: "Новая задача",
+				Body:  "Тестовая заявка",
+			}
+
+			mockMMRepo.On("GetByRealm", mock.Anything, realmID).Return(&models.RealmMattermost{RealmID: realmID, BotToken: "bt", BotUserID: "bb", IsActive: true}, nil)
+			mockUsers.On("GetByID", mock.Anything, userID).Return(&models.UserData{ID: userID, MattermostID: &mmID}, nil)
+
+			var sent string
+			mockSender.On("Send", "bt", "bb", mmID, mock.Anything).Run(func(args mock.Arguments) {
+				sent = args.String(3)
+			}).Return(nil).Once()
+
+			delivered, err := svc.Notify(context.Background(), userID, dto, ticket)
+			assert.NoError(t, err)
+			assert.True(t, delivered)
+
+			webLink := "Открыть: http://localhost:9000/tasks/" + ticket.ID.String()
+			pluginLink := "[Открыть в плагине](/plug/issuetrack/ticket/" + ticket.ID.String() + ")"
+			if tt.wantWebLink {
+				assert.Contains(t, sent, webLink)
+			} else {
+				assert.NotContains(t, sent, "Открыть: ")
+				assert.NotContains(t, sent, "http://localhost:9000/tasks/")
+			}
+			assert.Contains(t, sent, pluginLink)
+			mockSender.AssertExpectations(t)
+		})
+	}
+}
+
+// Ветка события с действием («Задача … обновлена») использует тот же блок
+// ссылок, что и обычные уведомления, — правило гейта проверяется и на ней.
+func TestMattermostNotifier_Links_WebLinkGatedOnUpdatedEvent(t *testing.T) {
+	mockMMRepo, mockUsers, mockSender, svc := mattermostNotifierFixturesWithPolicy(false, nil)
+
+	userID := uuid.New()
+	mmID := "mm-user-links-updated"
+	ticket := mmTicket()
+	realmID := *ticket.RealmID
+	dto := &models.CreateNotificationDTO{
+		Type:  string(models.NotificationTicketUpdated),
+		Title: "Задача обновлена",
+		Body:  "Тестовая заявка",
+	}
+
+	mockMMRepo.On("GetByRealm", mock.Anything, realmID).Return(&models.RealmMattermost{RealmID: realmID, BotToken: "bt", BotUserID: "bb", IsActive: true}, nil)
+	mockUsers.On("GetByID", mock.Anything, userID).Return(&models.UserData{ID: userID, MattermostID: &mmID}, nil)
+
+	var sent string
+	mockSender.On("Send", "bt", "bb", mmID, mock.Anything).Run(func(args mock.Arguments) {
+		sent = args.String(3)
+	}).Return(nil).Once()
+
+	delivered, err := svc.Notify(context.Background(), userID, dto, ticket)
+	assert.NoError(t, err)
+	assert.True(t, delivered)
+	assert.Contains(t, sent, "**Задача №12 обновлена: Тестовая заявка**")
+	assert.NotContains(t, sent, "Открыть: ")
+	assert.Contains(t, sent, "[Открыть в плагине](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
+	mockSender.AssertExpectations(t)
+}
+
+// Домен проверки — realm тикета, а не realm из заголовка запроса: тикет грузится
+// по id без realm-фильтра, поэтому сверять Enforce надо именно с ticket.RealmID.
+func TestMattermostNotifier_Links_EnforceUsesTicketRealm(t *testing.T) {
+	mockMMRepo, mockUsers, mockSender := new(MockMattermostRepo), new(MockUserService), new(MockMMSender)
+	mockPolicies := new(MockAccessPolicies)
+	svc := NewMattermostNotifier(mockMMRepo, mockUsers, mockSender, mockPolicies, "http://localhost:9000")
+
+	userID := uuid.New()
+	mmID := "mm-user-realm"
+	ticket := mmTicket()
+	realmID := *ticket.RealmID
+
+	mockPolicies.On("Enforce", userID.String(), realmID.String(), "ticket", "read").Return(true, nil).Once()
+	mockMMRepo.On("GetByRealm", mock.Anything, realmID).Return(&models.RealmMattermost{RealmID: realmID, BotToken: "bt", BotUserID: "bb", IsActive: true}, nil)
+	mockUsers.On("GetByID", mock.Anything, userID).Return(&models.UserData{ID: userID, MattermostID: &mmID}, nil)
+
+	var sent string
+	mockSender.On("Send", "bt", "bb", mmID, mock.Anything).Run(func(args mock.Arguments) {
+		sent = args.String(3)
+	}).Return(nil).Once()
+
+	delivered, err := svc.Notify(context.Background(), userID, &models.CreateNotificationDTO{
+		Type: string(models.NotificationTicketCreated), Body: "Тестовая заявка",
+	}, ticket)
+	assert.NoError(t, err)
+	assert.True(t, delivered)
+	assert.Contains(t, sent, "Открыть: http://localhost:9000/tasks/"+ticket.ID.String())
+	mockPolicies.AssertExpectations(t)
+	mockSender.AssertExpectations(t)
+}
+
+// Без собранного AccessPolicies (nil) веб-ссылка не печатается, но DM всё
+// равно доставляется — гейт не должен ломать доставку уведомления.
+func TestMattermostNotifier_Links_NilPolicies_StillDelivers(t *testing.T) {
+	mockMMRepo := new(MockMattermostRepo)
+	mockUsers := new(MockUserService)
+	mockSender := new(MockMMSender)
+	svc := NewMattermostNotifier(mockMMRepo, mockUsers, mockSender, nil, "http://localhost:9000")
+
+	userID := uuid.New()
+	mmID := "mm-user-nil"
+	ticket := mmTicket()
+	realmID := *ticket.RealmID
+
+	mockMMRepo.On("GetByRealm", mock.Anything, realmID).Return(&models.RealmMattermost{RealmID: realmID, BotToken: "bt", BotUserID: "bb", IsActive: true}, nil)
+	mockUsers.On("GetByID", mock.Anything, userID).Return(&models.UserData{ID: userID, MattermostID: &mmID}, nil)
+
+	var sent string
+	mockSender.On("Send", "bt", "bb", mmID, mock.Anything).Run(func(args mock.Arguments) {
+		sent = args.String(3)
+	}).Return(nil).Once()
+
+	delivered, err := svc.Notify(context.Background(), userID, &models.CreateNotificationDTO{
+		Type: string(models.NotificationTicketCreated), Body: "Тестовая заявка",
+	}, ticket)
+	assert.NoError(t, err)
+	assert.True(t, delivered)
+	assert.NotContains(t, sent, "Открыть: ")
+	assert.Contains(t, sent, "[Открыть в плагине](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
+	mockSender.AssertExpectations(t)
 }

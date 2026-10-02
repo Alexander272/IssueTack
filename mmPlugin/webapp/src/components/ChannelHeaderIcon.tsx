@@ -5,9 +5,11 @@ import {
     getContext,
     getContextFresh,
     getCachedContext,
+    getCurrentTeamName,
     getCurrentUserId,
     subscribeCurrentUser,
 } from '../api'
+import {rememberChannel, setModalHost, subscribeOpen, takePendingTicket} from '../deepLink'
 import type {PluginContextResult, PluginScope} from '../types'
 import ModalController from './ModalController'
 import {ClipboardCheckIcon} from './icons'
@@ -46,6 +48,10 @@ export default function ChannelHeaderIcon({channel}: ChannelHeaderIconProps) {
     const [context, setContext] = useState<PluginContextResult | null>(() => getCachedContext(scope))
     const [ready, setReady] = useState<boolean>(() => !!getCachedContext(scope))
     const [open, setOpen] = useState(false)
+    // Заявка, которую надо показать сразу после открытия модалки: сюда её кладут
+    // и перехватчик клика по ссылке, и TicketDeepLinkPage, когда уводит ссылку
+    // из DM в канал (см. deepLink.ts).
+    const [pendingOpenId, setPendingOpenId] = useState<string | null>(null)
     const aliveRef = useRef(true)
 
     useEffect(() => {
@@ -91,6 +97,45 @@ export default function ChannelHeaderIcon({channel}: ChannelHeaderIconProps) {
         }
     }, [scope])
 
+    // Запоминаем канал, из которого открывают ссылки на заявки: маршрут плагина
+    // живёт вне каналов, иначе вернуться в чат оттуда нечем. Только для scope,
+    // то есть для DM с ботом, — в остальных каналах модалки всё равно нет.
+    useEffect(() => {
+        if (scope) {
+            rememberChannel(getCurrentTeamName() || '', scope.channelId);
+        }
+    }, [scope?.channelId]);
+
+    // Показываем ли мы сейчас модалку — по тем же условиям, что и рендер: флаг
+    // нужен перехватчику клика по ссылке, чтобы гасить навигацию только когда
+    // заявку есть куда показать (см. deepLink.ts).
+    const modalHost = Boolean(scope && ready && context?.bound);
+    useEffect(() => {
+        setModalHost(modalHost);
+        return () => setModalHost(false);
+    }, [modalHost]);
+
+    // Клик по ссылке на заявку, когда модалка уже смонтирована: показываем её
+    // прямо в текущем канале, вообще никуда не переходя.
+    useEffect(() => subscribeOpen(ticketId => {
+        setPendingOpenId(ticketId);
+        setOpen(true);
+    }), []);
+
+    // Ссылка на заявку положила её id в deepLink и ушла в канал. Забираем его
+    // здесь — только когда модалка действительно сможет открыться (bound), иначе
+    // запись сгорела бы впустую вместе с единственным шансом её показать.
+    useEffect(() => {
+        if (!ready || !context?.bound || open || pendingOpenId) {
+            return
+        }
+        const pending = takePendingTicket();
+        if (pending) {
+            setPendingOpenId(pending)
+            setOpen(true)
+        }
+    }, [ready, context?.bound, open, pendingOpenId])
+
     if (!scope || !ready || !context || !context.bound) {
         return null
     }
@@ -126,7 +171,11 @@ export default function ChannelHeaderIcon({channel}: ChannelHeaderIconProps) {
                         <ModalController
                             scope={scope}
                             context={context}
-                            onClose={() => setOpen(false)}
+                            initialPendingOpenId={pendingOpenId}
+                            onClose={() => {
+                                setOpen(false);
+                                setPendingOpenId(null);
+                            }}
                         />,
                         document.body,
                     )

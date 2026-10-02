@@ -48,6 +48,11 @@
     flex: 0 0 auto;
 }
 
+/* Подложка модалки затемняется намеренно: без rgba(0,0,0,0.5) карточка
+   сливается с живым каналом и модалка перестаёт читаться как отдельный слой.
+   Проверено, что затемнение не связано с «блеклым меню» на маршруте плагина:
+   там панели серая из-за отсутствующей колонки каналов, а не из-за подложки.
+   Закрывается кликом по подложке (onClick в ModalController) и Escape. */
 .it-ticket-overlay {
     position: fixed;
     top: 0;
@@ -65,7 +70,7 @@
 .it-ticket-modal {
     display: flex;
     flex-direction: column;
-    width: 640px;
+    width: 720px;
     max-width: 100%;
     max-height: calc(100vh - 48px);
     background: var(--center-channel-bg, #fff);
@@ -631,14 +636,32 @@
 }
 
 /* Страница заявки, открытая по deep-link /plug/issuetrack/ticket/<uuid>.
-   Mattermost сам передаёт компоненту grid-area: center, здесь задаём только
-   внутренние отступы и фон, чтобы карточка не сливалась с фоном канала. */
+
+   grid-area: center обязателен и задаётся здесь, а не приходит от Mattermost.
+   Root монтирует компонент прямой дочеркой .main-wrapper — грида
+   "lhs center rhs" / min-content minmax(385px,1fr) min-content — и передаёт
+   зону пропсом `css`, который Pluggable раздаёт как {...otherProps}, а React на
+   DOM-элементе отбрасывает (это не style). Без явной зоны авторазмещение
+   уводит страницу в первую свободную ячейку `lhs` с шириной min-content:
+   окно получается узким и перекрывает меню каналов. На узких экранах MM
+   схлопывает .main-wrapper в единственную зону `main`, поэтому там тоже
+   нужна явная зона. Скругление и тень повторяют #channel_view, чтобы после
+   переезда в center страница выглядела штатной частью раскладки. */
 .it-ticket-page {
+    grid-area: center;
     height: 100%;
     overflow-y: auto;
     padding: 20px 24px 40px;
     background: var(--center-channel-bg, #fff);
     color: var(--center-channel-color, #3d3c40);
+    border-radius: var(--radius-l);
+    box-shadow: var(--elevation-1);
+}
+
+@media screen and (max-width: 768px) {
+    .it-ticket-page {
+        grid-area: main;
+    }
 }
 
 .it-ticket-page__notice {

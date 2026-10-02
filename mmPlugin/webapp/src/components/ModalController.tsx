@@ -8,6 +8,11 @@ import { CloseIcon } from './icons'
 interface ModalControllerProps {
 	scope: PluginScope
 	context: PluginContextResult
+	// Заявка, которую нужно открыть сразу при монтировании (ссылка из DM, см.
+	// deepLink.ts). Отдельный проп, а не onOpen, потому что сценарий открытия
+	// уже завершён: вкладка должна быть сразу «Мои заявки». На лету не меняется:
+	// при открытой модалке чат перекрыт подложкой, нажать вторую ссылку нельзя.
+	initialPendingOpenId?: string | null
 	onClose: () => void
 }
 
@@ -18,13 +23,13 @@ const TABS: { id: TabId; label: string }[] = [
 	{ id: 'mine', label: 'Мои заявки' },
 ]
 
-export default function ModalController({ scope, context, onClose }: ModalControllerProps) {
-	const [tab, setTab] = useState<TabId>('create')
+export default function ModalController({scope, context, initialPendingOpenId, onClose}: ModalControllerProps) {
+	const [tab, setTab] = useState<TabId>(initialPendingOpenId ? 'mine' : 'create')
 	// Заявка, которую нужно открыть сразу после переключения на «Мои заявки»:
 	// её id приходит с экрана успеха CreateTab. Хранится здесь, а не в MyTicketsTab,
 	// чтобы источник открытия (создание или клик в списке) не зависел от внутреннего
 	// состояния вкладки.
-	const [pendingOpenId, setPendingOpenId] = useState<string | null>(null)
+	const [pendingOpenId, setPendingOpenId] = useState<string | null>(initialPendingOpenId ?? null)
 
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {

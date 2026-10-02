@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
@@ -17,19 +18,23 @@ import (
 // активная Mattermost-интеграция, у пользователя заполнен mattermost_id. Формат
 // сообщения настраивается отдельно для каждого типа события в format.
 type mattermostNotifier struct {
-	mmRepo  repository.Mattermost
-	users   Users
-	sender  mattermostSender
-	baseURL string
+	mmRepo   repository.Mattermost
+	users    Users
+	sender   mattermostSender
+	policies AccessPolicies
+	baseURL  string
 }
 
-// NewMattermostNotifier создаёт канал Mattermost.
-func NewMattermostNotifier(mmRepo repository.Mattermost, users Users, sender mattermostSender, baseURL string) *mattermostNotifier {
+// NewMattermostNotifier создаёт канал Mattermost. policies нужен для проверки
+// coarse-права ticket:read: веб-ссылка на заявку ведёт на маршрут, закрытый
+// Casbin-мидлваром, и без проверки получателю уходит ссылка, которая откроет 403.
+func NewMattermostNotifier(mmRepo repository.Mattermost, users Users, sender mattermostSender, policies AccessPolicies, baseURL string) *mattermostNotifier {
 	return &mattermostNotifier{
-		mmRepo:  mmRepo,
-		users:   users,
-		sender:  sender,
-		baseURL: baseURL,
+		mmRepo:   mmRepo,
+		users:    users,
+		sender:   sender,
+		policies: policies,
+		baseURL:  baseURL,
 	}
 }
 
@@ -80,7 +85,7 @@ func (n *mattermostNotifier) Notify(ctx context.Context, userID uuid.UUID, notif
 		return false, nil
 	}
 
-	if err := n.sender.Send(settings.BotToken, settings.BotUserID, *user.MattermostID, n.format(ticket, notif)); err != nil {
+	if err := n.sender.Send(settings.BotToken, settings.BotUserID, *user.MattermostID, n.format(ctx, userID, ticket, notif)); err != nil {
 		return false, fmt.Errorf("failed to send mattermost notification: %w", err)
 	}
 	logger.Info("mattermost notification sent",
@@ -97,8 +102,9 @@ func (n *mattermostNotifier) Notify(ctx context.Context, userID uuid.UUID, notif
 // «обновлена», «удалена») и «Скоро срок» выводят номер сразу после слова «Задача»/
 // «Скоро срок» («Задача №12 обновлена: …»), прочие типы — номер после префикса
 // («Новая задача №12: …»). Для overdue и deadline_soon при заданном дедлайне
-// добавляется строка «Дедлайн: …».
-func (n *mattermostNotifier) format(ticket *models.Ticket, notif *models.CreateNotificationDTO) string {
+// добавляется строка «Дедлайн: …». Блок ссылок общий для всех типов и добавляется
+// один раз (links), чтобы правило показа веб-ссылки жило в одном месте.
+func (n *mattermostNotifier) format(ctx context.Context, userID uuid.UUID, ticket *models.Ticket, notif *models.CreateNotificationDTO) string {
 	var prefix, action string
 	switch notif.Type {
 	case string(models.NotificationTicketUpdated):
@@ -129,6 +135,8 @@ func (n *mattermostNotifier) format(ticket *models.Ticket, notif *models.CreateN
 		number = fmt.Sprintf(" №%d", *ticket.TicketNumber)
 	}
 
+	links := n.links(ctx, userID, ticket)
+
 	if action != "" {
 		// «Задача №12 обновлена: title» — действие идёт после номера.
 		text := fmt.Sprintf("**%s%s %s: %s**", prefix, number, action, title)
@@ -140,11 +148,7 @@ func (n *mattermostNotifier) format(ticket *models.Ticket, notif *models.CreateN
 				text += "\n\n" + details
 			}
 		}
-		if n.baseURL != "" {
-			text += fmt.Sprintf("\nОткрыть: %s/tasks/%s", n.baseURL, ticket.ID.String())
-		}
-		text += n.pluginLink(ticket.ID)
-		return text
+		return text + links
 	}
 
 	text := fmt.Sprintf("**%s%s: %s**", prefix, number, title)
@@ -159,11 +163,42 @@ func (n *mattermostNotifier) format(ticket *models.Ticket, notif *models.CreateN
 		}
 	}
 
-	if n.baseURL != "" {
-		text += fmt.Sprintf("\nОткрыть: %s/tasks/%s", n.baseURL, ticket.ID.String())
+	return text + links
+}
+
+// links собирает блок ссылок в конце DM. Ссылка на заявку внутри Mattermost
+// (pluginLink) добавляется всем: её маршрут защищён SourceGuard/PluginTokenGuard,
+// Casbin-мидлвара на нём нет, а доступ к заявке решается на уровне сервиса по
+// атрибутам. Веб-ссылка ведёт на /tasks/:id, который закрыт coarse-правом
+// ticket:read, поэтому она персональная: право проверяется для конкретного
+// получателя в домене тикета. Нет права или ошибка проверки — веб-ссылка не
+// печатается (fail-closed на ссылке, доставка DM при этом не страдает).
+func (n *mattermostNotifier) links(ctx context.Context, userID uuid.UUID, ticket *models.Ticket) string {
+	links := n.pluginLink(ticket.ID)
+	if n.baseURL == "" || n.policies == nil {
+		return links
 	}
-	text += n.pluginLink(ticket.ID)
-	return text
+	if ticket.RealmID == nil {
+		return links
+	}
+
+	allowed, err := n.policies.Enforce(userID.String(), ticket.RealmID.String(), string(access.ResourceTicket), string(access.Read))
+	if err != nil {
+		logger.Warn("failed to check ticket read policy for mattermost notification",
+			logger.StringAttr("ticket_id", ticket.ID.String()),
+			logger.StringAttr("user_id", userID.String()),
+			logger.ErrAttr(err),
+		)
+		return links
+	}
+	if !allowed {
+		logger.Info("mattermost notification skipped web link: no ticket read permission",
+			logger.StringAttr("ticket_id", ticket.ID.String()),
+			logger.StringAttr("user_id", userID.String()),
+		)
+		return links
+	}
+	return fmt.Sprintf("\nОткрыть: %s/tasks/%s", n.baseURL, ticket.ID.String()) + links
 }
 
 // pluginLink возвращает вторую ссылку в DM — на заявку внутри Mattermost.
