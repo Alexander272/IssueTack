@@ -87,8 +87,18 @@ func (s *userService) Sync(ctx context.Context, actor *models.Actor, force bool)
 	toUpdate := make([]*models.UserDataDTO, 0)
 	toDelete := make([]uuid.UUID, 0)
 	deleteUsernames := make(map[uuid.UUID]string, 0)
+	unknownSource := make([]string, 0)
 
 	for _, dbU := range dbUsers {
+		// Источник нормализуется при чтении из БД (mapUserSource схлопывает NULL,
+		// пустую строку и неизвестные значения в 'keycloak'), поэтому пустой Source
+		// на стороне сервиса — это потеря поля в маппинге, а не реальное значение.
+		// Таких пользователей синхронизация не удаляет: неизвестно, есть ли у них
+		// заявки, а удаление унесло бы их вместе с заявками (ON DELETE CASCADE).
+		if hasUnknownSource(dbU) {
+			unknownSource = append(unknownSource, dbU.Username)
+			continue
+		}
 		if protectedFromKeycloakSync(dbU) {
 			continue
 		}
@@ -115,6 +125,12 @@ func (s *userService) Sync(ctx context.Context, actor *models.Actor, force bool)
 			toDelete = append(toDelete, dbU.ID)
 			deleteUsernames[dbU.ID] = dbU.Username
 		}
+	}
+
+	if len(unknownSource) > 0 {
+		logger.Warn("keycloak sync skipped users with unknown source",
+			"count", len(unknownSource),
+			"usernames", strings.Join(unknownSource, ", "))
 	}
 
 	usersWithTickets := make([]string, 0)
@@ -162,7 +178,8 @@ func (s *userService) Sync(ctx context.Context, actor *models.Actor, force bool)
 			"created", len(toCreate),
 			"updated", len(toUpdate),
 			"deleted", len(toDelete),
-			"deleted_with_tickets", len(usersWithTickets))
+			"deleted_with_tickets", len(usersWithTickets),
+			"skipped_unknown_source", len(unknownSource))
 		return nil
 	})
 
@@ -291,6 +308,15 @@ func (s *userService) nonNil(value *string) string {
 // (GetIDsWithTickets, см. Sync и ErrKeycloakSyncLinkedUsers).
 func protectedFromKeycloakSync(u *models.UserData) bool {
 	return u.IsSystem || u.Source.IsFromMattermost()
+}
+
+// hasUnknownSource сообщает, что источник пользователя не удалось определить.
+// Пользователь без источника удалять нельзя: он не проходит ни одну защиту,
+// а принадлежность к Mattermost (а значит и наличие заявок) неизвестна.
+// Такой Source возможен только при потере поля при чтении из БД, поэтому это
+// страховка от повторения массового удаления, а не штатный случай.
+func hasUnknownSource(u *models.UserData) bool {
+	return u.Source == ""
 }
 
 // isChanged сравнивает пользователя из БД с данными из Keycloak. Синхронизация идемпотентна:

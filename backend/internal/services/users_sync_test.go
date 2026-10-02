@@ -52,6 +52,43 @@ func TestProtectedFromKeycloakSync(t *testing.T) {
 	}
 }
 
+// TestHasUnknownSource фиксирует страховку от повторения массового удаления:
+// пользователь, у которого источник не прочитан, удалять нельзя. Пустой Source
+// возможен только при потере поля в маппинге (например, в ветке mapUsersData для
+// пользователя с членством в realm) — именно это молча делало всех
+// импортированных из Mattermost пользователей удаляемыми.
+func TestHasUnknownSource(t *testing.T) {
+	tests := []struct {
+		name    string
+		user    *models.UserData
+		unknown bool
+	}{
+		{
+			name:    "пустой источник — неизвестен",
+			user:    &models.UserData{ID: uuid.New()},
+			unknown: true,
+		},
+		{
+			name:    "источник mattermost известен",
+			user:    &models.UserData{ID: uuid.New(), Source: models.UserSourceMattermost},
+			unknown: false,
+		},
+		{
+			name:    "источник keycloak известен",
+			user:    &models.UserData{ID: uuid.New(), Source: models.UserSourceKeycloak},
+			unknown: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasUnknownSource(tt.user); got != tt.unknown {
+				t.Errorf("hasUnknownSource() = %v, want %v", got, tt.unknown)
+			}
+		})
+	}
+}
+
 func TestUserSourceIsFromMattermost(t *testing.T) {
 	if models.UserSourceKeycloak.IsFromMattermost() {
 		t.Error("keycloak не должен считаться источником mattermost")

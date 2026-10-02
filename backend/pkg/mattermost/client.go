@@ -249,17 +249,47 @@ func (c *Client) GetUser(botToken, userID string) (*model.User, error) {
 	return user, nil
 }
 
-// isSyncableUser отсеивает пользователей, которых не нужно импортировать в
-// систему: ботов и деактивированных (удалённых) пользователей Mattermost.
-// Деактивированных (DeleteAt != 0) пропускаем, иначе синк заводил бы их как
-// активных сотрудников и показывал в выборе исполнителя.
-func isSyncableUser(u *model.User) bool {
-	return u != nil && !u.IsBot && u.DeleteAt == 0
+// syncFilter отбирает пользователей, которых нужно импортировать в систему, и
+// считает, что именно пропущено. Боты и деактивированные (удалённые) Mattermost
+// в синк не попадают: иначе уволенный сотрудник заводился бы как активный и
+// всплывал в выборе исполнителя. Счётчики нужны для лога — по нему видно, что
+// фильтр действительно отработал, не полагаясь на догадки.
+type syncFilter struct {
+	bots        int
+	deactivated int
+}
+
+// skip сообщает, что пользователя нужно пропустить, и учитывает причину.
+func (f *syncFilter) skip(u *model.User) bool {
+	switch {
+	case u == nil:
+		return true
+	case u.IsBot:
+		f.bots++
+		return true
+	case u.DeleteAt != 0:
+		f.deactivated++
+		return true
+	}
+	return false
+}
+
+// log пишет в лог число пропущенных пользователей (только если были пропуски).
+func (f *syncFilter) log(scope string) {
+	if f.bots == 0 && f.deactivated == 0 {
+		return
+	}
+	logger.Info("mattermost users skipped on sync",
+		logger.StringAttr("scope", scope),
+		logger.Int32Attr("bots", int32(f.bots)),
+		logger.Int32Attr("deactivated", int32(f.deactivated)),
+	)
 }
 
 func (c *Client) GetUsersInTeam(botToken, teamID string) ([]*model.User, error) {
 	api := c.newAPI(botToken)
 	var allUsers []*model.User
+	var filter syncFilter
 	page := 0
 	const perPage = 100
 	for {
@@ -268,7 +298,7 @@ func (c *Client) GetUsersInTeam(botToken, teamID string) ([]*model.User, error) 
 			return nil, fmt.Errorf("failed to get users in team page %d: %w", page, err)
 		}
 		for _, u := range users {
-			if isSyncableUser(u) {
+			if !filter.skip(u) {
 				allUsers = append(allUsers, u)
 			}
 		}
@@ -277,6 +307,7 @@ func (c *Client) GetUsersInTeam(botToken, teamID string) ([]*model.User, error) 
 		}
 		page++
 	}
+	filter.log("team")
 	return allUsers, nil
 }
 
@@ -305,6 +336,7 @@ func UnmarshalSubmission(data []byte, s *model.SubmitDialogRequest) error {
 func (c *Client) GetAllUsers(botToken string) ([]*model.User, error) {
 	api := c.newAPI(botToken)
 	var allUsers []*model.User
+	var filter syncFilter
 	page := 0
 	const perPage = 100
 	for {
@@ -313,7 +345,7 @@ func (c *Client) GetAllUsers(botToken string) ([]*model.User, error) {
 			return nil, fmt.Errorf("failed to get users page %d: %w", page, err)
 		}
 		for _, u := range users {
-			if isSyncableUser(u) {
+			if !filter.skip(u) {
 				allUsers = append(allUsers, u)
 			}
 		}
@@ -322,5 +354,6 @@ func (c *Client) GetAllUsers(botToken string) ([]*model.User, error) {
 		}
 		page++
 	}
+	filter.log("all")
 	return allUsers, nil
 }

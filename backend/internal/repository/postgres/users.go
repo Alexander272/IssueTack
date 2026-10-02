@@ -461,6 +461,7 @@ func mapUsersData(rows []*pq_models.User) ([]*models.UserData, error) {
 				LastName:       u.LastName,
 				IsActive:       u.UserIsActive.Bool,
 				IsSystem:       u.UserIsSystem.Bool,
+				Source:         mapUserSource(u.UserSource),
 				SiteID:         mapMattermostID(u.SiteId),
 				InternalNumber: u.InternalNumber.String,
 				CreatedAt:      u.CreatedAt,
