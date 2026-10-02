@@ -336,11 +336,11 @@ func (s *TicketService) GetByID(ctx context.Context, req *models.GetTicketByIdDT
 		return nil, fmt.Errorf("failed to get ticket by id. error: %w", err)
 	}
 
-	if err := s.access.CheckAccessOnTicket(ctx, data, req.Actor.ID, string(access.Read), req.RealmID); err != nil {
+	if err := s.access.CheckAccessOnTicket(ctx, data, req.Actor.ID, string(access.Read)); err != nil {
 		return nil, err
 	}
 
-	subtasks, err := s.subtasks.GetByTicketID(ctx, data.ID, req.Actor.ID, req.RealmID)
+	subtasks, err := s.subtasks.GetByTicketID(ctx, data.ID, req.Actor.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get subtasks: %w", err)
 	}
@@ -357,11 +357,7 @@ func (s *TicketService) GetByID(ctx context.Context, req *models.GetTicketByIdDT
 	}
 	data.Attachments = attachments
 
-	realmStr := ""
-	if req.RealmID != "" {
-		realmStr = req.RealmID
-	}
-	flags, err := s.GetAccessFlags(ctx, data, req.Actor.ID, realmStr)
+	flags, err := s.GetAccessFlags(ctx, data, req.Actor.ID)
 	if err == nil {
 		data.Access = flags
 	}
@@ -532,8 +528,8 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 
 	assignedOnly := false
 	ownerOnly := false
-	if err := s.access.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: *dto.ID, UserID: dto.Actor.ID, Action: string(access.Write), Realm: realmStr}); err != nil {
-		if workErr := s.access.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: *dto.ID, UserID: dto.Actor.ID, Realm: realmStr}); workErr != nil {
+	if err := s.access.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: *dto.ID, UserID: dto.Actor.ID, Action: string(access.Write)}); err != nil {
+		if workErr := s.access.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: *dto.ID, UserID: dto.Actor.ID}); workErr != nil {
 			old, loadErr := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
 			if loadErr != nil {
 				return fmt.Errorf("failed to load ticket for access check: %w", loadErr)
@@ -654,7 +650,7 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 		// независимо от assignedOnly/ownerOnly и права правки полей (canEditFields).
 		// Эхо текущего значения (фронт передаёт его в каждом запросе) не создаёт
 		// change и проходит беспрепятственно.
-		isAdmin, err := s.access.CanAdministerTickets(ctx, dto.Actor.ID, realmStr)
+		isAdmin, err := s.access.CanAdministerTickets(ctx, dto.Actor.ID, oldTicket)
 		if err != nil {
 			return fmt.Errorf("failed to check admin access: %w", err)
 		}
@@ -797,7 +793,7 @@ func (s *TicketService) Take(ctx context.Context, dto *models.TakeTicketDTO) err
 		return models.ErrTicketFrozen
 	}
 
-	if err := s.access.CheckAccessOnTicket(ctx, ticket, dto.Actor.ID, string(access.Read), dto.RealmID); err != nil {
+	if err := s.access.CheckAccessOnTicket(ctx, ticket, dto.Actor.ID, string(access.Read)); err != nil {
 		return err
 	}
 
@@ -982,11 +978,14 @@ func (s *TicketService) Transfer(ctx context.Context, dto *models.TransferTicket
 // Delete удаляет тикет: проверяет право на удаление, сохраняет снимок данных
 // в журнале и отправляет уведомление об удалении.
 func (s *TicketService) Delete(ctx context.Context, dto *models.DeleteTicketDTO) error {
-	if err := s.access.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: dto.ID, UserID: dto.Actor.ID, Action: string(access.Delete), Realm: dto.RealmID}); err != nil {
+	if err := s.access.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: dto.ID, UserID: dto.Actor.ID, Action: string(access.Delete)}); err != nil {
 		return err
 	}
 
 	var ticket *models.Ticket
+	// Директории вложений удаляются после коммита, поэтому id подзадач нужно
+	// сохранить из транзакции наружу.
+	var deletedSubIDs []uuid.UUID
 	err := s.tx.WithinTransaction(ctx, func(newTx postgres.Tx) error {
 		var loadErr error
 		ticket, loadErr = s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: dto.ID})
@@ -1018,28 +1017,40 @@ func (s *TicketService) Delete(ctx context.Context, dto *models.DeleteTicketDTO)
 		}
 
 		// Вложения не привязаны к тикету внешним ключом (полиморфный entity_id),
-		// поэтому при удалении тикета их нужно вычищать явно: записи из БД и
-		// директорию с файлами (ticket/{id}, subtask/{id}).
+		// поэтому при удалении тикета их нужно вычищать явно: записи из БД
+		// (ticket/{id} и subtask/{id}). Директории с файлами удаляются ПОСЛЕ
+		// коммита транзакции — файловая система в неё не входит, и удаление до
+		// коммита при откате (например, на s.repo.Delete ниже) потеряло бы файлы
+		// безвозвратно. См. AttachmentService.DeleteByEntity / RemoveEntityDir.
 		if err := s.attachments.DeleteByEntity(ctx, newTx, "ticket", dto.ID); err != nil {
 			return fmt.Errorf("failed to cleanup ticket attachments: %w", err)
 		}
-		subs, subsErr := s.subtasks.GetByTicketID(ctx, dto.ID, dto.Actor.ID, dto.RealmID)
+		subs, subsErr := s.subtasks.GetByTicketID(ctx, dto.ID, dto.Actor.ID)
 		if subsErr != nil {
 			return fmt.Errorf("failed to load ticket subtasks: %w", subsErr)
 		}
+		subIDs := make([]uuid.UUID, 0, len(subs))
 		for _, sub := range subs {
 			if err := s.attachments.DeleteByEntity(ctx, newTx, "subtask", sub.ID); err != nil {
 				return fmt.Errorf("failed to cleanup subtask attachments: %w", err)
 			}
+			subIDs = append(subIDs, sub.ID)
 		}
 
 		if err := s.repo.Delete(ctx, newTx, dto); err != nil {
 			return fmt.Errorf("failed to delete ticket. error: %w", err)
 		}
+		deletedSubIDs = subIDs
 		return nil
 	})
 	if err != nil {
 		return err
+	}
+
+	// Транзакция закоммичена — теперь директории можно снимать с диска.
+	s.attachments.RemoveEntityDir("ticket", dto.ID)
+	for _, subID := range deletedSubIDs {
+		s.attachments.RemoveEntityDir("subtask", subID)
 	}
 
 	if err := s.notifications.TicketDeleted(ctx, ticket); err != nil {
@@ -1199,13 +1210,16 @@ var activeStatuses = []models.TicketStatus{
 
 // GetAccessFlags вычисляет флаги доступа к тикету для пользователя
 // (чтение, запись, удаление, работа) и список доступных ему переходов по статусам.
-func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, realm string) (*models.AccessFlags, error) {
+// Реалм не принимается: все проверки внутри берут его из ticket.RealmID (см.
+// TicketAccessService.CheckAccessOnTicket), поэтому клиентский realm-заголовок
+// не может расширить набор прав.
+func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) (*models.AccessFlags, error) {
 	flags := &models.AccessFlags{CanRead: true}
 
-	writeErr := s.access.CheckAccessOnTicket(ctx, ticket, userID, string(access.Write), realm)
+	writeErr := s.access.CheckAccessOnTicket(ctx, ticket, userID, string(access.Write))
 	flags.CanWrite = writeErr == nil
 
-	deleteErr := s.access.CheckAccessOnTicket(ctx, ticket, userID, string(access.Delete), realm)
+	deleteErr := s.access.CheckAccessOnTicket(ctx, ticket, userID, string(access.Delete))
 	flags.CanDelete = deleteErr == nil
 
 	flags.CanWork = flags.CanWrite || (ticket.Assignee != nil && ticket.Assignee.ID == userID)
@@ -1231,7 +1245,7 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 	// заявки и передача исполнителя мимо менеджера группы. Намеренно не через
 	// ticket:write — это право есть у рядовых сотрудников, и по нему фронт
 	// разблокировал бы смену группы на чужих заявках.
-	isAdmin, err := s.access.CanAdministerTickets(ctx, userID, realm)
+	isAdmin, err := s.access.CanAdministerTickets(ctx, userID, ticket)
 	if err != nil {
 		return nil, err
 	}
@@ -1245,7 +1259,7 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 	}
 	flags.IsManager = isManager
 
-	flags.AllowedStatuses = s.computeAllowedStatuses(ctx, ticket, userID, realm)
+	flags.AllowedStatuses = s.computeAllowedStatuses(ctx, ticket, userID)
 
 	return flags, nil
 }
@@ -1256,8 +1270,8 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 // (см. ownerTransitionAllowed), исполнитель с work-доступом — активные статусы и resolved
 // (при отсутствии незакрытых подзадач), закрытие/отмена активного тикета — только
 // автору/менеджеру группы (владелец может отменить активный тикет).
-func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, realm string) []models.TicketStatus {
-	hasWrite := s.access.CheckAccessOnTicket(ctx, ticket, userID, string(access.Write), realm) == nil
+func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) []models.TicketStatus {
+	hasWrite := s.access.CheckAccessOnTicket(ctx, ticket, userID, string(access.Write)) == nil
 	isCreator := ticket.Creator.ID == userID
 
 	isMgr := false

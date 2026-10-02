@@ -29,7 +29,7 @@ func TestFavoriteService_Add_Success(t *testing.T) {
 
 	mockTickets.On("GetSummary", mock.Anything, ticketID).Return(
 		&models.Ticket{ID: ticketID}, nil)
-	mockAccess.On("CheckAccessOnTicket", mock.Anything, &models.Ticket{ID: ticketID}, userID, string(access.Read), "").Return(nil)
+	mockAccess.On("CheckAccessOnTicket", mock.Anything, &models.Ticket{ID: ticketID}, userID, string(access.Read)).Return(nil)
 	mockRepo.On("Add", mock.Anything, nil, mock.Anything).Return(nil)
 
 	err := svc.Add(context.Background(), &models.FavoriteDTO{
@@ -47,7 +47,7 @@ func TestFavoriteService_Add_Denied(t *testing.T) {
 
 	mockTickets.On("GetSummary", mock.Anything, ticketID).Return(
 		&models.Ticket{ID: ticketID}, nil)
-	mockAccess.On("CheckAccessOnTicket", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(models.ErrPermissionDenied)
+	mockAccess.On("CheckAccessOnTicket", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(models.ErrPermissionDenied)
 
 	err := svc.Add(context.Background(), &models.FavoriteDTO{
 		TicketID: ticketID, ActorID: userID, Type: models.FavoriteTypePermanent,
@@ -65,7 +65,7 @@ func TestFavoriteService_Remove_Success(t *testing.T) {
 
 	mockTickets.On("GetSummary", mock.Anything, ticketID).Return(
 		&models.Ticket{ID: ticketID, RealmID: &realmID}, nil)
-	mockAccess.On("CheckAccessOnTicket", mock.Anything, &models.Ticket{ID: ticketID, RealmID: &realmID}, userID, string(access.Read), realmID.String()).Return(nil)
+	mockAccess.On("CheckAccessOnTicket", mock.Anything, &models.Ticket{ID: ticketID, RealmID: &realmID}, userID, string(access.Read)).Return(nil)
 	mockRepo.On("Remove", mock.Anything, nil, ticketID, userID, models.FavoriteTypeTemporary).Return(nil)
 
 	err := svc.Remove(context.Background(), &models.FavoriteDTO{

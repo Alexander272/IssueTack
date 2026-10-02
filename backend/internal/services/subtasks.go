@@ -32,13 +32,13 @@ func NewSubtaskService(repo repository.Subtasks, logs ActivityLog, ticketAccess 
 // Subtasks — интерфейс работы с подзадачами.
 type Subtasks interface {
 	// GetByTicketID возвращает подзадачи тикета.
-	GetByTicketID(ctx context.Context, ticketID, actorID uuid.UUID, realm string) ([]*models.Subtask, error)
+	GetByTicketID(ctx context.Context, ticketID, actorID uuid.UUID) ([]*models.Subtask, error)
 	// GetByTicketIDs возвращает подзадачи нескольких тикетов (для листинга,
 	// один запрос вместо N+1). Доступ на чтение к каждому тикету уже проверен
 	// запросом листинга.
 	GetByTicketIDs(ctx context.Context, ticketIDs []uuid.UUID) (map[uuid.UUID][]*models.Subtask, error)
 	// GetByID возвращает подзадачу по идентификатору.
-	GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID, realm string) (*models.Subtask, error)
+	GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID) (*models.Subtask, error)
 	// GetRawByID возвращает подзадачу по идентификатору без проверки доступа —
 	// для внутренних сервисов, которым нужен только сам агрегат (например,
 	// разрешение родительского тикета вложений).
@@ -46,9 +46,9 @@ type Subtasks interface {
 	// GetUnresolvedCount возвращает количество нерешённых подзадач тикета.
 	GetUnresolvedCount(ctx context.Context, ticketID uuid.UUID) (int, error)
 	// Create создаёт подзадачу.
-	Create(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO, realm string) error
+	Create(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO) error
 	// CreateSeveral создаёт несколько подзадач.
-	CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.SubtaskDTO, realm string) error
+	CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.SubtaskDTO) error
 	// CreateManyOnCreate создаёт подзадачи в момент создания заявки внутри той же
 	// транзакции. Проверка CanCreateSubtask не выполняется: авторизация неявна —
 	// создатель новой заявки всегда имеет право создавать в ней подзадачи, а сама
@@ -57,17 +57,17 @@ type Subtasks interface {
 	// Status, Priority и SortOrder каждого DTO.
 	CreateManyOnCreate(ctx context.Context, tx postgres.Tx, dto []*models.SubtaskDTO) error
 	// Update обновляет подзадачу.
-	Update(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO, realm string) error
+	Update(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO) error
 	// Delete удаляет подзадачу.
-	Delete(ctx context.Context, tx postgres.Tx, dto *models.DelSubtaskDTO, realm string) error
+	Delete(ctx context.Context, tx postgres.Tx, dto *models.DelSubtaskDTO) error
 }
 
 // GetByTicketID возвращает подзадачи тикета с проверкой доступа на чтение.
-func (s *SubtaskService) GetByTicketID(ctx context.Context, ticketID, actorID uuid.UUID, realm string) ([]*models.Subtask, error) {
+func (s *SubtaskService) GetByTicketID(ctx context.Context, ticketID, actorID uuid.UUID) ([]*models.Subtask, error) {
 	if s.ticketAccess == nil {
 		return nil, models.ErrPermissionDenied
 	}
-	if err := s.ticketAccess.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read), Realm: realm}); err != nil {
+	if err := s.ticketAccess.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read)}); err != nil {
 		return nil, err
 	}
 	data, err := s.repo.GetByTicketID(ctx, ticketID)
@@ -102,7 +102,7 @@ func (s *SubtaskService) GetRawByID(ctx context.Context, req *models.GetSubtaskD
 
 // GetByID возвращает подзадачу по идентификатору с проверкой права чтения
 // родительского тикета.
-func (s *SubtaskService) GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID, realm string) (*models.Subtask, error) {
+func (s *SubtaskService) GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID) (*models.Subtask, error) {
 	data, err := s.repo.GetByID(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get subtask: %w", err)
@@ -110,7 +110,7 @@ func (s *SubtaskService) GetByID(ctx context.Context, req *models.GetSubtaskDTO,
 	if s.ticketAccess == nil {
 		return nil, models.ErrPermissionDenied
 	}
-	if err := s.ticketAccess.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: data.TicketID, UserID: actorID, Action: string(access.Read), Realm: realm}); err != nil {
+	if err := s.ticketAccess.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: data.TicketID, UserID: actorID, Action: string(access.Read)}); err != nil {
 		return nil, err
 	}
 	return data, nil
@@ -135,11 +135,11 @@ func (s *SubtaskService) GetUnresolvedCount(ctx context.Context, ticketID uuid.U
 
 // Create создаёт подзадачу с проверкой права создания (CanCreateSubtask: создатель/
 // исполнитель тикета или «управление» тикетом) и записью в журнал активности.
-func (s *SubtaskService) Create(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO, realm string) error {
+func (s *SubtaskService) Create(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO) error {
 	if s.ticketAccess == nil {
 		return models.ErrPermissionDenied
 	}
-	canCreate, err := s.ticketAccess.CanCreateSubtask(ctx, dto.Actor.ID, dto.TicketID, realm)
+	canCreate, err := s.ticketAccess.CanCreateSubtask(ctx, dto.Actor.ID, dto.TicketID)
 	if err != nil {
 		return fmt.Errorf("failed to check subtask create access: %w", err)
 	}
@@ -170,12 +170,12 @@ func (s *SubtaskService) Create(ctx context.Context, tx postgres.Tx, dto *models
 }
 
 // CreateSeveral создаёт несколько подзадач с проверкой права создания и записью в журнал активности.
-func (s *SubtaskService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.SubtaskDTO, realm string) error {
+func (s *SubtaskService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.SubtaskDTO) error {
 	if s.ticketAccess == nil {
 		return models.ErrPermissionDenied
 	}
 	if len(dto) > 0 {
-		canCreate, err := s.ticketAccess.CanCreateSubtask(ctx, dto[0].Actor.ID, dto[0].TicketID, realm)
+		canCreate, err := s.ticketAccess.CanCreateSubtask(ctx, dto[0].Actor.ID, dto[0].TicketID)
 		if err != nil {
 			return fmt.Errorf("failed to check subtask create access: %w", err)
 		}
@@ -264,7 +264,7 @@ func (s *SubtaskService) CreateManyOnCreate(ctx context.Context, tx postgres.Tx,
 //   - права на правку содержимого (CanEditSubtask: автор подзадачи или менеджер группы /
 //     realm supervisor) для всех полей, кроме status. Смену статуса может выполнить любой
 //     обладатель work-доступа.
-func (s *SubtaskService) Update(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO, realm string) error {
+func (s *SubtaskService) Update(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO) error {
 	old, err := s.repo.GetByID(ctx, &models.GetSubtaskDTO{ID: dto.ID})
 	if err != nil {
 		return fmt.Errorf("failed to get subtask: %w", err)
@@ -272,7 +272,7 @@ func (s *SubtaskService) Update(ctx context.Context, tx postgres.Tx, dto *models
 	if s.ticketAccess == nil {
 		return models.ErrPermissionDenied
 	}
-	if err := s.ticketAccess.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: old.TicketID, UserID: dto.Actor.ID, Realm: realm}); err != nil {
+	if err := s.ticketAccess.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: old.TicketID, UserID: dto.Actor.ID}); err != nil {
 		return err
 	}
 
@@ -348,7 +348,7 @@ func (s *SubtaskService) Update(ctx context.Context, tx postgres.Tx, dto *models
 // Delete удаляет подзадачу. Требует «рабочего» доступа (CheckWorkAccess — блокирует
 // замороженные заявки) и права на удаление из агрегата тикета: менеджер группы
 // (по атрибутам) или обладатель Casbin ticket:delete.
-func (s *SubtaskService) Delete(ctx context.Context, tx postgres.Tx, dto *models.DelSubtaskDTO, realm string) error {
+func (s *SubtaskService) Delete(ctx context.Context, tx postgres.Tx, dto *models.DelSubtaskDTO) error {
 	old, err := s.repo.GetByID(ctx, &models.GetSubtaskDTO{ID: dto.ID})
 	if err != nil {
 		return fmt.Errorf("failed to get subtask: %w", err)
@@ -356,10 +356,10 @@ func (s *SubtaskService) Delete(ctx context.Context, tx postgres.Tx, dto *models
 	if s.ticketAccess == nil {
 		return models.ErrPermissionDenied
 	}
-	if err := s.ticketAccess.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: old.TicketID, UserID: dto.Actor.ID, Realm: realm}); err != nil {
+	if err := s.ticketAccess.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: old.TicketID, UserID: dto.Actor.ID}); err != nil {
 		return err
 	}
-	if err := s.ticketAccess.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: old.TicketID, UserID: dto.Actor.ID, Action: string(access.Delete), Realm: realm}); err != nil {
+	if err := s.ticketAccess.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: old.TicketID, UserID: dto.Actor.ID, Action: string(access.Delete)}); err != nil {
 		return err
 	}
 

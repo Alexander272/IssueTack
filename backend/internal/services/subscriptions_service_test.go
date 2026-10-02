@@ -29,7 +29,7 @@ func TestSubscriptionService_Subscribe_Success(t *testing.T) {
 	ticket := &models.Ticket{ID: ticketID, RealmID: &realmID}
 
 	mockTickets.On("GetSummary", mock.Anything, ticketID).Return(ticket, nil)
-	mockAccess.On("CheckAccessOnTicket", mock.Anything, ticket, userID, string(access.Read), realmID.String()).Return(nil)
+	mockAccess.On("CheckAccessOnTicket", mock.Anything, ticket, userID, string(access.Read)).Return(nil)
 	mockAccess.On("CanManage", mock.Anything, userID, ticket).Return(true, nil)
 	mockRepo.On("Subscribe", mock.Anything, nil, ticketID, userID).Return(nil)
 
@@ -47,7 +47,7 @@ func TestSubscriptionService_Subscribe_Denied(t *testing.T) {
 
 	mockTickets.On("GetSummary", mock.Anything, ticketID).Return(
 		&models.Ticket{ID: ticketID, RealmID: &realmID}, nil)
-	mockAccess.On("CheckAccessOnTicket", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(models.ErrPermissionDenied)
+	mockAccess.On("CheckAccessOnTicket", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(models.ErrPermissionDenied)
 
 	err := svc.Subscribe(context.Background(), &models.SubscribeDTO{TicketID: ticketID, ActorID: userID})
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
@@ -63,7 +63,7 @@ func TestSubscriptionService_Subscribe_NotManagerDenied(t *testing.T) {
 	ticket := &models.Ticket{ID: ticketID, RealmID: &realmID}
 
 	mockTickets.On("GetSummary", mock.Anything, ticketID).Return(ticket, nil)
-	mockAccess.On("CheckAccessOnTicket", mock.Anything, ticket, userID, string(access.Read), realmID.String()).Return(nil)
+	mockAccess.On("CheckAccessOnTicket", mock.Anything, ticket, userID, string(access.Read)).Return(nil)
 	mockAccess.On("CanManage", mock.Anything, userID, ticket).Return(false, nil)
 
 	err := svc.Subscribe(context.Background(), &models.SubscribeDTO{TicketID: ticketID, ActorID: userID})
@@ -79,7 +79,7 @@ func TestSubscriptionService_Unsubscribe_Success(t *testing.T) {
 	ticket := &models.Ticket{ID: ticketID}
 
 	mockTickets.On("GetSummary", mock.Anything, ticketID).Return(ticket, nil)
-	mockAccess.On("CheckAccessOnTicket", mock.Anything, ticket, userID, string(access.Read), "").Return(nil)
+	mockAccess.On("CheckAccessOnTicket", mock.Anything, ticket, userID, string(access.Read)).Return(nil)
 	mockAccess.On("CanManage", mock.Anything, userID, ticket).Return(true, nil)
 	mockRepo.On("Unsubscribe", mock.Anything, nil, ticketID, userID).Return(nil)
 
@@ -96,7 +96,7 @@ func TestSubscriptionService_IsSubscribed_Success(t *testing.T) {
 	ticket := &models.Ticket{ID: ticketID}
 
 	mockTickets.On("GetSummary", mock.Anything, ticketID).Return(ticket, nil)
-	mockAccess.On("CheckAccessOnTicket", mock.Anything, ticket, userID, string(access.Read), "").Return(nil)
+	mockAccess.On("CheckAccessOnTicket", mock.Anything, ticket, userID, string(access.Read)).Return(nil)
 	mockAccess.On("CanManage", mock.Anything, userID, ticket).Return(true, nil)
 	mockRepo.On("Exists", mock.Anything, ticketID, userID).Return(true, nil)
 

@@ -187,11 +187,15 @@ type TransferTicketDTO struct {
 	RealmID    string     `json:"realmId"`
 }
 
+// AccessCheckDTO — вход проверки доступа к тикету. Реалм намеренно не принимается:
+// TicketRepo.GetByID грузит тикет по id без фильтра по реалму, поэтому реалм для
+// решения о доступе берётся из самого тикета (TicketAccessService.CheckAccessOnTicket).
+// Раньше здесь был Realm из клиентского заголовка, и это позволяло supervisor'у одного
+// реалма получить доступ к тикету другого (см. middleware.CheckPermissions).
 type AccessCheckDTO struct {
 	TicketID uuid.UUID
 	UserID   uuid.UUID
 	Action   string
-	Realm    string
 }
 
 type FieldChange struct {

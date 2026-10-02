@@ -64,7 +64,6 @@ func (s *CommentService) GetByTicket(ctx context.Context, ticketID uuid.UUID, us
 		TicketID: ticketID,
 		UserID:   userID,
 		Action:   "read",
-		Realm:    realm,
 	}); err != nil {
 		return nil, err
 	}
@@ -72,7 +71,6 @@ func (s *CommentService) GetByTicket(ctx context.Context, ticketID uuid.UUID, us
 	showAllInternal := s.ticketAccess.CheckInternalAssigneeAccess(ctx, &models.AccessCheckDTO{
 		TicketID: ticketID,
 		UserID:   userID,
-		Realm:    realm,
 	}) == nil
 
 	data, err := s.repo.GetByTicket(ctx, ticketID, userID, showAllInternal)
@@ -104,7 +102,6 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 	check := &models.AccessCheckDTO{
 		TicketID: dto.TicketID,
 		UserID:   dto.UserID,
-		Realm:    dto.Realm,
 	}
 
 	ticket, err := s.tickets.GetSummary(ctx, dto.TicketID)

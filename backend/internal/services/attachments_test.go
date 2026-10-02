@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -10,8 +11,10 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/config"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func attachmentFixtures(t *testing.T) (*MockAttachmentsRepo, *MockSubtaskService, *MockTicketAccessChecker, *AttachmentService) {
@@ -38,7 +41,7 @@ func TestAttachmentService_GetByEntity_Success(t *testing.T) {
 	expected := []*models.Attachment{{ID: uuid.New(), FileName: "file.pdf"}}
 
 	dto := &models.EntityAccessDTO{EntityType: "ticket", EntityID: entityID, ActorID: actorID, Realm: ""}
-	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Action: string(access.Read), Realm: ""}).Return(nil)
+	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Action: string(access.Read)}).Return(nil)
 	mockAccess.On("CheckInternalAssigneeAccess", mock.Anything, mock.AnythingOfType("*models.AccessCheckDTO")).Return(nil)
 	mockRepo.On("GetByEntity", mock.Anything, "ticket", entityID).Return(expected, nil)
 
@@ -62,7 +65,7 @@ func TestAttachmentService_GetByEntity_AccessDenied(t *testing.T) {
 	entityID := uuid.New()
 	actorID := uuid.New()
 	dto := &models.EntityAccessDTO{EntityType: "ticket", EntityID: entityID, ActorID: actorID, Realm: ""}
-	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Action: string(access.Read), Realm: ""}).Return(models.ErrPermissionDenied)
+	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Action: string(access.Read)}).Return(models.ErrPermissionDenied)
 
 	_, err := svc.GetByEntity(context.Background(), dto)
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
@@ -80,7 +83,7 @@ func TestAttachmentService_GetByEntity_Subtask(t *testing.T) {
 	mockSubtasks.On("GetRawByID", mock.Anything, &models.GetSubtaskDTO{ID: subtaskID}).Return(&models.Subtask{
 		ID: subtaskID, TicketID: ticketID,
 	}, nil)
-	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read), Realm: ""}).Return(nil)
+	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read)}).Return(nil)
 	mockRepo.On("GetByEntity", mock.Anything, "subtask", subtaskID).Return(expected, nil)
 
 	dto := &models.EntityAccessDTO{EntityType: "subtask", EntityID: subtaskID, ActorID: actorID, Realm: ""}
@@ -105,7 +108,7 @@ func TestAttachmentService_Upload_Success(t *testing.T) {
 	actorID := uuid.New()
 	content := "test file content"
 
-	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Realm: ""}).Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID}).Return(nil)
 	mockRepo.On("Create", mock.Anything, nil, mock.AnythingOfType("*models.Attachment")).Return(nil)
 
 	dto := &models.UploadAttachmentDTO{
@@ -134,7 +137,7 @@ func TestAttachmentService_Upload_RepoCreateFails(t *testing.T) {
 	entityID := uuid.New()
 	actorID := uuid.New()
 
-	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Realm: ""}).Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID}).Return(nil)
 	mockRepo.On("Create", mock.Anything, nil, mock.AnythingOfType("*models.Attachment")).Return(assert.AnError)
 
 	dto := &models.UploadAttachmentDTO{
@@ -158,7 +161,7 @@ func TestAttachmentService_Delete_Success(t *testing.T) {
 	}
 
 	mockRepo.On("GetByID", mock.Anything, attID).Return(att, nil)
-	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Realm: ""}).Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID}).Return(nil)
 	mockRepo.On("Delete", mock.Anything, nil, attID).Return(nil)
 
 	dto := &models.DeleteAttachmentDTO{ID: attID, ActorID: actorID, Realm: ""}
@@ -179,7 +182,7 @@ func TestAttachmentService_Delete_FileNotFound(t *testing.T) {
 	}
 
 	mockRepo.On("GetByID", mock.Anything, attID).Return(att, nil)
-	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Realm: ""}).Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID}).Return(nil)
 	mockRepo.On("Delete", mock.Anything, nil, attID).Return(nil)
 
 	dto := &models.DeleteAttachmentDTO{ID: attID, ActorID: actorID, Realm: ""}
@@ -194,7 +197,7 @@ func TestAttachmentService_Upload_ReadFileContents(t *testing.T) {
 	actorID := uuid.New()
 	content := "read check content"
 
-	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Realm: ""}).Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID}).Return(nil)
 	mockRepo.On("Create", mock.Anything, nil, mock.AnythingOfType("*models.Attachment")).Return(nil)
 
 	dto := &models.UploadAttachmentDTO{
@@ -259,7 +262,7 @@ func TestAttachmentService_GetByEntity_HidesInternalCommentFiles(t *testing.T) {
 	}
 
 	dto := &models.EntityAccessDTO{EntityType: "ticket", EntityID: entityID, ActorID: actorID, Realm: ""}
-	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Action: string(access.Read), Realm: ""}).Return(nil)
+	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Action: string(access.Read)}).Return(nil)
 	mockAccess.On("CheckInternalAssigneeAccess", mock.Anything, mock.AnythingOfType("*models.AccessCheckDTO")).Return(models.ErrPermissionDenied)
 	mockRepo.On("GetByEntity", mock.Anything, "ticket", entityID).Return(expected, nil)
 	mockRepo.On("GetByComments", mock.Anything, entityID).Return(map[uuid.UUID]bool{internalCID: true}, nil, nil)
@@ -283,7 +286,7 @@ func TestAttachmentService_GetByEntity_ShowAllForInternalUser(t *testing.T) {
 	}
 
 	dto := &models.EntityAccessDTO{EntityType: "ticket", EntityID: entityID, ActorID: actorID, Realm: ""}
-	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Action: string(access.Read), Realm: ""}).Return(nil)
+	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID, Action: string(access.Read)}).Return(nil)
 	mockAccess.On("CheckInternalAssigneeAccess", mock.Anything, mock.AnythingOfType("*models.AccessCheckDTO")).Return(nil)
 	mockRepo.On("GetByEntity", mock.Anything, "ticket", entityID).Return(expected, nil)
 
@@ -292,3 +295,134 @@ func TestAttachmentService_GetByEntity_ShowAllForInternalUser(t *testing.T) {
 	assert.Len(t, got, 2)
 	mockRepo.AssertNotCalled(t, "GetByComments")
 }
+
+// writeAttachmentFile создаёт файл вложения внутри uploadDir/entityType/entityID.
+func writeAttachmentFile(t *testing.T, uploadDir, entityType string, entityID uuid.UUID, name string) string {
+	t.Helper()
+	dir := filepath.Join(uploadDir, entityType, entityID.String())
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	path := filepath.Join(dir, name)
+	require.NoError(t, os.WriteFile(path, []byte("payload"), 0o644))
+	return path
+}
+
+// TestAttachmentService_DeleteByEntity_KeepsFilesInsideTransaction — регрессия на потерю
+// файлов: DeleteByEntity вызывается внутри транзакции вызывающего и не должен трогать ФС.
+// Раньше он удалял директорию целиком, поэтому откат транзакции оставлял записи в БД
+// без файлов — восстановить их было уже нечем.
+func TestAttachmentService_DeleteByEntity_KeepsFilesInsideTransaction(t *testing.T) {
+	mockRepo, _, _, svc := attachmentFixtures(t)
+
+	ticketID := uuid.New()
+	path := writeAttachmentFile(t, svc.conf.UploadDir, "ticket", ticketID, "a.txt")
+
+	mockRepo.On("DeleteByEntity", mock.Anything, mock.Anything, "ticket", ticketID).Return(nil)
+
+	err := svc.DeleteByEntity(context.Background(), nil, "ticket", ticketID)
+	assert.NoError(t, err)
+
+	_, statErr := os.Stat(path)
+	assert.NoError(t, statErr, "файл не должен удаляться до коммита транзакции")
+	mockRepo.AssertExpectations(t)
+}
+
+// TestAttachmentService_RemoveEntityDir — очистка после коммита сносит директорию целиком.
+func TestAttachmentService_RemoveEntityDir(t *testing.T) {
+	_, _, _, svc := attachmentFixtures(t)
+
+	ticketID := uuid.New()
+	subID := uuid.New()
+	path := writeAttachmentFile(t, svc.conf.UploadDir, "ticket", ticketID, "a.txt")
+	subPath := writeAttachmentFile(t, svc.conf.UploadDir, "subtask", subID, "b.txt")
+
+	svc.RemoveEntityDir("ticket", ticketID)
+	svc.RemoveEntityDir("subtask", subID)
+
+	_, err := os.Stat(path)
+	assert.True(t, os.IsNotExist(err), "директория вложений тикета должна быть снята")
+	_, err = os.Stat(subPath)
+	assert.True(t, os.IsNotExist(err), "директория вложений подзадачи должна быть снята")
+}
+
+// TestAttachmentService_RemoveEntityDir_UnknownTypeIgnored — неизвестный тип сущности
+// игнорируется: путь не должен вычисляться от недоверенного значения, и ошибки здесь
+// не возвращаются.
+func TestAttachmentService_RemoveEntityDir_UnknownTypeIgnored(t *testing.T) {
+	_, _, _, svc := attachmentFixtures(t)
+
+	svc.RemoveEntityDir("../../etc", uuid.New()) //nolint:gosec // проверяем защиту от выхода за uploadDir
+}
+
+// TestAttachmentService_Delete_FileRemovedAfterCommit — одиночное удаление снимает файл
+// только после успешного repo.Delete (при tx == nil он коммитится сразу).
+func TestAttachmentService_Delete_FileRemovedAfterCommit(t *testing.T) {
+	mockRepo, _, mockAccess, svc := attachmentFixtures(t)
+
+	attID := uuid.New()
+	entityID := uuid.New()
+	actorID := uuid.New()
+	path := writeAttachmentFile(t, svc.conf.UploadDir, "ticket", entityID, "a.txt")
+
+	att := &models.Attachment{ID: attID, EntityType: "ticket", EntityID: entityID, FilePath: path}
+	mockRepo.On("GetByID", mock.Anything, attID).Return(att, nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID}).Return(nil)
+	mockRepo.On("Delete", mock.Anything, nil, attID).Return(nil)
+
+	err := svc.Delete(context.Background(), nil, &models.DeleteAttachmentDTO{ID: attID, ActorID: actorID})
+	assert.NoError(t, err)
+
+	_, statErr := os.Stat(path)
+	assert.True(t, os.IsNotExist(statErr), "файл удалённого вложения должен быть снят с диска")
+}
+
+// TestAttachmentService_Delete_RepoErrorKeepsFile — если строка не удалена (repo.Delete
+// вернул ошибку), файл обязан остаться: иначе получится запись в БД без файла.
+func TestAttachmentService_Delete_RepoErrorKeepsFile(t *testing.T) {
+	mockRepo, _, mockAccess, svc := attachmentFixtures(t)
+
+	attID := uuid.New()
+	entityID := uuid.New()
+	actorID := uuid.New()
+	path := writeAttachmentFile(t, svc.conf.UploadDir, "ticket", entityID, "a.txt")
+
+	att := &models.Attachment{ID: attID, EntityType: "ticket", EntityID: entityID, FilePath: path}
+	mockRepo.On("GetByID", mock.Anything, attID).Return(att, nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID}).Return(nil)
+	mockRepo.On("Delete", mock.Anything, nil, attID).Return(assert.AnError)
+
+	err := svc.Delete(context.Background(), nil, &models.DeleteAttachmentDTO{ID: attID, ActorID: actorID})
+	assert.Error(t, err)
+
+	_, statErr := os.Stat(path)
+	assert.NoError(t, statErr, "при неудачном удалении записи файл должен остаться")
+}
+
+// TestAttachmentService_Delete_WithinCallerTransactionKeepsFile — при переданной транзакции
+// момент коммита вызывающему неизвестен, поэтому файл не трогается (только Warn-лог).
+func TestAttachmentService_Delete_WithinCallerTransactionKeepsFile(t *testing.T) {
+	mockRepo, _, mockAccess, svc := attachmentFixtures(t)
+
+	attID := uuid.New()
+	entityID := uuid.New()
+	actorID := uuid.New()
+	path := writeAttachmentFile(t, svc.conf.UploadDir, "ticket", entityID, "a.txt")
+
+	att := &models.Attachment{ID: attID, EntityType: "ticket", EntityID: entityID, FilePath: path}
+	mockRepo.On("GetByID", mock.Anything, attID).Return(att, nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: entityID, UserID: actorID}).Return(nil)
+	mockRepo.On("Delete", mock.Anything, mock.Anything, attID).Return(nil)
+
+	err := svc.Delete(context.Background(), fakeTx{}, &models.DeleteAttachmentDTO{ID: attID, ActorID: actorID})
+	assert.NoError(t, err)
+
+	_, statErr := os.Stat(path)
+	assert.NoError(t, statErr, "внутри транзакции вызывающего файл не удаляется")
+}
+
+// fakeTx — заглушка postgres.Tx: нужна, чтобы проверить ветку Delete с транзакцией
+// вызывающего (момент коммита снаружи неизвестен, поэтому файл удаляться не должен).
+type fakeTx struct{}
+
+func (fakeTx) TX() pgx.Tx                     { return nil }
+func (fakeTx) Commit(context.Context) error   { return nil }
+func (fakeTx) Rollback(context.Context) error { return nil }

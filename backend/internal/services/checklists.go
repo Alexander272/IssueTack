@@ -281,7 +281,7 @@ func (s *ChecklistService) ApplyTemplate(ctx context.Context, tx postgres.Tx, dt
 		}
 	}
 
-	if err := s.subtasks.CreateSeveral(ctx, tx, subtaskDTOs, ""); err != nil {
+	if err := s.subtasks.CreateSeveral(ctx, tx, subtaskDTOs); err != nil {
 		return fmt.Errorf("failed to create subtasks from template: %w", err)
 	}
 

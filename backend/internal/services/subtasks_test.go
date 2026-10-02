@@ -33,10 +33,10 @@ func TestSubtaskService_GetByTicketID_Success(t *testing.T) {
 		{ID: uuid.New(), Title: "Subtask 1", TicketID: ticketID},
 	}
 
-	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read), Realm: ""}).Return(nil)
+	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read)}).Return(nil)
 	mockRepo.On("GetByTicketID", mock.Anything, ticketID).Return(expected, nil)
 
-	got, err := svc.GetByTicketID(context.Background(), ticketID, actorID, "")
+	got, err := svc.GetByTicketID(context.Background(), ticketID, actorID)
 	assert.NoError(t, err)
 	assert.Equal(t, expected, got)
 	mockAccess.AssertExpectations(t)
@@ -47,7 +47,7 @@ func TestSubtaskService_GetByTicketID_NoAccess(t *testing.T) {
 	mockRepo, _, _, svc := subtaskServiceFixtures()
 	svc.ticketAccess = nil
 
-	_, err := svc.GetByTicketID(context.Background(), uuid.New(), uuid.New(), "")
+	_, err := svc.GetByTicketID(context.Background(), uuid.New(), uuid.New())
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 	mockRepo.AssertNotCalled(t, "GetByTicketID")
 }
@@ -57,9 +57,9 @@ func TestSubtaskService_GetByTicketID_AccessDenied(t *testing.T) {
 
 	ticketID := uuid.New()
 	actorID := uuid.New()
-	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read), Realm: ""}).Return(models.ErrPermissionDenied)
+	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read)}).Return(models.ErrPermissionDenied)
 
-	_, err := svc.GetByTicketID(context.Background(), ticketID, actorID, "")
+	_, err := svc.GetByTicketID(context.Background(), ticketID, actorID)
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 	mockRepo.AssertNotCalled(t, "GetByTicketID")
 }
@@ -74,9 +74,9 @@ func TestSubtaskService_GetByID_Success(t *testing.T) {
 	expected := &models.Subtask{ID: subtaskID, Title: "Subtask", TicketID: ticketID}
 
 	mockRepo.On("GetByID", mock.Anything, req).Return(expected, nil)
-	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read), Realm: ""}).Return(nil)
+	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Read)}).Return(nil)
 
-	got, err := svc.GetByID(context.Background(), req, actorID, "")
+	got, err := svc.GetByID(context.Background(), req, actorID)
 	assert.NoError(t, err)
 	assert.Equal(t, expected, got)
 }
@@ -88,7 +88,7 @@ func TestSubtaskService_GetByID_NoAccess(t *testing.T) {
 	subtaskID := uuid.New()
 	mockRepo.On("GetByID", mock.Anything, &models.GetSubtaskDTO{ID: subtaskID}).Return(&models.Subtask{}, nil)
 
-	_, err := svc.GetByID(context.Background(), &models.GetSubtaskDTO{ID: subtaskID}, uuid.New(), "")
+	_, err := svc.GetByID(context.Background(), &models.GetSubtaskDTO{ID: subtaskID}, uuid.New())
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 }
 
@@ -104,11 +104,11 @@ func TestSubtaskService_Create_Success(t *testing.T) {
 		Actor:    &models.Actor{ID: actorID, Name: "test"},
 	}
 
-	mockAccess.On("CanCreateSubtask", mock.Anything, actorID, ticketID, "").Return(true, nil)
+	mockAccess.On("CanCreateSubtask", mock.Anything, actorID, ticketID).Return(true, nil)
 	mockRepo.On("Create", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 
-	err := svc.Create(context.Background(), nil, dto, "")
+	err := svc.Create(context.Background(), nil, dto)
 	assert.NoError(t, err)
 	mockLogs.AssertExpectations(t)
 }
@@ -117,7 +117,7 @@ func TestSubtaskService_Create_NoAccess(t *testing.T) {
 	_, _, _, svc := subtaskServiceFixtures()
 	svc.ticketAccess = nil
 
-	err := svc.Create(context.Background(), nil, &models.SubtaskDTO{}, "")
+	err := svc.Create(context.Background(), nil, &models.SubtaskDTO{})
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 }
 
@@ -131,11 +131,11 @@ func TestSubtaskService_CreateSeveral_Success(t *testing.T) {
 		{ID: uuid.New(), TicketID: ticketID, Title: "S2", Actor: &models.Actor{ID: actorID, Name: "test"}},
 	}
 
-	mockAccess.On("CanCreateSubtask", mock.Anything, actorID, ticketID, "").Return(true, nil)
+	mockAccess.On("CanCreateSubtask", mock.Anything, actorID, ticketID).Return(true, nil)
 	mockRepo.On("CreateSeveral", mock.Anything, nil, dtos).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 
-	err := svc.CreateSeveral(context.Background(), nil, dtos, "")
+	err := svc.CreateSeveral(context.Background(), nil, dtos)
 	assert.NoError(t, err)
 }
 
@@ -143,7 +143,7 @@ func TestSubtaskService_CreateSeveral_NoAccess(t *testing.T) {
 	_, _, _, svc := subtaskServiceFixtures()
 	svc.ticketAccess = nil
 
-	err := svc.CreateSeveral(context.Background(), nil, []*models.SubtaskDTO{{}}, "")
+	err := svc.CreateSeveral(context.Background(), nil, []*models.SubtaskDTO{{}})
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 }
 
@@ -153,7 +153,7 @@ func TestSubtaskService_CreateSeveral_EmptyList(t *testing.T) {
 	mockRepo.On("CreateSeveral", mock.Anything, nil, []*models.SubtaskDTO{}).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 
-	err := svc.CreateSeveral(context.Background(), nil, []*models.SubtaskDTO{}, "")
+	err := svc.CreateSeveral(context.Background(), nil, []*models.SubtaskDTO{})
 	assert.NoError(t, err)
 	mockAccess.AssertNotCalled(t, "CheckWorkAccess")
 }
@@ -177,12 +177,12 @@ func TestSubtaskService_Update_Success(t *testing.T) {
 	}
 
 	mockRepo.On("GetByID", mock.Anything, &models.GetSubtaskDTO{ID: subtaskID}).Return(old, nil)
-	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Realm: ""}).Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID}).Return(nil)
 	mockAccess.On("CanEditSubtask", mock.Anything, actorID, old).Return(true, nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 
-	err := svc.Update(context.Background(), nil, dto, "")
+	err := svc.Update(context.Background(), nil, dto)
 
 	assert.NoError(t, err)
 	mockAccess.AssertExpectations(t)
@@ -209,11 +209,11 @@ func TestSubtaskService_Update_NoChanges(t *testing.T) {
 	}
 
 	mockRepo.On("GetByID", mock.Anything, &models.GetSubtaskDTO{ID: subtaskID}).Return(old, nil)
-	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Realm: ""}).Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID}).Return(nil)
 	mockAccess.On("CanEditSubtask", mock.Anything, actorID, old).Return(true, nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 
-	err := svc.Update(context.Background(), nil, dto, "")
+	err := svc.Update(context.Background(), nil, dto)
 
 	assert.NoError(t, err)
 	mockLogs.AssertNotCalled(t, "Create")
@@ -232,12 +232,12 @@ func TestSubtaskService_Delete_Success(t *testing.T) {
 	}
 
 	mockRepo.On("GetByID", mock.Anything, &models.GetSubtaskDTO{ID: subtaskID}).Return(old, nil)
-	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Realm: ""}).Return(nil)
-	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Delete), Realm: ""}).Return(nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID}).Return(nil)
+	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID, Action: string(access.Delete)}).Return(nil)
 	mockRepo.On("Delete", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 
-	err := svc.Delete(context.Background(), nil, dto, "")
+	err := svc.Delete(context.Background(), nil, dto)
 	assert.NoError(t, err)
 	mockAccess.AssertExpectations(t)
 	mockRepo.AssertExpectations(t)

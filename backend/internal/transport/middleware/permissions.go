@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/access"
@@ -8,7 +9,42 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
+
+// checkRealmMembership проверяет, что пользователь состоит в реалме, домен которого
+// пришёл из клиента. Заголовок realm задаёт Casbin-домен, поэтому без этой проверки
+// пользователь мог подставить чужой realm и получить coarse-права (ticket:read/write)
+// в чужой области: тикеты грузятся по id без realm-фильтра, а доступ к уже загруженному
+// тикету считается по ticket.RealmID (TicketAccessService.CheckAccessOnTicket).
+//
+// Пустой realm не проверяем — на нём Enforce всё равно ничего не разрешит, и такое
+// поведение нужно для маршрутов вне реалмов (например, собственный профиль).
+func (m *Middleware) checkRealmMembership(c *gin.Context, userID uuid.UUID, realmId string) error {
+	if realmId == "" {
+		return nil
+	}
+
+	realmID, err := uuid.Parse(realmId)
+	if err != nil {
+		// Не-UUID не может быть валидным Casbin-доменом, но явный отказ понятнее,
+		// чем «нет прав» из-за молчаливо не найденного реалма.
+		return models.ErrPermissionDenied
+	}
+
+	membership, err := m.services.UserRealms.GetByUserAndRealm(c, userID, realmID)
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			return models.ErrPermissionDenied
+		}
+		return err
+	}
+	if membership == nil || !membership.IsActive {
+		return models.ErrPermissionDenied
+	}
+
+	return nil
+}
 
 func (m *Middleware) CheckPermissions(perms ...access.Permission) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -23,13 +59,17 @@ func (m *Middleware) CheckPermissions(perms ...access.Permission) gin.HandlerFun
 			return
 		}
 
-		var accessAllowed bool
-		var lastErr error
-
 		realmId := c.GetHeader("realm")
 		if realmId == "" {
 			realmId = c.Query("realm")
 		}
+		if err := m.checkRealmMembership(c, user.ID, realmId); err != nil {
+			response.SendError(c, err)
+			return
+		}
+
+		var accessAllowed bool
+		var lastErr error
 
 		for _, r := range perms {
 			ok, err := m.services.AccessPolicies.Enforce(user.ID.String(), realmId, string(r.Resource), string(r.Action))

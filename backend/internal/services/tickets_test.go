@@ -1510,9 +1510,73 @@ func TestTicketService_Delete_Success(t *testing.T) {
 	mockRepo.On("Delete", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 	mockNotifications.On("TicketDeleted", mock.Anything, ticket).Return(nil)
+	// Файлы вложений снимаются с диска только после коммита транзакции.
+	mockAttachments.On("RemoveEntityDir", "ticket", ticketID).Return()
 
 	err := svc.Delete(context.Background(), dto)
 	assert.NoError(t, err)
+	mockAttachments.AssertExpectations(t)
+}
+
+// TestTicketService_Delete_RemovesAttachmentDirsAfterCommit — директории вложений
+// тикета и его подзадач очищаются после коммита, а не внутри транзакции: файловая
+// система в транзакцию не входит, и удаление до коммита при откате потеряло бы файлы
+// безвозвратно.
+func TestTicketService_Delete_RemovesAttachmentDirsAfterCommit(t *testing.T) {
+	mockRepo, mockLogs, mockSubtasks, mockAttachments, mockNotifications, _, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	ticketID := uuid.New()
+	subID := uuid.New()
+	dto := &models.DeleteTicketDTO{ID: ticketID, Actor: &models.Actor{ID: actorID, Name: "test"}}
+
+	ticket := &models.Ticket{ID: ticketID, Title: "Test Ticket"}
+	sub := &models.Subtask{ID: subID}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Delete)).Return(true, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(true, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(ticket, nil)
+	mockAttachments.On("DeleteByEntity", mock.Anything, nil, "ticket", ticketID).Return(nil)
+	mockAttachments.On("DeleteByEntity", mock.Anything, nil, "subtask", subID).Return(nil)
+	mockSubtasks.On("GetByTicketID", mock.Anything, ticketID, actorID).Return([]*models.Subtask{sub}, nil)
+	mockRepo.On("Delete", mock.Anything, nil, dto).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockNotifications.On("TicketDeleted", mock.Anything, ticket).Return(nil)
+	mockAttachments.On("RemoveEntityDir", "ticket", ticketID).Return()
+	mockAttachments.On("RemoveEntityDir", "subtask", subID).Return()
+
+	err := svc.Delete(context.Background(), dto)
+	assert.NoError(t, err)
+	mockAttachments.AssertExpectations(t)
+}
+
+// TestTicketService_Delete_RollbackKeepsFiles — регрессия на потерю файлов: если
+// транзакция откатилась (здесь — ошибка удаления строки тикета уже после очистки
+// записей вложений), директории с диска сниматься не должны. Раньше DeleteByEntity
+// удалял их внутри транзакции, и файлы пропадали безвозвратно при живых записях БД.
+func TestTicketService_Delete_RollbackKeepsFiles(t *testing.T) {
+	mockRepo, mockLogs, mockSubtasks, mockAttachments, _, _, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.DeleteTicketDTO{ID: ticketID, Actor: &models.Actor{ID: actorID, Name: "test"}}
+
+	ticket := &models.Ticket{ID: ticketID, Title: "Test Ticket"}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Delete)).Return(true, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(true, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(ticket, nil)
+	mockAttachments.On("DeleteByEntity", mock.Anything, nil, "ticket", ticketID).Return(nil)
+	mockSubtasks.On("GetByTicketID", mock.Anything, ticketID, actorID).Return([]*models.Subtask{}, nil)
+	// Откат: удаление строки тикета падает после очистки записей вложений.
+	mockRepo.On("Delete", mock.Anything, nil, dto).Return(assert.AnError)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+
+	err := svc.Delete(context.Background(), dto)
+	assert.Error(t, err)
+
+	// Файлы обязаны остаться на месте.
+	mockAttachments.AssertNotCalled(t, "RemoveEntityDir", mock.Anything, mock.Anything)
 }
 
 // TestTicketService_CheckAccess_PolicyGranted: realm-wide ticket:read сам по себе
@@ -2066,7 +2130,7 @@ func TestTicketService_GetAccessFlags_CanEditFields(t *testing.T) {
 		Group:   &models.GroupShort{ID: groupID, Name: "Group"},
 	}
 
-	flags, err := svc.GetAccessFlags(context.Background(), ticket, creatorID, "")
+	flags, err := svc.GetAccessFlags(context.Background(), ticket, creatorID)
 	assert.NoError(t, err)
 	assert.True(t, flags.CanEditFields)
 }
@@ -2092,7 +2156,7 @@ func TestTicketService_GetAccessFlags_IsAdmin(t *testing.T) {
 		Group:   &models.GroupShort{ID: groupID, Name: "Group"},
 	}
 
-	flags, err := svc.GetAccessFlags(context.Background(), ticket, adminID, "")
+	flags, err := svc.GetAccessFlags(context.Background(), ticket, adminID)
 	assert.NoError(t, err)
 	assert.True(t, flags.IsAdmin)
 	assert.False(t, flags.IsManager)
@@ -2119,7 +2183,7 @@ func TestTicketService_GetAccessFlags_IsManager(t *testing.T) {
 		Group:   &models.GroupShort{ID: groupID, Name: "Group"},
 	}
 
-	flags, err := svc.GetAccessFlags(context.Background(), ticket, managerID, "")
+	flags, err := svc.GetAccessFlags(context.Background(), ticket, managerID)
 	assert.NoError(t, err)
 	assert.False(t, flags.IsAdmin)
 	assert.True(t, flags.IsManager)
@@ -2146,7 +2210,7 @@ func TestTicketService_GetAccessFlags_NoRoles(t *testing.T) {
 		Group:   &models.GroupShort{ID: groupID, Name: "Group"},
 	}
 
-	flags, err := svc.GetAccessFlags(context.Background(), ticket, userID, "")
+	flags, err := svc.GetAccessFlags(context.Background(), ticket, userID)
 	assert.NoError(t, err)
 	assert.False(t, flags.IsAdmin)
 	assert.False(t, flags.IsManager)

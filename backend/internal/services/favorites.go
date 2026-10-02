@@ -75,12 +75,7 @@ func (s *TicketFavoritesService) checkReadAccess(ctx context.Context, ticketID, 
 		return nil, err
 	}
 
-	realm := ""
-	if ticket.RealmID != nil {
-		realm = ticket.RealmID.String()
-	}
-
-	if err := s.ticketAccess.CheckAccessOnTicket(ctx, ticket, userID, string(access.Read), realm); err != nil {
+	if err := s.ticketAccess.CheckAccessOnTicket(ctx, ticket, userID, string(access.Read)); err != nil {
 		return nil, err
 	}
 	return ticket, nil

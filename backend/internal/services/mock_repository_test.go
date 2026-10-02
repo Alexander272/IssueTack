@@ -606,7 +606,7 @@ type MockSubtaskService struct {
 	mock.Mock
 }
 
-func (m *MockSubtaskService) GetByTicketID(ctx context.Context, ticketID, actorID uuid.UUID, realm string) ([]*models.Subtask, error) {
+func (m *MockSubtaskService) GetByTicketID(ctx context.Context, ticketID, actorID uuid.UUID) ([]*models.Subtask, error) {
 	args := m.Called(ctx, ticketID, actorID)
 	return args.Get(0).([]*models.Subtask), args.Error(1)
 }
@@ -617,7 +617,7 @@ func (m *MockSubtaskService) GetByTicketIDs(ctx context.Context, ticketIDs []uui
 	}
 	return args.Get(0).(map[uuid.UUID][]*models.Subtask), args.Error(1)
 }
-func (m *MockSubtaskService) GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID, realm string) (*models.Subtask, error) {
+func (m *MockSubtaskService) GetByID(ctx context.Context, req *models.GetSubtaskDTO, actorID uuid.UUID) (*models.Subtask, error) {
 	args := m.Called(ctx, req, actorID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -635,11 +635,11 @@ func (m *MockSubtaskService) GetUnresolvedCount(ctx context.Context, ticketID uu
 	args := m.Called(ctx, ticketID)
 	return args.Int(0), args.Error(1)
 }
-func (m *MockSubtaskService) Create(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO, realm string) error {
+func (m *MockSubtaskService) Create(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO) error {
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
 }
-func (m *MockSubtaskService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.SubtaskDTO, realm string) error {
+func (m *MockSubtaskService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*models.SubtaskDTO) error {
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
 }
@@ -647,11 +647,11 @@ func (m *MockSubtaskService) CreateManyOnCreate(ctx context.Context, tx postgres
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
 }
-func (m *MockSubtaskService) Update(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO, realm string) error {
+func (m *MockSubtaskService) Update(ctx context.Context, tx postgres.Tx, dto *models.SubtaskDTO) error {
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
 }
-func (m *MockSubtaskService) Delete(ctx context.Context, tx postgres.Tx, dto *models.DelSubtaskDTO, realm string) error {
+func (m *MockSubtaskService) Delete(ctx context.Context, tx postgres.Tx, dto *models.DelSubtaskDTO) error {
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
 }
@@ -685,6 +685,9 @@ func (m *MockAttachmentService) Delete(ctx context.Context, tx postgres.Tx, dto 
 func (m *MockAttachmentService) DeleteByEntity(ctx context.Context, tx postgres.Tx, entityType string, entityID uuid.UUID) error {
 	args := m.Called(ctx, tx, entityType, entityID)
 	return args.Error(0)
+}
+func (m *MockAttachmentService) RemoveEntityDir(entityType string, entityID uuid.UUID) {
+	m.Called(entityType, entityID)
 }
 func (m *MockAttachmentService) GetForComments(ctx context.Context, ticketID uuid.UUID, showInternal bool) (map[uuid.UUID][]*models.Attachment, error) {
 	args := m.Called(ctx, ticketID, showInternal)
@@ -1032,8 +1035,8 @@ func (m *MockTicketAccessChecker) CheckInternalAssigneeAccess(ctx context.Contex
 	return args.Error(0)
 }
 
-func (m *MockTicketAccessChecker) CheckAccessOnTicket(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, action string, realm string) error {
-	args := m.Called(ctx, ticket, userID, action, realm)
+func (m *MockTicketAccessChecker) CheckAccessOnTicket(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, action string) error {
+	args := m.Called(ctx, ticket, userID, action)
 	return args.Error(0)
 }
 
@@ -1052,8 +1055,8 @@ func (m *MockTicketAccessChecker) CanCreateTicket(ctx context.Context, userID uu
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *MockTicketAccessChecker) CanAdministerTickets(ctx context.Context, userID uuid.UUID, realm string) (bool, error) {
-	args := m.Called(ctx, userID, realm)
+func (m *MockTicketAccessChecker) CanAdministerTickets(ctx context.Context, userID uuid.UUID, ticket *models.Ticket) (bool, error) {
+	args := m.Called(ctx, userID, ticket)
 	return args.Bool(0), args.Error(1)
 }
 
@@ -1062,8 +1065,8 @@ func (m *MockTicketAccessChecker) CanEditSubtask(ctx context.Context, userID uui
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *MockTicketAccessChecker) CanCreateSubtask(ctx context.Context, userID uuid.UUID, ticketID uuid.UUID, realm string) (bool, error) {
-	args := m.Called(ctx, userID, ticketID, realm)
+func (m *MockTicketAccessChecker) CanCreateSubtask(ctx context.Context, userID uuid.UUID, ticketID uuid.UUID) (bool, error) {
+	args := m.Called(ctx, userID, ticketID)
 	return args.Bool(0), args.Error(1)
 }
 

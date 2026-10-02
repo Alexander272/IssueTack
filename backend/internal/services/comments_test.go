@@ -208,7 +208,7 @@ func TestCommentService_GetByTicket_PopulatesAttachments(t *testing.T) {
 	commentID := uuid.New()
 	att := &models.Attachment{ID: uuid.New(), FileName: "file.png", CommentID: &commentID}
 
-	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: userID, Action: "read", Realm: "realm"}).Return(nil)
+	mockAccess.On("CheckAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: userID, Action: "read"}).Return(nil)
 	mockAccess.On("CheckInternalAssigneeAccess", mock.Anything, mock.AnythingOfType("*models.AccessCheckDTO")).Return(nil)
 	mockRepo.On("GetByTicket", mock.Anything, ticketID, userID, true).Return([]*models.Comment{{ID: commentID, Text: "внутр"}}, nil)
 	mockAttachments.On("GetForComments", mock.Anything, ticketID, true).Return(map[uuid.UUID][]*models.Attachment{commentID: {att}}, nil)

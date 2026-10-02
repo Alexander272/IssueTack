@@ -27,7 +27,12 @@ type TicketAccessChecker interface {
 	// общая основа для CheckAccess и логики статусов. Атрибуты тикета решают всегда,
 	// а отказ по ним компенсирует только IsRealmSupervisor; realm-wide
 	// ticket:read/write в проверке не участвуют.
-	CheckAccessOnTicket(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, action string, realm string) error
+	//
+	// Реалм берётся из самого тикета (ticket.RealmID), а не извне: тикет грузится
+	// по id без фильтра по реалму, поэтому клиентский «realm» из заголовка в решении
+	// о доступе означал бы, что supervisor одного реалма проходит проверку на тикет
+	// другого (см. ticketRealm).
+	CheckAccessOnTicket(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, action string) error
 	// IsRealmSupervisor определяет, является ли пользователь «начальником области» в реалме:
 	// ему выданы realm-wide пермишены управления областью (category:write или site:write).
 	// Единственная точка владения этой проверкой — через policies.enforcer.
@@ -46,16 +51,20 @@ type TicketAccessChecker interface {
 	// менеджер группы / realm supervisor). В отличие от CheckWorkAccess, realm-wide
 	// политика ticket:write сама по себе права на создание подзадач не даёт: иначе
 	// пользователь мог бы создать подзадачу, но не отредактировать/удалить её.
-	CanCreateSubtask(ctx context.Context, userID uuid.UUID, ticketID uuid.UUID, realm string) (bool, error)
-	// CanCreateTicket проверяет наличие realm-wide write-политики на ресурс тикетов —
+	// Реалм не передаётся: он берётся из загруженного тикета (см. CanManage).
+	CanCreateSubtask(ctx context.Context, userID uuid.UUID, ticketID uuid.UUID) (bool, error)
+	// CanCreateTicket проверяет наличие realm-wide write-политики на ресурсе тикетов —
 	// достаточно ли прав создать заявку напрямую (без ограничений «рабочего» режима).
+	// Реалм здесь берётся извне (тикета ещё нет): корректность значения обеспечивает
+	// проверка членства в реалме в middleware (см. middleware.CheckPermissions).
 	CanCreateTicket(ctx context.Context, userID uuid.UUID, realm string) (bool, error)
 	// CanAdministerTickets проверяет право на операции «поверх» тикета, доступные
 	// только начальнику области (realm supervisor): смена группы заявки и передача
 	// исполнителя мимо менеджера группы. Намеренно не опирается на ticket:write —
 	// realm-wide право работать с заявками есть у рядовых пользователей, и по нему
 	// они не должны ни переносить заявку в другую группу, ни переназначать чужую.
-	CanAdministerTickets(ctx context.Context, userID uuid.UUID, realm string) (bool, error)
+	// Реалм берётся из тикета, а не извне — оба вызывающих места тикет уже загрузили.
+	CanAdministerTickets(ctx context.Context, userID uuid.UUID, ticket *models.Ticket) (bool, error)
 }
 
 // TicketAccessService реализует проверку прав доступа к тикетам.
@@ -105,14 +114,20 @@ func NewTicketAccessService(repo repository.Tickets, groups Groups, policies Acc
 //
 // Менеджер группы определяется перебором GetManagedGroups, поэтому на одно действие
 // управляемые группы запрашиваются один раз. Если ни одно из правил не сработало — отказ.
-func (s *TicketAccessService) CheckAccessOnTicket(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, action string, realm string) error {
+//
+// Реалм для обхода «видно всё» берётся из ticket.RealmID, а не из аргумента вызывающего.
+// Тикет загружается по id без фильтра по реалму (TicketRepo.GetByID → WHERE t.id = $1),
+// поэтому realm, пришедший от клиента, не имеет отношения к тому, чей это тикет: supervisor
+// реалма A подставил бы свой realm и получил доступ к тикету реалма B. Аргумент realm
+// поэтому убран из сигнатуры, а не просто проигнорирован.
+func (s *TicketAccessService) CheckAccessOnTicket(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, action string) error {
 	if err := s.checkTicketAttributes(ctx, ticket, userID, action); err == nil {
 		return nil
 	}
 
 	// Обход «видно всё» для начальника области. Проверяется только на пути отказа, чтобы
 	// горячий путь «своя заявка» не платил лишние Enforce за category/site.
-	supervisor, err := s.IsRealmSupervisor(ctx, userID, realm)
+	supervisor, err := s.IsRealmSupervisor(ctx, userID, ticketRealm(ticket))
 	if err != nil {
 		return err
 	}
@@ -121,6 +136,15 @@ func (s *TicketAccessService) CheckAccessOnTicket(ctx context.Context, ticket *m
 	}
 
 	return models.ErrPermissionDenied
+}
+
+// ticketRealm возвращает реалм тикета строкой для Casbin-домена. Тикет без реалма
+// (внегрупповая заявка) даёт пустой домен — как и раньше в CanManage.
+func ticketRealm(ticket *models.Ticket) string {
+	if ticket.RealmID == nil {
+		return ""
+	}
+	return ticket.RealmID.String()
 }
 
 // checkTicketAttributes применяет модель доступа по атрибутам тикета: ни realm-wide
@@ -190,7 +214,7 @@ func (s *TicketAccessService) CheckAccess(ctx context.Context, dto *models.Acces
 	if err != nil {
 		return fmt.Errorf("failed to load ticket for access check: %w", err)
 	}
-	return s.CheckAccessOnTicket(ctx, ticket, dto.UserID, dto.Action, dto.Realm)
+	return s.CheckAccessOnTicket(ctx, ticket, dto.UserID, dto.Action)
 }
 
 // CheckWorkAccess — "рабочий" доступ к тикету: либо write-доступ (по модели CheckAccess),
@@ -212,7 +236,7 @@ func (s *TicketAccessService) CheckWorkAccess(ctx context.Context, dto *models.A
 		return models.ErrTicketFrozen
 	}
 
-	if err := s.CheckAccessOnTicket(ctx, ticket, dto.UserID, string(access.Write), dto.Realm); err == nil {
+	if err := s.CheckAccessOnTicket(ctx, ticket, dto.UserID, string(access.Write)); err == nil {
 		return nil
 	}
 	if ticket.Assignee != nil && ticket.Assignee.ID == dto.UserID {
@@ -272,12 +296,7 @@ func (s *TicketAccessService) IsRealmSupervisor(ctx context.Context, userID uuid
 // CanManage проверяет, может ли пользователь «управлять» тикетом: начальник области
 // (realm supervisor) или менеджер группы, к которой относится тикет.
 func (s *TicketAccessService) CanManage(ctx context.Context, userID uuid.UUID, ticket *models.Ticket) (bool, error) {
-	realm := ""
-	if ticket.RealmID != nil {
-		realm = ticket.RealmID.String()
-	}
-
-	supervisor, err := s.IsRealmSupervisor(ctx, userID, realm)
+	supervisor, err := s.IsRealmSupervisor(ctx, userID, ticketRealm(ticket))
 	if err != nil {
 		return false, err
 	}
@@ -308,11 +327,11 @@ func (s *TicketAccessService) CanCreateTicket(ctx context.Context, userID uuid.U
 	return ok, nil
 }
 
-// CanAdministerTickets проверяет, является ли пользователь начальником области.
-// Основание то же, что и у CanManage для тикета, но без загрузки тикета —
-// вызывается там, где право нужно на операцию над произвольной заявкой.
-func (s *TicketAccessService) CanAdministerTickets(ctx context.Context, userID uuid.UUID, realm string) (bool, error) {
-	return s.IsRealmSupervisor(ctx, userID, realm)
+// CanAdministerTickets проверяет, является ли пользователь начальником области тикета.
+// Основание то же, что и у CanManage; тикет передаётся, чтобы реалм для Casbin-домена
+// был взят из него, а не из клиентского realm-заголовка.
+func (s *TicketAccessService) CanAdministerTickets(ctx context.Context, userID uuid.UUID, ticket *models.Ticket) (bool, error) {
+	return s.IsRealmSupervisor(ctx, userID, ticketRealm(ticket))
 }
 
 // CanCreateSubtask — создание подзадач доступно только пользователям с «атрибутной»
@@ -321,7 +340,7 @@ func (s *TicketAccessService) CanAdministerTickets(ctx context.Context, userID u
 // на создание не даёт, чтобы не было разрыва «могу создать, но не могу править/удалить».
 // На замороженных заявках (resolved/closed/cancelled) создание запрещено всегда —
 // как и в CheckWorkAccess.
-func (s *TicketAccessService) CanCreateSubtask(ctx context.Context, userID uuid.UUID, ticketID uuid.UUID, realm string) (bool, error) {
+func (s *TicketAccessService) CanCreateSubtask(ctx context.Context, userID uuid.UUID, ticketID uuid.UUID) (bool, error) {
 	ticket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: ticketID})
 	if err != nil {
 		return false, fmt.Errorf("failed to load ticket: %w", err)

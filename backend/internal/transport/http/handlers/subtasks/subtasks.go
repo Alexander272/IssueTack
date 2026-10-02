@@ -51,9 +51,7 @@ func (h *Handler) getByTicket(c *gin.Context) {
 		return
 	}
 
-	realmIdStr := c.GetHeader("realm")
-
-	data, err := h.service.GetByTicketID(c, id, user.ID, realmIdStr)
+	data, err := h.service.GetByTicketID(c, id, user.ID)
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -82,9 +80,7 @@ func (h *Handler) create(c *gin.Context) {
 	}
 	dto.Actor = actor
 
-	realmIdStr := c.GetHeader("realm")
-
-	if err := h.service.Create(c, nil, dto, realmIdStr); err != nil {
+	if err := h.service.Create(c, nil, dto); err != nil {
 		response.SendError(c, err, dto)
 		return
 	}
@@ -116,9 +112,7 @@ func (h *Handler) update(c *gin.Context) {
 	}
 	dto.Actor = actor
 
-	realmIdStr := c.GetHeader("realm")
-
-	if err := h.service.Update(c, nil, dto, realmIdStr); err != nil {
+	if err := h.service.Update(c, nil, dto); err != nil {
 		response.SendError(c, err, dto)
 		return
 	}
@@ -139,9 +133,7 @@ func (h *Handler) delete(c *gin.Context) {
 	}
 	dto := &models.DelSubtaskDTO{ID: id, Actor: actor}
 
-	realmIdStr := c.GetHeader("realm")
-
-	if err := h.service.Delete(c, nil, dto, realmIdStr); err != nil {
+	if err := h.service.Delete(c, nil, dto); err != nil {
 		response.SendError(c, err)
 		return
 	}

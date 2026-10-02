@@ -64,12 +64,7 @@ func (s *TicketSubscriptionService) getTicketWithSubscribeAccess(ctx context.Con
 		return err
 	}
 
-	realm := ""
-	if ticket.RealmID != nil {
-		realm = ticket.RealmID.String()
-	}
-
-	if err := s.ticketAccess.CheckAccessOnTicket(ctx, ticket, userID, string(access.Read), realm); err != nil {
+	if err := s.ticketAccess.CheckAccessOnTicket(ctx, ticket, userID, string(access.Read)); err != nil {
 		return err
 	}
 

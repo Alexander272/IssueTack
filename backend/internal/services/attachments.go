@@ -13,6 +13,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
+	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/google/uuid"
 )
 
@@ -52,18 +53,18 @@ func (s *AttachmentService) checkEntityAccess(ctx context.Context, dto *models.E
 	switch dto.EntityType {
 	case "ticket":
 		if action == string(access.Write) {
-			return s.ticketAccess.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: dto.EntityID, UserID: dto.ActorID, Realm: dto.Realm})
+			return s.ticketAccess.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: dto.EntityID, UserID: dto.ActorID})
 		}
-		return s.ticketAccess.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: dto.EntityID, UserID: dto.ActorID, Action: action, Realm: dto.Realm})
+		return s.ticketAccess.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: dto.EntityID, UserID: dto.ActorID, Action: action})
 	case "subtask":
 		sub, err := s.subtasks.GetRawByID(ctx, &models.GetSubtaskDTO{ID: dto.EntityID})
 		if err != nil {
 			return fmt.Errorf("failed to load subtask for access check: %w", err)
 		}
 		if action == string(access.Write) {
-			return s.ticketAccess.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: sub.TicketID, UserID: dto.ActorID, Realm: dto.Realm})
+			return s.ticketAccess.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: sub.TicketID, UserID: dto.ActorID})
 		}
-		return s.ticketAccess.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: sub.TicketID, UserID: dto.ActorID, Action: action, Realm: dto.Realm})
+		return s.ticketAccess.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: sub.TicketID, UserID: dto.ActorID, Action: action})
 	}
 	return fmt.Errorf("unknown entity type: %s", dto.EntityType)
 }
@@ -78,11 +79,16 @@ type Attachments interface {
 	Upload(ctx context.Context, tx postgres.Tx, dto *models.UploadAttachmentDTO) (*models.Attachment, error)
 	// Delete удаляет вложение и связанный файл с диска.
 	Delete(ctx context.Context, tx postgres.Tx, dto *models.DeleteAttachmentDTO) error
-	// DeleteByEntity удаляет все вложения сущности (тикета/подзадачи) и файлы
-	// с диска. Внутренний вызов при каскадном удалении родительской записи:
-	// доступ не проверяется, авторизацию обеспечивает вызывающий. Файлы с
-	// диска удаляются целиком директорией entity_type/entity_id.
+	// DeleteByEntity удаляет записи вложений сущности (тикета/подзадачи) в рамках
+	// переданной транзакции. Внутренний вызов при каскадном удалении родительской
+	// записи: доступ не проверяется, авторизацию обеспечивает вызывающий.
+	// Файлы не трогает — см. RemoveEntityDir.
 	DeleteByEntity(ctx context.Context, tx postgres.Tx, entityType string, entityID uuid.UUID) error
+	// RemoveEntityDir удаляет с диска директорию вложений сущности
+	// (entity_type/entity_id). Вызывается строго после успешного коммита удаления
+	// записей вложений. Ошибки не возвращаются — только Warn-лог: файловая система
+	// не участвует в транзакции, и её сбой не должен отменять завершённую операцию.
+	RemoveEntityDir(entityType string, entityID uuid.UUID)
 	// GetForComments возвращает вложения комментариев тикета, сгруппированные по
 	// comment_id. Ожидается, что вызов осуществляет CommentService, уже проверивший
 	// право чтения тикета и видимость внутренних комментариев.
@@ -108,7 +114,6 @@ func (s *AttachmentService) GetByEntity(ctx context.Context, dto *models.EntityA
 	showInternal := s.ticketAccess.CheckInternalAssigneeAccess(ctx, &models.AccessCheckDTO{
 		TicketID: dto.EntityID,
 		UserID:   dto.ActorID,
-		Realm:    dto.Realm,
 	}) == nil
 	if showInternal {
 		return data, nil
@@ -253,6 +258,11 @@ func (s *AttachmentService) Upload(ctx context.Context, tx postgres.Tx, dto *mod
 }
 
 // Delete удаляет вложение (запись в БД и файл с диска) с проверкой права на запись.
+//
+// Вызывается без транзакции (tx == nil), поэтому удаление строки коммитится сразу
+// после repo.Delete и файл можно снимать только после этого. Если транзакция всё же
+// передана, файлы не трогаются: момент коммита вызывающему неизвестен, а удаление до
+// него необратимо теряет файл при откате (см. RemoveEntityDir).
 func (s *AttachmentService) Delete(ctx context.Context, tx postgres.Tx, dto *models.DeleteAttachmentDTO) error {
 	att, err := s.repo.GetByID(ctx, dto.ID)
 	if err != nil {
@@ -272,16 +282,34 @@ func (s *AttachmentService) Delete(ctx context.Context, tx postgres.Tx, dto *mod
 		return fmt.Errorf("failed to delete attachment: %w", err)
 	}
 
+	// Строка уже удалена и (при tx == nil) закоммичена: сбой очистки диска не должен
+	// отменять операцию, поэтому только логируем. Несуществующий файл — не ошибка.
+	if tx != nil {
+		logger.Warn("attachment deleted within caller transaction, file kept",
+			logger.StringAttr("attachment_id", dto.ID.String()),
+			logger.StringAttr("file_path", att.FilePath),
+		)
+		return nil
+	}
 	if err := os.Remove(att.FilePath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to delete file: %w", err)
+		logger.Warn("failed to remove attachment file",
+			logger.StringAttr("attachment_id", dto.ID.String()),
+			logger.StringAttr("file_path", att.FilePath),
+			logger.ErrAttr(err),
+		)
 	}
 	return nil
 }
 
-// DeleteByEntity удаляет все вложения сущности и директорию с файлами.
+// DeleteByEntity удаляет записи вложений сущности в рамках переданной транзакции.
 // Применяется при каскадном удалении тикета (вместе с подзадачами), чтобы не
-// оставлять «осиротевшие» записи и файлы. Вызывается внутри транзакции удаления
-// тикета, без проверки доступа — она выполнена выше, при проверке Delete-права.
+// оставлять «осиротевшие» записи. Вызывается внутри транзакции удаления тикета,
+// без проверки доступа — она выполнена выше, при проверке Delete-права.
+//
+// Файлы с диска здесь НЕ удаляются: файловая система не участвует в транзакции,
+// поэтому удаление до коммита необратимо теряет их при откате (в тикете после этого
+// вызова идут ещё чтение подзадач и удаление строки). Вызывающий накапливает
+// директории и чистит их после успешного коммита — см. RemoveEntityDir.
 func (s *AttachmentService) DeleteByEntity(ctx context.Context, tx postgres.Tx, entityType string, entityID uuid.UUID) error {
 	if !allowedEntityTypes[entityType] {
 		return fmt.Errorf("invalid entity type: %s", entityType)
@@ -289,9 +317,25 @@ func (s *AttachmentService) DeleteByEntity(ctx context.Context, tx postgres.Tx, 
 	if err := s.repo.DeleteByEntity(ctx, tx, entityType, entityID); err != nil {
 		return fmt.Errorf("failed to delete attachments: %w", err)
 	}
+	return nil
+}
+
+// RemoveEntityDir удаляет с диска директорию вложений сущности. Вызывается строго
+// ПОСЛЕ успешного коммита удаления записей (см. DeleteByEntity).
+//
+// Ошибки удаления не возвращаются: файловая система не участвует в транзакции, и
+// срыв очистки не должен превращать уже завершившуюся операцию в ошибку ответа —
+// остаётся осиротевший файл, который уберёт сборщик мусора. Наружу уходит Warn-лог.
+func (s *AttachmentService) RemoveEntityDir(entityType string, entityID uuid.UUID) {
+	if !allowedEntityTypes[entityType] {
+		return
+	}
 	dir := filepath.Join(s.conf.UploadDir, entityType, entityID.String())
 	if err := os.RemoveAll(dir); err != nil {
-		return fmt.Errorf("failed to remove attachment directory: %w", err)
+		logger.Warn("failed to remove attachment directory",
+			logger.StringAttr("entity_type", entityType),
+			logger.StringAttr("entity_id", entityID.String()),
+			logger.ErrAttr(err),
+		)
 	}
-	return nil
 }
