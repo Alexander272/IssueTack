@@ -150,11 +150,10 @@ export const Toolbar: FC<Props> = ({
 					height: 40,
 					order: { xs: 1, sm: 3 },
 					textTransform: 'none',
-					color: 'text.secondary',
 					minWidth: 'auto',
 					whiteSpace: 'nowrap',
 					borderColor: '#c4c4c4',
-					// color: '#9ca3af',
+					color: '#9ca3af',
 					width: { xs: '100%', sm: 'auto' },
 				}}
 			>
