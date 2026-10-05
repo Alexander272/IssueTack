@@ -78,12 +78,12 @@ func securityHeaders() gin.HandlerFunc {
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 		c.Header("Content-Security-Policy",
 			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "+
-				"img-src 'self' data: blob:; font-src 'self'; connect-src 'self' ws: wss:; "+
+				"img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; "+
 				"frame-ancestors 'none'; base-uri 'self'; form-action 'self';")
 		c.Header("Permissions-Policy",
 			"camera=(), microphone=(), geolocation=(), gyroscope=(), "+
 				"accelerometer=(), magnetometer=(), usb=(), payment=(), "+
-				"display-capture=(), document-domain=()")
+				"display-capture=()")
 		c.Next()
 	}
 }
@@ -130,6 +130,7 @@ var allowedStaticExts = map[string]bool{
 	".html": true, ".js": true, ".css": true, ".png": true, ".jpg": true,
 	".jpeg": true, ".svg": true, ".gif": true, ".ico": true, ".webp": true,
 	".woff": true, ".woff2": true, ".ttf": true, ".eot": true, ".map": true,
+	".webmanifest": true,
 }
 
 func (h *Handler) initStatic(router *gin.Engine, conf *config.Config) {
