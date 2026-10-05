@@ -15,9 +15,9 @@ export const Dashboard = () => {
 	const { data: roles, isFetching: isFetchingRoles } = useGetRolesQuery()
 
 	const stats = {
-		users: users?.data.length,
-		active: users?.data.filter(u => u.isActive).length,
-		roles: roles?.data.length,
+		users: users?.data?.length,
+		active: users?.data?.filter(u => u.isActive).length,
+		roles: roles?.data?.length,
 	}
 	const isLoading = isFetchingUsers || isFetchingRoles
 

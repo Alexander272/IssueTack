@@ -32,7 +32,7 @@ type Realm interface {
 func (r *RealmRepo) GetAll(ctx context.Context) ([]*models.Realm, error) {
 	query := fmt.Sprintf(`SELECT id, name, code, description, is_active, created_at, updated_at FROM %s ORDER BY name`, Tables.Realms)
 
-	var data []*models.Realm
+	data := []*models.Realm{}
 	rows, err := r.db.Query(ctx, query)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))

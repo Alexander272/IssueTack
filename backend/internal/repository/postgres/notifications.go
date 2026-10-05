@@ -67,7 +67,7 @@ func (r *notificationRepository) Create(ctx context.Context, tx Tx, dto *models.
 func (r *notificationRepository) GetUnread(ctx context.Context, userID uuid.UUID) ([]*models.Notification, error) {
 	query := fmt.Sprintf(`SELECT id, user_id, type, title, body, data, is_read, created_at FROM %s WHERE user_id = $1 AND is_read = FALSE ORDER BY created_at DESC`, Tables.Notifications)
 
-	var data []*models.Notification
+	data := []*models.Notification{}
 	rows, err := r.db.Query(ctx, query, userID)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to get unread notifications: %w", err))

@@ -1291,7 +1291,9 @@ func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *mode
 	hasWork := hasWrite || (ticket.Assignee != nil && ticket.Assignee.ID == userID)
 
 	current := ticket.Status
-	var allowed []models.TicketStatus
+	// Инициализация обязательна: список уходит в JSON как AccessFlags.AllowedStatuses,
+	// который во фронте объявлен TicketStatus[] — nil-слайс отдал бы null вопреки типу.
+	allowed := []models.TicketStatus{}
 
 	// add добавляет статусы в список разрешённых, исключая дубликаты
 	// (одна роль может давать статус, уже добавленный другой ролью).

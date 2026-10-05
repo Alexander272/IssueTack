@@ -48,7 +48,7 @@ export const Role = () => {
 
 	const realmMap = useMemo(() => {
 		const map = new Map<string, IRealm>()
-		realms?.data.forEach(r => map.set(r.id, r))
+		realms?.data?.forEach(r => map.set(r.id, r))
 		return map
 	}, [realms])
 
@@ -84,7 +84,7 @@ export const Role = () => {
 	}
 
 	const roleMap = new Map<string, IRoleWithStats>()
-	data?.data.forEach(role => {
+	data?.data?.forEach(role => {
 		roleMap.set(role.slug, role)
 	})
 

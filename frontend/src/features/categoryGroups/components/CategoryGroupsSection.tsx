@@ -41,13 +41,13 @@ export const CategoryGroupsSection: FC<Props> = ({ categories }) => {
 	const [editing, setEditing] = useState<ICategoryGroupDTO | null>(null)
 
 	const openCreate = () => {
-		const nextOrder = (categoryGroups?.data.length ?? 0) + 1
+		const nextOrder = (categoryGroups?.data?.length ?? 0) + 1
 		setEditing({ id: null, name: '', description: '', sortOrder: nextOrder })
 		setOpen(true)
 	}
 
 	const openEdit = (id: string) => {
-		const cg = categoryGroups?.data.find(g => g.id === id)
+		const cg = categoryGroups?.data?.find(g => g.id === id)
 		if (!cg) return
 		setEditing({
 			id: cg.id,
@@ -80,7 +80,7 @@ export const CategoryGroupsSection: FC<Props> = ({ categories }) => {
 			</Box>
 
 			<Stack spacing={1}>
-				{categoryGroups?.data.map(cg => {
+				{categoryGroups?.data?.map(cg => {
 					const section = sections.find(s => s.id === cg.id)
 					const cats = section?.categories ?? []
 					return (
@@ -149,7 +149,7 @@ export const CategoryGroupsSection: FC<Props> = ({ categories }) => {
 						</Box>
 					))}
 
-				{!categoryGroups?.data.length ? (
+				{!categoryGroups?.data?.length ? (
 					<Typography sx={{ py: 1, color: 'text.secondary' }}>
 						Разделов пока нет — все категории показываются одним списком.
 					</Typography>

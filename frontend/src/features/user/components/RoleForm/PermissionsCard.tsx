@@ -75,7 +75,7 @@ export const PermissionsCard: FC<Props> = ({ role }) => {
 	const toggleAllPermissionsHandler = (state: boolean) => {
 		console.log('toggle all', state)
 
-		data?.data.forEach(row => {
+		data?.data?.forEach(row => {
 			const groupName = row.group
 			const groupResMap = resMap.get(groupName)
 			let actionMap: Map<string, IRolePermissionItem> | null = null
@@ -251,7 +251,7 @@ export const PermissionsCard: FC<Props> = ({ role }) => {
 							</TableRow>
 						</TableHead>
 						<TableBody>
-							{data?.data.map(row => {
+							{data?.data?.map(row => {
 								let changed = false
 								let allAllowed = true
 								actions.forEach(a => {

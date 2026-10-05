@@ -31,7 +31,7 @@ export const GroupsView: FC = () => {
 
 	const filtered = useMemo(() => {
 		const q = debouncedSearch.toLowerCase()
-		return groups?.data.filter(g => {
+		return groups?.data?.filter(g => {
 			if (!q) return true
 			return g.name.toLowerCase().includes(q) || g.description.toLowerCase().includes(q)
 		})

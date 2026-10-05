@@ -82,7 +82,7 @@ func (r *favoriteRepository) GetByUser(ctx context.Context, userID uuid.UUID, fa
 	}
 	defer rows.Close()
 
-	var data []*models.TicketFavorite
+	data := []*models.TicketFavorite{}
 	for rows.Next() {
 		var fav models.TicketFavorite
 		if err := rows.Scan(&fav.ID, &fav.UserID, &fav.TicketID, &fav.Type, &fav.CreatedAt); err != nil {

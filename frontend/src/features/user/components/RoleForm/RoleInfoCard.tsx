@@ -177,7 +177,7 @@ const RealmSelect = ({ value, onChange, error }: RealmSelectProps) => {
 					Загрузка...
 				</MenuItem>
 			) : (
-				data?.data.map(realm => (
+				data?.data?.map(realm => (
 					<MenuItem key={realm.id} value={realm.id}>
 						{realm.name} ({realm.slug})
 					</MenuItem>

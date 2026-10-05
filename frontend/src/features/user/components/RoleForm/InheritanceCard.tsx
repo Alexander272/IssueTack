@@ -35,7 +35,7 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 			if (map.has(slug)) return map.get(slug)!
 
 			const res = new Set<string>()
-			const role = rolesData?.data.find(r => r.slug === slug)
+			const role = rolesData?.data?.find(r => r.slug === slug)
 
 			role?.children.forEach(parentSlug => {
 				res.add(parentSlug)
@@ -46,7 +46,7 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 			return res
 		}
 
-		rolesData?.data.forEach(r => getAncestors(r.slug))
+		rolesData?.data?.forEach(r => getAncestors(r.slug))
 		return map
 	}, [rolesData])
 
@@ -227,7 +227,7 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 									const isSelected = (selectedSlugs ?? []).includes(role.slug)
 									const check = canSelectRole(role)
 									const chainText = role.children.length
-										? `Наследуется от: ${role.children.map(s => rolesData?.data.find(r => r.slug === s)?.name || s).join(' → ')}`
+										? `Наследуется от: ${role.children.map(s => rolesData?.data?.find(r => r.slug === s)?.name || s).join(' → ')}`
 										: ''
 
 									return (

@@ -101,7 +101,7 @@ export const Users = () => {
 				newValue = newValue.filter(v => v !== '')
 			}
 
-			if (newValue.length === roles?.data.length) {
+			if (newValue.length === roles?.data?.length) {
 				newValue = ['']
 			}
 		}
@@ -172,7 +172,7 @@ export const Users = () => {
 					<MenuItem value='' disabled>
 						Все роли
 					</MenuItem>
-					{roles?.data.map(role => (
+					{roles?.data?.map(role => (
 						<MenuItem key={role.id} value={role.name}>
 							{role.name}
 						</MenuItem>
@@ -211,7 +211,7 @@ export const Users = () => {
 				{filteredUsers.map(u => (
 					<UserCard key={u.id} user={u} onClick={userHandler} />
 				))}
-				{!data?.data.length && !isFetching ? (
+				{!data?.data?.length && !isFetching ? (
 					<Typography align='center' sx={{ py: 3, color: 'text.secondary' }}>
 						Пользователи не найдены.
 					</Typography>

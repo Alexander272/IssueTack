@@ -89,7 +89,7 @@ func (r *activityRepository) Get(ctx context.Context, req *models.GetLogsDTO) ([
 	}
 	defer rows.Close()
 
-	var data []*models.ActivityLog
+	data := []*models.ActivityLog{}
 	for rows.Next() {
 		item := &models.ActivityLog{}
 		actor := nullableActivityActor{}

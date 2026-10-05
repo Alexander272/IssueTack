@@ -109,7 +109,7 @@ export const Realms = () => {
 					</TableHead>
 
 					<TableBody sx={{ '& tr:not(:last-child)': { borderBottom: '1px solid #f3f4f6' } }}>
-						{data?.data.map(r => (
+						{data?.data?.map(r => (
 							<TableRow key={r.id} hover sx={{ cursor: 'pointer', '&:hover': { bgcolor: '#fafafa' } }}>
 								<TableCell sx={{ py: 2, px: 4 }}>
 									<Typography sx={{ fontWeight: 600, color: '#111827' }}>{r.name}</Typography>
@@ -171,7 +171,7 @@ export const Realms = () => {
 								</TableCell>
 							</TableRow>
 						))}
-						{!data?.data.length && !isFetching ? (
+						{!data?.data?.length && !isFetching ? (
 							<TableRow>
 								<TableCell colSpan={6} align='center' sx={{ py: 3, color: 'text.secondary' }}>
 									Области не найдены.

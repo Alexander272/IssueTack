@@ -42,7 +42,7 @@ func (r *auditRepo) Get(ctx context.Context, req *models.GetAuditLogsDTO) ([]*mo
 	}
 	defer rows.Close()
 
-	var data []*models.AuditLog
+	data := []*models.AuditLog{}
 	for rows.Next() {
 		item := &models.AuditLog{}
 		if err := rows.Scan(
@@ -72,7 +72,7 @@ func (r *auditRepo) GetByRealm(ctx context.Context, req *models.GetAuditLogsByRe
 	}
 	defer rows.Close()
 
-	var data []*models.AuditLog
+	data := []*models.AuditLog{}
 	for rows.Next() {
 		item := &models.AuditLog{}
 		if err := rows.Scan(

@@ -44,11 +44,11 @@ export const CategoriesCard: FC = () => {
 	const disabled = !enabled
 
 	const groupsWithCategories = useMemo<IGroupWithCategories[]>(() => {
-		if (!groups?.data.length) return []
+		if (!groups?.data?.length) return []
 
-		return groups?.data.map(group => ({
+		return groups?.data?.map(group => ({
 			...group,
-			categories: categories?.data.filter(category => category.groupId === group.id) || [],
+			categories: categories?.data?.filter(category => category.groupId === group.id) || [],
 		}))
 	}, [groups, categories])
 
@@ -222,7 +222,7 @@ export const CategoriesCard: FC = () => {
 							)
 						})}
 
-						{!categories?.data.length && renderEmpty}
+						{!categories?.data?.length && renderEmpty}
 					</TableBody>
 				</Table>
 			</TableContainer>

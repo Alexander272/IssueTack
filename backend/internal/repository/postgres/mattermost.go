@@ -76,7 +76,7 @@ func (r *MattermostRepo) GetActive(ctx context.Context) ([]*models.RealmMattermo
 	}
 	defer rows.Close()
 
-	var data []*models.RealmMattermost
+	data := []*models.RealmMattermost{}
 	for rows.Next() {
 		item := &models.RealmMattermost{}
 		if err := rows.Scan(

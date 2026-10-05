@@ -120,7 +120,7 @@ func (r *RoleRepo) GetAll(ctx context.Context) ([]*models.Role, error) {
 	}
 	defer rows.Close()
 
-	var data []*models.Role
+	data := []*models.Role{}
 	for rows.Next() {
 		item := &models.Role{}
 		if err := rows.Scan(

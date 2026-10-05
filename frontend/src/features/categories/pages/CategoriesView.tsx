@@ -35,13 +35,13 @@ export const CategoriesView: FC = () => {
 
 	const groupsMap = useMemo(() => {
 		const map = new Map<string, string>()
-		groups?.data.forEach(g => map.set(g.id, g.name))
+		groups?.data?.forEach(g => map.set(g.id, g.name))
 		return map
 	}, [groups?.data])
 
 	const filtered = useMemo(() => {
 		const q = debouncedSearch.toLowerCase()
-		return categories?.data.filter(c => {
+		return categories?.data?.filter(c => {
 			if (filters.group !== 'all' && c.groupId !== filters.group) return false
 			if (filters.status === 'active' && !c.isActive) return false
 			if (filters.status === 'inactive' && c.isActive) return false

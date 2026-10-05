@@ -49,7 +49,7 @@ func (r *SiteRepo) GetByID(ctx context.Context, req *models.GetSiteByIdDTO) (*mo
 func (r *SiteRepo) Get(ctx context.Context, req *models.GetSitesDTO) ([]*models.Site, error) {
 	query := fmt.Sprintf(`SELECT id, name, address, created_at, updated_at FROM %s`, Tables.Sites)
 
-	var data []*models.Site
+	data := []*models.Site{}
 	rows, err := r.db.Query(ctx, query)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))

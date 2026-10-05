@@ -98,7 +98,7 @@ export const LastActions = () => {
 							</TableRow>
 						) : null}
 
-						{logs?.data.map((log, i) => (
+						{logs?.data?.map((log, i) => (
 							<Fragment key={i}>
 								<TableRow hover onClick={() => toggleRow(i)}>
 									<TableCell>
