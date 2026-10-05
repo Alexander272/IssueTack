@@ -5,6 +5,7 @@ import type { IUser } from '@/features/user/types/user'
 import type { ISignIn } from './types/auth'
 import { API } from '@/app/api'
 import { apiSlice } from '@/app/apiSlice'
+import { clearRememberedCredentials } from './storage/rememberedCredentials'
 import { resetUser } from '../user/userSlice'
 
 const authApiSlice = apiSlice.injectEndpoints({
@@ -35,6 +36,7 @@ const authApiSlice = apiSlice.injectEndpoints({
 				try {
 					await api.queryFulfilled
 					api.dispatch(resetUser())
+					clearRememberedCredentials()
 				} catch (error) {
 					const fetchError = (error as IBaseFetchError).error
 					toast.error(fetchError.data?.message, { autoClose: false })

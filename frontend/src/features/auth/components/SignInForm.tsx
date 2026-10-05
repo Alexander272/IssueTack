@@ -10,7 +10,7 @@ import {
 	Typography,
 	useTheme,
 } from '@mui/material'
-import { Controller, useForm } from 'react-hook-form'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
@@ -18,29 +18,20 @@ import type { ISignIn } from '../types/auth'
 import { useAppDispatch, useAppSelector } from '@/hooks/redux'
 import { setUser } from '@/features/user/userSlice'
 import { getRealm, setRealm } from '@/features/realms/realmSlice'
-import { EyeIcon, EyeOffIcon } from 'lucide-mui'
+import { EyeIcon, EyeOffIcon, TrashIcon } from 'lucide-mui'
+import {
+	clearRememberedCredentials,
+	loadRememberedCredentials,
+	saveRememberedCredentials,
+} from '../storage/rememberedCredentials'
 import { useSignInMutation } from '../authApiSlice'
 
-const rememberKey = '@issueTrack/remember'
 const defaultValues: ISignIn = { username: '', password: '', remember: false }
-
-type Remembered = { username?: string; remember?: boolean }
-
-const loadRemembered = (): ISignIn => {
-	let stored: Remembered | null = null
-	try {
-		stored = JSON.parse(localStorage.getItem(rememberKey) || 'null')
-	} catch {
-		// ignore malformed stored value
-	}
-	if (stored && typeof stored === 'object' && !!stored.username) {
-		return { username: stored.username, password: '', remember: stored.remember !== false }
-	}
-	return defaultValues
-}
 
 export const SignInForm = () => {
 	const [passIsVisible, setPassIsVisible] = useState(false)
+	const [initialCredentials] = useState(() => loadRememberedCredentials())
+	const [hasStoredPassword, setHasStoredPassword] = useState(() => !!initialCredentials)
 	const { palette } = useTheme()
 
 	const dispatch = useAppDispatch()
@@ -49,22 +40,38 @@ export const SignInForm = () => {
 	const {
 		control,
 		handleSubmit,
+		reset,
+		getValues,
 		formState: { errors },
-	} = useForm<ISignIn>({ defaultValues: loadRemembered() })
+	} = useForm<ISignIn>({
+		defaultValues: initialCredentials
+			? {
+					username: initialCredentials.username,
+					password: initialCredentials.password,
+					remember: true,
+				}
+			: defaultValues,
+	})
 
 	const [signIn, { isLoading }] = useSignInMutation()
 
+	const remember = useWatch({ control, name: 'remember' })
+
 	const togglePassVisible = () => setPassIsVisible(prev => !prev)
 
-	const signInHandler = async (data: ISignIn) => {
-		if (data.remember) {
-			localStorage.setItem(rememberKey, JSON.stringify({ username: data.username, remember: true }))
-		} else {
-			localStorage.removeItem(rememberKey)
-		}
+	const forgetHandler = () => {
+		clearRememberedCredentials()
+		setHasStoredPassword(false)
+		reset({ ...defaultValues, username: getValues('username') })
+	}
 
+	const signInHandler = async (data: ISignIn) => {
+		if (!data.remember) clearRememberedCredentials()
+
+		const request = signIn(data)
 		try {
-			const payload = await signIn(data).unwrap()
+			const payload = await request.unwrap()
+			if (data.remember) saveRememberedCredentials(data.username, data.password)
 			dispatch(setUser(payload.data))
 			if (!realm && payload.data.realms.length > 0 && payload.data.realms[0].realm) {
 				dispatch(setRealm(payload.data.realms[0].realm))
@@ -72,6 +79,8 @@ export const SignInForm = () => {
 		} catch (error) {
 			const fetchError = error as IFetchError
 			toast.error(fetchError.data?.message, { autoClose: false })
+		} finally {
+			request.reset()
 		}
 	}
 
@@ -148,24 +157,45 @@ export const SignInForm = () => {
 				/>
 			</Stack>
 
-			<Stack direction={'row'} spacing={1} sx={{ alignItems: 'center', mt: 1, mb: 1 }}>
-				<Controller
-					control={control}
-					name='remember'
-					render={({ field }) => (
-						<FormControlLabel
-							control={<Checkbox {...field} checked={field.value || false} />}
-							label='Запомнить пароль'
-							sx={{
-								pr: 2,
-								borderRadius: 20,
-								width: '100%',
-								transition: 'all 0.2s ease-in-out',
-								':hover': { cursor: 'pointer', background: palette.action.hover },
-							}}
-						/>
-					)}
-				/>
+			<Stack sx={{ mt: 1, mb: 1 }}>
+				<Stack direction={'row'} spacing={1} sx={{ alignItems: 'center' }}>
+					<Controller
+						control={control}
+						name='remember'
+						render={({ field }) => (
+							<FormControlLabel
+								control={<Checkbox {...field} checked={field.value || false} />}
+								label='Запомнить пароль'
+								sx={{
+									pr: 2,
+									borderRadius: 20,
+									flex: 1,
+									transition: 'all 0.2s ease-in-out',
+									':hover': { cursor: 'pointer', background: palette.action.hover },
+								}}
+							/>
+						)}
+					/>
+
+					{hasStoredPassword ? (
+						<Button
+							type='button'
+							size='small'
+							onClick={forgetHandler}
+							startIcon={<TrashIcon sx={{ fontSize: 16 }} />}
+							sx={{ color: palette.text.secondary, whiteSpace: 'nowrap', flexShrink: 0 }}
+						>
+							Забыть
+						</Button>
+					) : null}
+				</Stack>
+
+				{remember ? (
+					<Typography variant='caption' sx={{ display: 'block', color: palette.text.secondary, mt: 0.5 }}>
+						Пароль запомнится в этом браузере — не включайте на чужих машинах. При выходе из аккаунта он
+						стирается.
+					</Typography>
+				) : null}
 			</Stack>
 
 			<Button type='submit' disabled={isLoading} variant='contained' sx={{ borderRadius: 10, marginY: 3 }}>
