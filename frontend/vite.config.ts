@@ -50,6 +50,14 @@ export default defineConfig({
 				replacement: path.resolve(__dirname, 'src'),
 			},
 		],
+		// В node_modules есть три копии reselect (root 5.3.0 и вложенные 5.2.0
+		// в @reduxjs/toolkit/@mui/x-internals). Из-за этого dev-проверка
+		// inputStabilityCheck внутри @mui/x-charts не видит общий setGlobalDevModeChecks.
+		// dedupe сводит всё к одной копии из корня проекта.
+		dedupe: ['reselect'],
+	},
+	optimizeDeps: {
+		include: ['reselect'],
 	},
 	server: {
 		proxy: {

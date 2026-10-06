@@ -100,7 +100,7 @@ export const PeriodPicker: FC<Props> = ({ value, onChange }) => {
 					bgcolor: 'background.paper',
 					border: '1px solid',
 					borderColor: 'divider',
-					borderRadius: 9999,
+					borderRadius: 2,
 					cursor: 'pointer',
 					fontSize: '14px',
 					color: 'text.primary',

@@ -255,6 +255,41 @@ func (m *MockTicketsRepo) CountNotClosedByCategory(ctx context.Context, category
 	args := m.Called(ctx, categoryID)
 	return args.Int(0), args.Error(1)
 }
+func (m *MockTicketsRepo) GetStatisticsSummary(ctx context.Context, query models.StatisticsQuery) (*models.StatisticsSummary, error) {
+	args := m.Called(ctx, query)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.StatisticsSummary), args.Error(1)
+}
+func (m *MockTicketsRepo) GetStatisticsByStatus(ctx context.Context, query models.StatisticsQuery) ([]*models.StatusBucket, error) {
+	args := m.Called(ctx, query)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.StatusBucket), args.Error(1)
+}
+func (m *MockTicketsRepo) GetStatisticsByDimension(ctx context.Context, query models.StatisticsQuery) ([]*models.StatisticsBucket, error) {
+	args := m.Called(ctx, query)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.StatisticsBucket), args.Error(1)
+}
+func (m *MockTicketsRepo) GetStatisticsWorkload(ctx context.Context, query models.StatisticsQuery) ([]*models.WorkloadBucket, error) {
+	args := m.Called(ctx, query)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.WorkloadBucket), args.Error(1)
+}
+func (m *MockTicketsRepo) GetStatisticsTrend(ctx context.Context, query models.StatisticsQuery) ([]*models.TrendPoint, error) {
+	args := m.Called(ctx, query)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.TrendPoint), args.Error(1)
+}
 
 // MockTicketsService — мок сервисного интерфейса Tickets (владельца агрегата тикетов).
 // Используется тестами зависимости сервисов-потребителей (comments/subscriptions/favorites).

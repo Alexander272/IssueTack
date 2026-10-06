@@ -47,7 +47,10 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 				method: 'POST',
 				body,
 			}),
-			invalidatesTags: [{ type: 'Tasks', id: 'LIST' }],
+			invalidatesTags: [
+				{ type: 'Tasks', id: 'LIST' },
+				{ type: 'Statistics', id: 'TICKETS' },
+			],
 		}),
 
 		updateTask: builder.mutation<{ id: string; message: string }, Partial<ITaskDTO> & { id: string }>({
@@ -59,6 +62,7 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 			invalidatesTags: (_result, _error, arg) => [
 				{ type: 'Tasks', id: 'LIST' },
 				{ type: 'Tasks', id: arg.id },
+				{ type: 'Statistics', id: 'TICKETS' },
 			],
 			onQueryStarted: async (_arg, api) => {
 				try {
@@ -78,6 +82,7 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 			invalidatesTags: (_result, _error, id) => [
 				{ type: 'Tasks', id: 'LIST' },
 				{ type: 'Tasks', id },
+				{ type: 'Statistics', id: 'TICKETS' },
 			],
 			onQueryStarted: async (_arg, api) => {
 				try {
@@ -98,6 +103,7 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 			invalidatesTags: (_result, _error, arg) => [
 				{ type: 'Tasks', id: 'LIST' },
 				{ type: 'Tasks', id: arg.id },
+				{ type: 'Statistics', id: 'TICKETS' },
 			],
 			onQueryStarted: async (_arg, api) => {
 				try {
@@ -117,6 +123,7 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 			invalidatesTags: (_result, _error, id) => [
 				{ type: 'Tasks', id: 'LIST' },
 				{ type: 'Tasks', id },
+				{ type: 'Statistics', id: 'TICKETS' },
 			],
 			onQueryStarted: async (_arg, api) => {
 				try {

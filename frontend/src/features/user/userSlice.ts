@@ -61,16 +61,19 @@ export const getUserRealms = (state: RootState) => state.user.realms
 export const getUserCapabilities = (state: RootState) => state.user.capabilities
 export const getUserSiteId = (state: RootState) => state.user.siteId
 
+const EMPTY_PERMISSIONS: string[] = []
+const EMPTY_CAPABILITIES: IUserCapabilities = { managedGroupIds: [], memberGroupIds: [], isRealmAdmin: false }
+
 export const getCurrentTenantPermissions = createSelector(
 	[getPermissions, getRealm],
-	(permissions, realm) => permissions[realm?.id || ''] ?? [],
+	(permissions, realm) => permissions[realm?.id || ''] ?? EMPTY_PERMISSIONS,
 )
 
 export const getPermissionsSet = createSelector([getCurrentTenantPermissions], permissions => new Set(permissions))
 
 export const getCurrentCapabilities = createSelector(
 	[getUserCapabilities, getRealm],
-	(caps, realm) => caps[realm?.id || ''] ?? { managedGroupIds: [], memberGroupIds: [], isRealmAdmin: false },
+	(caps, realm) => caps[realm?.id || ''] ?? EMPTY_CAPABILITIES,
 )
 
 export const getIsManager = createSelector(

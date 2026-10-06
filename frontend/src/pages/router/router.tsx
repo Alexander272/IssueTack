@@ -8,6 +8,7 @@ import { Home } from '@/pages/home/HomeLazy'
 import { Tasks } from '@/pages/tasks/TasksLazy'
 import { TaskDetail } from '@/pages/tasks/TaskDetailLazy'
 import { Favorites } from '@/pages/favorites/FavoritesLazy'
+import { Statistics } from '@/pages/statistics/StatisticsLazy'
 import { Sites } from '@/pages/sites/SitesLazy'
 import { Groups } from '@/pages/groups/GroupsLazy'
 import { Categories } from '@/pages/categories/CategoriesLazy'
@@ -49,6 +50,10 @@ const config: RouteObject[] = [
 					{
 						path: AppRoutes.Favorites,
 						element: <Favorites />,
+					},
+					{
+						path: AppRoutes.Statistics,
+						element: <Statistics />,
 					},
 					{
 						path: AppRoutes.Sites,

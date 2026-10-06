@@ -47,6 +47,11 @@ type Tickets interface {
 	CloseResolved(ctx context.Context, cutoff time.Time) (int64, error)
 	CountNotClosedByGroup(ctx context.Context, groupID uuid.UUID) (int, error)
 	CountNotClosedByCategory(ctx context.Context, categoryID uuid.UUID) (int, error)
+	GetStatisticsSummary(ctx context.Context, query models.StatisticsQuery) (*models.StatisticsSummary, error)
+	GetStatisticsByStatus(ctx context.Context, query models.StatisticsQuery) ([]*models.StatusBucket, error)
+	GetStatisticsByDimension(ctx context.Context, query models.StatisticsQuery) ([]*models.StatisticsBucket, error)
+	GetStatisticsWorkload(ctx context.Context, query models.StatisticsQuery) ([]*models.WorkloadBucket, error)
+	GetStatisticsTrend(ctx context.Context, query models.StatisticsQuery) ([]*models.TrendPoint, error)
 }
 
 type nullableTicketAssoc struct {

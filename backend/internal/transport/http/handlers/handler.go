@@ -20,6 +20,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/realms"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/roles"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/sites"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/statistics"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/subscriptions"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/subtasks"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/tickets"
@@ -65,6 +66,7 @@ func (h *Handler) Init(group *gin.RouterGroup) {
 	secure := v1.Group("", h.middleware.VerifyToken)
 
 	tickets.Register(secure, h.services.Tickets, h.middleware)
+	statistics.Register(secure, h.services.Statistics, h.middleware)
 	subtasks.Register(secure, h.services.Subtasks, h.middleware)
 	attachments.Register(secure, h.services.Attachments, h.services.Tickets, h.conf.FileServer.MaxSize, h.middleware)
 	checklists.Register(secure, h.services.Checklists, h.middleware)

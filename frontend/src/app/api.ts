@@ -36,10 +36,7 @@ export const API = {
 		byEntity: (entityId: string) => `/activity-log?entityId=${entityId}` as const,
 	},
 	statistics: {
-		search: '/statistics/search' as const,
-		priceSearch: '/prices/statistics/search/' as const,
-		activity: '/statistics/activity' as const,
-		logins: '/statistics/logins' as const,
+		tickets: '/statistics/tickets' as const,
 	},
 
 	categories: {

@@ -115,6 +115,7 @@ export const Popover: FC<Props> = ({ open, anchorEl, onClose, initial, onApply, 
 					<Typography sx={sectionSx}>Площадка</Typography>
 					<Autocomplete
 						multiple
+						disableCloseOnSelect
 						options={siteOptions}
 						value={currentSites}
 						onChange={(_, v) => update('siteIds', v.map(s => s.id))}
