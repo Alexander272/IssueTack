@@ -83,13 +83,17 @@ func (r *CategoryGroupRepo) Create(ctx context.Context, dto *models.CategoryGrou
 }
 
 func (r *CategoryGroupRepo) Update(ctx context.Context, dto *models.CategoryGroupDTO) error {
-	query := fmt.Sprintf(`UPDATE %s SET name=$2, description=$3, sort_order=$4, realm_id=$5 WHERE id=$1`,
+	// realm_id не в SET — см. CategoryRepo.Update.
+	query := fmt.Sprintf(`UPDATE %s SET name=$2, description=$3, sort_order=$4 WHERE id=$1 AND realm_id=$5`,
 		Tables.CategoryGroups,
 	)
 
-	_, err := r.db.Exec(ctx, query, dto.ID, dto.Name, dto.Description, dto.SortOrder, dto.RealmID)
+	res, err := r.db.Exec(ctx, query, dto.ID, dto.Name, dto.Description, dto.SortOrder, dto.RealmID)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	if tag := res.RowsAffected(); tag == 0 {
+		return models.ErrNotFound
 	}
 	return nil
 }

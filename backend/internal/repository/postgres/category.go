@@ -89,13 +89,18 @@ func (r *CategoryRepo) Create(ctx context.Context, dto *models.CategoryDTO) erro
 }
 
 func (r *CategoryRepo) Update(ctx context.Context, dto *models.CategoryDTO) error {
-	query := fmt.Sprintf(`UPDATE %s SET name=$2, description=$3, group_id=$4, category_group_id=$5, def_priority=$6, is_active=$7, realm_id=$8 WHERE id=$1`,
+	// realm_id не в SET: категория принадлежит тому реалму, в котором создана,
+	// а предикт ниже не даёт переписать (и «перевезти» в свой реалм) чужую.
+	query := fmt.Sprintf(`UPDATE %s SET name=$2, description=$3, group_id=$4, category_group_id=$5, def_priority=$6, is_active=$7 WHERE id=$1 AND realm_id=$8`,
 		Tables.Categories,
 	)
 
-	_, err := r.db.Exec(ctx, query, dto.ID, dto.Name, dto.Description, dto.GroupID, dto.CategoryGroupID, dto.Priority, dto.IsActive, dto.RealmID)
+	res, err := r.db.Exec(ctx, query, dto.ID, dto.Name, dto.Description, dto.GroupID, dto.CategoryGroupID, dto.Priority, dto.IsActive, dto.RealmID)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	if tag := res.RowsAffected(); tag == 0 {
+		return models.ErrNotFound
 	}
 	return nil
 }

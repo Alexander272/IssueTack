@@ -59,14 +59,15 @@ func TestChecklistService_GetByID_OwnTemplate(t *testing.T) {
 
 	actorID := uuid.New()
 	templateID := uuid.New()
-	req := &models.GetChecklistTemplateDTO{ID: templateID}
-	template := &models.ChecklistTemplate{ID: templateID, Title: "Template", RealmID: uuid.New(), CreatedBy: &actorID}
+	realmID := uuid.New()
+	req := &models.GetChecklistTemplateDTO{ID: templateID, RealmID: realmID}
+	template := &models.ChecklistTemplate{ID: templateID, Title: "Template", RealmID: realmID, CreatedBy: &actorID}
 	items := []*models.ChecklistTemplateItem{{ID: uuid.New(), Title: "Item 1"}}
 
 	mockRepo.On("GetByID", mock.Anything, req).Return(template, nil)
 	mockRepo.On("GetItems", mock.Anything, templateID).Return(items, nil)
 
-	got, err := svc.GetByID(context.Background(), req, actorID, "")
+	got, err := svc.GetByID(context.Background(), req, actorID, realmID)
 	assert.NoError(t, err)
 	assert.Equal(t, items, got.Items)
 }
@@ -76,12 +77,13 @@ func TestChecklistService_GetByID_Forbidden(t *testing.T) {
 
 	actorID := uuid.New()
 	templateID := uuid.New()
-	template := &models.ChecklistTemplate{ID: templateID, Title: "Template", RealmID: uuid.New(), CreatedBy: ptr(uuid.New())}
+	realmID := uuid.New()
+	template := &models.ChecklistTemplate{ID: templateID, Title: "Template", RealmID: realmID, CreatedBy: ptr(uuid.New())}
 
 	mockRepo.On("GetByID", mock.Anything, mock.Anything).Return(template, nil)
 	mockPolicies.On("Enforce", actorID.String(), mock.Anything, string(access.ResourceChecklist), string(access.Read)).Return(false, nil)
 
-	_, err := svc.GetByID(context.Background(), &models.GetChecklistTemplateDTO{ID: templateID}, actorID, "")
+	_, err := svc.GetByID(context.Background(), &models.GetChecklistTemplateDTO{ID: templateID, RealmID: realmID}, actorID, realmID)
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 }
 
@@ -90,14 +92,15 @@ func TestChecklistService_GetByID_WithPerm(t *testing.T) {
 
 	actorID := uuid.New()
 	templateID := uuid.New()
-	template := &models.ChecklistTemplate{ID: templateID, Title: "Template", RealmID: uuid.New(), CreatedBy: ptr(uuid.New())}
+	realmID := uuid.New()
+	template := &models.ChecklistTemplate{ID: templateID, Title: "Template", RealmID: realmID, CreatedBy: ptr(uuid.New())}
 	items := []*models.ChecklistTemplateItem{{ID: uuid.New(), Title: "Item 1"}}
 
 	mockRepo.On("GetByID", mock.Anything, mock.Anything).Return(template, nil)
 	mockPolicies.On("Enforce", actorID.String(), template.RealmID.String(), string(access.ResourceChecklist), string(access.Read)).Return(true, nil)
 	mockRepo.On("GetItems", mock.Anything, templateID).Return(items, nil)
 
-	got, err := svc.GetByID(context.Background(), &models.GetChecklistTemplateDTO{ID: templateID}, actorID, "")
+	got, err := svc.GetByID(context.Background(), &models.GetChecklistTemplateDTO{ID: templateID, RealmID: realmID}, actorID, realmID)
 	assert.NoError(t, err)
 	assert.Equal(t, items, got.Items)
 }
@@ -152,12 +155,13 @@ func TestChecklistService_Update_Owner(t *testing.T) {
 	mockRepo, _, _, svc := checkListFixtures()
 
 	actorID := uuid.New()
-	dto := &models.ChecklistTemplateDTO{ID: uuid.New(), Title: "Updated"}
-	mockRepo.On("GetByID", mock.Anything, &models.GetChecklistTemplateDTO{ID: dto.ID}).Return(
-		&models.ChecklistTemplate{ID: dto.ID, RealmID: uuid.New(), CreatedBy: &actorID}, nil)
+	realmID := uuid.New()
+	dto := &models.ChecklistTemplateDTO{ID: uuid.New(), Title: "Updated", RealmID: realmID}
+	mockRepo.On("GetByID", mock.Anything, &models.GetChecklistTemplateDTO{ID: dto.ID, RealmID: realmID}).Return(
+		&models.ChecklistTemplate{ID: dto.ID, RealmID: realmID, CreatedBy: &actorID}, nil)
 	mockRepo.On("Update", mock.Anything, dto).Return(nil)
 
-	err := svc.Update(context.Background(), dto, actorID, "")
+	err := svc.Update(context.Background(), dto, actorID, realmID)
 	assert.NoError(t, err)
 }
 
@@ -167,12 +171,12 @@ func TestChecklistService_Update_Forbidden(t *testing.T) {
 	actorID := uuid.New()
 	templateID := uuid.New()
 	realmID := uuid.New()
-	dto := &models.ChecklistTemplateDTO{ID: templateID, Title: "Updated"}
-	mockRepo.On("GetByID", mock.Anything, &models.GetChecklistTemplateDTO{ID: dto.ID}).Return(
+	dto := &models.ChecklistTemplateDTO{ID: templateID, Title: "Updated", RealmID: realmID}
+	mockRepo.On("GetByID", mock.Anything, &models.GetChecklistTemplateDTO{ID: dto.ID, RealmID: realmID}).Return(
 		&models.ChecklistTemplate{ID: dto.ID, RealmID: realmID, CreatedBy: ptr(uuid.New())}, nil)
 	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceChecklist), string(access.Write)).Return(false, nil)
 
-	err := svc.Update(context.Background(), dto, actorID, "")
+	err := svc.Update(context.Background(), dto, actorID, realmID)
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 	mockRepo.AssertNotCalled(t, "Update")
 }
@@ -183,12 +187,12 @@ func TestChecklistService_Update_WithWritePerm(t *testing.T) {
 	actorID := uuid.New()
 	realmID := uuid.New()
 	dto := &models.ChecklistTemplateDTO{ID: uuid.New(), Title: "Updated", RealmID: realmID}
-	mockRepo.On("GetByID", mock.Anything, &models.GetChecklistTemplateDTO{ID: dto.ID}).Return(
+	mockRepo.On("GetByID", mock.Anything, &models.GetChecklistTemplateDTO{ID: dto.ID, RealmID: realmID}).Return(
 		&models.ChecklistTemplate{ID: dto.ID, RealmID: realmID, CreatedBy: ptr(uuid.New())}, nil)
 	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceChecklist), string(access.Write)).Return(true, nil)
 	mockRepo.On("Update", mock.Anything, dto).Return(nil)
 
-	err := svc.Update(context.Background(), dto, actorID, "")
+	err := svc.Update(context.Background(), dto, actorID, realmID)
 	assert.NoError(t, err)
 }
 
@@ -196,13 +200,13 @@ func TestChecklistService_Delete_Forbidden(t *testing.T) {
 	mockRepo, _, mockPolicies, svc := checkListFixtures()
 
 	actorID := uuid.New()
-	dto := &models.DelChecklistTemplateDTO{ID: uuid.New()}
 	realmID := uuid.New()
-	mockRepo.On("GetByID", mock.Anything, &models.GetChecklistTemplateDTO{ID: dto.ID}).Return(
+	dto := &models.DelChecklistTemplateDTO{ID: uuid.New(), RealmID: realmID}
+	mockRepo.On("GetByID", mock.Anything, &models.GetChecklistTemplateDTO{ID: dto.ID, RealmID: realmID}).Return(
 		&models.ChecklistTemplate{ID: dto.ID, RealmID: realmID, CreatedBy: ptr(uuid.New())}, nil)
 	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceChecklist), string(access.Delete)).Return(false, nil)
 
-	err := svc.Delete(context.Background(), dto, actorID, "")
+	err := svc.Delete(context.Background(), dto, actorID, realmID)
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 	mockRepo.AssertNotCalled(t, "Delete")
 }
@@ -213,11 +217,12 @@ func TestChecklistService_SetItems_Owner(t *testing.T) {
 	actorID := uuid.New()
 	templateID := uuid.New()
 	items := []*models.ChecklistTemplateItemDTO{{Title: "Item"}}
-	mockRepo.On("GetByID", mock.Anything, &models.GetChecklistTemplateDTO{ID: templateID}).Return(
-		&models.ChecklistTemplate{ID: templateID, RealmID: uuid.New(), CreatedBy: &actorID}, nil)
+	realmID := uuid.New()
+	mockRepo.On("GetByID", mock.Anything, &models.GetChecklistTemplateDTO{ID: templateID, RealmID: realmID}).Return(
+		&models.ChecklistTemplate{ID: templateID, RealmID: realmID, CreatedBy: &actorID}, nil)
 	mockRepo.On("SetItems", mock.Anything, nil, templateID, items).Return(nil)
 
-	err := svc.SetItems(context.Background(), nil, templateID, items, actorID, "")
+	err := svc.SetItems(context.Background(), nil, templateID, items, actorID, realmID)
 	assert.NoError(t, err)
 }
 
@@ -227,11 +232,12 @@ func TestChecklistService_GetItems_Own(t *testing.T) {
 	actorID := uuid.New()
 	templateID := uuid.New()
 	expected := []*models.ChecklistTemplateItem{{ID: uuid.New(), Title: "Item"}}
-	mockRepo.On("GetByID", mock.Anything, &models.GetChecklistTemplateDTO{ID: templateID}).Return(
-		&models.ChecklistTemplate{ID: templateID, RealmID: uuid.New(), CreatedBy: &actorID}, nil)
+	realmID := uuid.New()
+	mockRepo.On("GetByID", mock.Anything, &models.GetChecklistTemplateDTO{ID: templateID, RealmID: realmID}).Return(
+		&models.ChecklistTemplate{ID: templateID, RealmID: realmID, CreatedBy: &actorID}, nil)
 	mockRepo.On("GetItems", mock.Anything, templateID).Return(expected, nil)
 
-	got, err := svc.GetItems(context.Background(), templateID, actorID, "")
+	got, err := svc.GetItems(context.Background(), templateID, actorID, realmID)
 	assert.NoError(t, err)
 	assert.Equal(t, expected, got)
 }
@@ -247,12 +253,13 @@ func TestChecklistService_ApplyTemplate_Success(t *testing.T) {
 		{ID: uuid.New(), Title: "Task 2", SortOrder: 2},
 	}
 
-	mockRepo.On("GetByID", mock.Anything, &models.GetChecklistTemplateDTO{ID: templateID}).Return(
-		&models.ChecklistTemplate{ID: templateID, RealmID: uuid.New(), CreatedBy: &actor.ID}, nil)
+	realmID := uuid.New()
+	mockRepo.On("GetByID", mock.Anything, &models.GetChecklistTemplateDTO{ID: templateID, RealmID: realmID}).Return(
+		&models.ChecklistTemplate{ID: templateID, RealmID: realmID, CreatedBy: &actor.ID}, nil)
 	mockRepo.On("GetItems", mock.Anything, templateID).Return(items, nil)
 	mockSubtasks.On("CreateSeveral", mock.Anything, nil, mock.Anything).Return(nil)
 
-	err := svc.ApplyTemplate(context.Background(), nil, &models.ApplyTemplateDTO{TicketID: ticketID, TemplateID: templateID, Actor: actor})
+	err := svc.ApplyTemplate(context.Background(), nil, &models.ApplyTemplateDTO{TicketID: ticketID, TemplateID: templateID, Actor: actor, RealmID: realmID})
 	assert.NoError(t, err)
 }
 
@@ -263,10 +270,10 @@ func TestChecklistService_ApplyTemplate_Forbidden(t *testing.T) {
 	actor := &models.Actor{ID: uuid.New(), Name: "test"}
 	tpl := &models.ChecklistTemplate{ID: templateID, RealmID: uuid.New(), CreatedBy: ptr(uuid.New())}
 
-	mockRepo.On("GetByID", mock.Anything, &models.GetChecklistTemplateDTO{ID: templateID}).Return(tpl, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetChecklistTemplateDTO{ID: templateID, RealmID: tpl.RealmID}).Return(tpl, nil)
 	mockPolicies.On("Enforce", actor.ID.String(), tpl.RealmID.String(), string(access.ResourceChecklist), string(access.Read)).Return(false, nil)
 
-	err := svc.ApplyTemplate(context.Background(), nil, &models.ApplyTemplateDTO{TicketID: uuid.New(), TemplateID: templateID, Actor: actor})
+	err := svc.ApplyTemplate(context.Background(), nil, &models.ApplyTemplateDTO{TicketID: uuid.New(), TemplateID: templateID, Actor: actor, RealmID: tpl.RealmID})
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 }
 
@@ -277,15 +284,54 @@ func TestChecklistService_ApplyTemplate_EmptyItems(t *testing.T) {
 	templateID := uuid.New()
 	actor := &models.Actor{ID: uuid.New(), Name: "test"}
 
-	mockRepo.On("GetByID", mock.Anything, &models.GetChecklistTemplateDTO{ID: templateID}).Return(
-		&models.ChecklistTemplate{ID: templateID, RealmID: uuid.New(), CreatedBy: &actor.ID}, nil)
+	realmID := uuid.New()
+	mockRepo.On("GetByID", mock.Anything, &models.GetChecklistTemplateDTO{ID: templateID, RealmID: realmID}).Return(
+		&models.ChecklistTemplate{ID: templateID, RealmID: realmID, CreatedBy: &actor.ID}, nil)
 	mockRepo.On("GetItems", mock.Anything, templateID).Return([]*models.ChecklistTemplateItem{}, nil)
 
-	err := svc.ApplyTemplate(context.Background(), nil, &models.ApplyTemplateDTO{TicketID: ticketID, TemplateID: templateID, Actor: actor})
+	err := svc.ApplyTemplate(context.Background(), nil, &models.ApplyTemplateDTO{TicketID: ticketID, TemplateID: templateID, Actor: actor, RealmID: realmID})
 	assert.NoError(t, err)
 	mockSubtasks.AssertNotCalled(t, "CreateSeveral")
 }
 
 func ptr[T any](v T) *T {
 	return &v
+}
+
+// Регрессия на IDOR: автор шаблона из другого реалма не должен управлять им,
+// даже если у него есть checklist:write в «своём» реалме. Раньше проверка шла по
+// домену заголовка, а при пустом заголовке — по realm самой сущности.
+func TestChecklistService_Update_ForeignRealmTemplate(t *testing.T) {
+	mockRepo, _, mockPolicies, svc := checkListFixtures()
+
+	actorID := uuid.New()
+	realmID := uuid.New()
+	foreignRealmID := uuid.New()
+	dto := &models.ChecklistTemplateDTO{ID: uuid.New(), Title: "Updated", RealmID: realmID}
+
+	// Автор — тот же пользователь, но шаблон остался в чужом реалме.
+	mockRepo.On("GetByID", mock.Anything, &models.GetChecklistTemplateDTO{ID: dto.ID, RealmID: realmID}).
+		Return(&models.ChecklistTemplate{ID: dto.ID, RealmID: foreignRealmID, CreatedBy: &actorID}, nil)
+	mockPolicies.On("Enforce", actorID.String(), mock.Anything, string(access.ResourceChecklist), mock.Anything).Return(true, nil)
+
+	err := svc.Update(context.Background(), dto, actorID, realmID)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+	mockRepo.AssertNotCalled(t, "Update")
+}
+
+// Тот же сценарий на удалении.
+func TestChecklistService_Delete_ForeignRealmTemplate(t *testing.T) {
+	mockRepo, _, mockPolicies, svc := checkListFixtures()
+
+	actorID := uuid.New()
+	realmID := uuid.New()
+	dto := &models.DelChecklistTemplateDTO{ID: uuid.New(), RealmID: realmID}
+
+	mockRepo.On("GetByID", mock.Anything, &models.GetChecklistTemplateDTO{ID: dto.ID, RealmID: realmID}).
+		Return(&models.ChecklistTemplate{ID: dto.ID, RealmID: uuid.New(), CreatedBy: &actorID}, nil)
+	mockPolicies.On("Enforce", actorID.String(), mock.Anything, string(access.ResourceChecklist), mock.Anything).Return(true, nil)
+
+	err := svc.Delete(context.Background(), dto, actorID, realmID)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+	mockRepo.AssertNotCalled(t, "Delete")
 }

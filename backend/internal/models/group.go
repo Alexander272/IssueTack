@@ -26,11 +26,19 @@ type GroupShort struct {
 	Name string    `json:"name" db:"name"`
 }
 
+// GetGroupDTO — запрос одной группы. RealmID заполняется сервером из
+// авторизованного realm (constants.CtxRealm) и не принимается от клиента: группа
+// ищется по id, поэтому без предиката realm запрос «мой realm + чужой uuid»
+// проходил бы к чужой группе. json:"-" исключает подстановку realm из тела.
 type GetGroupDTO struct {
-	ID uuid.UUID `json:"id" db:"id"`
+	ID      uuid.UUID  `json:"id" db:"id"`
+	RealmID *uuid.UUID `json:"-" db:"-"`
 }
 
-type GetGroupsDTO struct{}
+// GetGroupsDTO — запрос списка групп. RealmID заполняется сервером (см. GetGroupDTO).
+type GetGroupsDTO struct {
+	RealmID *uuid.UUID `json:"-" db:"-"`
+}
 
 type GroupDTO struct {
 	ID                uuid.UUID   `json:"id" db:"id"`
@@ -49,7 +57,8 @@ type GroupManagerReq struct {
 }
 
 type DelGroupDTO struct {
-	ID uuid.UUID `json:"id" db:"id"`
+	ID      uuid.UUID  `json:"id" db:"id"`
+	RealmID *uuid.UUID `json:"-" db:"-"`
 }
 
 // GroupMember — вспомогательная структура для работы со связями в БД
@@ -58,7 +67,11 @@ type GroupMember struct {
 	UserID  uuid.UUID `json:"userId" db:"user_id"`
 }
 
+// GroupMemberDTO — добавление/удаление участника группы. GroupID приходит от
+// клиента, поэтому RealmID (подставленный сервером) обязателен: без него
+// участника можно было бы добавить в группу чужого реалма.
 type GroupMemberDTO struct {
-	GroupID uuid.UUID `json:"groupId" db:"group_id"`
-	UserID  uuid.UUID `json:"userId" db:"user_id"`
+	GroupID uuid.UUID  `json:"groupId" db:"group_id"`
+	UserID  uuid.UUID  `json:"userId" db:"user_id"`
+	RealmID *uuid.UUID `json:"-" db:"-"`
 }

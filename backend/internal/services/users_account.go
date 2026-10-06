@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/events"
@@ -21,6 +22,25 @@ func (s *userService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto []*
 	return nil
 }
 
+// ensureRealmMembership требует, чтобы пользователь состоял в авторизованном реалме.
+//
+// Пользователь — глобальная сущность (учётная запись общая для реалмов), поэтому
+// users:write в «своём» realm не должен давать правку учётки сотрудника другой области:
+// иначе запрос вида «realm=A + чужой uuid» менял ФИО, email и активность чужого
+// пользователя. Пустой realm допускается только для внутренних вызовов без контекста.
+func (s *userService) ensureRealmMembership(ctx context.Context, userID, realmID uuid.UUID) error {
+	if realmID == uuid.Nil {
+		return nil
+	}
+	if _, err := s.userRealm.GetByUserAndRealm(ctx, userID, realmID); err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			return models.ErrNotFound
+		}
+		return fmt.Errorf("failed to check user realm membership: %w", err)
+	}
+	return nil
+}
+
 // UpdateAccount обновляет учётную запись пользователя и его привязки к realm'ам, публикуя событие аудита.
 func (s *userService) UpdateAccount(ctx context.Context, dto *models.UpdateAccountDTO) error {
 	// Защита от кросс-реалмовой эскалации: users:write проверяется Casbin по домену
@@ -36,6 +56,10 @@ func (s *userService) UpdateAccount(ctx context.Context, dto *models.UpdateAccou
 				return fmt.Errorf("%w: привязки ролей в другом realm изменять запрещено", models.ErrPermissionDenied)
 			}
 		}
+	}
+
+	if err := s.ensureRealmMembership(ctx, dto.ID, dto.RealmID); err != nil {
+		return err
 	}
 
 	candidate, err := s.GetByID(ctx, dto.ID)

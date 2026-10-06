@@ -92,7 +92,9 @@ func (h *Handler) getByID(c *gin.Context) {
 		return
 	}
 
-	realmIdStr := c.GetHeader("realm")
+	// Реалм берём из контекста (middleware проверил членство и права): строка
+	// заголовка здесь — не авторизованное значение.
+	realmIdStr := utils.GetRealmString(c)
 
 	data, err := h.service.GetByID(c, &models.GetTicketByIdDTO{ID: id, Actor: actor, RealmID: realmIdStr})
 	if err != nil {
@@ -115,7 +117,9 @@ func (h *Handler) take(c *gin.Context) {
 		return
 	}
 
-	realmIdStr := c.GetHeader("realm")
+	// Реалм берём из контекста (middleware проверил членство и права): строка
+	// заголовка здесь — не авторизованное значение.
+	realmIdStr := utils.GetRealmString(c)
 
 	if err := h.service.Take(c, &models.TakeTicketDTO{ID: id, Actor: actor, RealmID: realmIdStr}); err != nil {
 		response.SendError(c, err)
@@ -143,7 +147,9 @@ func (h *Handler) transfer(c *gin.Context) {
 		return
 	}
 
-	realmIdStr := c.GetHeader("realm")
+	// Реалм берём из контекста (middleware проверил членство и права): строка
+	// заголовка здесь — не авторизованное значение.
+	realmIdStr := utils.GetRealmString(c)
 	dto.RealmID = realmIdStr
 
 	actor := utils.GetActor(c)
@@ -166,7 +172,7 @@ func (h *Handler) create(c *gin.Context) {
 		return
 	}
 
-	realmID, ok := utils.GetRealmUUID(c)
+	realmID, ok := utils.RequireRealmUUID(c)
 	if !ok {
 		return
 	}
@@ -203,10 +209,11 @@ func (h *Handler) update(c *gin.Context) {
 		return
 	}
 
-	realmID, ok := utils.GetRealmUUID(c)
-	if ok {
-		dto.RealmID = &realmID
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
 	}
+	dto.RealmID = &realmID
 
 	actor := utils.GetActor(c)
 	if actor == nil {
@@ -234,7 +241,9 @@ func (h *Handler) delete(c *gin.Context) {
 		return
 	}
 
-	realmIdStr := c.GetHeader("realm")
+	// Реалм берём из контекста (middleware проверил членство и права): строка
+	// заголовка здесь — не авторизованное значение.
+	realmIdStr := utils.GetRealmString(c)
 
 	if err := h.service.Delete(c, &models.DeleteTicketDTO{ID: id, Actor: actor, RealmID: realmIdStr}); err != nil {
 		response.SendError(c, err)

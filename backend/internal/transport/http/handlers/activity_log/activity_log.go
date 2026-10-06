@@ -7,6 +7,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -32,7 +33,14 @@ func Register(api *gin.RouterGroup, service services.ActivityLog, middleware *mi
 }
 
 func (h *Handler) getAll(c *gin.Context) {
-	dto := &models.GetLogsDTO{}
+	// Реалм берётся только из контекста: query-параметр realmId задавал клиент,
+	// поэтому /activity-log?realmId=<чужой> отдавал журнал чужой области.
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	dto := &models.GetLogsDTO{RealmID: &realmID}
 
 	if entityID := c.Query("entityId"); entityID != "" {
 		id, err := uuid.Parse(entityID)
@@ -53,15 +61,6 @@ func (h *Handler) getAll(c *gin.Context) {
 		}
 		dto.ParentID = &id
 	}
-	if realmID := c.Query("realmId"); realmID != "" {
-		id, err := uuid.Parse(realmID)
-		if err != nil {
-			response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
-			return
-		}
-		dto.RealmID = &id
-	}
-
 	data, err := h.service.Get(c, dto)
 	if err != nil {
 		response.SendError(c, err)

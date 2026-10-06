@@ -30,13 +30,15 @@ type AuditLogs interface {
 }
 
 func (r *auditRepo) Get(ctx context.Context, req *models.GetAuditLogsDTO) ([]*models.AuditLog, error) {
+	// Без фильтра по realm отдавался журнал всех областей вместе с old/new values:
+	// имена пользователей, названия сущностей и содержимое полей чужих реалмов.
 	query := fmt.Sprintf(`SELECT id, changed_by, changed_by_name, action, entity_type, entity_id, realm_id, realm_name, 
 		old_values, new_values, created_at 
-		FROM %s ORDER BY realm_name, created_at DESC`,
+		FROM %s WHERE realm_id = $1 ORDER BY realm_name, created_at DESC`,
 		Tables.AuditLogs,
 	)
 
-	rows, err := r.db.Query(ctx, query)
+	rows, err := r.db.Query(ctx, query, req.RealmID)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}

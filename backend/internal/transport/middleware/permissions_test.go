@@ -56,6 +56,14 @@ func newPermissionsMiddleware(realms *fakeUserRealms, policies *fakeAccessPolici
 
 func runPermissions(t *testing.T, m *Middleware, realmHeader string) *httptest.ResponseRecorder {
 	t.Helper()
+	w, _, _ := runPermissionsCtx(t, m, realmHeader)
+	return w
+}
+
+// runPermissionsCtx возвращает значения, которые мидлвар положил в контекст для
+// следующих обработчиков: realm из контекста — единственный авторизованный.
+func runPermissionsCtx(t *testing.T, m *Middleware, realmHeader string) (*httptest.ResponseRecorder, any, any) {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 
 	w := httptest.NewRecorder()
@@ -66,9 +74,16 @@ func runPermissions(t *testing.T, m *Middleware, realmHeader string) *httptest.R
 	}
 	c.Set(constants.CtxUser, models.User{ID: uuid.New()})
 
+	var gotRealm, gotUser any
 	handler := m.CheckPermissions(access.Reg.R(access.ResourceTicket).Read())
-	handler(c)
-	return w
+	probe := func(pc *gin.Context) {
+		gotRealm, _ = pc.Get(constants.CtxRealm)
+		gotUser, _ = pc.Get(constants.CtxUser)
+	}
+	for _, h := range []gin.HandlerFunc{handler, probe} {
+		h(c)
+	}
+	return w, gotRealm, gotUser
 }
 
 // TestCheckPermissions_ForeignRealmDenied — регрессия на IDOR: заголовок realm задаёт
@@ -157,4 +172,30 @@ func TestCheckPermissions_NoSession(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 	assert.Empty(t, realms.calls)
 	assert.Empty(t, policies.enforced)
+}
+
+// TestCheckPermissions_RealmInContext — мидлвар обязан класть в контекст realm,
+// под которым запрос разрешён: хендлеры берут его оттуда (utils.RequireRealmUUID),
+// иначе можно было бы подменить realm в самом handler-слое.
+func TestCheckPermissions_RealmInContext(t *testing.T) {
+	realmID := uuid.New()
+	realms := &fakeUserRealms{membership: &models.UserRealm{RealmID: realmID, IsActive: true}}
+	policies := &fakeAccessPolicies{}
+
+	w, gotRealm, gotUser := runPermissionsCtx(t, newPermissionsMiddleware(realms, policies), realmID.String())
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, realmID.String(), gotRealm, "в контексте должен лежать авторизованный realm")
+	assert.NotNil(t, gotUser)
+}
+
+// TestCheckPermissions_NoRealmInContext — на маршрутах вне реалмов домен пустой,
+// и в контексте тоже пусто: хендлеры обязаны это учитывать (RequireRealmUUID).
+func TestCheckPermissions_NoRealmInContext(t *testing.T) {
+	realms := &fakeUserRealms{}
+	policies := &fakeAccessPolicies{}
+
+	_, gotRealm, _ := runPermissionsCtx(t, newPermissionsMiddleware(realms, policies), "")
+
+	assert.Equal(t, "", gotRealm, "без заголовка домен пустой, авторизованного realm нет")
 }

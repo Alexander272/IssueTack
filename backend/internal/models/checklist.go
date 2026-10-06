@@ -27,6 +27,9 @@ type ChecklistTemplateItem struct {
 
 type GetChecklistTemplateDTO struct {
 	ID uuid.UUID `json:"id"`
+	// RealmID — реалм, под которым запрос авторизован (заполняет хендлер):
+	// шаблон чужого реалма по «своему realm + чужой uuid» иначе читался и правился.
+	RealmID uuid.UUID `json:"-"`
 }
 
 type GetChecklistTemplatesDTO struct {
@@ -39,7 +42,8 @@ type GetChecklistTemplatesDTO struct {
 }
 
 type ChecklistTemplateDTO struct {
-	RealmID     uuid.UUID `json:"realmId"`
+	// RealmID подставляется сервером из контекста (см. GetChecklistTemplateDTO.RealmID).
+	RealmID     uuid.UUID `json:"-"`
 	ID          uuid.UUID `json:"id"`
 	Title       string    `json:"title"`
 	Description string    `json:"description,omitempty"`
@@ -57,11 +61,15 @@ type ChecklistTemplateItemDTO struct {
 }
 
 type DelChecklistTemplateDTO struct {
-	ID uuid.UUID `json:"id"`
+	ID      uuid.UUID `json:"id"`
+	RealmID uuid.UUID `json:"-"`
 }
 
 type ApplyTemplateDTO struct {
 	TicketID   uuid.UUID
 	TemplateID uuid.UUID
 	Actor      *Actor
+	// RealmID — авторизованный реалм (из контекста): шаблон должен быть из него же,
+	// иначе к тикету применялся бы чек-лист чужой области.
+	RealmID uuid.UUID
 }

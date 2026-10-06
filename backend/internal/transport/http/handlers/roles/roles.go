@@ -45,7 +45,12 @@ func Register(api *gin.RouterGroup, service services.Roles, middleware *middlewa
 }
 
 func (h *Handler) getAll(c *gin.Context) {
-	roles, err := h.service.GetAll(c)
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	roles, err := h.service.GetAll(c, &realmID)
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -54,6 +59,11 @@ func (h *Handler) getAll(c *gin.Context) {
 }
 
 func (h *Handler) get(c *gin.Context) {
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
 	strId := c.Param("id")
 	id, err := uuid.Parse(strId)
 	if err != nil {
@@ -61,7 +71,7 @@ func (h *Handler) get(c *gin.Context) {
 		return
 	}
 
-	role, err := h.service.GetOne(c, &models.GetRoleDTO{ID: id})
+	role, err := h.service.GetOne(c, &models.GetRoleDTO{ID: id, RealmID: &realmID})
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -70,7 +80,12 @@ func (h *Handler) get(c *gin.Context) {
 }
 
 func (h *Handler) getWithStats(c *gin.Context) {
-	roles, err := h.service.GetWithStats(c)
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	roles, err := h.service.GetWithStats(c, &realmID)
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -79,6 +94,11 @@ func (h *Handler) getWithStats(c *gin.Context) {
 }
 
 func (h *Handler) getWithPermissions(c *gin.Context) {
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
 	strId := c.Param("id")
 	id, err := uuid.Parse(strId)
 	if err != nil {
@@ -86,7 +106,7 @@ func (h *Handler) getWithPermissions(c *gin.Context) {
 		return
 	}
 
-	role, err := h.service.GetOneWithPermissions(c, &models.GetRoleDTO{ID: id})
+	role, err := h.service.GetOneWithPermissions(c, &models.GetRoleDTO{ID: id, RealmID: &realmID})
 	if err != nil {
 		response.SendError(c, err, id)
 		return
@@ -95,14 +115,23 @@ func (h *Handler) getWithPermissions(c *gin.Context) {
 }
 
 func (h *Handler) create(c *gin.Context) {
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
 	dto := &models.RoleDTO{}
 	if err := c.BindJSON(dto); err != nil {
 		response.SendError(c, err)
 		return
 	}
+	// realm только из контекста: тело запроса не может выбрать, в какую область
+	// попадёт роль (иначе роль чужого реалма создавалась бы в «своём»).
+	dto.RealmID = realmID
 
+	// Новая роль всегда обычная: системность задаёт сервер, is_editable=true —
+	// дефолт колонки (в INSERT не пишется).
 	dto.IsSystem = false
-	dto.IsEditable = true
 
 	actor := utils.GetActor(c)
 	if actor == nil {
@@ -119,6 +148,11 @@ func (h *Handler) create(c *gin.Context) {
 }
 
 func (h *Handler) update(c *gin.Context) {
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
 	strId := c.Param("id")
 	id, err := uuid.Parse(strId)
 	if err != nil {
@@ -136,9 +170,12 @@ func (h *Handler) update(c *gin.Context) {
 		return
 	}
 	dto.ID = id
+	dto.RealmID = realmID
 
-	dto.IsSystem = false
-	dto.IsEditable = true
+	// is_system/is_editable не трогаем: они не пишутся в UPDATE, иначе правка
+	// системной роли снимала бы с неё защиту `AND NOT is_system` в удалении.
+	// Системность роли меняется только сидом, неприкасаемость — только созданием
+	// роли с is_editable=false (в API это root, см. RoleRepo.Create).
 
 	actor := utils.GetActor(c)
 	if actor == nil {
@@ -155,13 +192,18 @@ func (h *Handler) update(c *gin.Context) {
 }
 
 func (h *Handler) delete(c *gin.Context) {
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
 	strId := c.Param("id")
 	id, err := uuid.Parse(strId)
 	if err != nil {
 		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
 		return
 	}
-	dto := &models.DeleteRoleDTO{ID: id}
+	dto := &models.DeleteRoleDTO{ID: id, RealmID: &realmID}
 
 	actor := utils.GetActor(c)
 	if actor == nil {
@@ -178,6 +220,11 @@ func (h *Handler) delete(c *gin.Context) {
 }
 
 func (h *Handler) setPermissions(c *gin.Context) {
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
 	var req struct {
 		PermissionIDs []string `json:"permissionIds"`
 	}
@@ -186,9 +233,15 @@ func (h *Handler) setPermissions(c *gin.Context) {
 		return
 	}
 
-	roleID := c.Param("id")
+	roleID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
 
-	if err := h.service.SetPermissions(c, roleID, req.PermissionIDs); err != nil {
+	dto := &models.SetPermissionsDTO{RoleID: roleID, PermissionIDs: req.PermissionIDs, RealmID: &realmID}
+
+	if err := h.service.SetPermissions(c, dto); err != nil {
 		response.SendError(c, err, req)
 		return
 	}

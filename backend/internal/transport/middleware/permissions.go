@@ -93,6 +93,7 @@ func (m *Middleware) CheckPermissions(perms ...access.Permission) gin.HandlerFun
 			return
 		}
 
+		c.Set(constants.CtxRealm, realmId)
 		c.Next()
 	}
 }

@@ -21,10 +21,16 @@ type AuditLog struct {
 	CreatedAt     time.Time        `json:"createdAt" db:"created_at"`
 }
 
-type GetAuditLogsDTO struct{}
+// GetAuditLogsDTO — журнал изменений своего реалма. RealmID заполняет хендлер
+// значением, под которым Casbin разрешил чтение: клиент выбирать реалм не может.
+type GetAuditLogsDTO struct {
+	RealmID uuid.UUID `json:"-" db:"-"`
+}
 
+// GetAuditLogsByRealmDTO — см. RealmID в GetAuditLogsDTO. Путь /audit/by-realm/:realmId
+// оставлен для совместимости, но обязан совпадать с авторизованным реалмом.
 type GetAuditLogsByRealmDTO struct {
-	RealmID uuid.UUID
+	RealmID uuid.UUID `json:"-" db:"-"`
 }
 
 type AuditLogDTO struct {

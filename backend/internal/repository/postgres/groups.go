@@ -39,7 +39,7 @@ type Groups interface {
 
 func (r *groupRepo) GetByID(ctx context.Context, req *models.GetGroupDTO) (*models.Group, error) {
 	query := fmt.Sprintf(`
-		SELECT g.id, g.name, g.description, g.created_at, g.updated_at,
+		SELECT g.id, g.realm_id, g.name, g.description, g.created_at, g.updated_at,
 			g.default_assignee_id, g.manager_id,
 			da.id AS da_id, da.username AS da_username, da.first_name AS da_first_name, da.last_name AS da_last_name, da.internal_number AS da_internal_number,
 			m.id AS m_id, m.username AS m_username, m.first_name AS m_first_name, m.last_name AS m_last_name, m.internal_number AS m_internal_number
@@ -49,13 +49,22 @@ func (r *groupRepo) GetByID(ctx context.Context, req *models.GetGroupDTO) (*mode
 		WHERE g.id = $1
 	`, Tables.Groups, Tables.Users, Tables.Users)
 
+	// Предикт realm обязателен: группа ищется по id, а Casbin уже разрешил операцию
+	// в realm из заголовка. Без него «свой realm + чужой uuid» проходил бы к чужой группе.
+	args := []any{req.ID}
+	if req.RealmID != nil {
+		query += ` AND g.realm_id = $2`
+		args = append(args, *req.RealmID)
+	}
+
 	group := &models.Group{}
 	var daID, mID *uuid.UUID
 	var daUsername, daFirstName, daLastName *string
 	var mUsername, mFirstName, mLastName *string
 	var daInternalNumber, mInternalNumber *string
-	err := r.db.QueryRow(ctx, query, req.ID).Scan(
+	err := r.db.QueryRow(ctx, query, args...).Scan(
 		&group.ID,
+		&group.RealmID,
 		&group.Name,
 		&group.Description,
 		&group.CreatedAt,
@@ -87,7 +96,7 @@ func (r *groupRepo) GetByID(ctx context.Context, req *models.GetGroupDTO) (*mode
 
 func (r *groupRepo) Get(ctx context.Context, req *models.GetGroupsDTO) ([]*models.Group, error) {
 	query := fmt.Sprintf(`
-		SELECT g.id, g.name, g.description, g.created_at, g.updated_at,
+		SELECT g.id, g.realm_id, g.name, g.description, g.created_at, g.updated_at,
 			g.default_assignee_id, g.manager_id,
 			da.id AS da_id, da.username AS da_username, da.first_name AS da_first_name, da.last_name AS da_last_name, 
 			da.internal_number AS da_internal_number, da.email AS da_email,
@@ -98,8 +107,14 @@ func (r *groupRepo) Get(ctx context.Context, req *models.GetGroupsDTO) ([]*model
 		LEFT JOIN %s m ON m.id = g.manager_id
 	`, Tables.Groups, Tables.Users, Tables.Users)
 
+	args := []any{}
+	if req.RealmID != nil {
+		query += ` WHERE g.realm_id = $1`
+		args = append(args, *req.RealmID)
+	}
+
 	data := []*models.Group{}
-	rows, err := r.db.Query(ctx, query)
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -113,6 +128,7 @@ func (r *groupRepo) Get(ctx context.Context, req *models.GetGroupsDTO) ([]*model
 		var daInternalNumber, mInternalNumber *string
 		if err := rows.Scan(
 			&item.ID,
+			&item.RealmID,
 			&item.Name,
 			&item.Description,
 			&item.CreatedAt,
@@ -180,8 +196,23 @@ func (r *groupRepo) Update(ctx context.Context, tx Tx, dto *models.GroupDTO) err
 
 	query := fmt.Sprintf(`UPDATE %s SET name=$2, description=$3, default_assignee_id=$4, manager_id=$5 WHERE id=$1`, Tables.Groups)
 
-	if _, err := exec.Exec(ctx, query, dto.ID, dto.Name, dto.Description, dto.DefaultAssigneeID, dto.ManagerID); err != nil {
+	args := []any{dto.ID, dto.Name, dto.Description, dto.DefaultAssigneeID, dto.ManagerID}
+	// realm_id намеренно не в SET: перенос группы в другой realm привёл бы к
+	// рассинхрону привязок пользователей, а принадлежность группы проверяется
+	// предиктом ниже (realm подставляет хендлер из авторизованного значения).
+	if dto.RealmID != uuid.Nil {
+		query += ` AND realm_id = $6`
+		args = append(args, dto.RealmID)
+	}
+
+	res, err := exec.Exec(ctx, query, args...)
+	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	// Проверяем до правки состава: обнулённая выборка означает чужую группу,
+	// а без этой проверки её участники были бы вычищены по чужому group_id.
+	if tag := res.RowsAffected(); tag == 0 {
+		return models.ErrNotFound
 	}
 
 	deleteQuery := fmt.Sprintf(`DELETE FROM %s WHERE group_id = $1`, Tables.GroupMembers)
@@ -213,27 +244,60 @@ func (r *groupRepo) setMembers(ctx context.Context, exec QueryExecutor, groupID 
 func (r *groupRepo) Delete(ctx context.Context, dto *models.DelGroupDTO) error {
 	query := fmt.Sprintf(`DELETE FROM %s WHERE id = $1`, Tables.Groups)
 
-	_, err := r.db.Exec(ctx, query, dto.ID)
+	args := []any{dto.ID}
+	if dto.RealmID != nil {
+		query += ` AND realm_id = $2`
+		args = append(args, *dto.RealmID)
+	}
+
+	res, err := r.db.Exec(ctx, query, args...)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	if tag := res.RowsAffected(); tag == 0 {
+		return models.ErrNotFound
 	}
 	return nil
 }
 
 func (r *groupRepo) AddMember(ctx context.Context, dto *models.GroupMemberDTO) error {
-	query := fmt.Sprintf(`INSERT INTO %s (group_id, user_id) VALUES ($1, $2)`, Tables.GroupMembers)
+	// INSERT ... SELECT с проверкой принадлежности группы realm'у: иначе участника
+	// можно было бы добавить в группу чужого реалма и получить read её заявок.
+	query := fmt.Sprintf(`
+		INSERT INTO %s (group_id, user_id)
+		SELECT g.id, $2 FROM %s g WHERE g.id = $1
+	`, Tables.GroupMembers, Tables.Groups)
 
-	_, err := r.db.Exec(ctx, query, dto.GroupID, dto.UserID)
+	args := []any{dto.GroupID, dto.UserID}
+	if dto.RealmID != nil {
+		query += ` AND g.realm_id = $3`
+		args = append(args, *dto.RealmID)
+	}
+
+	res, err := r.db.Exec(ctx, query, args...)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	if tag := res.RowsAffected(); tag == 0 {
+		return models.ErrNotFound
 	}
 	return nil
 }
 
 func (r *groupRepo) RemoveMember(ctx context.Context, dto *models.GroupMemberDTO) error {
-	query := fmt.Sprintf(`DELETE FROM %s WHERE group_id = $1 AND user_id = $2`, Tables.GroupMembers)
+	query := fmt.Sprintf(`
+		DELETE FROM %s gm
+		USING %s g
+		WHERE gm.group_id = $1 AND gm.user_id = $2 AND g.id = gm.group_id
+	`, Tables.GroupMembers, Tables.Groups)
 
-	_, err := r.db.Exec(ctx, query, dto.GroupID, dto.UserID)
+	args := []any{dto.GroupID, dto.UserID}
+	if dto.RealmID != nil {
+		query += ` AND g.realm_id = $3`
+		args = append(args, *dto.RealmID)
+	}
+
+	_, err := r.db.Exec(ctx, query, args...)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -245,10 +309,17 @@ func (r *groupRepo) GetMembers(ctx context.Context, req *models.GetGroupDTO) ([]
 		SELECT u.id, u.username, u.first_name, u.last_name, u.email, u.internal_number
 		FROM %s gm
 		JOIN %s u ON u.id = gm.user_id
+		JOIN %s g ON g.id = gm.group_id
 		WHERE gm.group_id = $1
-	`, Tables.GroupMembers, Tables.Users)
+	`, Tables.GroupMembers, Tables.Users, Tables.Groups)
 
-	rows, err := r.db.Query(ctx, query, req.ID)
+	args := []any{req.ID}
+	if req.RealmID != nil {
+		query += ` AND g.realm_id = $2`
+		args = append(args, *req.RealmID)
+	}
+
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}

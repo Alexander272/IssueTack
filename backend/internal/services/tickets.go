@@ -220,8 +220,17 @@ func (s *TicketService) attachSubtasks(ctx context.Context, data []*models.Ticke
 //     (DefaultAssigneeID), иначе — единственный участник группы, чтобы тикет не остался без
 //     исполнителя. Если в группе несколько участников, исполнитель не назначается.
 //   - менеджер (ManagerID) — менеджером группы (ManagerID), если не задан явно.
+//
+// Группа ищется с предиктом realm тикета: group_id приходит из тела, поэтому без
+// него можно было бы привязать заявку к группе чужого реалма — её участники
+// получили бы доступ к заявке, а ответственный по умолчанию стал бы исполнителем
+// из другого реалма. Чужой id отвечает ErrNotFound, как и несуществующий.
 func (s *TicketService) autoAssign(ctx context.Context, dto *models.TicketDTO) error {
-	group, err := s.groups.GetByID(ctx, &models.GetGroupDTO{ID: *dto.GroupID})
+	if dto.RealmID == nil {
+		return fmt.Errorf("realm is required")
+	}
+
+	group, err := s.groups.GetByID(ctx, &models.GetGroupDTO{ID: *dto.GroupID, RealmID: dto.RealmID})
 	if err != nil {
 		return fmt.Errorf("failed to get group: %w", err)
 	}
@@ -235,7 +244,7 @@ func (s *TicketService) autoAssign(ctx context.Context, dto *models.TicketDTO) e
 				return fmt.Errorf("failed to get member count: %w", err)
 			}
 			if count == 1 {
-				members, err := s.groups.GetMembers(ctx, &models.GetGroupDTO{ID: *dto.GroupID})
+				members, err := s.groups.GetMembers(ctx, &models.GetGroupDTO{ID: *dto.GroupID, RealmID: dto.RealmID})
 				if err != nil {
 					return fmt.Errorf("failed to get members: %w", err)
 				}
@@ -248,6 +257,29 @@ func (s *TicketService) autoAssign(ctx context.Context, dto *models.TicketDTO) e
 
 	if dto.ManagerID == nil && group.ManagerID != nil {
 		dto.ManagerID = group.ManagerID
+	}
+	return nil
+}
+
+// checkGroupRealm ограничивает смену группы рамками реалма тикета.
+//
+// Группа принадлежит реалму, поэтому перенос заявки в группу соседнего отдела
+// отдал бы её участникам доступ к заявке (участие в группе даёт read, менеджер —
+// write/delete), а ответственному по умолчанию — ещё и назначение исполнителем.
+// Право на смену группы есть только у администратора реалма, но сама группа
+// проверяется по realm тикета, а не по значению из тела запроса. Чужой id
+// отвечает ErrNotFound.
+//
+// Снятие группы (groupId = null) не проверяется: реалм при этом не меняется.
+func (s *TicketService) checkGroupRealm(ctx context.Context, oldTicket *models.Ticket, dto *models.TicketDTO) error {
+	if dto.GroupID == nil {
+		return nil
+	}
+	if oldTicket.RealmID == nil {
+		return fmt.Errorf("ticket realm is required")
+	}
+	if _, err := s.groups.GetByID(ctx, &models.GetGroupDTO{ID: *dto.GroupID, RealmID: oldTicket.RealmID}); err != nil {
+		return fmt.Errorf("failed to check group realm: %w", err)
 	}
 	return nil
 }
@@ -727,6 +759,10 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 					return models.ErrPermissionDenied
 				}
 			}
+		}
+
+		if err := s.checkGroupRealm(ctx, oldTicket, dto); err != nil {
+			return err
 		}
 
 		if err := s.repo.Update(ctx, newTx, dto); err != nil {

@@ -44,7 +44,14 @@ func Register(api *gin.RouterGroup, services services.Users, session services.Se
 }
 
 func (h *Handler) getAll(c *gin.Context) {
-	data, err := h.service.GetAll(c, nil)
+	// nil в GetAll отдавал всех пользователей всех реалмов (ФИО, email, табельный
+	// номер), поэтому realm обязателен и берётся из контекста.
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	data, err := h.service.GetAll(c, &realmID)
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -55,11 +62,12 @@ func (h *Handler) getAll(c *gin.Context) {
 func (h *Handler) getByRealm(c *gin.Context) {
 	membership := models.MembershipFilter(c.Query("membership"))
 
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
 	if membership == models.MembershipCustomers || membership == models.MembershipExecutors {
-		realmID, ok := utils.GetRealmUUID(c)
-		if !ok {
-			return
-		}
 		data, err := h.service.GetByMembership(c, realmID, membership)
 		if err != nil {
 			response.SendError(c, err)
@@ -69,12 +77,7 @@ func (h *Handler) getByRealm(c *gin.Context) {
 		return
 	}
 
-	var realmID *uuid.UUID
-	if id, ok := utils.GetRealmUUID(c); ok {
-		realmID = &id
-	}
-
-	data, err := h.service.GetAll(c, realmID)
+	data, err := h.service.GetAll(c, &realmID)
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -143,15 +146,14 @@ func (h *Handler) updateAccount(c *gin.Context) {
 	}
 	dto.ID = id
 
-	// Realm запроса нужен сервису, чтобы разрешить привязки ролей (dto.Realms)
-	// только внутри realm, где Casbin уже подтвердил users:write. Невалидный
-	// заголовок GetRealmUUID отвечает ошибкой сам; при отсутствии заголовка
-	// dto.RealmID остаётся Nil — привязки ролей сервис отклонит.
-	if realmID, ok := utils.GetRealmUUID(c); ok {
-		dto.RealmID = realmID
-	} else if c.GetHeader("realm") != "" {
+	// Realm обязателен: Casbin подтвердил users:write в этой области, и именно по
+	// ней сервис проверяет членство целевого пользователя и правит привязки ролей.
+	// Без realm правка учётки была бы глобальной (любой пользователь системы).
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
 		return
 	}
+	dto.RealmID = realmID
 
 	actor := utils.GetActor(c)
 	if actor == nil {

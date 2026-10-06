@@ -38,6 +38,10 @@ type GetRoleDTO struct {
 	Slug  string    `json:"slug" db:"slug"`
 	Name  string    `json:"name" db:"name"`
 	Realm string    `json:"realm" db:"realm"`
+	// RealmID — realm, под которым запрос авторизован (заполняется сервером).
+	// Поиск по id обязан быть ограничен им: иначе «свой realm + чужой uuid» открывал
+	// бы роль чужого реалма. Для поиска по slug предикт realm_id уже есть в SQL.
+	RealmID *uuid.UUID `json:"-" db:"-"`
 }
 
 type RoleDTO struct {
@@ -59,6 +63,9 @@ type RoleDTO struct {
 type DeleteRoleDTO struct {
 	ID    uuid.UUID `json:"id" db:"id"`
 	Actor *Actor
+	// RealmID — см. GetRoleDTO.RealmID: удаление каскадом сносит привязки
+	// user_realms, поэтому роль чужого реалма удалять нельзя.
+	RealmID *uuid.UUID `json:"-" db:"-"`
 }
 
 type RoleInheritance struct {
@@ -76,6 +83,15 @@ type RolePermissionDTO struct {
 	ActorID      uuid.UUID `json:"actorId" db:"actor_id"`
 	RoleID       uuid.UUID `json:"roleId" db:"role_id"`
 	PermissionID uuid.UUID `json:"permissionId" db:"permission_id"`
+}
+
+// SetPermissionsDTO — замена набора прав роли. RealmID заполняется сервером:
+// без него права можно было бы выдать роли чужого реалма (в т.ч. выдать своей,
+// получив realm-wide category:write и став начальником области).
+type SetPermissionsDTO struct {
+	RoleID        uuid.UUID  `json:"roleId" db:"role_id"`
+	PermissionIDs []string   `json:"permissionIds"`
+	RealmID       *uuid.UUID `json:"-" db:"-"`
 }
 
 type RoleWithPerms struct {

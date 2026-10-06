@@ -63,7 +63,7 @@ func (h *Handler) getContent(c *gin.Context) {
 		return
 	}
 
-	realmIdStr := c.GetHeader("realm")
+	realmIdStr := utils.GetRealmString(c)
 
 	att, reader, err := h.service.GetContent(c, id, user.ID, realmIdStr)
 	if err != nil {
@@ -107,7 +107,7 @@ func (h *Handler) getByEntity(c *gin.Context) {
 		return
 	}
 
-	realmIdStr := c.GetHeader("realm")
+	realmIdStr := utils.GetRealmString(c)
 
 	dto := &models.EntityAccessDTO{
 		EntityType: entityType,
@@ -153,7 +153,7 @@ func (h *Handler) upload(c *gin.Context) {
 	}
 	defer file.Close()
 
-	realmIdStr := c.GetHeader("realm")
+	realmIdStr := utils.GetRealmString(c)
 
 	dto := &models.UploadAttachmentDTO{
 		EntityType: entityType,
@@ -187,7 +187,7 @@ func (h *Handler) delete(c *gin.Context) {
 		return
 	}
 
-	realmIdStr := c.GetHeader("realm")
+	realmIdStr := utils.GetRealmString(c)
 
 	dto := &models.DeleteAttachmentDTO{
 		ID:      id,

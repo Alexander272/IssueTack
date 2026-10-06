@@ -53,7 +53,7 @@ func (h *Handler) getByTicket(c *gin.Context) {
 		return
 	}
 
-	realm := c.GetHeader("realm")
+	realm := utils.GetRealmString(c)
 
 	data, err := h.service.GetByTicket(c, ticketID, user.ID, realm)
 	if err != nil {
@@ -75,7 +75,7 @@ func (h *Handler) create(c *gin.Context) {
 		return
 	}
 
-	realm := c.GetHeader("realm")
+	realm := utils.GetRealmString(c)
 
 	if err := c.Request.ParseMultipartForm(32 << 20); err != nil && !errors.Is(err, http.ErrNotMultipart) {
 		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))

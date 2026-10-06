@@ -44,7 +44,7 @@ func Register(api *gin.RouterGroup, service services.CategoryGroups, middleware 
 }
 
 func (h *Handler) getAll(c *gin.Context) {
-	realmID, ok := utils.GetRealmUUID(c)
+	realmID, ok := utils.RequireRealmUUID(c)
 	if !ok {
 		return
 	}
@@ -63,7 +63,7 @@ func (h *Handler) getByID(c *gin.Context) {
 		return
 	}
 
-	realmID, ok := utils.GetRealmUUID(c)
+	realmID, ok := utils.RequireRealmUUID(c)
 	if !ok {
 		return
 	}
@@ -77,7 +77,7 @@ func (h *Handler) getByID(c *gin.Context) {
 }
 
 func (h *Handler) create(c *gin.Context) {
-	realmID, ok := utils.GetRealmUUID(c)
+	realmID, ok := utils.RequireRealmUUID(c)
 	if !ok {
 		return
 	}
@@ -102,7 +102,7 @@ func (h *Handler) update(c *gin.Context) {
 		return
 	}
 
-	realmID, ok := utils.GetRealmUUID(c)
+	realmID, ok := utils.RequireRealmUUID(c)
 	if !ok {
 		return
 	}
@@ -132,7 +132,7 @@ func (h *Handler) delete(c *gin.Context) {
 		return
 	}
 
-	realmID, ok := utils.GetRealmUUID(c)
+	realmID, ok := utils.RequireRealmUUID(c)
 	if !ok {
 		return
 	}

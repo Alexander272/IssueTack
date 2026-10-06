@@ -52,9 +52,11 @@ func (h *Handler) getAll(c *gin.Context) {
 		}
 		dto.RealmID = id
 	}
-	if ctxRealm, ok := utils.GetRealmUUID(c); ok {
-		dto.RealmID = ctxRealm
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
 	}
+	dto.RealmID = realmID
 
 	actor := utils.GetActor(c)
 	if actor == nil {
@@ -78,12 +80,17 @@ func (h *Handler) getByID(c *gin.Context) {
 		return
 	}
 
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
 	actor := utils.GetActor(c)
 	if actor == nil {
 		return
 	}
 
-	data, err := h.service.GetByID(c, &models.GetChecklistTemplateDTO{ID: id}, actor.ID, c.GetHeader("realm"))
+	data, err := h.service.GetByID(c, &models.GetChecklistTemplateDTO{ID: id, RealmID: realmID}, actor.ID, realmID)
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -104,7 +111,12 @@ func (h *Handler) getItems(c *gin.Context) {
 		return
 	}
 
-	data, err := h.service.GetItems(c, id, actor.ID, c.GetHeader("realm"))
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	data, err := h.service.GetItems(c, id, actor.ID, realmID)
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -119,9 +131,11 @@ func (h *Handler) create(c *gin.Context) {
 		return
 	}
 
-	if ctxRealm, ok := utils.GetRealmUUID(c); ok {
-		dto.RealmID = ctxRealm
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
 	}
+	dto.RealmID = realmID
 	actor := utils.GetActor(c)
 	if actor == nil {
 		return
@@ -154,12 +168,18 @@ func (h *Handler) update(c *gin.Context) {
 	}
 	dto.ID = id
 
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+	dto.RealmID = realmID
+
 	actor := utils.GetActor(c)
 	if actor == nil {
 		return
 	}
 
-	if err := h.service.Update(c, dto, actor.ID, c.GetHeader("realm")); err != nil {
+	if err := h.service.Update(c, dto, actor.ID, realmID); err != nil {
 		response.SendError(c, err, dto)
 		return
 	}
@@ -180,12 +200,17 @@ func (h *Handler) setItems(c *gin.Context) {
 		return
 	}
 
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
 	actor := utils.GetActor(c)
 	if actor == nil {
 		return
 	}
 
-	if err := h.service.SetItems(c, nil, id, items, actor.ID, c.GetHeader("realm")); err != nil {
+	if err := h.service.SetItems(c, nil, id, items, actor.ID, realmID); err != nil {
 		response.SendError(c, err)
 		return
 	}
@@ -205,12 +230,17 @@ func (h *Handler) apply(c *gin.Context) {
 		return
 	}
 
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
 	actor := utils.GetActor(c)
 	if actor == nil {
 		return
 	}
 
-	if err := h.service.ApplyTemplate(c, nil, &models.ApplyTemplateDTO{TicketID: ticketID, TemplateID: templateID, Actor: actor}); err != nil {
+	if err := h.service.ApplyTemplate(c, nil, &models.ApplyTemplateDTO{TicketID: ticketID, TemplateID: templateID, Actor: actor, RealmID: realmID}); err != nil {
 		response.SendError(c, err)
 		return
 	}
@@ -225,12 +255,17 @@ func (h *Handler) delete(c *gin.Context) {
 		return
 	}
 
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
 	actor := utils.GetActor(c)
 	if actor == nil {
 		return
 	}
 
-	if err := h.service.Delete(c, &models.DelChecklistTemplateDTO{ID: id}, actor.ID, c.GetHeader("realm")); err != nil {
+	if err := h.service.Delete(c, &models.DelChecklistTemplateDTO{ID: id, RealmID: realmID}, actor.ID, realmID); err != nil {
 		response.SendError(c, err)
 		return
 	}

@@ -1,10 +1,13 @@
 package audit_log
 
 import (
+	"fmt"
+
 	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -31,7 +34,12 @@ func Register(api *gin.RouterGroup, service services.AuditLogs, middleware *midd
 }
 
 func (h *Handler) getAll(c *gin.Context) {
-	data, err := h.service.Get(c, &models.GetAuditLogsDTO{})
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	data, err := h.service.Get(c, &models.GetAuditLogsDTO{RealmID: realmID})
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -39,10 +47,21 @@ func (h *Handler) getAll(c *gin.Context) {
 	response.SendData(c, data, len(data))
 }
 
+// getByRealm: Casbin проверяет реалм из заголовка, а не из пути, поэтому path-параметр
+// обязан совпадать с авторизованным — иначе читался бы журнал чужой области.
 func (h *Handler) getByRealm(c *gin.Context) {
-	realmID, err := uuid.Parse(c.Param("realmId"))
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	requested, err := uuid.Parse(c.Param("realmId"))
 	if err != nil {
-		response.SendError(c, err)
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+	if requested != realmID {
+		response.SendError(c, models.ErrNotFound)
 		return
 	}
 

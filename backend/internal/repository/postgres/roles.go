@@ -24,7 +24,7 @@ func NewRoleRepo(db *pgxpool.Pool, tr Transaction) *RoleRepo {
 
 type Roles interface {
 	GetOne(ctx context.Context, req *models.GetRoleDTO) (*models.Role, error)
-	GetAll(ctx context.Context) ([]*models.Role, error)
+	GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.Role, error)
 	GetIDBySlug(ctx context.Context, realmID uuid.UUID, slug string) (uuid.UUID, error)
 	GetUserCount(ctx context.Context, roleIDs []string) (map[string]int, error)
 	GetIDsBySlugs(ctx context.Context, realmID uuid.UUID, slugs []string) (map[string]uuid.UUID, error)
@@ -45,6 +45,10 @@ func (r *RoleRepo) GetOne(ctx context.Context, req *models.GetRoleDTO) (*models.
 	if req.ID != uuid.Nil {
 		params = append(params, req.ID)
 		condition = fmt.Sprintf("WHERE id = $%d", len(params))
+		if req.RealmID != nil {
+			params = append(params, *req.RealmID)
+			condition += fmt.Sprintf(" AND realm_id = $%d", len(params))
+		}
 	}
 	if req.Slug != "" {
 		params = append(params, req.Slug, req.Realm)
@@ -108,13 +112,20 @@ func (r *RoleRepo) IsExistsById(ctx context.Context, id uuid.UUID) (bool, error)
 	return exists, nil
 }
 
-func (r *RoleRepo) GetAll(ctx context.Context) ([]*models.Role, error) {
+func (r *RoleRepo) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.Role, error) {
 	query := fmt.Sprintf(`SELECT id, slug, name, realm_id, description, level, is_active, is_system, is_editable, created_at, updated_at 
-		FROM %s ORDER BY realm_id, level, slug`,
-		Tables.Roles,
-	)
+		FROM %s`, Tables.Roles)
 
-	rows, err := r.db.Query(ctx, query)
+	args := []any{}
+	// Список ролей отдаём только своего реалма: иначе видны и правятся роли других
+	// областей (в том числе системные, по которым видны их slug и уровни).
+	if realmID != nil {
+		query += ` WHERE realm_id = $1`
+		args = append(args, *realmID)
+	}
+	query += ` ORDER BY realm_id, level, slug`
+
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -227,13 +238,23 @@ func (r *RoleRepo) Update(ctx context.Context, tx Tx, dto *models.RoleDTO) error
 		return models.ErrReservedRole
 	}
 
-	query := fmt.Sprintf(`UPDATE %s SET name=$1, realm_id=$2, level=$3, slug=$4, is_system=$5, updated_at=NOW() WHERE id=$6`,
+	// realm_id не в SET: роль принадлежит realm, в котором создана, а перенос роли
+	// в другой realm рвёт привязки user_realms и наследование ролей.
+	//
+	// is_system тоже не в SET: Delete защищён предикатом `AND NOT is_system`, то
+	// есть запись is_system=$N здесь снимала бы с системной роли неудаляемость при
+	// первой же правке. Флаг ставится только сидом/созданием роли, а неприкасаемость
+	// задаёт is_editable=false (только root).
+	query := fmt.Sprintf(`UPDATE %s SET name=$1, level=$2, slug=$3, updated_at=NOW() WHERE id=$4 AND realm_id=$5`,
 		Tables.Roles,
 	)
 
-	_, err := r.getExec(tx).Exec(ctx, query, dto.Name, dto.RealmID, dto.Level, dto.Slug, dto.IsSystem, dto.ID)
+	res, err := r.getExec(tx).Exec(ctx, query, dto.Name, dto.Level, dto.Slug, dto.ID, dto.RealmID)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	if tag := res.RowsAffected(); tag == 0 {
+		return models.ErrNotFound
 	}
 	return nil
 }
@@ -241,9 +262,18 @@ func (r *RoleRepo) Update(ctx context.Context, tx Tx, dto *models.RoleDTO) error
 func (r *RoleRepo) Delete(ctx context.Context, tx Tx, dto *models.DeleteRoleDTO) error {
 	query := fmt.Sprintf(`DELETE FROM %s WHERE id=$1 AND NOT is_system`, Tables.Roles)
 
-	_, err := r.getExec(tx).Exec(ctx, query, dto.ID)
+	args := []any{dto.ID}
+	if dto.RealmID != nil {
+		query += ` AND realm_id = $2`
+		args = append(args, *dto.RealmID)
+	}
+
+	res, err := r.getExec(tx).Exec(ctx, query, args...)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	if tag := res.RowsAffected(); tag == 0 {
+		return models.ErrNotFound
 	}
 	return nil
 }

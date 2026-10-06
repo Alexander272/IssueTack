@@ -59,9 +59,10 @@ func TestRoleService_GetAll(t *testing.T) {
 		{ID: uuid.New(), Name: "admin"},
 		{ID: uuid.New(), Name: "user"},
 	}
-	mockRepo.On("GetAll", mock.Anything).Return(expected, nil)
+	realmID := uuid.New()
+	mockRepo.On("GetAll", mock.Anything, &realmID).Return(expected, nil)
 
-	got, err := svc.GetAll(context.Background())
+	got, err := svc.GetAll(context.Background(), &realmID)
 	assert.NoError(t, err)
 	assert.Len(t, got, 2)
 }
@@ -166,7 +167,7 @@ func TestRoleService_Update_Success(t *testing.T) {
 		IsEditable: true,
 	}
 
-	mockRepo.On("GetOne", mock.Anything, &models.GetRoleDTO{ID: roleID}).Return(oldRole, nil)
+	mockRepo.On("GetOne", mock.Anything, &models.GetRoleDTO{ID: roleID, RealmID: &realmID}).Return(oldRole, nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockRepo.On("GetIDsBySlugs", mock.Anything, realmID, mock.Anything).Return(map[string]uuid.UUID{}, nil)
 	mockHierarchy.On("GetRoleDescendants", mock.Anything, &models.GetRolesInheritance{Roles: []string{"moderator"}}).Return(map[string][]string{"moderator": {}}, nil)
@@ -182,9 +183,10 @@ func TestRoleService_Update_RoleNotEditable(t *testing.T) {
 	mockRepo, _, _, _, svc := roleServiceFixtures()
 
 	roleID := uuid.New()
-	dto := &models.RoleDTO{ID: roleID, Actor: &models.Actor{ID: uuid.New(), Name: "test"}}
+	realmID := uuid.New()
+	dto := &models.RoleDTO{ID: roleID, RealmID: realmID, Actor: &models.Actor{ID: uuid.New(), Name: "test"}}
 
-	mockRepo.On("GetOne", mock.Anything, &models.GetRoleDTO{ID: roleID}).Return(&models.Role{
+	mockRepo.On("GetOne", mock.Anything, &models.GetRoleDTO{ID: roleID, RealmID: &realmID}).Return(&models.Role{
 		ID: roleID, IsEditable: false,
 	}, nil)
 
@@ -198,14 +200,14 @@ func TestRoleService_Delete_Success(t *testing.T) {
 
 	roleID := uuid.New()
 	realmID := uuid.New()
-	dto := &models.DeleteRoleDTO{ID: roleID, Actor: &models.Actor{ID: uuid.New(), Name: "test"}}
+	dto := &models.DeleteRoleDTO{ID: roleID, RealmID: &realmID, Actor: &models.Actor{ID: uuid.New(), Name: "test"}}
 
 	role := &models.Role{
 		ID: roleID, Name: "custom-role", Slug: "custom-role",
 		IsSystem: false, IsEditable: true, Realm: realmID.String(),
 	}
 
-	mockRepo.On("GetOne", mock.Anything, &models.GetRoleDTO{ID: roleID}).Return(role, nil)
+	mockRepo.On("GetOne", mock.Anything, &models.GetRoleDTO{ID: roleID, RealmID: &realmID}).Return(role, nil)
 	mockRepo.On("Delete", mock.Anything, nil, dto).Return(nil)
 	mockRealms.On("GetByID", mock.Anything, &models.GetRealmByIdDTO{ID: realmID}).Return(&models.Realm{Name: "test-realm"}, nil)
 
@@ -217,9 +219,10 @@ func TestRoleService_Delete_Reserved(t *testing.T) {
 	mockRepo, _, _, _, svc := roleServiceFixtures()
 
 	roleID := uuid.New()
-	dto := &models.DeleteRoleDTO{ID: roleID, Actor: &models.Actor{ID: uuid.New(), Name: "test"}}
+	realmID := uuid.New()
+	dto := &models.DeleteRoleDTO{ID: roleID, RealmID: &realmID, Actor: &models.Actor{ID: uuid.New(), Name: "test"}}
 
-	mockRepo.On("GetOne", mock.Anything, &models.GetRoleDTO{ID: roleID}).Return(&models.Role{
+	mockRepo.On("GetOne", mock.Anything, &models.GetRoleDTO{ID: roleID, RealmID: &realmID}).Return(&models.Role{
 		ID: roleID, IsSystem: true, IsEditable: false,
 	}, nil)
 
@@ -250,22 +253,80 @@ func TestRoleService_GetOneWithPermissions(t *testing.T) {
 
 func TestRoleService_SetPermissions(t *testing.T) {
 	mockPerms := new(MockPermissionsRepo)
-	_, _, _, _, svc := roleServiceFixtures()
+	mockRepo, _, _, _, svc := roleServiceFixtures()
 	svc.perms = mockPerms
 
 	roleID := uuid.New()
+	realmID := uuid.New()
 	permID := uuid.New().String()
+	mockRepo.On("GetOne", mock.Anything, &models.GetRoleDTO{ID: roleID, RealmID: &realmID}).
+		Return(&models.Role{ID: roleID, IsEditable: true}, nil)
 	mockPerms.On("ReplacePermissions", mock.Anything, nil, roleID, mock.Anything).Return(nil)
 
-	err := svc.SetPermissions(context.Background(), roleID.String(), []string{permID})
+	err := svc.SetPermissions(context.Background(), &models.SetPermissionsDTO{
+		RoleID: roleID, PermissionIDs: []string{permID}, RealmID: &realmID,
+	})
 	assert.NoError(t, err)
 }
 
-func TestRoleService_SetPermissions_InvalidRoleID(t *testing.T) {
-	_, _, _, _, svc := roleServiceFixtures()
+// Права нельзя выдать роли чужого реалма: поиск роли ограничен авторизованным
+// realm'ом, поэтому запрос падает с ErrNotFound, ничего не записав.
+func TestRoleService_SetPermissions_ForeignRealm(t *testing.T) {
+	mockPerms := new(MockPermissionsRepo)
+	mockRepo, _, _, _, svc := roleServiceFixtures()
+	svc.perms = mockPerms
 
-	err := svc.SetPermissions(context.Background(), "invalid-uuid", []string{})
-	assert.Error(t, err)
+	roleID := uuid.New()
+	realmID := uuid.New()
+	mockRepo.On("GetOne", mock.Anything, &models.GetRoleDTO{ID: roleID, RealmID: &realmID}).
+		Return(nil, models.ErrNotFound)
+
+	err := svc.SetPermissions(context.Background(), &models.SetPermissionsDTO{
+		RoleID: roleID, PermissionIDs: []string{}, RealmID: &realmID,
+	})
+	assert.ErrorIs(t, err, models.ErrNotFound)
+	mockPerms.AssertNotCalled(t, "ReplacePermissions", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+// Права неприкасаемой роли (is_editable=false — в сиде это только root) менять
+// нельзя: ErrRoleNotEditable, как и в Update.
+func TestRoleService_SetPermissions_NotEditableRole(t *testing.T) {
+	mockPerms := new(MockPermissionsRepo)
+	mockRepo, _, _, _, svc := roleServiceFixtures()
+	svc.perms = mockPerms
+
+	roleID := uuid.New()
+	realmID := uuid.New()
+	mockRepo.On("GetOne", mock.Anything, &models.GetRoleDTO{ID: roleID, RealmID: &realmID}).
+		Return(&models.Role{ID: roleID, IsSystem: true, IsEditable: false}, nil)
+
+	err := svc.SetPermissions(context.Background(), &models.SetPermissionsDTO{
+		RoleID: roleID, PermissionIDs: []string{}, RealmID: &realmID,
+	})
+	assert.ErrorIs(t, err, models.ErrRoleNotEditable)
+	mockPerms.AssertNotCalled(t, "ReplacePermissions", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+// Системная роль (is_system=true) прав и создаётся как обычная: система нужна
+// только чтобы её нельзя было удалить. Регресс на возврат IsSystem в гвард
+// SetPermissions — именно это ломало настройку прав chief/admin/user.
+func TestRoleService_SetPermissions_SystemButEditableRole(t *testing.T) {
+	mockPerms := new(MockPermissionsRepo)
+	mockRepo, _, _, _, svc := roleServiceFixtures()
+	svc.perms = mockPerms
+
+	roleID := uuid.New()
+	realmID := uuid.New()
+	permID := uuid.New().String()
+	mockRepo.On("GetOne", mock.Anything, &models.GetRoleDTO{ID: roleID, RealmID: &realmID}).
+		Return(&models.Role{ID: roleID, Slug: "chief", IsSystem: true, IsEditable: true}, nil)
+	mockPerms.On("ReplacePermissions", mock.Anything, nil, roleID, mock.Anything).Return(nil)
+
+	err := svc.SetPermissions(context.Background(), &models.SetPermissionsDTO{
+		RoleID: roleID, PermissionIDs: []string{permID}, RealmID: &realmID,
+	})
+	assert.NoError(t, err)
+	mockPerms.AssertCalled(t, "ReplacePermissions", mock.Anything, mock.Anything, roleID, mock.Anything)
 }
 
 func TestRoleService_GetWithStats(t *testing.T) {
@@ -276,13 +337,14 @@ func TestRoleService_GetWithStats(t *testing.T) {
 		{ID: roleID, Name: "admin", Slug: "admin"},
 	}
 
-	mockRepo.On("GetAll", mock.Anything).Return(roles, nil)
+	realmID := uuid.New()
+	mockRepo.On("GetAll", mock.Anything, &realmID).Return(roles, nil)
 	mockHierarchy.On("GetDirectChildren", mock.Anything, &models.GetRolesInheritance{Roles: []string{"admin"}}).Return(map[string][]string{"admin": {}}, nil)
 	mockHierarchy.On("GetRoleDescendants", mock.Anything, &models.GetRolesInheritance{Roles: []string{"admin"}}).Return(map[string][]string{}, nil)
 	mockPerms.On("CountForAll", mock.Anything, mock.Anything).Return(map[string]models.PermsWithCount{}, nil)
 	mockRepo.On("GetUserCount", mock.Anything, []string{roleID.String()}).Return(map[string]int{roleID.String(): 5}, nil)
 
-	result, err := svc.GetWithStats(context.Background())
+	result, err := svc.GetWithStats(context.Background(), &realmID)
 	assert.NoError(t, err)
 	assert.Len(t, result, 1)
 	assert.Equal(t, "admin", result[0].Role.Slug)

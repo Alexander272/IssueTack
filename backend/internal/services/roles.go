@@ -66,10 +66,10 @@ func NewRolesService(deps *RoleDeps) *RoleService {
 // Roles описывает сервис управления ролями.
 type Roles interface {
 	GetOne(ctx context.Context, req *models.GetRoleDTO) (*models.Role, error)
-	GetAll(ctx context.Context) ([]*models.Role, error)
+	GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.Role, error)
 	GetIDBySlug(ctx context.Context, realmID uuid.UUID, slug string) (uuid.UUID, error)
 	GetOneWithPermissions(ctx context.Context, req *models.GetRoleDTO) (*models.RoleWithPerms, error)
-	GetWithStats(ctx context.Context) ([]*models.RoleWithStats, error)
+	GetWithStats(ctx context.Context, realmID *uuid.UUID) ([]*models.RoleWithStats, error)
 	GetPermissionsGrouped(ctx context.Context, req *models.GetRoleDTO) ([]*models.RolePermissionsGrouped, error)
 	IsExists(ctx context.Context, realmID uuid.UUID, roleName string) (bool, error)
 	Create(ctx context.Context, dto *models.RoleDTO) error
@@ -77,7 +77,7 @@ type Roles interface {
 	Delete(ctx context.Context, dto *models.DeleteRoleDTO) error
 	AssignPermission(ctx context.Context, dto *models.RolePermissionDTO) error
 	DeletePermission(ctx context.Context, dto *models.RolePermissionDTO) error
-	SetPermissions(ctx context.Context, roleID string, permissionIDs []string) error
+	SetPermissions(ctx context.Context, dto *models.SetPermissionsDTO) error
 }
 
 // GetOne возвращает роль по заданным параметрам запроса.
@@ -89,9 +89,10 @@ func (s *RoleService) GetOne(ctx context.Context, req *models.GetRoleDTO) (*mode
 	return data, nil
 }
 
-// GetAll возвращает список всех ролей.
-func (s *RoleService) GetAll(ctx context.Context) ([]*models.Role, error) {
-	data, err := s.repo.GetAll(ctx)
+// GetAll возвращает список ролей realm'а. realmID обязателен для вызовов из
+// HTTP: без него отдавались роли всех областей.
+func (s *RoleService) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.Role, error) {
+	data, err := s.repo.GetAll(ctx, realmID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get all roles: %w", err)
 	}
@@ -133,8 +134,8 @@ func (s *RoleService) GetOneWithPermissions(ctx context.Context, req *models.Get
 }
 
 // GetWithStats возвращает все роли со статистикой: число потомков, назначенных пользователей и прав.
-func (s *RoleService) GetWithStats(ctx context.Context) ([]*models.RoleWithStats, error) {
-	roles, err := s.GetAll(ctx)
+func (s *RoleService) GetWithStats(ctx context.Context, realmID *uuid.UUID) ([]*models.RoleWithStats, error) {
+	roles, err := s.GetAll(ctx, realmID)
 	if err != nil {
 		return nil, err
 	}
@@ -330,7 +331,10 @@ func (s *RoleService) Create(ctx context.Context, dto *models.RoleDTO) error {
 
 // Update обновляет данные роли, её наследования и права и публикует событие аудита.
 func (s *RoleService) Update(ctx context.Context, dto *models.RoleDTO) error {
-	oldRole, err := s.GetOne(ctx, &models.GetRoleDTO{ID: dto.ID})
+	// Загрузка ограничена realm'ом из dto: он подставлен хендлером из значения,
+	// под которым Casbin разрешил запись. Роль чужого реалма даст ErrNotFound.
+	realmID := dto.RealmID
+	oldRole, err := s.GetOne(ctx, &models.GetRoleDTO{ID: dto.ID, RealmID: &realmID})
 	if err != nil {
 		return fmt.Errorf("failed to get role: %w", err)
 	}
@@ -511,7 +515,7 @@ func (s *RoleService) Update(ctx context.Context, dto *models.RoleDTO) error {
 
 // Delete удаляет роль, если она не системная и не защищена от редактирования, и публикует событие аудита.
 func (s *RoleService) Delete(ctx context.Context, dto *models.DeleteRoleDTO) error {
-	role, err := s.repo.GetOne(ctx, &models.GetRoleDTO{ID: dto.ID})
+	role, err := s.repo.GetOne(ctx, &models.GetRoleDTO{ID: dto.ID, RealmID: dto.RealmID})
 	if err != nil {
 		return fmt.Errorf("failed to get role: %w", err)
 	}
@@ -576,19 +580,32 @@ func (s *RoleService) DeletePermission(ctx context.Context, dto *models.RolePerm
 }
 
 // SetPermissions заменяет набор прав роли, указанной по идентификатору, новым списком.
-func (s *RoleService) SetPermissions(ctx context.Context, roleID string, permissionIDs []string) error {
-	roleUUID, err := uuid.Parse(roleID)
+//
+// Роль обязана принадлежать realm'у, под которым запрос авторизован: без этой
+// проверки можно было бы выдать права роли чужого реалма (в т.ч. своей — realm-wide
+// category:write превращает в начальника области).
+//
+// Права неприкасаемой роли менять нельзя, но это НЕ то же, что системная роль:
+// is_system запрещает удаление (проверка живёт и здесь, и в Delete), а
+// is_editable=false — любую правку, и такой флаг имеет только root. Системные, но
+// редактируемые роли (chief/admin/user) правятся как обычные.
+func (s *RoleService) SetPermissions(ctx context.Context, dto *models.SetPermissionsDTO) error {
+	role, err := s.repo.GetOne(ctx, &models.GetRoleDTO{ID: dto.RoleID, RealmID: dto.RealmID})
 	if err != nil {
-		return fmt.Errorf("failed to parse role id: %w", err)
+		return fmt.Errorf("failed to get role: %w", err)
 	}
 
-	perms, err := parseUUIDs(permissionIDs)
+	if !role.IsEditable {
+		return models.ErrRoleNotEditable
+	}
+
+	perms, err := parseUUIDs(dto.PermissionIDs)
 	if err != nil {
 		return err
 	}
 
 	return s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
-		if err := s.perms.ReplacePermissions(ctx, tx, roleUUID, perms); err != nil {
+		if err := s.perms.ReplacePermissions(ctx, tx, dto.RoleID, perms); err != nil {
 			return fmt.Errorf("failed to replace permissions: %w", err)
 		}
 		return nil

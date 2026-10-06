@@ -38,17 +38,17 @@ type Checklists interface {
 	// Get возвращает список шаблонов чек-листов. Без права checklist:read — только свои.
 	Get(ctx context.Context, req *models.GetChecklistTemplatesDTO) ([]*models.ChecklistTemplate, error)
 	// GetByID возвращает шаблон чек-листа вместе с его пунктами.
-	GetByID(ctx context.Context, req *models.GetChecklistTemplateDTO, actorID uuid.UUID, realm string) (*models.ChecklistTemplate, error)
+	GetByID(ctx context.Context, req *models.GetChecklistTemplateDTO, actorID uuid.UUID, realmID uuid.UUID) (*models.ChecklistTemplate, error)
 	// Create создаёт шаблон чек-листа. Название должно быть уникальным в видимой области.
 	Create(ctx context.Context, dto *models.ChecklistTemplateDTO) error
 	// Update обновляет шаблон чек-листа (владелец или checklist:write).
-	Update(ctx context.Context, dto *models.ChecklistTemplateDTO, actorID uuid.UUID, realm string) error
+	Update(ctx context.Context, dto *models.ChecklistTemplateDTO, actorID uuid.UUID, realmID uuid.UUID) error
 	// Delete удаляет шаблон чек-листа (владелец или checklist:delete).
-	Delete(ctx context.Context, dto *models.DelChecklistTemplateDTO, actorID uuid.UUID, realm string) error
+	Delete(ctx context.Context, dto *models.DelChecklistTemplateDTO, actorID uuid.UUID, realmID uuid.UUID) error
 	// SetItems заменяет набор пунктов шаблона чек-листа (владелец или checklist:write).
-	SetItems(ctx context.Context, tx postgres.Tx, templateID uuid.UUID, items []*models.ChecklistTemplateItemDTO, actorID uuid.UUID, realm string) error
+	SetItems(ctx context.Context, tx postgres.Tx, templateID uuid.UUID, items []*models.ChecklistTemplateItemDTO, actorID uuid.UUID, realmID uuid.UUID) error
 	// GetItems возвращает пункты шаблона чек-листа.
-	GetItems(ctx context.Context, templateID uuid.UUID, actorID uuid.UUID, realm string) ([]*models.ChecklistTemplateItem, error)
+	GetItems(ctx context.Context, templateID uuid.UUID, actorID uuid.UUID, realmID uuid.UUID) ([]*models.ChecklistTemplateItem, error)
 	// ApplyTemplate создаёт подзадачи тикета по шаблону чек-листа.
 	ApplyTemplate(ctx context.Context, tx postgres.Tx, dto *models.ApplyTemplateDTO) error
 }
@@ -62,25 +62,31 @@ func (s *ChecklistService) hasChecklistPerm(userID uuid.UUID, realm string, acti
 }
 
 // canAccessTemplate — доступ к конкретному шаблону: право checklist:read или автор.
-func (s *ChecklistService) canAccessTemplate(tpl *models.ChecklistTemplate, actorID uuid.UUID, realm string) (bool, error) {
+//
+// Реалм шаблона обязан совпадать с авторизованным: иначе авторство давало бы доступ к
+// шаблону, оставшемуся в другом реалме, а подстановка tpl.RealmID в домен Casbin
+// проверяла бы права уже в чужой области.
+func (s *ChecklistService) canAccessTemplate(tpl *models.ChecklistTemplate, actorID uuid.UUID, realmID uuid.UUID) (bool, error) {
+	if tpl.RealmID != realmID {
+		return false, nil
+	}
 	if tpl.CreatedBy != nil && *tpl.CreatedBy == actorID {
 		return true, nil
 	}
-	if realm == "" {
-		return s.hasChecklistPerm(actorID, tpl.RealmID.String(), string(access.Read))
-	}
-	return s.hasChecklistPerm(actorID, realm, string(access.Read))
+	return s.hasChecklistPerm(actorID, realmID.String(), string(access.Read))
 }
 
-// canManageTemplate — право менять шаблон: автор или checklist:write.
-func (s *ChecklistService) canManageTemplate(tpl *models.ChecklistTemplate, actorID uuid.UUID, realm string, action string) (bool, error) {
+// canManageTemplate — право менять шаблон: автор или checklist:write (см. canAccessTemplate).
+func (s *ChecklistService) canManageTemplate(tpl *models.ChecklistTemplate, actorID uuid.UUID, realmID uuid.UUID, action string) (bool, error) {
+	// Проверка реалма идёт первой: авторство не должно переносить доступ между
+	// областями (пользователь мог остаться автором шаблона после смены realm).
+	if tpl.RealmID != realmID {
+		return false, nil
+	}
 	if tpl.CreatedBy != nil && *tpl.CreatedBy == actorID {
 		return true, nil
 	}
-	if realm == "" {
-		realm = tpl.RealmID.String()
-	}
-	return s.hasChecklistPerm(actorID, realm, action)
+	return s.hasChecklistPerm(actorID, realmID.String(), action)
 }
 
 // Get возвращает список шаблонов чек-листов. Пользователи без права checklist:read
@@ -104,13 +110,13 @@ func (s *ChecklistService) Get(ctx context.Context, req *models.GetChecklistTemp
 }
 
 // GetByID возвращает шаблон чек-листа вместе с его пунктами.
-func (s *ChecklistService) GetByID(ctx context.Context, req *models.GetChecklistTemplateDTO, actorID uuid.UUID, realm string) (*models.ChecklistTemplate, error) {
+func (s *ChecklistService) GetByID(ctx context.Context, req *models.GetChecklistTemplateDTO, actorID uuid.UUID, realmID uuid.UUID) (*models.ChecklistTemplate, error) {
 	template, err := s.repo.GetByID(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get checklist template: %w", err)
 	}
 
-	ok, err := s.canAccessTemplate(template, actorID, realm)
+	ok, err := s.canAccessTemplate(template, actorID, realmID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check template access: %w", err)
 	}
@@ -162,16 +168,16 @@ func (s *ChecklistService) Create(ctx context.Context, dto *models.ChecklistTemp
 }
 
 // Update обновляет шаблон чек-листа. Доступно владельцу или обладателю checklist:write.
-func (s *ChecklistService) Update(ctx context.Context, dto *models.ChecklistTemplateDTO, actorID uuid.UUID, realm string) error {
+func (s *ChecklistService) Update(ctx context.Context, dto *models.ChecklistTemplateDTO, actorID uuid.UUID, realmID uuid.UUID) error {
 	if strings.TrimSpace(dto.Title) == "" {
 		return models.ErrInvalidInput
 	}
 
-	tpl, err := s.repo.GetByID(ctx, &models.GetChecklistTemplateDTO{ID: dto.ID})
+	tpl, err := s.repo.GetByID(ctx, &models.GetChecklistTemplateDTO{ID: dto.ID, RealmID: realmID})
 	if err != nil {
 		return fmt.Errorf("failed to get checklist template: %w", err)
 	}
-	ok, err := s.canManageTemplate(tpl, actorID, realm, string(access.Write))
+	ok, err := s.canManageTemplate(tpl, actorID, realmID, string(access.Write))
 	if err != nil {
 		return fmt.Errorf("failed to check template edit access: %w", err)
 	}
@@ -186,12 +192,12 @@ func (s *ChecklistService) Update(ctx context.Context, dto *models.ChecklistTemp
 }
 
 // Delete удаляет шаблон чек-листа. Доступно владельцу или обладателю checklist:delete.
-func (s *ChecklistService) Delete(ctx context.Context, dto *models.DelChecklistTemplateDTO, actorID uuid.UUID, realm string) error {
-	tpl, err := s.repo.GetByID(ctx, &models.GetChecklistTemplateDTO{ID: dto.ID})
+func (s *ChecklistService) Delete(ctx context.Context, dto *models.DelChecklistTemplateDTO, actorID uuid.UUID, realmID uuid.UUID) error {
+	tpl, err := s.repo.GetByID(ctx, &models.GetChecklistTemplateDTO{ID: dto.ID, RealmID: realmID})
 	if err != nil {
 		return fmt.Errorf("failed to get checklist template: %w", err)
 	}
-	ok, err := s.canManageTemplate(tpl, actorID, realm, string(access.Delete))
+	ok, err := s.canManageTemplate(tpl, actorID, realmID, string(access.Delete))
 	if err != nil {
 		return fmt.Errorf("failed to check template delete access: %w", err)
 	}
@@ -206,12 +212,12 @@ func (s *ChecklistService) Delete(ctx context.Context, dto *models.DelChecklistT
 }
 
 // SetItems заменяет набор пунктов шаблона чек-листа. Доступно владельцу или обладателю checklist:write.
-func (s *ChecklistService) SetItems(ctx context.Context, tx postgres.Tx, templateID uuid.UUID, items []*models.ChecklistTemplateItemDTO, actorID uuid.UUID, realm string) error {
-	tpl, err := s.repo.GetByID(ctx, &models.GetChecklistTemplateDTO{ID: templateID})
+func (s *ChecklistService) SetItems(ctx context.Context, tx postgres.Tx, templateID uuid.UUID, items []*models.ChecklistTemplateItemDTO, actorID uuid.UUID, realmID uuid.UUID) error {
+	tpl, err := s.repo.GetByID(ctx, &models.GetChecklistTemplateDTO{ID: templateID, RealmID: realmID})
 	if err != nil {
 		return fmt.Errorf("failed to get checklist template: %w", err)
 	}
-	ok, err := s.canManageTemplate(tpl, actorID, realm, string(access.Write))
+	ok, err := s.canManageTemplate(tpl, actorID, realmID, string(access.Write))
 	if err != nil {
 		return fmt.Errorf("failed to check template edit access: %w", err)
 	}
@@ -226,12 +232,12 @@ func (s *ChecklistService) SetItems(ctx context.Context, tx postgres.Tx, templat
 }
 
 // GetItems возвращает пункты шаблона чек-листа (с проверкой доступа к шаблону).
-func (s *ChecklistService) GetItems(ctx context.Context, templateID uuid.UUID, actorID uuid.UUID, realm string) ([]*models.ChecklistTemplateItem, error) {
-	tpl, err := s.repo.GetByID(ctx, &models.GetChecklistTemplateDTO{ID: templateID})
+func (s *ChecklistService) GetItems(ctx context.Context, templateID uuid.UUID, actorID uuid.UUID, realmID uuid.UUID) ([]*models.ChecklistTemplateItem, error) {
+	tpl, err := s.repo.GetByID(ctx, &models.GetChecklistTemplateDTO{ID: templateID, RealmID: realmID})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get checklist template: %w", err)
 	}
-	ok, err := s.canAccessTemplate(tpl, actorID, realm)
+	ok, err := s.canAccessTemplate(tpl, actorID, realmID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check template access: %w", err)
 	}
@@ -248,11 +254,11 @@ func (s *ChecklistService) GetItems(ctx context.Context, templateID uuid.UUID, a
 
 // ApplyTemplate создаёт подзадачи тикета по шаблону чек-листа.
 func (s *ChecklistService) ApplyTemplate(ctx context.Context, tx postgres.Tx, dto *models.ApplyTemplateDTO) error {
-	tpl, err := s.repo.GetByID(ctx, &models.GetChecklistTemplateDTO{ID: dto.TemplateID})
+	tpl, err := s.repo.GetByID(ctx, &models.GetChecklistTemplateDTO{ID: dto.TemplateID, RealmID: dto.RealmID})
 	if err != nil {
 		return fmt.Errorf("failed to get checklist template: %w", err)
 	}
-	ok, err := s.canAccessTemplate(tpl, dto.Actor.ID, tpl.RealmID.String())
+	ok, err := s.canAccessTemplate(tpl, dto.Actor.ID, dto.RealmID)
 	if err != nil {
 		return fmt.Errorf("failed to check template access: %w", err)
 	}

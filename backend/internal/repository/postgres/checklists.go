@@ -69,12 +69,12 @@ func (r *ChecklistRepo) Get(ctx context.Context, req *models.GetChecklistTemplat
 }
 
 func (r *ChecklistRepo) GetByID(ctx context.Context, req *models.GetChecklistTemplateDTO) (*models.ChecklistTemplate, error) {
-	query := fmt.Sprintf(`SELECT id, realm_id, title, description, created_by, created_at, updated_at FROM %s WHERE id = $1`,
+	query := fmt.Sprintf(`SELECT id, realm_id, title, description, created_by, created_at, updated_at FROM %s WHERE id = $1 AND realm_id = $2`,
 		Tables.ChecklistTemplates,
 	)
 
 	item := &models.ChecklistTemplate{}
-	if err := r.db.QueryRow(ctx, query, req.ID).Scan(
+	if err := r.db.QueryRow(ctx, query, req.ID, req.RealmID).Scan(
 		&item.ID, &item.RealmID, &item.Title, &item.Description, &item.CreatedBy,
 		&item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
@@ -145,23 +145,29 @@ func (r *ChecklistRepo) ExistsByTitle(ctx context.Context, realmID uuid.UUID, ti
 }
 
 func (r *ChecklistRepo) Update(ctx context.Context, dto *models.ChecklistTemplateDTO) error {
-	query := fmt.Sprintf(`UPDATE %s SET title=$2, description=$3, updated_at=NOW() WHERE id=$1`,
+	query := fmt.Sprintf(`UPDATE %s SET title=$2, description=$3, updated_at=NOW() WHERE id=$1 AND realm_id=$4`,
 		Tables.ChecklistTemplates,
 	)
 
-	_, err := r.db.Exec(ctx, query, dto.ID, dto.Title, dto.Description)
+	res, err := r.db.Exec(ctx, query, dto.ID, dto.Title, dto.Description, dto.RealmID)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	if tag := res.RowsAffected(); tag == 0 {
+		return models.ErrNotFound
 	}
 	return nil
 }
 
 func (r *ChecklistRepo) Delete(ctx context.Context, dto *models.DelChecklistTemplateDTO) error {
-	query := fmt.Sprintf(`DELETE FROM %s WHERE id = $1`, Tables.ChecklistTemplates)
+	query := fmt.Sprintf(`DELETE FROM %s WHERE id = $1 AND realm_id = $2`, Tables.ChecklistTemplates)
 
-	_, err := r.db.Exec(ctx, query, dto.ID)
+	res, err := r.db.Exec(ctx, query, dto.ID, dto.RealmID)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	if tag := res.RowsAffected(); tag == 0 {
+		return models.ErrNotFound
 	}
 	return nil
 }

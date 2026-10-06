@@ -93,8 +93,8 @@ func (m *MockRolesRepo) GetOne(ctx context.Context, req *models.GetRoleDTO) (*mo
 	}
 	return args.Get(0).(*models.Role), args.Error(1)
 }
-func (m *MockRolesRepo) GetAll(ctx context.Context) ([]*models.Role, error) {
-	args := m.Called(ctx)
+func (m *MockRolesRepo) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.Role, error) {
+	args := m.Called(ctx, realmID)
 	return args.Get(0).([]*models.Role), args.Error(1)
 }
 func (m *MockRolesRepo) GetIDBySlug(ctx context.Context, realmID uuid.UUID, slug string) (uuid.UUID, error) {

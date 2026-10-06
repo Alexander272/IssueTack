@@ -44,7 +44,12 @@ func Register(api *gin.RouterGroup, service services.Groups, middleware *middlew
 }
 
 func (h *Handler) getAll(c *gin.Context) {
-	data, err := h.service.Get(c, &models.GetGroupsDTO{})
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	data, err := h.service.Get(c, &models.GetGroupsDTO{RealmID: &realmID})
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -53,6 +58,11 @@ func (h *Handler) getAll(c *gin.Context) {
 }
 
 func (h *Handler) getByID(c *gin.Context) {
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
 	strId := c.Param("id")
 	id, err := uuid.Parse(strId)
 	if err != nil {
@@ -60,7 +70,7 @@ func (h *Handler) getByID(c *gin.Context) {
 		return
 	}
 
-	data, err := h.service.GetByID(c, &models.GetGroupDTO{ID: id})
+	data, err := h.service.GetByID(c, &models.GetGroupDTO{ID: id, RealmID: &realmID})
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -69,7 +79,7 @@ func (h *Handler) getByID(c *gin.Context) {
 }
 
 func (h *Handler) create(c *gin.Context) {
-	realmId, ok := utils.GetRealmUUID(c)
+	realmId, ok := utils.RequireRealmUUID(c)
 	if !ok {
 		return
 	}
@@ -89,6 +99,11 @@ func (h *Handler) create(c *gin.Context) {
 }
 
 func (h *Handler) update(c *gin.Context) {
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
 	strId := c.Param("id")
 	id, err := uuid.Parse(strId)
 	if err != nil {
@@ -106,6 +121,9 @@ func (h *Handler) update(c *gin.Context) {
 		return
 	}
 	dto.ID = id
+	// realm из тела игнорируем: группу нельзя перенести в другой realm, а предикт
+	// в SQL должен опираться на realm, под которым Casbin уже разрешил запись.
+	dto.RealmID = realmID
 
 	if err := h.service.Update(c, dto); err != nil {
 		response.SendError(c, err, dto)
@@ -115,11 +133,17 @@ func (h *Handler) update(c *gin.Context) {
 }
 
 func (h *Handler) addMember(c *gin.Context) {
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
 	dto := &models.GroupMemberDTO{}
 	if err := c.BindJSON(dto); err != nil {
 		response.SendError(c, err)
 		return
 	}
+	dto.RealmID = &realmID
 
 	if err := h.service.AddMember(c, dto); err != nil {
 		response.SendError(c, err)
@@ -129,11 +153,17 @@ func (h *Handler) addMember(c *gin.Context) {
 }
 
 func (h *Handler) removeMember(c *gin.Context) {
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
 	dto := &models.GroupMemberDTO{}
 	if err := c.BindJSON(dto); err != nil {
 		response.SendError(c, err)
 		return
 	}
+	dto.RealmID = &realmID
 
 	if err := h.service.RemoveMember(c, dto); err != nil {
 		response.SendError(c, err)
@@ -143,6 +173,11 @@ func (h *Handler) removeMember(c *gin.Context) {
 }
 
 func (h *Handler) delete(c *gin.Context) {
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
 	strId := c.Param("id")
 	id, err := uuid.Parse(strId)
 	if err != nil {
@@ -150,7 +185,7 @@ func (h *Handler) delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.Delete(c, &models.DelGroupDTO{ID: id}); err != nil {
+	if err := h.service.Delete(c, &models.DelGroupDTO{ID: id, RealmID: &realmID}); err != nil {
 		response.SendError(c, err)
 		return
 	}
