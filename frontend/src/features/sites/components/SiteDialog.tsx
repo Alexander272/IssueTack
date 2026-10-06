@@ -35,8 +35,9 @@ export const SiteDialog: FC<Props> = ({ site, open, onClose }) => {
 	const [update, { isLoading: isUpdating }] = useUpdateSiteMutation()
 	const [remove, { isLoading: isDeleting }] = useDeleteSiteMutation()
 
-	const { control, handleSubmit } = useForm<ISiteDTO>({
+	const { control, handleSubmit, formState } = useForm<ISiteDTO>({
 		values: site ?? { id: null, name: '', address: '' },
+		mode: 'onTouched',
 	})
 
 	const isLoading = isCreating || isUpdating || isDeleting
@@ -177,7 +178,7 @@ export const SiteDialog: FC<Props> = ({ site, open, onClose }) => {
 							<Button
 								type='submit'
 								variant='contained'
-								disabled={isLoading}
+								disabled={isLoading || !formState.isValid || (isEdit && !formState.isDirty)}
 								sx={{ textTransform: 'none', px: 3 }}
 							>
 								{isEdit ? 'Сохранить' : 'Создать'}

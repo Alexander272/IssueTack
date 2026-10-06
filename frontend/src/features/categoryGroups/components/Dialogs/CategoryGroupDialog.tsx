@@ -36,8 +36,9 @@ export const CategoryGroupDialog: FC<Props> = ({ categoryGroup, open, onClose })
 	const [update, { isLoading: isUpdating }] = useUpdateCategoryGroupMutation()
 	const [remove, { isLoading: isDeleting }] = useDeleteCategoryGroupMutation()
 
-	const { control, handleSubmit } = useForm<ICategoryGroupDTO>({
+	const { control, handleSubmit, formState } = useForm<ICategoryGroupDTO>({
 		values: categoryGroup ?? { id: null, name: '', description: '', sortOrder: 0 },
+		mode: 'onTouched',
 	})
 
 	const isLoading = isCreating || isUpdating || isDeleting
@@ -46,8 +47,10 @@ export const CategoryGroupDialog: FC<Props> = ({ categoryGroup, open, onClose })
 		try {
 			if (form.id) {
 				await update(form).unwrap()
+				toast.success('Раздел обновлён')
 			} else {
 				await create(form).unwrap()
+				toast.success('Раздел создан')
 			}
 			onClose()
 		} catch (error) {
@@ -172,7 +175,7 @@ export const CategoryGroupDialog: FC<Props> = ({ categoryGroup, open, onClose })
 					<Button
 						onClick={saveHandler}
 						variant='contained'
-						disabled={isLoading}
+						disabled={isLoading || !formState.isValid || (Boolean(categoryGroup?.id) && !formState.isDirty)}
 						sx={{ textTransform: 'none', px: 3 }}
 					>
 						{categoryGroup?.id ? 'Сохранить' : 'Создать'}

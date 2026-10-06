@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Button, Box, FormControl, IconButton, MenuItem, Select, Typography, Tooltip } from '@mui/material'
 import type { SvgIconProps } from '@mui/material'
 import type { FC } from 'react'
+import { toast } from 'react-toastify'
 import { CheckCircle, Clock, Circle, ListCheck, Plus, Pencil, Trash2, ChevronDown, ChevronUp } from 'lucide-mui'
 
 import type { ISubtask, TicketStatus } from '../../types/task'
@@ -83,6 +84,7 @@ export const Subtasks = ({
 		try {
 			if (editSubtask) {
 				await updateSubtask({ ticketId: taskId, id: editSubtask.id, title, description })
+				toast.success('Подзадача обновлена')
 			} else {
 				const nextOrder = list.reduce((max, s) => Math.max(max, s.sortOrder), -1) + 1
 				await createSubtask({
@@ -93,6 +95,7 @@ export const Subtasks = ({
 					priority: 'medium',
 					sortOrder: nextOrder,
 				})
+				toast.success('Подзадача добавлена')
 			}
 		} catch {
 			// handled by toast in apiSlice
@@ -114,6 +117,7 @@ export const Subtasks = ({
 		setDeleting(true)
 		try {
 			await deleteSubtask({ ticketId: taskId, subtaskId: deleteTarget.id })
+			toast.success('Подзадача удалена')
 			setDeleteTarget(null)
 		} catch {
 			// handled by toast in apiSlice

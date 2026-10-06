@@ -51,19 +51,20 @@ export const TaskCreateForm = ({ onSuccess, onCancel, embedded, onSavingChange }
 			dueDate: null,
 			subtasks: [],
 		},
+		mode: 'onTouched',
 	})
-	const { control, getValues, handleSubmit, reset, setValue } = methods
+	const { control, getValues, handleSubmit, reset, setValue, formState } = methods
 
 	const selectedCategoryId = useWatch({ control, name: 'categoryId' })
 
 	useEffect(() => {
 		const cat = categories.find(c => c.id === selectedCategoryId)
-		if (cat) setValue('priority', cat.priority)
+		if (cat) setValue('priority', cat.priority, { shouldValidate: true })
 	}, [selectedCategoryId, categories, setValue])
 
 	useEffect(() => {
 		if (userSiteId && !getValues('siteId')) {
-			setValue('siteId', userSiteId)
+			setValue('siteId', userSiteId, { shouldValidate: true })
 		}
 	}, [userSiteId, setValue, getValues])
 
@@ -177,7 +178,7 @@ export const TaskCreateForm = ({ onSuccess, onCancel, embedded, onSavingChange }
 							<Button
 								type='submit'
 								variant='contained'
-								disabled={isSaving}
+								disabled={isSaving || !formState.isValid}
 								sx={{ textTransform: 'none', px: 3 }}
 							>
 								{isSaving ? 'Создание...' : 'Создать заявку'}

@@ -95,8 +95,9 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 			siteId: task.site.id,
 			dueDate: task.dueDate ?? null,
 		},
+		mode: 'onTouched',
 	})
-	const { handleSubmit, reset } = methods
+	const { handleSubmit, reset, formState } = methods
 	const [submitting, setSubmitting] = useState(false)
 
 	const onSubmit = handleSubmit(async data => {
@@ -170,7 +171,7 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 							<Button
 								type='submit'
 								variant='contained'
-								disabled={isLoading}
+								disabled={isLoading || !formState.isValid || !formState.isDirty}
 								sx={{ textTransform: 'none', px: 3 }}
 							>
 								{isLoading ? 'Сохранение...' : 'Сохранить'}

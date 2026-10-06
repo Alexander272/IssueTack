@@ -182,9 +182,17 @@ export const SignInForm = () => {
 							type='button'
 							size='small'
 							onClick={forgetHandler}
-							startIcon={<TrashIcon sx={{ fontSize: 16 }} />}
-							sx={{ color: palette.text.secondary, whiteSpace: 'nowrap', flexShrink: 0 }}
+							sx={{
+								color: palette.text.secondary,
+								whiteSpace: 'nowrap',
+								textTransform: 'none',
+								alignItems: 'center',
+								flexShrink: 0,
+								px: 1.5,
+								borderRadius: 20,
+							}}
 						>
+							<TrashIcon sx={{ fontSize: 16, mr: 0.5 }} />
 							Забыть
 						</Button>
 					) : null}

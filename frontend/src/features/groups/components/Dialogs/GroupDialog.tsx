@@ -25,7 +25,7 @@ export const GroupDialog: FC<Props> = ({ group, users, open, onClose }) => {
 	const [update, { isLoading: isUpdating }] = useUpdateGroupMutation()
 	const [remove, { isLoading: isDeleting }] = useDeleteGroupMutation()
 
-	const { control, handleSubmit } = useForm<IGroupDTO>({
+	const { control, handleSubmit, formState } = useForm<IGroupDTO>({
 		values: group ?? {
 			id: undefined,
 			name: '',
@@ -34,6 +34,7 @@ export const GroupDialog: FC<Props> = ({ group, users, open, onClose }) => {
 			defaultAssigneeId: null,
 			memberIds: [],
 		},
+		mode: 'onTouched',
 	})
 
 	const memberIds = useWatch({ control, name: 'memberIds' })
@@ -45,8 +46,10 @@ export const GroupDialog: FC<Props> = ({ group, users, open, onClose }) => {
 		try {
 			if (form.id) {
 				await update(form).unwrap()
+				toast.success('Группа обновлена')
 			} else {
 				await create(form).unwrap()
+				toast.success('Группа создана')
 			}
 			onClose()
 		} catch (error) {
@@ -117,7 +120,7 @@ export const GroupDialog: FC<Props> = ({ group, users, open, onClose }) => {
 					<Button
 						onClick={saveHandler}
 						variant='contained'
-						disabled={isLoading}
+						disabled={isLoading || !formState.isValid || (Boolean(group?.id) && !formState.isDirty)}
 						sx={{ textTransform: 'none', px: 3 }}
 					>
 						{group?.id ? 'Сохранить' : 'Создать'}

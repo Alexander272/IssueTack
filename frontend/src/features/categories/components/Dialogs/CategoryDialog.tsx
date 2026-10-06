@@ -31,7 +31,7 @@ export const CategoryDialog: FC<Props> = ({ category, groups, categoryGroups, op
 	const [update, { isLoading: isUpdating }] = useUpdateCategoryMutation()
 	const [remove, { isLoading: isDeleting }] = useDeleteCategoryMutation()
 
-	const { control, handleSubmit } = useForm<ICategoryDTO>({
+	const { control, handleSubmit, formState } = useForm<ICategoryDTO>({
 		values: category ?? {
 			id: null,
 			name: '',
@@ -41,6 +41,7 @@ export const CategoryDialog: FC<Props> = ({ category, groups, categoryGroups, op
 			priority: 'medium',
 			isActive: true,
 		},
+		mode: 'onTouched',
 	})
 
 	const isLoading = isCreating || isUpdating || isDeleting
@@ -49,8 +50,10 @@ export const CategoryDialog: FC<Props> = ({ category, groups, categoryGroups, op
 		try {
 			if (form.id) {
 				await update(form).unwrap()
+				toast.success('Категория обновлена')
 			} else {
 				await create(form).unwrap()
+				toast.success('Категория создана')
 			}
 			onClose()
 		} catch (error) {
@@ -121,7 +124,7 @@ export const CategoryDialog: FC<Props> = ({ category, groups, categoryGroups, op
 					<Button
 						onClick={saveHandler}
 						variant='contained'
-						disabled={isLoading}
+						disabled={isLoading || !formState.isValid || (Boolean(category?.id) && !formState.isDirty)}
 						sx={{ textTransform: 'none', px: 3 }}
 					>
 						{category?.id ? 'Сохранить' : 'Создать'}

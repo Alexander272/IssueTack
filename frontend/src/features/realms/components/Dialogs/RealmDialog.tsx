@@ -19,7 +19,7 @@ export const RealmDialog: FC<Props> = ({ realm, open, onClose }) => {
 	const [create, { isLoading: isCreating }] = useCreateRealmMutation()
 	const [update, { isLoading: isUpdating }] = useUpdateRealmMutation()
 
-	const { control, handleSubmit } = useForm<IRealmDTO>({
+	const { control, handleSubmit, formState } = useForm<IRealmDTO>({
 		values: realm ?? {
 			id: '',
 			name: '',
@@ -27,6 +27,7 @@ export const RealmDialog: FC<Props> = ({ realm, open, onClose }) => {
 			description: '',
 			isActive: true,
 		},
+		mode: 'onTouched',
 	})
 
 	const isLoading = isCreating || isUpdating
@@ -35,8 +36,10 @@ export const RealmDialog: FC<Props> = ({ realm, open, onClose }) => {
 		try {
 			if (form.id) {
 				await update(form).unwrap()
+				toast.success('Область обновлена')
 			} else {
 				await create(form).unwrap()
+				toast.success('Область создана')
 			}
 			onClose()
 		} catch (error) {
@@ -84,7 +87,7 @@ export const RealmDialog: FC<Props> = ({ realm, open, onClose }) => {
 				<Button
 					onClick={saveHandler}
 					variant='contained'
-					disabled={isLoading}
+					disabled={isLoading || !formState.isValid || (Boolean(realm) && !formState.isDirty)}
 					sx={{ textTransform: 'none', px: 3 }}
 				>
 					{realm ? 'Сохранить' : 'Создать'}
