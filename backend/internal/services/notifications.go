@@ -173,10 +173,10 @@ func (s *NotificationService) NotifyOverdue(ctx context.Context, ticket *models.
 	return nil
 }
 
-// TicketCreated оповещает менеджера, ответственных категории и исполнителя о создании тикета,
-// а также авто-подписывает на заявку надзителей реалма и менеджера группы (с включёнными
-// уведомлениями), чтобы они получали дальнейшие события через подписку. Создатель тикета
-// уведомление о собственном действии не получает.
+// TicketCreated оповещает менеджера, ответственного за категорию (менеджера группы) и
+// исполнителя о создании тикета, а также авто-подписывает на заявку надзителей реалма и
+// менеджера группы (с включёнными уведомлениями), чтобы они получали дальнейшие события
+// через подписку. Создатель тикета уведомление о собственном действии не получает.
 func (s *NotificationService) TicketCreated(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) error {
 	recipients := make(map[uuid.UUID]struct{})
 
@@ -198,7 +198,7 @@ func (s *NotificationService) TicketCreated(ctx context.Context, ticket *models.
 		}
 	}
 
-	// Авто-подписка на заявку: надзители реалма и менеджер группы с включёнными уведомлениями.
+	// Авто-подписка на заявку: начальник области и менеджер группы с включёнными уведомлениями.
 	auto, err := s.autoSubscribeOnCreate(ctx, ticket)
 	if err != nil {
 		return err
@@ -353,7 +353,7 @@ func (s *NotificationService) TicketUpdated(ctx context.Context, ticket *models.
 	return nil
 }
 
-// TicketDeleted оповещает менеджера, ответственных категории и подписанных об удалении тикета.
+// TicketDeleted оповещает менеджера, ответственного за категорию и подписанных об удалении тикета.
 func (s *NotificationService) TicketDeleted(ctx context.Context, ticket *models.Ticket) error {
 	recipients := make(map[uuid.UUID]struct{})
 

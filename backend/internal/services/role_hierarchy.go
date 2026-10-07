@@ -23,15 +23,19 @@ func NewRoleHierarchyService(repo repository.RoleHierarchy) *RoleHierarchyServic
 }
 
 // RoleHierarchy описывает сервис управления иерархией ролей.
+//
+// Терминология: запись role_hierarchy (role_id=ребёнок, parent_role_id=родитель) означает,
+// что родитель наследует права ребёнка (в Casbin грузится как g(parent, role)). «Наследуемые
+// роли» — это потомки, «роли-предки» — родительская цепочка.
 type RoleHierarchy interface {
 	LoadPolicy(ctx context.Context) ([]*models.SyncRoleInheritance, error)
 	GetInheritedRoles(ctx context.Context, req *models.GetRolesInheritance) (map[string][]string, error)
 	GetRoleDescendants(ctx context.Context, req *models.GetRolesInheritance) (map[string][]string, error)
 	GetDirectChildren(ctx context.Context, req *models.GetRolesInheritance) (map[string][]string, error)
 	AddInheritance(ctx context.Context, tx postgres.Tx, dto *models.RoleHierarchyDTO) error
-	AddInheritances(ctx context.Context, tx postgres.Tx, realmID uuid.UUID, roleID uuid.UUID, parentRoleIDs []uuid.UUID) error
+	AddInheritances(ctx context.Context, tx postgres.Tx, realmID uuid.UUID, roleID uuid.UUID, inheritedRoleIDs []uuid.UUID) error
 	RemoveInheritance(ctx context.Context, tx postgres.Tx, dto *models.RoleHierarchyDTO) error
-	RemoveInheritances(ctx context.Context, tx postgres.Tx, roleID uuid.UUID, parentRoleIDs []uuid.UUID) error
+	RemoveInheritances(ctx context.Context, tx postgres.Tx, roleID uuid.UUID, inheritedRoleIDs []uuid.UUID) error
 }
 
 // LoadPolicy возвращает связи наследования ролей для загрузки политик Casbin.
@@ -52,7 +56,8 @@ func (s *RoleHierarchyService) GetDirectChildren(ctx context.Context, req *model
 	return data, nil
 }
 
-// GetInheritedRoles возвращает роли-предков, от которых наследуют указанные роли.
+// GetInheritedRoles возвращает роли-предков (цепочку родителей) указанных ролей — роли,
+// которые эти роли «кормят» правами (родитель наследует потомка).
 func (s *RoleHierarchyService) GetInheritedRoles(ctx context.Context, req *models.GetRolesInheritance) (map[string][]string, error) {
 	data, err := s.repo.GetInheritedRoles(ctx, req)
 	if err != nil {
@@ -61,7 +66,7 @@ func (s *RoleHierarchyService) GetInheritedRoles(ctx context.Context, req *model
 	return data, nil
 }
 
-// GetRoleDescendants возвращает всех потомков для указанных ролей.
+// GetRoleDescendants возвращает всех потомков (прямых и транзитивных) для указанных ролей.
 func (s *RoleHierarchyService) GetRoleDescendants(ctx context.Context, req *models.GetRolesInheritance) (map[string][]string, error) {
 	data, err := s.repo.GetRoleDescendants(ctx, req)
 	if err != nil {
@@ -79,7 +84,8 @@ func (s *RoleHierarchyService) SyncRoleInheritance(ctx context.Context, req *mod
 	return data, nil
 }
 
-// AddInheritance добавляет наследование роли от родительской роли, запрещая наследование от самой себя.
+// AddInheritance делает роль dto.RoleID потомком dto.ParentRoleID (родитель наследует её
+// права), запрещая наследование от самой себя.
 func (s *RoleHierarchyService) AddInheritance(ctx context.Context, tx postgres.Tx, dto *models.RoleHierarchyDTO) error {
 	// Проверка: нельзя наследовать от себя
 	if dto.ParentRoleID == dto.RoleID {
@@ -100,23 +106,24 @@ func (s *RoleHierarchyService) RemoveInheritance(ctx context.Context, tx postgre
 	return nil
 }
 
-// AddInheritances добавляет наследование роли от нескольких родительских ролей, запрещая наследование от самой себя.
-func (s *RoleHierarchyService) AddInheritances(ctx context.Context, tx postgres.Tx, realmID uuid.UUID, roleID uuid.UUID, parentRoleIDs []uuid.UUID) error {
-	for _, parentID := range parentRoleIDs {
-		if roleID == parentID {
+// AddInheritances присоединяет к роли roleID наследуемые роли (её потомков): roleID становится
+// их родителем, то есть получает их права. Наследование от самой себя запрещено.
+func (s *RoleHierarchyService) AddInheritances(ctx context.Context, tx postgres.Tx, realmID uuid.UUID, roleID uuid.UUID, inheritedRoleIDs []uuid.UUID) error {
+	for _, inheritedRoleID := range inheritedRoleIDs {
+		if roleID == inheritedRoleID {
 			return models.ErrCannotInheritFromSelf
 		}
 	}
 
-	if err := s.repo.AddInheritances(ctx, tx, realmID, roleID, parentRoleIDs); err != nil {
+	if err := s.repo.AddInheritances(ctx, tx, realmID, roleID, inheritedRoleIDs); err != nil {
 		return fmt.Errorf("failed to add inheritances. error: %w", err)
 	}
 	return nil
 }
 
-// RemoveInheritances удаляет наследование роли от нескольких родительских ролей.
-func (s *RoleHierarchyService) RemoveInheritances(ctx context.Context, tx postgres.Tx, roleID uuid.UUID, parentRoleIDs []uuid.UUID) error {
-	if err := s.repo.RemoveInheritances(ctx, tx, roleID, parentRoleIDs); err != nil {
+// RemoveInheritances отсоединяет от роли roleID наследуемые роли (её потомков).
+func (s *RoleHierarchyService) RemoveInheritances(ctx context.Context, tx postgres.Tx, roleID uuid.UUID, inheritedRoleIDs []uuid.UUID) error {
+	if err := s.repo.RemoveInheritances(ctx, tx, roleID, inheritedRoleIDs); err != nil {
 		return fmt.Errorf("failed to remove inheritances. error: %w", err)
 	}
 	return nil

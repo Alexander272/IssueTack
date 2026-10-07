@@ -28,37 +28,37 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 			.filter(Boolean) as IRoleWithStats[]
 	}, [selectedSlugs, rolesData])
 
-	const ancestorsMap = useMemo(() => {
+	const inheritedMap = useMemo(() => {
 		const map = new Map<string, Set<string>>()
 
-		const getAncestors = (slug: string): Set<string> => {
+		const collectInherited = (slug: string): Set<string> => {
 			if (map.has(slug)) return map.get(slug)!
 
 			const res = new Set<string>()
 			const role = rolesData?.data?.find(r => r.slug === slug)
 
-			role?.children.forEach(parentSlug => {
-				res.add(parentSlug)
-				getAncestors(parentSlug).forEach(s => res.add(s))
+			role?.children.forEach(inheritedSlug => {
+				res.add(inheritedSlug)
+				collectInherited(inheritedSlug).forEach(s => res.add(s))
 			})
 
 			map.set(slug, res)
 			return res
 		}
 
-		rolesData?.data?.forEach(r => getAncestors(r.slug))
+		rolesData?.data?.forEach(r => collectInherited(r.slug))
 		return map
 	}, [rolesData])
 
 	const canSelectRole = (role: IRoleWithStats) => {
 		for (const selected of selectedRoles) {
-			// Проверка: не является ли текущая роль предком уже выбранной?
-			if (ancestorsMap.get(selected.slug)?.has(role.slug)) {
+			// Проверка: не наследуется ли роль уже через выбранную?
+			if (inheritedMap.get(selected.slug)?.has(role.slug)) {
 				return { can: false, reason: `Роль "${role.name}" уже наследуется через "${selected.name}"` }
 			}
 
-			// Проверка: не является ли выбранная роль предком текущей? (нужно удалить старую)
-			if (ancestorsMap.get(role.slug)?.has(selected.slug)) {
+			// Проверка: не наследуется ли выбранная через текущую? (нужно удалить старую)
+			if (inheritedMap.get(role.slug)?.has(selected.slug)) {
 				return { can: true, willRemove: selected }
 			}
 		}
@@ -92,7 +92,7 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 
 		slugs.forEach(slug => {
 			allRelatedSlugs.add(slug)
-			ancestorsMap.get(slug)?.forEach(ancestor => allRelatedSlugs.add(ancestor))
+			inheritedMap.get(slug)?.forEach(inherited => allRelatedSlugs.add(inherited))
 		})
 
 		const inheritedPermIds = new Set<string>()
@@ -150,7 +150,7 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 				<LinkIcon sx={{ fontSize: 16 }} /> Наследование от других ролей
 			</Typography>
 			<Typography variant='body2' color='text.secondary' sx={{ mb: 2 }}>
-				Выберите родительские роли.
+				Выберите роли, права которых унаследует эта роль.
 			</Typography>
 
 			<Box sx={{ position: 'relative' }}>
@@ -345,7 +345,7 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 					}}
 				>
 					<LinkIcon sx={{ fontSize: 16, mr: 1 }} />
-					Выбранные родительские роли
+					Выбранные наследуемые роли
 				</Typography>
 
 				{selectedRoles.length === 0 ? (
@@ -361,7 +361,7 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 						<Box sx={{ width: 32, height: 32, mx: 'auto', mb: 1 }}>
 							<LinkIcon sx={{ color: '#9ca3af', fontSize: 22 }} />
 						</Box>
-						<Typography sx={{ fontSize: '0.875rem' }}>Родительские роли не выбраны</Typography>
+						<Typography sx={{ fontSize: '0.875rem' }}>Наследуемые роли не выбраны</Typography>
 					</Box>
 				) : (
 					<Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>

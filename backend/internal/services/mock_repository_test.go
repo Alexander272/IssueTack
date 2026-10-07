@@ -199,16 +199,16 @@ func (m *MockRoleHierarchyRepo) AddInheritance(ctx context.Context, tx postgres.
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
 }
-func (m *MockRoleHierarchyRepo) AddInheritances(ctx context.Context, tx postgres.Tx, realmID uuid.UUID, roleID uuid.UUID, parentRoleIDs []uuid.UUID) error {
-	args := m.Called(ctx, tx, realmID, roleID, parentRoleIDs)
+func (m *MockRoleHierarchyRepo) AddInheritances(ctx context.Context, tx postgres.Tx, realmID uuid.UUID, roleID uuid.UUID, inheritedRoleIDs []uuid.UUID) error {
+	args := m.Called(ctx, tx, realmID, roleID, inheritedRoleIDs)
 	return args.Error(0)
 }
 func (m *MockRoleHierarchyRepo) RemoveInheritance(ctx context.Context, tx postgres.Tx, dto *models.RoleHierarchyDTO) error {
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
 }
-func (m *MockRoleHierarchyRepo) RemoveInheritances(ctx context.Context, tx postgres.Tx, roleID uuid.UUID, parentRoleIDs []uuid.UUID) error {
-	args := m.Called(ctx, tx, roleID, parentRoleIDs)
+func (m *MockRoleHierarchyRepo) RemoveInheritances(ctx context.Context, tx postgres.Tx, roleID uuid.UUID, inheritedRoleIDs []uuid.UUID) error {
+	args := m.Called(ctx, tx, roleID, inheritedRoleIDs)
 	return args.Error(0)
 }
 
@@ -1003,16 +1003,16 @@ func (m *MockRoleHierarchyService) AddInheritance(ctx context.Context, tx postgr
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
 }
-func (m *MockRoleHierarchyService) AddInheritances(ctx context.Context, tx postgres.Tx, realmID uuid.UUID, roleID uuid.UUID, parentRoleIDs []uuid.UUID) error {
-	args := m.Called(ctx, tx, realmID, roleID, parentRoleIDs)
+func (m *MockRoleHierarchyService) AddInheritances(ctx context.Context, tx postgres.Tx, realmID uuid.UUID, roleID uuid.UUID, inheritedRoleIDs []uuid.UUID) error {
+	args := m.Called(ctx, tx, realmID, roleID, inheritedRoleIDs)
 	return args.Error(0)
 }
 func (m *MockRoleHierarchyService) RemoveInheritance(ctx context.Context, tx postgres.Tx, dto *models.RoleHierarchyDTO) error {
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
 }
-func (m *MockRoleHierarchyService) RemoveInheritances(ctx context.Context, tx postgres.Tx, roleID uuid.UUID, parentRoleIDs []uuid.UUID) error {
-	args := m.Called(ctx, tx, roleID, parentRoleIDs)
+func (m *MockRoleHierarchyService) RemoveInheritances(ctx context.Context, tx postgres.Tx, roleID uuid.UUID, inheritedRoleIDs []uuid.UUID) error {
+	args := m.Called(ctx, tx, roleID, inheritedRoleIDs)
 	return args.Error(0)
 }
 

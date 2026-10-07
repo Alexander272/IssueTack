@@ -108,7 +108,8 @@ func (s *RoleService) GetIDBySlug(ctx context.Context, realmID uuid.UUID, slug s
 	return id, nil
 }
 
-// GetOneWithPermissions возвращает роль вместе с её прямыми потомками по иерархии и назначенными правами.
+// GetOneWithPermissions возвращает роль вместе с её наследуемыми ролями (прямыми потомками
+// по иерархии: родитель включает потомка) и назначенными правами.
 func (s *RoleService) GetOneWithPermissions(ctx context.Context, req *models.GetRoleDTO) (*models.RoleWithPerms, error) {
 	data, err := s.GetOne(ctx, req)
 	if err != nil {
@@ -289,7 +290,7 @@ func (s *RoleService) Create(ctx context.Context, dto *models.RoleDTO) error {
 				if id, ok := roleIDs[slug]; ok {
 					inheritIDs = append(inheritIDs, id)
 				} else {
-					return fmt.Errorf("parent role not found: %s", slug)
+					return fmt.Errorf("inherited role not found: %s", slug)
 				}
 			}
 
@@ -359,82 +360,85 @@ func (s *RoleService) Update(ctx context.Context, dto *models.RoleDTO) error {
 			return fmt.Errorf("failed to update role: %w", err)
 		}
 
+		// Сравниваем с прямыми детьми (как их возвращает GetOneWithPermissions и отправляет форма),
+		// а не со всеми потомками: диф по транзитивным элементам давал бы тихие no-op в
+		// RemoveInheritances, который снимает только прямые связи.
 		var currentInherits map[string][]string
-		if len(dto.Inherits) > 0 {
-			currentInherits, err = s.hierarchy.GetRoleDescendants(ctx, &models.GetRolesInheritance{Roles: []string{dto.Slug}})
+		currentInherits, err = s.hierarchy.GetDirectChildren(ctx, &models.GetRolesInheritance{Roles: []string{dto.Slug}})
+		if err != nil {
+			return fmt.Errorf("failed to get current inherits: %w", err)
+		}
+
+		currentSlugs := currentInherits[dto.Slug]
+		toAdd := make([]string, 0, len(dto.Inherits))
+		toRemove := make([]string, 0, len(currentSlugs))
+
+		currentMap := make(map[string]bool)
+		for _, s := range currentSlugs {
+			currentMap[s] = true
+		}
+
+		newMap := make(map[string]bool)
+		for _, s := range dto.Inherits {
+			newMap[s] = true
+		}
+
+		for _, s := range dto.Inherits {
+			if !currentMap[s] {
+				toAdd = append(toAdd, s)
+			}
+		}
+		for _, s := range currentSlugs {
+			if !newMap[s] {
+				toRemove = append(toRemove, s)
+			}
+		}
+
+		if len(toAdd) > 0 || len(toRemove) > 0 {
+			inheritChange = true
+		}
+
+		// Пустой dto.Inherits (сняли все наследования в форме) обязан удалять текущих детей —
+		// поэтому блок не гейтится по len(Inherits), иначе очистка молча не применялась бы.
+		if len(toAdd) > 0 {
+			addIDs, err := s.repo.GetIDsBySlugs(ctx, dto.RealmID, toAdd)
 			if err != nil {
-				return fmt.Errorf("failed to get current inherits: %w", err)
+				return fmt.Errorf("failed to get role IDs: %w", err)
+			}
+			inheritIDs := make([]uuid.UUID, 0, len(toAdd))
+			for _, s := range toAdd {
+				id, ok := addIDs[s]
+				if !ok {
+					return fmt.Errorf("inherited role not found: %s", s)
+				}
+				inheritIDs = append(inheritIDs, id)
 			}
 
-			currentSlugs := currentInherits[dto.Slug]
-			toAdd := make([]string, 0, len(dto.Inherits))
-			toRemove := make([]string, 0, len(currentSlugs))
+			logger.Debug("inheritances",
+				logger.IntAttr("count", len(inheritIDs)),
+				logger.StringAttr("role", dto.ID.String()),
+				logger.StringAttr("parents", strings.Join(dto.Inherits, ", ")))
 
-			currentMap := make(map[string]bool)
-			for _, s := range currentSlugs {
-				currentMap[s] = true
+			if err := s.hierarchy.AddInheritances(ctx, tx, dto.RealmID, dto.ID, inheritIDs); err != nil {
+				return err
 			}
+		}
 
-			newMap := make(map[string]bool)
-			for _, s := range dto.Inherits {
-				newMap[s] = true
+		if len(toRemove) > 0 {
+			removeIDs, err := s.repo.GetIDsBySlugs(ctx, dto.RealmID, toRemove)
+			if err != nil {
+				return fmt.Errorf("failed to get role IDs: %w", err)
 			}
-
-			for _, s := range dto.Inherits {
-				if !currentMap[s] {
-					toAdd = append(toAdd, s)
+			childIDs := make([]uuid.UUID, 0, len(toRemove))
+			for _, s := range toRemove {
+				id, ok := removeIDs[s]
+				if !ok {
+					return fmt.Errorf("inherited role not found for removal: %s", s)
 				}
+				childIDs = append(childIDs, id)
 			}
-			for _, s := range currentSlugs {
-				if !newMap[s] {
-					toRemove = append(toRemove, s)
-				}
-			}
-
-			if len(toAdd) > 0 || len(toRemove) > 0 {
-				inheritChange = true
-			}
-
-			if len(toAdd) > 0 {
-				addIDs, err := s.repo.GetIDsBySlugs(ctx, dto.RealmID, toAdd)
-				if err != nil {
-					return fmt.Errorf("failed to get role IDs: %w", err)
-				}
-				inheritIDs := make([]uuid.UUID, 0, len(toAdd))
-				for _, s := range toAdd {
-					id, ok := addIDs[s]
-					if !ok {
-						return fmt.Errorf("parent role not found: %s", s)
-					}
-					inheritIDs = append(inheritIDs, id)
-				}
-
-				logger.Debug("inheritances",
-					logger.IntAttr("count", len(inheritIDs)),
-					logger.StringAttr("role", dto.ID.String()),
-					logger.StringAttr("parents", strings.Join(dto.Inherits, ", ")))
-
-				if err := s.hierarchy.AddInheritances(ctx, tx, dto.RealmID, dto.ID, inheritIDs); err != nil {
-					return err
-				}
-			}
-
-			if len(toRemove) > 0 {
-				removeIDs, err := s.repo.GetIDsBySlugs(ctx, dto.RealmID, toRemove)
-				if err != nil {
-					return fmt.Errorf("failed to get role IDs: %w", err)
-				}
-				parentIDs := make([]uuid.UUID, 0, len(toRemove))
-				for _, s := range toRemove {
-					id, ok := removeIDs[s]
-					if !ok {
-						return fmt.Errorf("parent role not found for removal: %s", s)
-					}
-					parentIDs = append(parentIDs, id)
-				}
-				if err := s.hierarchy.RemoveInheritances(ctx, tx, dto.ID, parentIDs); err != nil {
-					return err
-				}
+			if err := s.hierarchy.RemoveInheritances(ctx, tx, dto.ID, childIDs); err != nil {
+				return err
 			}
 		}
 

@@ -37,12 +37,17 @@ type UserRealms interface {
 	GetRealmSupervisors(ctx context.Context, realmID uuid.UUID) ([]uuid.UUID, error)
 }
 
-// GetRealmSupervisors возвращает ID пользователей реалма, чья роль (прямо или через
-// наследование role_hierarchy) имеет realm-wide пермишен управления областью:
+// GetRealmSupervisors возвращает ID пользователей реалма, чья роль или любая наследуемая
+// ею роль (роль-потомок по role_hierarchy) имеет realm-wide пермишен управления областью:
 // category:write или site:write. Это «начальники области», которые видят и получают
 // уведомления о заявках всего реалма. Критерий настраивается выдачей прав ролям в БД.
+//
+// Направление наследования согласовано с Casbin (adapter.go грузит g(parent_role_id, role_id)):
+// родительская роль «включает» права своих потомков. Поэтому запись (role_id=user,
+// parent_role_id=admin) НЕ делает роли user супервизорами — user лишь передаёт свои
+// права admin, а не наоборот.
 func (r *UserRealmRepo) GetRealmSupervisors(ctx context.Context, realmID uuid.UUID) ([]uuid.UUID, error) {
-	query := fmt.Sprintf(`WITH RECURSIVE ancestors AS (
+	query := fmt.Sprintf(`WITH RECURSIVE effective_roles AS (
 			SELECT ur.user_id, ur.role_id
 			FROM %s ur
 			JOIN %s r ON r.id = ur.role_id
@@ -50,13 +55,13 @@ func (r *UserRealmRepo) GetRealmSupervisors(ctx context.Context, realmID uuid.UU
 
 			UNION
 
-			SELECT a.user_id, rh.parent_role_id AS role_id
-			FROM ancestors a
-			JOIN %s rh ON rh.role_id = a.role_id
+			SELECT er.user_id, rh.role_id
+			FROM effective_roles er
+			JOIN %s rh ON rh.parent_role_id = er.role_id
 		)
-		SELECT DISTINCT a.user_id
-		FROM ancestors a
-		JOIN %s rp ON rp.role_id = a.role_id
+		SELECT DISTINCT er.user_id
+		FROM effective_roles er
+		JOIN %s rp ON rp.role_id = er.role_id
 		JOIN %s p ON p.id = rp.permission_id
 		WHERE (p.object = 'category' AND p.action = 'write')
 		   OR (p.object = 'site'      AND p.action = 'write')`,

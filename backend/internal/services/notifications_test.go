@@ -135,6 +135,108 @@ func TestNotificationService_TicketCreated_NotifiesWithType(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// Дедупликация: один и тот же человек (надзитель реалма == менеджер группы == ответственный
+// за категорию == менеджер заявки) должен получить уведомление ровно один раз. До фикса
+// GetRealmSupervisors поднимал по роли user вышестоящих ролей как «надзителей», и менеджер,
+// входящий в user, уведомлялся повторно плюс без дедупликации двойной рассылки.
+func TestNotificationService_TicketCreated_DedupSupervisorResponsibleManager(t *testing.T) {
+	mockRepo := new(MockNotificationsRepo)
+	mockSubs := new(MockTicketSubscriptionOps)
+	mockUserRealms := new(MockUserRealmsService)
+	mockGroups := new(MockGroupsRepo)
+	mockNotifier := new(MockNotifier)
+
+	x := uuid.New()
+	assigneeID := uuid.New()
+	realmID := uuid.New()
+	categoryID := uuid.New()
+	groupID := uuid.New()
+
+	mockUserRealms.On("GetRealmSupervisors", mock.Anything, realmID).Return([]uuid.UUID{x}, nil).Once()
+	mockRepo.On("GetResponsibleByCategory", mock.Anything, categoryID).Return([]uuid.UUID{x}, nil).Once()
+	mockGroups.On("GetByID", mock.Anything, mock.Anything).Return(&models.Group{ID: groupID, ManagerID: &x}, nil).Once()
+	mockRepo.On("GetSettings", mock.Anything, x).Return(&models.NotificationSettings{UserID: x, Settings: []byte(`{"enabled":true}`)}, nil).Once()
+	mockSubs.On("SubscribeInternal", mock.Anything, mock.Anything, x).Return(nil).Once()
+	mockRepo.On("GetCategoryEventSubscribers", mock.Anything, categoryID, mock.Anything).Return([]uuid.UUID{}, nil).Once()
+	mockRepo.On("GetGroupEventSubscribers", mock.Anything, groupID, mock.Anything).Return([]uuid.UUID{}, nil).Once()
+	mockNotifier.On("Name").Return("mock").Maybe()
+
+	ticket := &models.Ticket{
+		ID:       uuid.New(),
+		Title:    "Test Ticket",
+		RealmID:  &realmID,
+		Manager:  &models.UserShort{ID: x},
+		Assignee: &models.UserShort{ID: assigneeID},
+		Group:    &models.GroupShort{ID: groupID},
+		Category: &models.CategoryShort{ID: categoryID},
+	}
+
+	expectDeliverAndPersist(mockRepo, mockNotifier, x, assigneeID)
+
+	svc := &NotificationService{
+		repo:          mockRepo,
+		subscriptions: mockSubs,
+		userRealms:    mockUserRealms,
+		groups:        mockGroups,
+		txManager:     &mockTransactionManager{},
+		channels:      []Notifier{mockNotifier},
+	}
+
+	err := svc.TicketCreated(context.Background(), ticket, uuid.New())
+	assert.NoError(t, err)
+
+	mockNotifier.AssertExpectations(t)
+	mockRepo.AssertExpectations(t)
+	// Ровно по одному уведомлению на получателя — повторной рассылки X нет.
+	mockNotifier.AssertNumberOfCalls(t, "Notify", 2)
+	mockRepo.AssertNumberOfCalls(t, "Create", 2)
+}
+
+// Дедупликация в TicketUpdated: менеджер заявки == исполнитель == подписчик события «статус» —
+// всё ещё одно уведомление.
+func TestNotificationService_TicketUpdated_DedupAssigneeManagerSubscriber(t *testing.T) {
+	mockRepo := new(MockNotificationsRepo)
+	mockSubs := new(MockTicketSubscriptionOps)
+	mockUserRealms := new(MockUserRealmsService)
+	mockGroups := new(MockGroupsRepo)
+	mockNotifier := new(MockNotifier)
+
+	x := uuid.New()
+	actorID := uuid.New()
+	categoryID := uuid.New()
+	ticket := &models.Ticket{
+		ID:       uuid.New(),
+		Title:    "Test",
+		Manager:  &models.UserShort{ID: x},
+		Assignee: &models.UserShort{ID: x},
+		Category: &models.CategoryShort{ID: categoryID},
+	}
+	changes := []*models.FieldChange{
+		{Tag: models.ActionStatusChanged, OldVal: "open", NewVal: "in_progress"},
+	}
+
+	mockSubs.On("GetSubscribersByEvent", mock.Anything, ticket.ID, categoryID, mock.Anything).Return([]uuid.UUID{x}, nil).Once()
+	mockRepo.On("GetCategoryEventSubscribers", mock.Anything, categoryID, mock.Anything).Return([]uuid.UUID{}, nil).Once()
+	mockNotifier.On("Name").Return("mock").Maybe()
+
+	expectDeliverAndPersist(mockRepo, mockNotifier, x)
+
+	svc := &NotificationService{
+		repo:          mockRepo,
+		subscriptions: mockSubs,
+		userRealms:    mockUserRealms,
+		groups:        mockGroups,
+		txManager:     &mockTransactionManager{},
+		channels:      []Notifier{mockNotifier},
+	}
+
+	err := svc.TicketUpdated(context.Background(), ticket, actorID, changes)
+	assert.NoError(t, err)
+
+	mockNotifier.AssertNumberOfCalls(t, "Notify", 1)
+	mockRepo.AssertNumberOfCalls(t, "Create", 1)
+}
+
 func TestNotificationService_TicketCreated_NotDelivered_NotPersisted(t *testing.T) {
 	mockRepo, mockNotifier, svc := notificationServiceFixtures()
 

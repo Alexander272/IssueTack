@@ -139,7 +139,7 @@ func TestRoleService_Create_ParentNotFound(t *testing.T) {
 
 	err := svc.Create(context.Background(), dto)
 	assert.Error(t, err)
-	assert.ErrorContains(t, err, "parent role not found")
+	assert.ErrorContains(t, err, "inherited role not found")
 }
 
 func TestRoleService_Update_Success(t *testing.T) {
@@ -170,13 +170,55 @@ func TestRoleService_Update_Success(t *testing.T) {
 	mockRepo.On("GetOne", mock.Anything, &models.GetRoleDTO{ID: roleID, RealmID: &realmID}).Return(oldRole, nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockRepo.On("GetIDsBySlugs", mock.Anything, realmID, mock.Anything).Return(map[string]uuid.UUID{}, nil)
-	mockHierarchy.On("GetRoleDescendants", mock.Anything, &models.GetRolesInheritance{Roles: []string{"moderator"}}).Return(map[string][]string{"moderator": {}}, nil)
+	mockHierarchy.On("GetDirectChildren", mock.Anything, &models.GetRolesInheritance{Roles: []string{"moderator"}}).Return(map[string][]string{"moderator": {}}, nil)
 	mockPerms.On("GetRolePermissions", mock.Anything, nil, roleID).Return(map[uuid.UUID]bool{}, nil)
 	mockPerms.On("ReplacePermissions", mock.Anything, nil, roleID, []uuid.UUID{}).Return(nil)
 	mockRealms.On("GetByID", mock.Anything, &models.GetRealmByIdDTO{ID: realmID}).Return(&models.Realm{Name: "test-realm"}, nil)
 
 	err := svc.Update(context.Background(), dto)
 	assert.NoError(t, err)
+}
+
+func TestRoleService_Update_ClearInherits(t *testing.T) {
+	mockRepo, mockRealms, mockHierarchy, mockPerms, svc := roleServiceFixtures()
+
+	roleID := uuid.New()
+	adminID := uuid.New()
+	chiefID := uuid.New()
+	realmID := uuid.New()
+	dto := &models.RoleDTO{
+		ID:          roleID,
+		RealmID:     realmID,
+		Name:        "moderator",
+		Slug:        "moderator",
+		Level:       2,
+		Description: "updated desc",
+		Permissions: []string{},
+		Inherits:    []string{},
+		Actor:       &models.Actor{ID: uuid.New(), Name: "test"},
+	}
+
+	oldRole := &models.Role{
+		ID: roleID, Name: "moderator", Slug: "moderator", Level: 1,
+		Realm: realmID.String(), IsEditable: true,
+	}
+
+	mockRepo.On("GetOne", mock.Anything, &models.GetRoleDTO{ID: roleID, RealmID: &realmID}).Return(oldRole, nil)
+	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
+	mockHierarchy.On("GetDirectChildren", mock.Anything, &models.GetRolesInheritance{Roles: []string{"moderator"}}).
+		Return(map[string][]string{"moderator": {"admin", "chief"}}, nil)
+	mockRepo.On("GetIDsBySlugs", mock.Anything, realmID, []string{"admin", "chief"}).
+		Return(map[string]uuid.UUID{"admin": adminID, "chief": chiefID}, nil)
+	mockHierarchy.On("RemoveInheritances", mock.Anything, nil, roleID, []uuid.UUID{adminID, chiefID}).Return(nil)
+	mockPerms.On("GetRolePermissions", mock.Anything, nil, roleID).Return(map[uuid.UUID]bool{}, nil)
+	mockPerms.On("ReplacePermissions", mock.Anything, nil, roleID, []uuid.UUID{}).Return(nil)
+	mockRealms.On("GetByID", mock.Anything, &models.GetRealmByIdDTO{ID: realmID}).Return(&models.Realm{Name: "test-realm"}, nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockHierarchy.AssertExpectations(t)
+	mockPerms.AssertExpectations(t)
 }
 
 func TestRoleService_Update_RoleNotEditable(t *testing.T) {
