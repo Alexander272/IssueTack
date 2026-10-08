@@ -23,4 +23,7 @@ export type Props = {
 	onCancel?: () => void
 	embedded?: boolean
 	onSavingChange?: (saving: boolean) => void
+	// onDirtyChange сообщает родителю, есть ли в форме непустой черновик: по нему
+	// модалка решает, можно ли закрывать окно кликом мимо/Escape.
+	onDirtyChange?: (dirty: boolean) => void
 }

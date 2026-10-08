@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 
 import { ApiError, createTicket } from '../api'
 import type { PluginCategory, PluginContextResult, PluginCreateResult, PluginScope, PluginSite } from '../types'
 import { formatBytes } from '../labels'
+import { clearDraft, loadDraft, saveDraft } from '../createDraft'
 import { FileIcon } from './icons'
 
 interface CreateTabProps {
@@ -12,6 +13,9 @@ interface CreateTabProps {
 	// onOpen открывает только что созданную заявку в карточке внутри этой же
 	// модалки, без перехода в веб-приложение.
 	onOpen: (ticketId: string) => void
+	// onDraftChange сообщает родителю, есть ли непустой черновик: по нему
+	// ModalController решает, можно ли закрывать окно кликом мимо/Escape.
+	onDraftChange?: (hasDraft: boolean) => void
 }
 
 interface FieldErrors {
@@ -20,19 +24,22 @@ interface FieldErrors {
 	siteId?: string
 }
 
-export default function CreateTab({ scope, context, onCreated, onOpen }: CreateTabProps) {
+export default function CreateTab({ scope, context, onCreated, onOpen, onDraftChange }: CreateTabProps) {
 	const userSiteId =
 		context.user?.siteId && (context.sites || []).some(s => s.id === context.user.siteId) ? context.user.siteId : ''
-	const [title, setTitle] = useState('')
-	const [description, setDescription] = useState('')
-	const [categoryId, setCategoryId] = useState('')
-	const [siteId, setSiteId] = useState(userSiteId)
+	const [initialDraft] = useState(() => loadDraft(context.realmId, context.user.id))
+	const [title, setTitle] = useState(initialDraft?.title ?? '')
+	const [description, setDescription] = useState(initialDraft?.description ?? '')
+	const [categoryId, setCategoryId] = useState(initialDraft?.categoryId ?? '')
+	const [siteId, setSiteId] = useState(initialDraft?.siteId || userSiteId)
 	const [siteTouched, setSiteTouched] = useState(false)
 	const [files, setFiles] = useState<File[]>([])
 	const [submitting, setSubmitting] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 	const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
 	const [result, setResult] = useState<PluginCreateResult | null>(null)
+	const [hasDraft, setHasDraft] = useState(false)
+	const [confirmingClear, setConfirmingClear] = useState(false)
 
 	const categories = (context.categories || []).filter((c: PluginCategory) => c.isActive !== false)
 	// Категории группируются по разделам (таксономия) — нативные optgroup.
@@ -52,7 +59,21 @@ export default function CreateTab({ scope, context, onCreated, onOpen }: CreateT
 	const sites = context.sites || []
 	const selectedSite = sites.find(s => s.id === siteId) || null
 
+	useEffect(() => {
+		saveDraft(context.realmId, context.user.id, { title, description, categoryId, siteId })
+	}, [context.realmId, context.user.id, title, description, categoryId, siteId])
+
+	useEffect(() => {
+		// Дефолтная площадка пользователя сама по себе не считается черновиком.
+		const hasContent = Boolean(
+			title.trim() || description.trim() || categoryId || files.length > 0 || (siteId && siteId !== userSiteId),
+		)
+		setHasDraft(hasContent)
+		onDraftChange?.(hasContent)
+	}, [title, description, categoryId, siteId, files, userSiteId, onDraftChange])
+
 	const reset = () => {
+		clearDraft(context.realmId, context.user.id)
 		setTitle('')
 		setDescription('')
 		setCategoryId('')
@@ -103,6 +124,15 @@ export default function CreateTab({ scope, context, onCreated, onOpen }: CreateT
 				siteId: siteId || null,
 				files,
 			})
+			// Заявка создана — черновик больше не нужен, а поля очищаем, чтобы
+			// «Создать ещё» и закрытие окна не тянули старые данные.
+			clearDraft(context.realmId, context.user.id)
+			setTitle('')
+			setDescription('')
+			setCategoryId('')
+			setSiteId(userSiteId)
+			setSiteTouched(false)
+			setFiles([])
 			setResult({ number: res.number, link: res.link, ...res })
 		} catch (err) {
 			setError(err instanceof ApiError ? err.message : 'Не удалось создать заявку')
@@ -279,10 +309,44 @@ export default function CreateTab({ scope, context, onCreated, onOpen }: CreateT
 			{error ? <div className='it-ticket-error'>{error}</div> : null}
 
 			<div className='it-ticket-form__footer'>
+				{hasDraft ? (
+					<button
+						type='button'
+						className='it-btn it-btn--danger'
+						disabled={submitting}
+						onClick={() => setConfirmingClear(true)}
+					>
+						Очистить
+					</button>
+				) : null}
 				<button type='submit' className='it-btn it-btn--primary' disabled={submitting}>
 					{submitting ? 'Создание…' : 'Создать заявку'}
 				</button>
 			</div>
+
+			{confirmingClear ? (
+				<div className='it-confirm' onClick={() => setConfirmingClear(false)}>
+					<div className='it-confirm__box' onClick={e => e.stopPropagation()}>
+						<div className='it-confirm__title'>Очистить черновик?</div>
+						<div className='it-confirm__text'>Заполненные данные и вложения будут потеряны.</div>
+						<div className='it-confirm__actions'>
+							<button type='button' className='it-btn it-btn--sm' onClick={() => setConfirmingClear(false)}>
+								Нет
+							</button>
+							<button
+								type='button'
+								className='it-btn it-btn--sm it-btn--danger it-btn--solid'
+								onClick={() => {
+									setConfirmingClear(false)
+									reset()
+								}}
+							>
+								Очистить
+							</button>
+						</div>
+					</div>
+				</div>
+			) : null}
 		</form>
 	)
 }

@@ -1,8 +1,8 @@
-import { type FC, useState } from 'react'
-import { Dialog, DialogContent, DialogTitle, IconButton, Typography, useMediaQuery, useTheme } from '@mui/material'
+import { type FC, useRef, useState } from 'react'
+import { Box, Dialog, DialogContent, DialogTitle, IconButton, Tooltip, Typography, useMediaQuery, useTheme } from '@mui/material'
 
-import { TaskCreateForm } from './TaskCreateForm'
-import { XIcon } from 'lucide-mui'
+import { TaskCreateForm, type TaskCreateFormHandle } from './TaskCreateForm'
+import { EraserIcon, XIcon } from 'lucide-mui'
 
 type Props = {
 	open: boolean
@@ -13,13 +13,25 @@ export const TaskCreateModal: FC<Props> = ({ open, onClose }) => {
 	const theme = useTheme()
 	const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
 	const [saving, setSaving] = useState(false)
+	const [dirty, setDirty] = useState(false)
+	const formRef = useRef<TaskCreateFormHandle>(null)
 
 	const canClose = !saving
+
+	// Пока в форме есть непустой черновик, клик мимо и Escape не закрывают окно —
+	// иначе заполненное теряется от случайного клика. Закрыть можно крестиком или
+	// после успешного создания/очистки. Крестик вызывает onClose напрямую (не
+	// через reason), поэтому остаётся доступным.
+	const handleClose = (_event: unknown, reason: 'backdropClick' | 'escapeKeyDown') => {
+		if (saving) return
+		if (dirty && (reason === 'backdropClick' || reason === 'escapeKeyDown')) return
+		onClose()
+	}
 
 	return (
 		<Dialog
 			open={open}
-			onClose={canClose ? onClose : undefined}
+			onClose={handleClose}
 			fullWidth
 			fullScreen={isMobile}
 			maxWidth='md'
@@ -33,13 +45,36 @@ export const TaskCreateModal: FC<Props> = ({ open, onClose }) => {
 				<Typography variant='h6' component='div' sx={{ fontWeight: 'bold' }}>
 					Создание заявки
 				</Typography>
-				<IconButton size='large' onClick={canClose ? onClose : undefined} disabled={saving} sx={{ color: 'text.secondary' }}>
-					<XIcon sx={{ fontSize: 20 }} />
-				</IconButton>
+				<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+					{dirty && (
+						<Tooltip title='Очистить черновик'>
+							<span>
+								<IconButton
+									size='large'
+									onClick={() => formRef.current?.requestReset()}
+									disabled={saving}
+									sx={{ color: 'text.secondary' }}
+								>
+									<EraserIcon sx={{ fontSize: 20 }} />
+								</IconButton>
+							</span>
+						</Tooltip>
+					)}
+					<IconButton size='large' onClick={canClose ? onClose : undefined} disabled={saving} sx={{ color: 'text.secondary' }}>
+						<XIcon sx={{ fontSize: 20 }} />
+					</IconButton>
+				</Box>
 			</DialogTitle>
 
 			<DialogContent sx={{ p: { xs: 1, sm: 2.5 } }}>
-				<TaskCreateForm embedded onSuccess={onClose} onCancel={onClose} onSavingChange={setSaving} />
+				<TaskCreateForm
+					ref={formRef}
+					embedded
+					onSuccess={onClose}
+					onCancel={onClose}
+					onSavingChange={setSaving}
+					onDirtyChange={setDirty}
+				/>
 			</DialogContent>
 		</Dialog>
 	)
