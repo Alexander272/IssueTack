@@ -32,14 +32,15 @@ type Column = { field: string; label: string; sortable: boolean; width?: number 
 const COLUMNS: readonly Column[] = [
 	{ field: 'ticketNumber', label: '№', sortable: true, width: 70 },
 	{ field: 'title', label: 'Тема', sortable: true },
-	{ field: 'owner', label: 'Заказчик', sortable: true, width: 200 },
-	{ field: 'site', label: 'Площадка', sortable: true, width: 140 },
+	{ field: 'owner', label: 'Заказчик', sortable: true, width: 180 },
+	{ field: 'site', label: 'Площадка', sortable: true, width: 160 },
 	{ field: 'dueDate', label: 'Срок', sortable: true, width: 160 },
 	{ field: 'priority', label: 'Приоритет', sortable: true, width: 130 },
-	{ field: 'assignee', label: 'Назначено', sortable: true, width: 200 },
+	{ field: 'assignee', label: 'Исполнитель', sortable: true, width: 180 },
 	{ field: 'status', label: 'Статус', sortable: true, width: 130 },
 	{ field: 'subtasks', label: 'Подзадачи', sortable: false, width: 130 },
 ]
+const TABLE_MIN_WIDTH = COLUMNS.reduce((sum, col) => sum + (col.width ?? 240), 0)
 
 export const TaskTable = ({ tasks, groupBy, groupEnabled, onTaskClick, sort, onSortChange }: Props) => {
 	const theme = useTheme()
@@ -125,7 +126,7 @@ export const TaskTable = ({ tasks, groupBy, groupEnabled, onTaskClick, sort, onS
 			elevation={0}
 			sx={{ borderRadius: 3, border: '1px solid #f3f4f6', overflow: 'hidden', overflowX: 'auto' }}
 		>
-			<Table sx={{ minWidth: tasks.length > 0 ? 900 : undefined }}>
+			<Table sx={{ tableLayout: 'fixed', minWidth: TABLE_MIN_WIDTH }}>
 				<TableHead>{headRow}</TableHead>
 				<TableBody>{body}</TableBody>
 			</Table>

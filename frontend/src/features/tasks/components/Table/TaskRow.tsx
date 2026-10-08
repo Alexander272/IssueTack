@@ -81,6 +81,7 @@ export const TaskRow = ({ task, onClick, sx }: Props) => {
 					<Box
 						sx={{
 							display: 'inline-flex',
+							alignItems: 'center',
 							px: 1.5,
 							py: 1,
 							borderRadius: '999px',
@@ -89,12 +90,24 @@ export const TaskRow = ({ task, onClick, sx }: Props) => {
 							bgcolor: '#f3f4f6',
 							color: '#374151',
 							maxWidth: '100%',
-							overflow: 'hidden',
-							textOverflow: 'ellipsis',
-							whiteSpace: 'nowrap',
+							minWidth: 0,
 						}}
 					>
-						{task.site?.name ?? '—'}
+						<Typography
+							component='span'
+							sx={{
+								display: 'block',
+								minWidth: 0,
+								overflow: 'hidden',
+								textOverflow: 'ellipsis',
+								whiteSpace: 'nowrap',
+								fontSize: '0.75rem',
+								fontWeight: 500,
+								lineHeight: 1,
+							}}
+						>
+							{task.site?.name ?? '—'}
+						</Typography>
 					</Box>
 				</Tooltip>
 			</TableCell>
