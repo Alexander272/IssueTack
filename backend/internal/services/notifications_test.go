@@ -435,6 +435,53 @@ func TestNotificationService_TicketUpdated_StatusChange_AssigneeIsActor(t *testi
 	mockNotifier.AssertNotCalled(t, "Notify", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
+// Заказчик уведомляется о смене статуса заявки.
+func TestNotificationService_TicketUpdated_StatusChange_OwnerNotified(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	ownerID := uuid.New()
+	ticket := &models.Ticket{
+		ID:       uuid.New(),
+		Title:    "Test",
+		Owner:    &models.UserShort{ID: ownerID},
+		Category: &models.CategoryShort{ID: uuid.New()},
+	}
+
+	changes := []*models.FieldChange{
+		{Tag: models.ActionStatusChanged, OldVal: "open", NewVal: "in_progress"},
+	}
+
+	expectDeliverAndPersist(mockRepo, mockNotifier, ownerID)
+
+	err := svc.TicketUpdated(context.Background(), ticket, uuid.New(), changes)
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
+}
+
+// Заказчик не уведомляется об изменении приоритета и срока — только статус и комментарии.
+func TestNotificationService_TicketUpdated_PriorityDueDateChange_OwnerNotNotified(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	ownerID := uuid.New()
+	ticket := &models.Ticket{
+		ID:       uuid.New(),
+		Title:    "Test",
+		Owner:    &models.UserShort{ID: ownerID},
+		Category: &models.CategoryShort{ID: uuid.New()},
+	}
+
+	changes := []*models.FieldChange{
+		{Tag: models.ActionPriorityChanged, OldVal: "low", NewVal: "urgent"},
+		{Tag: models.ActionDueDateChanged, OldVal: "none", NewVal: "2026-09-02 12:00:00 +0000 UTC"},
+	}
+
+	err := svc.TicketUpdated(context.Background(), ticket, uuid.New(), changes)
+	assert.NoError(t, err)
+	mockRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
+	mockNotifier.AssertNotCalled(t, "Notify", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
 func TestNotificationService_TicketDeleted_Success(t *testing.T) {
 	mockRepo, mockNotifier, svc := notificationServiceFixtures()
 
@@ -490,7 +537,7 @@ func TestNotificationService_TicketCommented_NotifiesAssignee(t *testing.T) {
 
 	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID)
 
-	err := svc.TicketCommented(context.Background(), ticket, actorID)
+	err := svc.TicketCommented(context.Background(), ticket, actorID, "уточните сроки", "Петров Иван")
 	assert.NoError(t, err)
 	mockRepo.AssertExpectations(t)
 	mockNotifier.AssertExpectations(t)
@@ -507,7 +554,7 @@ func TestNotificationService_TicketCommented_ActorExcluded(t *testing.T) {
 		Category: &models.CategoryShort{ID: uuid.New()},
 	}
 
-	err := svc.TicketCommented(context.Background(), ticket, actorID)
+	err := svc.TicketCommented(context.Background(), ticket, actorID, "уточните сроки", "Петров Иван")
 	assert.NoError(t, err)
 	mockRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
 	mockNotifier.AssertNotCalled(t, "Notify", mock.Anything, mock.Anything, mock.Anything, mock.Anything)

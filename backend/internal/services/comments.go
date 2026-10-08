@@ -143,7 +143,8 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 	// факт создания комментария — их сбои только логируются.
 	s.notifyOwnerViaMattermost(ctx, comment)
 	if s.notifications != nil {
-		if err := s.notifications.TicketCommented(ctx, ticket, comment.UserID); err != nil {
+		authorLabel := s.commentAuthorLabel(ctx, comment.UserID)
+		if err := s.notifications.TicketCommented(ctx, ticket, comment.UserID, comment.Text, authorLabel); err != nil {
 			logger.Warn("failed to notify about comment", logger.StringAttr("ticket_id", comment.TicketID.String()), logger.ErrAttr(err))
 		}
 	}
@@ -178,6 +179,23 @@ func (s *CommentService) persistCommentAndFiles(ctx context.Context, tx postgres
 		}
 	}
 	return nil
+}
+
+// commentAuthorLabel возвращает «Фамилия Имя» автора комментария для Mattermost.
+// Пустая строка — автора не удалось загрузить (best-effort: само сообщение при этом
+// доставляется, просто без фразы об авторе).
+func (s *CommentService) commentAuthorLabel(ctx context.Context, userID uuid.UUID) string {
+	author, err := s.users.GetByID(ctx, userID)
+	if err != nil || author == nil {
+		logger.Warn("failed to load comment author", logger.StringAttr("user_id", userID.String()), logger.ErrAttr(err))
+		return ""
+	}
+	return userShortLabel(&models.UserShort{
+		ID:        author.ID,
+		LastName:  author.LastName,
+		FirstName: author.FirstName,
+		Username:  author.Username,
+	})
 }
 
 // notifyOwnerViaMattermost дублирует публичный (не внутренний) комментарий из
@@ -221,7 +239,12 @@ func (s *CommentService) notifyOwnerViaMattermost(ctx context.Context, comment *
 		number = "заявка"
 	}
 
-	text := fmt.Sprintf("**%s: %s**\n\n%s", number, title, comment.Text)
+	text := fmt.Sprintf("**%s: %s**", number, title)
+	if authorLabel := s.commentAuthorLabel(ctx, comment.UserID); authorLabel != "" {
+		text += fmt.Sprintf("\n\nКомментарий пользователя %s:\n%s", authorLabel, comment.Text)
+	} else {
+		text += "\n\n" + comment.Text
+	}
 	if err := s.mmSender.Send(settings.BotToken, settings.BotUserID, *ownerUser.MattermostID, text); err != nil {
 		logger.Warn("failed to send mattermost comment notify", logger.StringAttr("ticket_id", comment.TicketID.String()), logger.ErrAttr(err))
 	}

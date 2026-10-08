@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/events"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
@@ -45,6 +46,7 @@ type MattermostDeps struct {
 	Attachments Attachments
 	Comments    Comments
 	Access      TicketAccessChecker
+	Policies    AccessPolicies
 	EventBus    *events.PolicyEventManager
 	Most        *mattermost.Most
 	BaseURL     string
@@ -74,6 +76,7 @@ type MattermostService struct {
 	attachments   Attachments
 	comments      Comments
 	access        TicketAccessChecker
+	policies      AccessPolicies
 	eventBus      *events.PolicyEventManager
 	most          *mattermost.Most
 	baseURL       string
@@ -99,6 +102,7 @@ func NewMattermostService(deps *MattermostDeps) *MattermostService {
 		attachments: deps.Attachments,
 		comments:    deps.Comments,
 		access:      deps.Access,
+		policies:    deps.Policies,
 		eventBus:    deps.EventBus,
 		most:        deps.Most,
 		baseURL:     deps.BaseURL,
@@ -475,7 +479,7 @@ type myTicketsChunk struct {
 
 // myTicketsChunks разбивает заявки пользователя на сообщения по
 // myTicketsChunkSize — показываем все, а не первые 20.
-func (s *MattermostService) myTicketsChunks(tickets []*models.Ticket, ownerID uuid.UUID) []myTicketsChunk {
+func (s *MattermostService) myTicketsChunks(tickets []*models.Ticket, user *models.UserData) []myTicketsChunk {
 	if len(tickets) == 0 {
 		return []myTicketsChunk{{message: "У вас нет активных заявок."}}
 	}
@@ -485,7 +489,7 @@ func (s *MattermostService) myTicketsChunks(tickets []*models.Ticket, ownerID uu
 
 	chunks := make([]myTicketsChunk, 0, (len(tickets)+myTicketsChunkSize-1)/myTicketsChunkSize)
 	for from := 0; from < len(tickets); from += myTicketsChunkSize {
-		chunk, ok := s.myTicketsChunkAt(tickets, from, ownerID)
+		chunk, ok := s.myTicketsChunkAt(tickets, from, user)
 		if !ok {
 			break
 		}
@@ -497,12 +501,12 @@ func (s *MattermostService) myTicketsChunks(tickets []*models.Ticket, ownerID uu
 // myTicketsChunkAt собирает одно сообщение со срезом заявок [from, from+размер).
 // Смещение from кладут в контекст кнопок карточек: после смены статуса бот
 // перерисовывает тем же смещением тот же срез.
-func (s *MattermostService) myTicketsChunkAt(tickets []*models.Ticket, from int, ownerID uuid.UUID) (myTicketsChunk, bool) {
+func (s *MattermostService) myTicketsChunkAt(tickets []*models.Ticket, from int, user *models.UserData) (myTicketsChunk, bool) {
 	if from < 0 || from >= len(tickets) {
 		return myTicketsChunk{}, false
 	}
 	end := min(from+myTicketsChunkSize, len(tickets))
-	return s.myTicketsChunk(tickets, from, end, myTicketsHeader(from, end, len(tickets)), ownerID), true
+	return s.myTicketsChunk(tickets, from, end, myTicketsHeader(from, end, len(tickets)), user), true
 }
 
 // myTicketsChunkAfterEdit пересобирает сообщение списка после действия над
@@ -519,7 +523,7 @@ func (s *MattermostService) myTicketsChunkAt(tickets []*models.Ticket, from int,
 // Заголовок всегда считается по состоянию ДО действия, поэтому он не «поедет»
 // после удаления карточки. ok=false означает, что в сообщении не осталось ни
 // одной карточки — такое сообщение надо удалить.
-func (s *MattermostService) myTicketsChunkAfterEdit(tickets []*models.Ticket, from int, removed bool, ownerID uuid.UUID) (myTicketsChunk, bool) {
+func (s *MattermostService) myTicketsChunkAfterEdit(tickets []*models.Ticket, from int, removed bool, user *models.UserData) (myTicketsChunk, bool) {
 	if from < 0 || from > len(tickets) {
 		return myTicketsChunk{}, false
 	}
@@ -538,14 +542,14 @@ func (s *MattermostService) myTicketsChunkAfterEdit(tickets []*models.Ticket, fr
 	if from >= end {
 		return myTicketsChunk{}, false
 	}
-	return s.myTicketsChunk(tickets, from, end, myTicketsHeader(from, oldEnd, total), ownerID), true
+	return s.myTicketsChunk(tickets, from, end, myTicketsHeader(from, oldEnd, total), user), true
 }
 
 // myTicketsChunk превращает срез заявок в карточки поста с готовым заголовком.
-func (s *MattermostService) myTicketsChunk(tickets []*models.Ticket, from, end int, message string, ownerID uuid.UUID) myTicketsChunk {
+func (s *MattermostService) myTicketsChunk(tickets []*models.Ticket, from, end int, message string, user *models.UserData) myTicketsChunk {
 	cards := make([]mattermost.Attachment, 0, end-from)
 	for _, t := range tickets[from:end] {
-		cards = append(cards, s.myTicketCard(t, ownerID, from))
+		cards = append(cards, s.myTicketCard(t, user, from))
 	}
 	return myTicketsChunk{message: message, cards: cards}
 }
@@ -561,8 +565,10 @@ func myTicketsHeader(from, end, total int) string {
 
 // myTicketCard собирает карточку заявки списка. Заголовок ведёт на заявку
 // (title_link) — отдельной кнопки «Открыть заявку» нет, вместо неё у заявки
-// владельца появляются действия по статусу.
-func (s *MattermostService) myTicketCard(t *models.Ticket, ownerID uuid.UUID, from int) mattermost.Attachment {
+// владельца появляются действия по статусу. Веб-ссылка доступна только
+// веб-пользователю (Keycloak) с coarse-правом ticket:read; остальным заголовок
+// ведёт на deep-link плагина, который открывается внутри Mattermost.
+func (s *MattermostService) myTicketCard(t *models.Ticket, user *models.UserData, from int) mattermost.Attachment {
 	title := t.Title
 	if t.TicketNumber != nil {
 		title = fmt.Sprintf("№%d — %s", *t.TicketNumber, t.Title)
@@ -576,13 +582,18 @@ func (s *MattermostService) myTicketCard(t *models.Ticket, ownerID uuid.UUID, fr
 		fields = append(fields, mattermost.AttachmentField{Title: "Площадка", Value: t.Site.Name, Short: true})
 	}
 
+	titleLink := pluginDeepLink(t.ID)
+	if s.showWebLink(user, t.RealmID) {
+		titleLink = s.taskLink(t.ID)
+	}
+
 	card := mattermost.Attachment{
 		Title:     title,
-		TitleLink: s.taskLink(t.ID),
+		TitleLink: titleLink,
 		Text:      cardSummary(t.Description),
 		Color:     mmStatusColors[t.Status],
 		Fields:    fields,
-		Buttons:   s.myTicketActionButtons(t, ownerID, from),
+		Buttons:   s.myTicketActionButtons(t, user.ID, from),
 	}
 	return card
 }
@@ -673,6 +684,30 @@ func (s *MattermostService) taskLink(ticketID uuid.UUID) string {
 	return fmt.Sprintf("%s/tasks/%s", s.baseURL, ticketID.String())
 }
 
+// showWebLink решает, показывать ли пользователю веб-ссылку на заявку.
+// Веб-ссылка ведёт на /tasks/:id, который доступен только пользователям из
+// Keycloak: у пользователей, созданных из Mattermost (Source=mattermost), нет
+// учётной записи в вебе. Второе условие — coarse-право ticket:read в домене
+// заявки: без него страница отдаст отказ. Ошибка проверки трактуется как отказ
+// (fail-closed на ссылке, доставка сообщения при этом не страдает).
+func (s *MattermostService) showWebLink(user *models.UserData, realmID *uuid.UUID) bool {
+	if user == nil || user.Source.IsFromMattermost() {
+		return false
+	}
+	if s.policies == nil || realmID == nil {
+		return false
+	}
+	allowed, err := s.policies.Enforce(user.ID.String(), realmID.String(), string(access.ResourceTicket), string(access.Read))
+	if err != nil {
+		logger.Warn("failed to check ticket read policy for mattermost web link",
+			logger.StringAttr("user_id", user.ID.String()),
+			logger.ErrAttr(err),
+		)
+		return false
+	}
+	return allowed
+}
+
 // sendStatusMessage отвечает на команду «мои | статус | заявки» списком активных
 // заявок карточками — тем же содержимым, что и кнопка «Мои заявки», но обычным
 // сообщением в канале. Длинный список уходит несколькими сообщениями.
@@ -687,7 +722,7 @@ func (s *MattermostService) sendStatusMessage(ctx context.Context, ch *mmChannel
 		return err
 	}
 
-	return s.sendMyTicketsChunks(ctx, ch.Settings.BotToken, ch.ChannelID, s.myTicketsChunks(tickets, user.ID))
+	return s.sendMyTicketsChunks(ctx, ch.Settings.BotToken, ch.ChannelID, s.myTicketsChunks(tickets, user))
 }
 
 // sendMyTicketsChunks отправляет список заявок одним или несколькими сообщениями

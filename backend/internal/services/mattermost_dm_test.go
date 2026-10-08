@@ -287,6 +287,24 @@ func dmService(t *testing.T, captured *[]capturedPost) (*MattermostService, *Moc
 	return dmFixtureService(t, &mmCapture{posts: captured}, nil)
 }
 
+// keycloakUser — веб-пользователь (для него допустима веб-ссылка при наличии права).
+func keycloakUser(id uuid.UUID) *models.UserData {
+	return &models.UserData{ID: id, Source: models.UserSourceKeycloak}
+}
+
+// mattermostUser — пользователь, созданный из Mattermost: учётки в Keycloak нет,
+// веб-ссылка ему не показывается.
+func mattermostUser(id uuid.UUID) *models.UserData {
+	return &models.UserData{ID: id, Source: models.UserSourceMattermost}
+}
+
+// allowAllPolicies — мок Casbin, разрешающий любую проверку.
+func allowAllPolicies() *MockAccessPolicies {
+	p := new(MockAccessPolicies)
+	p.On("Enforce", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(true, nil)
+	return p
+}
+
 // dmFixtureService собирает сервис с перехватом постов и диалогов Mattermost.
 // comments можно передать nil, если тест не проверяет комментарии.
 func dmFixtureService(t *testing.T, capture *mmCapture, comments *MockCommentsService) (*MattermostService, *MockMattermostRepo, *MockUserService, *MockUserRealmsService, *MockTicketsService) {
@@ -300,6 +318,7 @@ func dmFixtureService(t *testing.T, capture *mmCapture, comments *MockCommentsSe
 		UserRealms: userRealms,
 		Tickets:    tickets,
 		Comments:   comments,
+		Policies:   allowAllPolicies(),
 		Most:       mattermost.NewMost(mattermost.MostConfig{ServerURL: srv.URL, BaseURL: testBaseURL}),
 		BaseURL:    testBaseURL,
 	})
@@ -385,6 +404,7 @@ func TestSendStatusMessage_PostsTicketCards(t *testing.T) {
 		Status:       models.StatusOpen,
 		CreatedAt:    created,
 		TicketNumber: &num,
+		RealmID:      &realmID,
 		Site:         &models.SiteShort{Name: "Офис на Пушкина"},
 		Owner:        &models.UserShort{ID: userID},
 	}}, 1, nil)
@@ -471,7 +491,7 @@ func TestHandleInteractiveAction_MyTickets(t *testing.T) {
 	repo.On("GetByRealm", mock.Anything, realmID).Return(&models.RealmMattermost{RealmID: realmID, BotToken: "bot-token"}, nil)
 	expectExistingUser(users, userRealms, userID, realmID)
 	tickets.On("Get", mock.Anything, mock.Anything).Return([]*models.Ticket{{
-		ID: ticketID, Title: "Заявка", Status: models.StatusInProgress, CreatedAt: time.Now(),
+		ID: ticketID, Title: "Заявка", Status: models.StatusInProgress, CreatedAt: time.Now(), RealmID: &realmID,
 	}}, 1, nil)
 
 	result, err := svc.HandleInteractiveAction(context.Background(), &models.InteractiveActionDTO{
@@ -979,7 +999,7 @@ func TestMyTicketsChunks_SplitsAllTickets(t *testing.T) {
 		tickets = append(tickets, ticketFixture(i, models.StatusOpen, ownerID))
 	}
 
-	chunks := svc.myTicketsChunks(tickets, ownerID)
+	chunks := svc.myTicketsChunks(tickets, keycloakUser(ownerID))
 	require.Len(t, chunks, 6)
 	for i, chunk := range chunks {
 		want := myTicketsChunkSize
@@ -1017,11 +1037,11 @@ func TestMyTicketCard_Description(t *testing.T) {
 
 	ticket := ticketFixture(0, models.StatusOpen, ownerID)
 	ticket.Description = "  Не работает\n\n  экспорт в 1С  "
-	card := svc.myTicketCard(ticket, ownerID, 0)
+	card := svc.myTicketCard(ticket, keycloakUser(ownerID), 0)
 	assert.Equal(t, "Не работает экспорт в 1С", card.Text)
 
 	ticket.Description = strings.Repeat("а", cardSummaryLimit+50)
-	card = svc.myTicketCard(ticket, ownerID, 0)
+	card = svc.myTicketCard(ticket, keycloakUser(ownerID), 0)
 	assert.Len(t, []rune(card.Text), cardSummaryLimit+1, "длинное описание подрезается многоточием")
 	assert.True(t, strings.HasSuffix(card.Text, "…"))
 }
@@ -1035,7 +1055,7 @@ func TestCardSummary_EdgeCases(t *testing.T) {
 func TestMyTicketsChunks_EmptyList(t *testing.T) {
 	svc := NewMattermostService(&MattermostDeps{BaseURL: testBaseURL})
 
-	chunks := svc.myTicketsChunks(nil, uuid.New())
+	chunks := svc.myTicketsChunks(nil, keycloakUser(uuid.New()))
 	require.Len(t, chunks, 1)
 	assert.Equal(t, "У вас нет активных заявок.", chunks[0].message)
 	assert.Empty(t, chunks[0].cards)
@@ -1094,7 +1114,7 @@ func TestMyTicketsChunkAt_UniqueButtonIDs(t *testing.T) {
 		tickets = append(tickets, ticketFixture(i, models.StatusResolved, ownerID))
 	}
 
-	chunk, ok := svc.myTicketsChunkAt(tickets, 0, ownerID)
+	chunk, ok := svc.myTicketsChunkAt(tickets, 0, keycloakUser(ownerID))
 	require.True(t, ok)
 	require.Len(t, chunk.cards, 4)
 
@@ -1121,16 +1141,16 @@ func TestMyTicketsChunkAt_FromContext(t *testing.T) {
 		tickets = append(tickets, ticketFixture(i, models.StatusOpen, ownerID))
 	}
 
-	chunk, ok := svc.myTicketsChunkAt(tickets, 10, ownerID)
+	chunk, ok := svc.myTicketsChunkAt(tickets, 10, keycloakUser(ownerID))
 	require.True(t, ok)
 	require.Len(t, chunk.cards, 2)
 	assert.Equal(t, "Заявки 11–12 из 12:", chunk.message)
 	require.Len(t, chunk.cards[0].Buttons, 1)
 	assert.Equal(t, "10", chunk.cards[0].Buttons[0].Context["from"])
 
-	_, ok = svc.myTicketsChunkAt(tickets, 12, ownerID)
+	_, ok = svc.myTicketsChunkAt(tickets, 12, keycloakUser(ownerID))
 	assert.False(t, ok, "срез за концом списка не собирается")
-	_, ok = svc.myTicketsChunkAt(tickets, -1, ownerID)
+	_, ok = svc.myTicketsChunkAt(tickets, -1, keycloakUser(ownerID))
 	assert.False(t, ok, "отрицательное смещение не собирается")
 }
 
@@ -1168,13 +1188,12 @@ func TestSendStatusMessage_SendsAllTicketsInSeveralPosts(t *testing.T) {
 func TestMyTicketsChunks_WithoutBaseURL(t *testing.T) {
 	svc := NewMattermostService(&MattermostDeps{})
 
-	chunks := svc.myTicketsChunks([]*models.Ticket{{
-		ID: uuid.New(), Title: "Заявка", Status: models.StatusOpen, CreatedAt: time.Now(),
-	}}, uuid.New())
+	ticket := &models.Ticket{ID: uuid.New(), Title: "Заявка", Status: models.StatusOpen, CreatedAt: time.Now()}
+	chunks := svc.myTicketsChunks([]*models.Ticket{ticket}, keycloakUser(uuid.New()))
 
 	require.Len(t, chunks, 1)
 	require.Len(t, chunks[0].cards, 1)
-	assert.Empty(t, chunks[0].cards[0].TitleLink, "без base_url ссылка на заявку не строится")
+	assert.Equal(t, pluginDeepLink(ticket.ID), chunks[0].cards[0].TitleLink, "без веб-доступа заголовок ведёт в плагин")
 }
 
 func TestMyTicketsChunks_TitleWithoutNumber(t *testing.T) {
@@ -1182,12 +1201,47 @@ func TestMyTicketsChunks_TitleWithoutNumber(t *testing.T) {
 
 	chunks := svc.myTicketsChunks([]*models.Ticket{{
 		ID: uuid.New(), Title: "Без номера", Status: models.StatusPending, CreatedAt: time.Now(),
-	}}, uuid.New())
+	}}, keycloakUser(uuid.New()))
 
 	require.Len(t, chunks, 1)
 	require.Len(t, chunks[0].cards, 1)
 	assert.Equal(t, "Без номера", chunks[0].cards[0].Title, "без номера заголовок остаётся как есть")
 	assert.Equal(t, mmStatusLabels[models.StatusPending], chunks[0].cards[0].Fields[0].Value)
+}
+
+// sendTicketCreatedDM: веб-ссылка доступна веб-пользователю (Keycloak) с
+// coarse-правом, пользователю из Mattermost — deep-link плагина.
+func TestSendTicketCreatedDM_WebLinkBySource(t *testing.T) {
+	tests := []struct {
+		name    string
+		user    *models.UserData
+		wantWeb bool
+	}{
+		{"keycloak с ticket:read — веб-ссылка", keycloakUser(uuid.New()), true},
+		{"mattermost — deep-link плагина", mattermostUser(uuid.New()), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var posts []capturedPost
+			svc, _, _, _, _ := dmService(t, &posts)
+
+			realmID := uuid.New()
+			ticketID := uuid.New()
+			settings := &models.RealmMattermost{RealmID: realmID, BotToken: "bot-token", BotUserID: "bot1", IsActive: true}
+			dto := &models.TicketDTO{ID: &ticketID, TicketNumber: 7, Title: "Тестовая заявка", RealmID: &realmID}
+
+			svc.sendTicketCreatedDM(settings, "mm1", dto, tt.user)
+
+			require.Len(t, posts, 1)
+			if tt.wantWeb {
+				assert.Contains(t, posts[0].message, testBaseURL+"/tasks/"+ticketID.String())
+			} else {
+				assert.NotContains(t, posts[0].message, "/tasks/")
+				assert.Contains(t, posts[0].message, "[Открыть в плагине](/plug/issuetrack/ticket/"+ticketID.String()+")")
+			}
+		})
+	}
 }
 
 // cardChannel — канал бота с включённой интеграцией.
@@ -1228,6 +1282,7 @@ func TestHandleTicketCard_OwnerResolved_TwoButtons(t *testing.T) {
 		CreatedAt:    time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC),
 		DueDate:      &due,
 		TicketNumber: ptr(42),
+		RealmID:      &realmID,
 		Category:     &models.CategoryShort{Name: "Касса"},
 		Site:         &models.SiteShort{Name: "Офис на Пушкина"},
 		Owner:        &models.UserShort{ID: userID, Username: "u1"},

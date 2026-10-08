@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
@@ -85,7 +86,7 @@ func (n *mattermostNotifier) Notify(ctx context.Context, userID uuid.UUID, notif
 		return false, nil
 	}
 
-	if err := n.sender.Send(settings.BotToken, settings.BotUserID, *user.MattermostID, n.format(ctx, userID, ticket, notif)); err != nil {
+	if err := n.sender.Send(settings.BotToken, settings.BotUserID, *user.MattermostID, n.format(ctx, user, ticket, notif)); err != nil {
 		return false, fmt.Errorf("failed to send mattermost notification: %w", err)
 	}
 	logger.Info("mattermost notification sent",
@@ -104,7 +105,7 @@ func (n *mattermostNotifier) Notify(ctx context.Context, userID uuid.UUID, notif
 // («Новая задача №12: …»). Для overdue и deadline_soon при заданном дедлайне
 // добавляется строка «Дедлайн: …». Блок ссылок общий для всех типов и добавляется
 // один раз (links), чтобы правило показа веб-ссылки жило в одном месте.
-func (n *mattermostNotifier) format(ctx context.Context, userID uuid.UUID, ticket *models.Ticket, notif *models.CreateNotificationDTO) string {
+func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, ticket *models.Ticket, notif *models.CreateNotificationDTO) string {
 	var prefix, action string
 	switch notif.Type {
 	case string(models.NotificationTicketUpdated):
@@ -135,7 +136,7 @@ func (n *mattermostNotifier) format(ctx context.Context, userID uuid.UUID, ticke
 		number = fmt.Sprintf(" №%d", *ticket.TicketNumber)
 	}
 
-	links := n.links(ctx, userID, ticket)
+	links := n.links(ctx, user, ticket)
 
 	if action != "" {
 		// «Задача №12 обновлена: title» — действие идёт после номера.
@@ -144,7 +145,7 @@ func (n *mattermostNotifier) format(ctx context.Context, userID uuid.UUID, ticke
 			text += fmt.Sprintf("\nДедлайн: %s", ticket.DueDate.Format("02.01.2006 15:04"))
 		}
 		if notif.Type == string(models.NotificationTicketUpdated) {
-			if details := n.changesSummary(notif.Data); details != "" {
+			if details := n.changesSummary(user.ID, notif.Data); details != "" {
 				text += "\n\n" + details
 			}
 		}
@@ -153,28 +154,76 @@ func (n *mattermostNotifier) format(ctx context.Context, userID uuid.UUID, ticke
 
 	text := fmt.Sprintf("**%s%s: %s**", prefix, number, title)
 
+	if notif.Type == string(models.NotificationTicketCreated) && ticket.Owner != nil {
+		if label := userShortLabel(ticket.Owner); label != "" {
+			text += "\nЗаказчик: " + label
+		}
+	}
+
 	if notif.Type == string(models.NotificationDeadlineSoon) && ticket.DueDate != nil {
 		text += fmt.Sprintf("\nДедлайн: %s", ticket.DueDate.Format("02.01.2006 15:04"))
 	}
 
 	if notif.Type == string(models.NotificationTicketUpdated) {
-		if details := n.changesSummary(notif.Data); details != "" {
+		if details := n.changesSummary(user.ID, notif.Data); details != "" {
 			text += "\n\n" + details
+		}
+	}
+
+	if notif.Type == string(models.NotificationTicketComment) {
+		if block := commentBlock(notif.Data); block != "" {
+			text += "\n\n" + block
 		}
 	}
 
 	return text + links
 }
 
+// userShortLabel собирает «Фамилия Имя» заказчика для DM; без ФИО — username.
+func userShortLabel(u *models.UserShort) string {
+	name := strings.TrimSpace(u.LastName + " " + u.FirstName)
+	if name == "" {
+		return u.Username
+	}
+	return name
+}
+
+// commentBlock извлекает из data.comment текст и автора комментария и собирает
+// блок «Комментарий пользователя <ФИО>:\n<текст>». Без автора — только текст,
+// пустой data/текст — пустая строка (блок не печатается).
+func commentBlock(data json.RawMessage) string {
+	if len(data) == 0 {
+		return ""
+	}
+	var payload struct {
+		Comment struct {
+			Text   string `json:"text"`
+			Author string `json:"author"`
+		} `json:"comment"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil || payload.Comment.Text == "" {
+		return ""
+	}
+	if payload.Comment.Author == "" {
+		return payload.Comment.Text
+	}
+	return fmt.Sprintf("Комментарий пользователя %s:\n%s", payload.Comment.Author, payload.Comment.Text)
+}
+
 // links собирает блок ссылок в конце DM. Ссылка на заявку внутри Mattermost
 // (pluginLink) добавляется всем: её маршрут защищён SourceGuard/PluginTokenGuard,
 // Casbin-мидлвара на нём нет, а доступ к заявке решается на уровне сервиса по
 // атрибутам. Веб-ссылка ведёт на /tasks/:id, который закрыт coarse-правом
-// ticket:read, поэтому она персональная: право проверяется для конкретного
-// получателя в домене тикета. Нет права или ошибка проверки — веб-ссылка не
-// печатается (fail-closed на ссылке, доставка DM при этом не страдает).
-func (n *mattermostNotifier) links(ctx context.Context, userID uuid.UUID, ticket *models.Ticket) string {
+// ticket:read, поэтому она персональная: показывается только веб-пользователю
+// (Source != mattermost — у пользователей из Mattermost нет учётки Keycloak) и
+// только при наличии права в домене тикета. Нет права, не веб-пользователь или
+// ошибка проверки — веб-ссылка не печатается (fail-closed на ссылке, доставка
+// DM при этом не страдает).
+func (n *mattermostNotifier) links(ctx context.Context, user *models.UserData, ticket *models.Ticket) string {
 	links := n.pluginLink(ticket.ID)
+	if user == nil || user.Source.IsFromMattermost() {
+		return links
+	}
 	if n.baseURL == "" || n.policies == nil {
 		return links
 	}
@@ -182,11 +231,11 @@ func (n *mattermostNotifier) links(ctx context.Context, userID uuid.UUID, ticket
 		return links
 	}
 
-	allowed, err := n.policies.Enforce(userID.String(), ticket.RealmID.String(), string(access.ResourceTicket), string(access.Read))
+	allowed, err := n.policies.Enforce(user.ID.String(), ticket.RealmID.String(), string(access.ResourceTicket), string(access.Read))
 	if err != nil {
 		logger.Warn("failed to check ticket read policy for mattermost notification",
 			logger.StringAttr("ticket_id", ticket.ID.String()),
-			logger.StringAttr("user_id", userID.String()),
+			logger.StringAttr("user_id", user.ID.String()),
 			logger.ErrAttr(err),
 		)
 		return links
@@ -194,7 +243,7 @@ func (n *mattermostNotifier) links(ctx context.Context, userID uuid.UUID, ticket
 	if !allowed {
 		logger.Info("mattermost notification skipped web link: no ticket read permission",
 			logger.StringAttr("ticket_id", ticket.ID.String()),
-			logger.StringAttr("user_id", userID.String()),
+			logger.StringAttr("user_id", user.ID.String()),
 		)
 		return links
 	}
@@ -214,9 +263,28 @@ func (n *mattermostNotifier) pluginLink(ticketID uuid.UUID) string {
 	return fmt.Sprintf("\n[Открыть в плагине](%s)", pluginDeepLink(ticketID))
 }
 
+// changeTagLabels — русские подписи полей в сводке изменений тикета. Значения
+// статусов/приоритетов/сроков переводятся отдельно, поля с id выводятся вообще
+// без значений (см. changeLine), чтобы в DM не светились сырые uuid.
+var changeTagLabels = map[models.ActivityType]string{
+	models.ActionCreated:            "Создана",
+	models.ActionClosed:             "Закрыта",
+	models.ActionTitleChanged:       "Заголовок",
+	models.ActionDescriptionChanged: "Описание",
+	models.ActionStatusChanged:      "Статус",
+	models.ActionPriorityChanged:    "Приоритет",
+	models.ActionOwnerChanged:       "Заказчик",
+	models.ActionGroupChanged:       "Группа",
+	models.ActionGroupAssigned:      "Группа",
+	models.ActionManagerChanged:     "Начальник",
+	models.ActionDueDateChanged:     "Срок",
+	models.ActionSiteChanged:        "Площадка",
+	models.ActionCategoryChanged:    "Категория",
+}
+
 // changesSummary превращает сводку изменений тикета (поле data.changes) в многострочный
 // текст вида «• поле: старое → новое». Возвращает пустую строку, если изменений нет.
-func (n *mattermostNotifier) changesSummary(data json.RawMessage) string {
+func (n *mattermostNotifier) changesSummary(userID uuid.UUID, data json.RawMessage) string {
 	if len(data) == 0 {
 		return ""
 	}
@@ -232,9 +300,99 @@ func (n *mattermostNotifier) changesSummary(data json.RawMessage) string {
 	}
 	lines := make([]string, 0, len(changes))
 	for _, ch := range changes {
-		lines = append(lines, fmt.Sprintf("• %s: %s → %s", ch.Tag, prettyVal(ch.OldVal), prettyVal(ch.NewVal)))
+		if line, ok := n.changeLine(userID, ch); ok {
+			lines = append(lines, line)
+		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// changeLine превращает одно изменение тикета в строку сводки. При передаче заявки
+// новому исполнителю пишем «Вам назначена задача.» без id, остальным получателям —
+// нейтрально. Поля с id (заказчик/начальник/группа/категория/площадка) выводятся без
+// значений. Неизвестный тег строку не даёт, чтобы в DM не просочился английский тег.
+func (n *mattermostNotifier) changeLine(userID uuid.UUID, ch *models.FieldChange) (string, bool) {
+	switch ch.Tag {
+	case models.ActionAssigned, models.ActionAssignChanged:
+		if ch.NewVal == "" || ch.NewVal == "none" {
+			return "", false
+		}
+		newAssigneeID, err := uuid.Parse(ch.NewVal)
+		if err != nil {
+			return "", false
+		}
+		if newAssigneeID == userID {
+			return "Вам назначена задача.", true
+		}
+		verb := "назначен"
+		if ch.Tag == models.ActionAssignChanged {
+			verb = "изменён"
+		}
+		return "Исполнитель: " + verb, true
+
+	case models.ActionOwnerChanged:
+		return "Заказчик: изменён", true
+	case models.ActionManagerChanged:
+		return "Начальник: изменён", true
+	case models.ActionGroupChanged:
+		return "Группа: изменена", true
+	case models.ActionGroupAssigned:
+		return "Группа: назначена", true
+	case models.ActionSiteChanged:
+		return "Площадка: изменена", true
+	case models.ActionCategoryChanged:
+		return "Категория: изменена", true
+	}
+
+	label, ok := changeTagLabels[ch.Tag]
+	if !ok {
+		return "", false
+	}
+
+	switch ch.Tag {
+	case models.ActionStatusChanged:
+		return fmt.Sprintf("• %s: %s → %s", label, ruStatus(ch.OldVal), ruStatus(ch.NewVal)), true
+	case models.ActionPriorityChanged:
+		return fmt.Sprintf("• %s: %s → %s", label, ruPriority(ch.OldVal), ruPriority(ch.NewVal)), true
+	case models.ActionDueDateChanged, models.ActionClosed:
+		return fmt.Sprintf("• %s: %s → %s", label, ruTime(ch.OldVal), ruTime(ch.NewVal)), true
+	default:
+		return fmt.Sprintf("• %s: %s → %s", label, prettyVal(ch.OldVal), prettyVal(ch.NewVal)), true
+	}
+}
+
+// ruStatus переводит значение статуса в русскую подпись (той же, что в карточках бота).
+func ruStatus(v string) string {
+	if v == "" || v == "none" {
+		return "—"
+	}
+	if label, ok := mmStatusLabels[models.TicketStatus(v)]; ok {
+		return label
+	}
+	return v
+}
+
+// ruPriority переводит значение приоритета в русскую подпись (той же, что в карточках бота).
+func ruPriority(v string) string {
+	if v == "" || v == "none" {
+		return "—"
+	}
+	if label, ok := mmPriorityLabels[models.Priority(v)]; ok {
+		return label
+	}
+	return v
+}
+
+// ruTime форматирует «сырое» время изменения (строковое представление *time.Time)
+// в читаемый «02.01.2006 15:04». Неразобранное значение возвращается как есть.
+func ruTime(v string) string {
+	if v == "" || v == "none" {
+		return "—"
+	}
+	if t, err := time.Parse("2006-01-02 15:04:05 -0700 MST", v); err == nil {
+		return t.Format("02.01.2006 15:04")
+	}
+	return v
 }
 
 func prettyVal(v string) string {

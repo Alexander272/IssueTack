@@ -718,8 +718,8 @@ func (m *MockNotificationService) SendUnread(ctx context.Context, client *ws_hub
 	args := m.Called(ctx, client)
 	return args.Error(0)
 }
-func (m *MockNotificationService) TicketCommented(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) error {
-	args := m.Called(ctx, ticket, actorID)
+func (m *MockNotificationService) TicketCommented(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID, commentText, authorLabel string) error {
+	args := m.Called(ctx, ticket, actorID, commentText, authorLabel)
 	return args.Error(0)
 }
 func (m *MockNotificationService) AttachmentAdded(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) error {

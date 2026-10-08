@@ -68,8 +68,13 @@ func TestCommentService_Create_SendsDMToOwner(t *testing.T) {
 	})).Return(nil)
 	mockTickets.On("GetSummary", mock.Anything, ticket.ID).Return(ticket, nil)
 	mockUsers.On("GetByID", mock.Anything, ownerID).Return(&models.UserData{ID: ownerID, MattermostID: &ownerMM}, nil)
+	mockUsers.On("GetByID", mock.Anything, prismID).Return(&models.UserData{ID: prismID, LastName: "Петров", FirstName: "Иван", Username: "prism"}, nil)
 	mockMMRepo.On("GetByRealm", mock.Anything, realmID).Return(&models.RealmMattermost{RealmID: realmID, BotToken: "bt", BotUserID: "bb", IsActive: true}, nil)
-	mockSender.On("Send", "bt", "bb", ownerMM, mock.Anything).Return(nil)
+	mockSender.On("Send", "bt", "bb", ownerMM, mock.MatchedBy(func(msg string) bool {
+		return assert.Contains(t, msg, "**№42: Заголовок заявки**") &&
+			assert.Contains(t, msg, "Комментарий пользователя Петров Иван:") &&
+			assert.Contains(t, msg, dto.Text)
+	})).Return(nil)
 
 	comment, err := svc.Create(context.Background(), nil, dto)
 	assert.NoError(t, err)
