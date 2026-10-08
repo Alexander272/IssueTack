@@ -215,7 +215,10 @@ func (r *RoleRepo) GetIDsBySlugs(ctx context.Context, realmID uuid.UUID, slugs [
 }
 
 func (r *RoleRepo) Create(ctx context.Context, tx Tx, dto *models.RoleDTO) error {
-	if dto.Slug == "root" || dto.Slug == "superadmin" {
+	// slug "root" зарезервирован: на литеральный root завязана Casbin-политика
+	// суперпользователя (p, root, *, *, * в adapter.go), поэтому его нельзя занять
+	// или переименовать. "superadmin" резервом не является — политики за ним нет.
+	if dto.Slug == "root" {
 		return models.ErrReservedRole
 	}
 
@@ -234,7 +237,10 @@ func (r *RoleRepo) Create(ctx context.Context, tx Tx, dto *models.RoleDTO) error
 }
 
 func (r *RoleRepo) Update(ctx context.Context, tx Tx, dto *models.RoleDTO) error {
-	if dto.Slug == "root" || dto.Slug == "superadmin" {
+	// slug "root" зарезервирован: на литеральный root завязана Casbin-политика
+	// суперпользователя (p, root, *, *, * в adapter.go), поэтому его нельзя занять
+	// или переименовать. "superadmin" резервом не является — политики за ним нет.
+	if dto.Slug == "root" {
 		return models.ErrReservedRole
 	}
 

@@ -30,19 +30,24 @@ export default function ModalController({scope, context, initialPendingOpenId, o
 	// чтобы источник открытия (создание или клик в списке) не зависел от внутреннего
 	// состояния вкладки.
 	const [pendingOpenId, setPendingOpenId] = useState<string | null>(initialPendingOpenId ?? null)
+	// Есть ли непустой черновик формы создания: пока он есть, клик мимо окна и
+	// Escape не закрывают модалку (закрыть можно только крестиком/по действию) —
+	// иначе заполненная форма терялась бы от случайного клика. Пустая форма
+	// закрывается как раньше.
+	const [hasDraft, setHasDraft] = useState(false)
 
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
-			if (e.key === 'Escape') {
+			if (e.key === 'Escape' && !hasDraft) {
 				onClose()
 			}
 		}
 		window.addEventListener('keydown', onKey)
 		return () => window.removeEventListener('keydown', onKey)
-	}, [onClose])
+	}, [onClose, hasDraft])
 
 	return (
-		<div className='it-ticket-overlay' onClick={onClose}>
+		<div className='it-ticket-overlay' onClick={() => (hasDraft ? undefined : onClose())}>
 			<div
 				className='it-ticket-modal'
 				role='dialog'
@@ -73,6 +78,7 @@ export default function ModalController({scope, context, initialPendingOpenId, o
 						<CreateTab
 							scope={scope}
 							context={context}
+							onDraftChange={setHasDraft}
 							onCreated={() => setTab('mine')}
 							onOpen={id => {
 								setTab('mine')

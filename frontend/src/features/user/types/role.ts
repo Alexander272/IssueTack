@@ -23,7 +23,6 @@ export interface IRoleDTO {
 
 export interface IRoleWithStats extends IRole {
 	children: string[]
-	inheritance: { [key: string]: string[] }
 	perms: IPermsCount
 	userCount: number
 }
@@ -43,7 +42,6 @@ export interface IFullRole {
 	name: string
 	description: string
 	level: number
-	extends: string[]
 	isShow: boolean
 }
 
@@ -62,7 +60,6 @@ export interface IRolePermissionsGrouped {
 }
 
 export interface IRoleWithPerms extends IRole {
-	extends?: string[]
 	perms: IRolePermissionsGrouped[]
 }
 

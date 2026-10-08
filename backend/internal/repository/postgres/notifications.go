@@ -30,6 +30,8 @@ type Notifications interface {
 	GetUnread(ctx context.Context, userID uuid.UUID) ([]*models.Notification, error)
 	MarkRead(ctx context.Context, tx Tx, id uuid.UUID) error
 	MarkAllRead(ctx context.Context, tx Tx, userID uuid.UUID) error
+	// GetResponsibleByCategory возвращает «ответственного» за категорию — менеджера
+	// группы-владельца категории (groups.manager_id, активного), если он назначен.
 	GetResponsibleByCategory(ctx context.Context, categoryID uuid.UUID) ([]uuid.UUID, error)
 	// GetCategoryEventSubscribers возвращает ID пользователей, у которых мастер-переключатель
 	// enabled включён и заданное событие (поле eventField в матрице «категория × событие»)
@@ -106,13 +108,18 @@ func (r *notificationRepository) MarkAllRead(ctx context.Context, tx Tx, userID 
 	return nil
 }
 
+// GetResponsibleByCategory возвращает «ответственного» за категорию — менеджера
+// группы-владельца категории (groups.manager_id), если он назначен и активен.
+// Узкий круг (в отличие от всех участников группы) сужает получателей уведомлений
+// о заявках категории до одного ключевого человека.
 func (r *notificationRepository) GetResponsibleByCategory(ctx context.Context, categoryID uuid.UUID) ([]uuid.UUID, error) {
 	query := fmt.Sprintf(`
-		SELECT gm.user_id
-		FROM %s gm
-		JOIN %s c ON c.group_id = gm.group_id
+		SELECT g.manager_id AS user_id
+		FROM %s c
+		JOIN %s g ON g.id = c.group_id
+		JOIN %s u ON u.id = g.manager_id AND u.is_active = true
 		WHERE c.id = $1
-	`, Tables.GroupMembers, Tables.Categories)
+	`, Tables.Categories, Tables.Groups, Tables.Users)
 
 	rows, err := r.db.Query(ctx, query, categoryID)
 	if err != nil {

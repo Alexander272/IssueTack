@@ -168,7 +168,8 @@ func (s *UserRealmService) DeleteSeveral(ctx context.Context, tx postgres.Tx, dt
 	})
 }
 
-// GetRealmSupervisors возвращает ID пользователей-«начальников области» реалма.
+// GetRealmSupervisors возвращает ID пользователей-«начальников области» реалма — тех,
+// чья роль (или её потомки по role_hierarchy) несёт category:write/site:write.
 func (s *UserRealmService) GetRealmSupervisors(ctx context.Context, realmID uuid.UUID) ([]uuid.UUID, error) {
 	data, err := s.repo.GetRealmSupervisors(ctx, realmID)
 	if err != nil {

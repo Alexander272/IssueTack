@@ -174,6 +174,7 @@ func NewServices(deps *Deps) *Services {
 		Attachments: attachments,
 		Comments:    comments,
 		Access:      access,
+		Policies:    policies,
 		EventBus:    updatePolicyEvent,
 		Most:        mmMost,
 		BaseURL:     deps.Conf.Http.BaseURL,

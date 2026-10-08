@@ -62,7 +62,9 @@ type Notifications interface {
 	// TicketDeleted оповещает заинтересованных пользователей об удалении тикета.
 	TicketDeleted(ctx context.Context, ticket *models.Ticket) error
 	// TicketCommented оповещает исполнителя и подписанных о новом комментарии.
-	TicketCommented(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) error
+	// commentText и authorLabel — текст комментария и «Фамилия Имя» его автора
+	// (пустая строка, если автора не удалось определить); они попадают в DM и в Data.
+	TicketCommented(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID, commentText, authorLabel string) error
 	// AttachmentAdded оповещает исполнителя и подписанных о новом вложении.
 	AttachmentAdded(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) error
 	// NotifyOverdue оповещает о просроченном тикете: исполнителя, менеджера, админов реалма,
@@ -173,10 +175,10 @@ func (s *NotificationService) NotifyOverdue(ctx context.Context, ticket *models.
 	return nil
 }
 
-// TicketCreated оповещает менеджера, ответственных категории и исполнителя о создании тикета,
-// а также авто-подписывает на заявку надзителей реалма и менеджера группы (с включёнными
-// уведомлениями), чтобы они получали дальнейшие события через подписку. Создатель тикета
-// уведомление о собственном действии не получает.
+// TicketCreated оповещает менеджера, ответственного за категорию (менеджера группы) и
+// исполнителя о создании тикета, а также авто-подписывает на заявку надзителей реалма и
+// менеджера группы (с включёнными уведомлениями), чтобы они получали дальнейшие события
+// через подписку. Создатель тикета уведомление о собственном действии не получает.
 func (s *NotificationService) TicketCreated(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) error {
 	recipients := make(map[uuid.UUID]struct{})
 
@@ -198,7 +200,7 @@ func (s *NotificationService) TicketCreated(ctx context.Context, ticket *models.
 		}
 	}
 
-	// Авто-подписка на заявку: надзители реалма и менеджер группы с включёнными уведомлениями.
+	// Авто-подписка на заявку: начальник области и менеджер группы с включёнными уведомлениями.
 	auto, err := s.autoSubscribeOnCreate(ctx, ticket)
 	if err != nil {
 		return err
@@ -310,6 +312,12 @@ func (s *NotificationService) TicketUpdated(ctx context.Context, ticket *models.
 		recipients[ticket.Assignee.ID] = struct{}{}
 	}
 
+	// Заказчик (owner) уведомляется только о смене статуса: изменения приоритета, срока
+	// и прочих полей до него не доходят. Автор изменения исключается ниже общим delete.
+	if hasStatusChange(changes) && ticket.Owner != nil {
+		recipients[ticket.Owner.ID] = struct{}{}
+	}
+
 	// Если изменён статус задачи — уведомляем подписчиков категории на событие «Изменение статуса».
 	if ticket.Category != nil && hasStatusChange(changes) {
 		statusSubscribers, err := s.repo.GetCategoryEventSubscribers(ctx, ticket.Category.ID, models.EventFieldName(models.EventStatus))
@@ -353,7 +361,7 @@ func (s *NotificationService) TicketUpdated(ctx context.Context, ticket *models.
 	return nil
 }
 
-// TicketDeleted оповещает менеджера, ответственных категории и подписанных об удалении тикета.
+// TicketDeleted оповещает менеджера, ответственного за категорию и подписанных об удалении тикета.
 func (s *NotificationService) TicketDeleted(ctx context.Context, ticket *models.Ticket) error {
 	recipients := make(map[uuid.UUID]struct{})
 
@@ -403,7 +411,7 @@ func (s *NotificationService) TicketDeleted(ctx context.Context, ticket *models.
 
 // TicketCommented оповещает исполнителя и подписанных о новом комментарии по заявке.
 // Самому автору комментария уведомление не отправляется.
-func (s *NotificationService) TicketCommented(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) error {
+func (s *NotificationService) TicketCommented(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID, commentText, authorLabel string) error {
 	recipients := make(map[uuid.UUID]struct{})
 
 	if ticket.Assignee != nil && ticket.Assignee.ID != actorID {
@@ -441,6 +449,10 @@ func (s *NotificationService) TicketCommented(ctx context.Context, ticket *model
 	data, err := json.Marshal(map[string]any{
 		"ticket_id": ticket.ID.String(),
 		"title":     ticket.Title,
+		"comment": map[string]string{
+			"text":   commentText,
+			"author": authorLabel,
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to marshal notification data: %w", err)

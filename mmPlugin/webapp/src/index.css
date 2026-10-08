@@ -149,6 +149,7 @@
 }
 
 .it-ticket-form {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -288,6 +289,7 @@
 .it-ticket-form__footer {
     display: flex;
     justify-content: flex-end;
+    gap: 8px;
     padding-top: 4px;
 }
 

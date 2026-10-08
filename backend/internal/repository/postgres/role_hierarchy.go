@@ -23,17 +23,33 @@ func NewRoleHierarchyRepo(db *pgxpool.Pool, tr Transaction) *RoleHierarchyRepo {
 }
 
 type RoleHierarchy interface {
+	// LoadPolicy возвращает связи наследования для Casbin: запись (role_id=ребёнок,
+	// parent_role_id=родитель) — родитель «включает» права ребёнка (g(parent, role)).
 	LoadPolicy(ctx context.Context) ([]*models.SyncRoleInheritance, error)
+	// GetInheritedRoles возвращает роли-предков (цепочку родителей) указанных ролей.
 	GetInheritedRoles(ctx context.Context, req *models.GetRolesInheritance) (map[string][]string, error)
+	// GetRoleDescendants возвращает всех потомков (включая прямых) для указанных ролей —
+	// роли, права которых родитель включает. Противоположно GetInheritedRoles.
 	GetRoleDescendants(ctx context.Context, req *models.GetRolesInheritance) (map[string][]string, error)
+	// GetDirectChildren возвращает непосредственных потомков (роли c parent_role_id = X).
 	GetDirectChildren(ctx context.Context, req *models.GetRolesInheritance) (map[string][]string, error)
+	// SyncRoleInheritance возвращает связи наследования одной роли (её предков) для Casbin.
 	SyncRoleInheritance(ctx context.Context, req *models.GetRoleInheritance) ([]*models.SyncRoleInheritance, error)
+	// AddInheritance делает роль dto.RoleID потомком dto.ParentRoleID: родитель будет
+	// наследовать права потомка (запись role_id=RoleID, parent_role_id=ParentRoleID).
 	AddInheritance(ctx context.Context, tx Tx, dto *models.RoleHierarchyDTO) error
-	AddInheritances(ctx context.Context, tx Tx, realmID uuid.UUID, roleID uuid.UUID, parentRoleIDs []uuid.UUID) error
+	// AddInheritances присоединяет к роли roleID наследуемые роли (её потомков):
+	// roleID становится их родителем (запись parent_role_id=roleID, role_id=наследуемая).
+	AddInheritances(ctx context.Context, tx Tx, realmID uuid.UUID, roleID uuid.UUID, inheritedRoleIDs []uuid.UUID) error
+	// RemoveInheritance удаляет наследование роли от родительской роли (запись целиком).
 	RemoveInheritance(ctx context.Context, tx Tx, dto *models.RoleHierarchyDTO) error
-	RemoveInheritances(ctx context.Context, tx Tx, roleID uuid.UUID, parentRoleIDs []uuid.UUID) error
+	// RemoveInheritances отсоединяет от роли roleID наследуемые роли (её потомков): удаляет
+	// записи, где roleID — родитель (parent_role_id=roleID, role_id IN inheritedRoleIDs).
+	RemoveInheritances(ctx context.Context, tx Tx, roleID uuid.UUID, inheritedRoleIDs []uuid.UUID) error
 }
 
+// LoadPolicy возвращает все связи наследования ролей для загрузки в Casbin
+// (adapter.go грузит каждую как g(ParentRole, Role, Realm) — родитель наследует потомка).
 func (r *RoleHierarchyRepo) LoadPolicy(ctx context.Context) ([]*models.SyncRoleInheritance, error) {
 	query := fmt.Sprintf(`SELECT r1.slug, r2.slug, rh.realm_id
         FROM %s rh
@@ -64,6 +80,11 @@ func (r *RoleHierarchyRepo) LoadPolicy(ctx context.Context) ([]*models.SyncRoleI
 	return data, nil
 }
 
+// GetInheritedRoles возвращает для каждой из указанных ролей цепочку ролей-ПРЕДКОВ
+// (шаг за шагом вверх по role_hierarchy: role_id → parent_role_id). Это роли, которые
+// наследуют указанную роль: запись (role_id=X, parent_role_id=Y) означает Y (родитель)
+// включает права X, поэтому предки X — родители, деды и т.д.
+// Направление противоположно GetRoleDescendants (тот идёт вниз, к потомкам).
 func (r *RoleHierarchyRepo) GetInheritedRoles(ctx context.Context, req *models.GetRolesInheritance) (map[string][]string, error) {
 	if len(req.Roles) == 0 {
 		return make(map[string][]string), nil
@@ -71,15 +92,15 @@ func (r *RoleHierarchyRepo) GetInheritedRoles(ctx context.Context, req *models.G
 
 	query := fmt.Sprintf(`WITH RECURSIVE inheritance_tree AS (
 			SELECT 
-				r1.id as root_id,
-				r1.slug as root_slug,
-				r2.id as parent_id,
-				r2.slug as parent_slug
+				r2.id as root_id,
+				r2.slug as root_slug,
+				r1.id as parent_id,
+				r1.slug as parent_slug
 			FROM %s ri
 			JOIN %s r1 ON ri.parent_role_id = r1.id
 			JOIN %s r2 ON ri.role_id = r2.id
-			WHERE r1.slug = ANY($1)
-			AND r2.is_active = true
+			WHERE r2.slug = ANY($1)
+			AND r1.is_active = true
 
 			UNION ALL
 
@@ -89,8 +110,8 @@ func (r *RoleHierarchyRepo) GetInheritedRoles(ctx context.Context, req *models.G
 				r3.id,
 				r3.slug
 			FROM inheritance_tree it
-			JOIN %s ri ON ri.parent_role_id = it.parent_id
-			JOIN %s r3 ON ri.role_id = r3.id
+			JOIN %s ri ON ri.role_id = it.parent_id
+			JOIN %s r3 ON ri.parent_role_id = r3.id
 			WHERE r3.is_active = true
 		)
 		SELECT DISTINCT root_slug, parent_slug
@@ -120,7 +141,8 @@ func (r *RoleHierarchyRepo) GetInheritedRoles(ctx context.Context, req *models.G
 	return result, nil
 }
 
-// SyncRoleInheritance — используется для синхронизации наследования ролей с Casbin
+// SyncRoleInheritance возвращает роли-предки (direct parents) роли req.Role для синхронизации
+// с Casbin: Response Role=req.Role (потомок), ParentRole=родитель — casbin грузит g(parent, role).
 func (r *RoleHierarchyRepo) SyncRoleInheritance(ctx context.Context, req *models.GetRoleInheritance) ([]*models.SyncRoleInheritance, error) {
 	query := fmt.Sprintf(`SELECT r2.slug 
         FROM %s ri
@@ -142,8 +164,7 @@ func (r *RoleHierarchyRepo) SyncRoleInheritance(ctx context.Context, req *models
 		if err := rows.Scan(&parentCode); err != nil {
 			return nil, MapError(fmt.Errorf("scan row error: %w", err))
 		}
-		// // g(дочерняя_роль, родительская_роль, домен)
-		// casbin.AddGroupingPolicy(roleCode, parentCode, domain)
+		// Связь грузится в Casbin как g(родитель, роль, домен): родитель наследует потомка.
 		data = append(data, &models.SyncRoleInheritance{Role: req.Role, ParentRole: parentCode, Realm: req.Realm})
 	}
 	if err := rows.Err(); err != nil {
@@ -265,16 +286,16 @@ func (r *RoleHierarchyRepo) AddInheritance(ctx context.Context, tx Tx, dto *mode
 	return nil
 }
 
-func (r *RoleHierarchyRepo) AddInheritances(ctx context.Context, tx Tx, realmID uuid.UUID, roleID uuid.UUID, parentRoleIDs []uuid.UUID) error {
-	if len(parentRoleIDs) == 0 {
+func (r *RoleHierarchyRepo) AddInheritances(ctx context.Context, tx Tx, realmID uuid.UUID, roleID uuid.UUID, inheritedRoleIDs []uuid.UUID) error {
+	if len(inheritedRoleIDs) == 0 {
 		return nil
 	}
 
-	values := make([]string, 0, len(parentRoleIDs))
-	args := make([]any, 0, len(parentRoleIDs)*3)
-	for i, parentID := range parentRoleIDs {
+	values := make([]string, 0, len(inheritedRoleIDs))
+	args := make([]any, 0, len(inheritedRoleIDs)*3)
+	for i, inheritedRoleID := range inheritedRoleIDs {
 		values = append(values, fmt.Sprintf("($%d, $%d, $%d)", i*3+1, i*3+2, i*3+3))
-		args = append(args, roleID, parentID, realmID)
+		args = append(args, roleID, inheritedRoleID, realmID)
 	}
 
 	query := fmt.Sprintf(`INSERT INTO %s (parent_role_id, role_id, realm_id) VALUES %s ON CONFLICT DO NOTHING`,
@@ -287,16 +308,16 @@ func (r *RoleHierarchyRepo) AddInheritances(ctx context.Context, tx Tx, realmID 
 	return nil
 }
 
-func (r *RoleHierarchyRepo) RemoveInheritances(ctx context.Context, tx Tx, roleID uuid.UUID, parentRoleIDs []uuid.UUID) error {
-	if len(parentRoleIDs) == 0 {
+func (r *RoleHierarchyRepo) RemoveInheritances(ctx context.Context, tx Tx, roleID uuid.UUID, inheritedRoleIDs []uuid.UUID) error {
+	if len(inheritedRoleIDs) == 0 {
 		return nil
 	}
 
-	placeholders := make([]string, 0, len(parentRoleIDs))
+	placeholders := make([]string, 0, len(inheritedRoleIDs))
 	args := []any{roleID}
-	for _, parentID := range parentRoleIDs {
+	for _, inheritedRoleID := range inheritedRoleIDs {
 		placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)+1))
-		args = append(args, parentID)
+		args = append(args, inheritedRoleID)
 	}
 
 	query := fmt.Sprintf(`DELETE FROM %s WHERE parent_role_id = $1 AND role_id IN (%s)`,

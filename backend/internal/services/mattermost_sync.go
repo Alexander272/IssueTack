@@ -44,12 +44,12 @@ func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uui
 
 	if matched, userID, username := matchByEmail(sysUsers, mmUser.Email); matched {
 		s.ensureLinkAndRealm(ctx, realmID, userID, mmUser.Id, siteID, userID, username)
-		return &models.UserData{ID: userID, Username: username, SiteID: userSiteByID(sysUsers, userID)}, nil
+		return &models.UserData{ID: userID, Username: username, SiteID: userSiteByID(sysUsers, userID), Source: userSourceByID(sysUsers, userID)}, nil
 	}
 
 	if matched, userID, username := matchByUsername(sysUsers, mmUser.Username); matched {
 		s.ensureLinkAndRealm(ctx, realmID, userID, mmUser.Id, siteID, userID, username)
-		return &models.UserData{ID: userID, Username: username, SiteID: userSiteByID(sysUsers, userID)}, nil
+		return &models.UserData{ID: userID, Username: username, SiteID: userSiteByID(sysUsers, userID), Source: userSourceByID(sysUsers, userID)}, nil
 	}
 
 	mmFio := buildFIO(mmUser.FirstName, cleanMMLastName(mmUser.LastName))
@@ -94,6 +94,7 @@ func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uui
 	newUser := &models.UserData{
 		ID:       newUserID,
 		Username: mmUser.Username,
+		Source:   models.UserSourceMattermost,
 	}
 	if siteID != nil {
 		value := siteID.String()
@@ -112,6 +113,22 @@ func userSiteByID(users []*models.UserData, id uuid.UUID) *string {
 		}
 	}
 	return nil
+}
+
+// userSourceByID возвращает источник пользователя из списка. Пустое значение и
+// отсутствие записи трактуются как keycloak — так же нормализует источник
+// postgres.userRepo (mapUserSource), поэтому веб-ссылка таким пользователям
+// разрешена (с поправкой на coarse-право).
+func userSourceByID(users []*models.UserData, id uuid.UUID) models.UserSource {
+	for _, u := range users {
+		if u.ID == id {
+			if u.Source == "" {
+				return models.UserSourceKeycloak
+			}
+			return u.Source
+		}
+	}
+	return models.UserSourceKeycloak
 }
 
 // ensureRealmMembership добавляет пользователя в realm с ролью «user», если он

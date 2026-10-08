@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { Box, Button, Stack, Typography } from '@mui/material'
 import { FormProvider, useForm, useWatch } from 'react-hook-form'
 import { toast } from 'react-toastify'
+import { SaveIcon } from 'lucide-mui'
 
 import type { IFetchError } from '@/app/types/error'
 import type { ITaskDTO } from '../../types/task'
 import type { FormValues, Props } from './types'
+import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
 import { useAppSelector } from '@/hooks/redux'
 import { useGetAllCategoriesQuery } from '@/features/categories/categoriesApiSlice'
 import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
@@ -18,8 +20,27 @@ import { DescriptionSection } from './DescriptionSection'
 import { AdvancedSettingsSection } from './AdvancedSettingsSection'
 import { CustomerSelectionSection } from './CustomerSelectionSection'
 import { SubtasksCreationSection } from './SubtasksCreationSection'
+import { clearDraft, hasDraftContent, loadDraft, saveDraft } from './draft'
 
-export const TaskCreateForm = ({ onSuccess, onCancel, embedded, onSavingChange }: Props) => {
+// EMPTY_FORM — исходные значения формы. reset() обязан сбрасывать именно к ним,
+// а не к defaultValues: последние могут быть черновиком из sessionStorage.
+const EMPTY_FORM: FormValues = {
+	title: '',
+	description: '',
+	priority: 'medium',
+	categoryId: '',
+	groupId: null,
+	ownerId: null,
+	assigneeId: null,
+	siteId: '',
+	dueDate: null,
+	subtasks: [],
+}
+
+export type TaskCreateFormHandle = { requestReset: () => void }
+
+export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
+	({ onSuccess, onCancel, embedded, onSavingChange, onDirtyChange }, ref) => {
 	const currentUserId = useAppSelector(getUserId)
 	const realm = useAppSelector(getRealm)
 	const isManager = useAppSelector(getIsManager)
@@ -34,26 +55,60 @@ export const TaskCreateForm = ({ onSuccess, onCancel, embedded, onSavingChange }
 
 	const [files, setFiles] = useState<File[]>([])
 	const [submitting, setSubmitting] = useState(false)
+	const [confirmOpen, setConfirmOpen] = useState(false)
 
 	const categories = useMemo(() => categoriesData?.data ?? [], [categoriesData])
 	const sites = useMemo(() => sitesData?.data ?? [], [sitesData])
 
+	// Черновик читается синхронно на первом рендере, чтобы сразу попасть в
+	// defaultValues формы. Ключ — realm + пользователь.
+	const [initialDraft] = useState(() =>
+		realm?.id && currentUserId ? loadDraft(realm.id, currentUserId) : null,
+	)
+
 	const methods = useForm<FormValues>({
-		defaultValues: {
-			title: '',
-			description: '',
-			priority: 'medium',
-			categoryId: '',
-			groupId: null,
-			ownerId: null,
-			assigneeId: null,
-			siteId: '',
-			dueDate: null,
-			subtasks: [],
-		},
+		defaultValues: initialDraft ?? EMPTY_FORM,
 		mode: 'onTouched',
 	})
 	const { control, getValues, handleSubmit, reset, setValue, formState } = methods
+
+	const filesRef = useRef<File[]>([])
+	const watchedValues = useWatch({ control }) as FormValues
+	// Первый прогон эффекта сохранения пропускаем: форма уже инициализирована
+	// черновиком, а частично пустой результат первого useWatch мог бы затереть
+	// его в хранилище.
+	const hydratedRef = useRef(false)
+
+	useEffect(() => {
+		filesRef.current = files
+		onDirtyChange?.(hasDraftContent(getValues(), files.length))
+	}, [files, filesRef, getValues, onDirtyChange])
+
+	useEffect(() => {
+		if (!realm?.id || !currentUserId) return
+		if (!hydratedRef.current) {
+			hydratedRef.current = true
+			return
+		}
+		saveDraft(realm.id, currentUserId, watchedValues)
+		onDirtyChange?.(hasDraftContent(watchedValues, filesRef.current.length))
+	}, [realm?.id, currentUserId, watchedValues, onDirtyChange])
+
+	const clearDraftStorage = () => {
+		if (realm?.id && currentUserId) clearDraft(realm.id, currentUserId)
+	}
+
+	// Кнопка очистки живёт в шапке модалки (TaskCreateModal), поэтому наружу
+	// отдаём только запрос на подтверждение — сам сброс делает форма.
+	useImperativeHandle(ref, () => ({ requestReset: () => setConfirmOpen(true) }), [])
+
+	const resetAll = useCallback(() => {
+		reset(EMPTY_FORM)
+		setFiles([])
+		clearDraftStorage()
+		setConfirmOpen(false)
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [reset, realm?.id, currentUserId])
 
 	const selectedCategoryId = useWatch({ control, name: 'categoryId' })
 
@@ -129,8 +184,9 @@ export const TaskCreateForm = ({ onSuccess, onCancel, embedded, onSavingChange }
 					toast.success('Задача создана')
 				}
 
-				reset()
+				reset(EMPTY_FORM)
 				setFiles([])
+				clearDraftStorage()
 				onSuccess?.()
 			} catch (error) {
 				const fetchError = error as IFetchError
@@ -170,7 +226,7 @@ export const TaskCreateForm = ({ onSuccess, onCancel, embedded, onSavingChange }
 							<Button
 								type='button'
 								variant='outlined'
-								onClick={embedded ? onCancel : () => reset()}
+								onClick={embedded ? onCancel : () => setConfirmOpen(true)}
 								sx={{ textTransform: 'none', color: 'text.primary', borderColor: '#ddd' }}
 							>
 								{embedded ? 'Отмена' : 'Очистить'}
@@ -179,6 +235,7 @@ export const TaskCreateForm = ({ onSuccess, onCancel, embedded, onSavingChange }
 								type='submit'
 								variant='contained'
 								disabled={isSaving || !formState.isValid}
+								startIcon={<SaveIcon sx={{ fontSize: 18 }} />}
 								sx={{ textTransform: 'none', px: 3 }}
 							>
 								{isSaving ? 'Создание...' : 'Создать заявку'}
@@ -187,6 +244,19 @@ export const TaskCreateForm = ({ onSuccess, onCancel, embedded, onSavingChange }
 					</Stack>
 				</Box>
 			</FormProvider>
+
+			<ConfirmDialog
+				open={confirmOpen}
+				title='Очистить черновик?'
+				message='Заполненные данные и вложения будут потеряны.'
+				confirmLabel='Очистить'
+				confirmColor='warning'
+				onConfirm={resetAll}
+				onCancel={() => setConfirmOpen(false)}
+			/>
 		</Box>
 	)
-}
+	},
+)
+
+TaskCreateForm.displayName = 'TaskCreateForm'

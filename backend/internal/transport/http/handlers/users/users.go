@@ -44,14 +44,10 @@ func Register(api *gin.RouterGroup, services services.Users, session services.Se
 }
 
 func (h *Handler) getAll(c *gin.Context) {
-	// nil в GetAll отдавал всех пользователей всех реалмов (ФИО, email, табельный
-	// номер), поэтому realm обязателен и берётся из контекста.
-	realmID, ok := utils.RequireRealmUUID(c)
-	if !ok {
-		return
-	}
-
-	data, err := h.service.GetAll(c, &realmID)
+	// Глобальный список всех пользователей (ФИО, email, табельный номер) независимо
+	// от realm: доступен только носителю users:write, а он выдаётся системному
+	// администратору/root. Realm-скоуп — отдельная ручка GET /users/by-realm.
+	data, err := h.service.GetAll(c, nil)
 	if err != nil {
 		response.SendError(c, err)
 		return

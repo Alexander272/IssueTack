@@ -1,6 +1,6 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { Autocomplete, Box, Stack, TextField, Typography } from '@mui/material'
-import { DatePicker } from '@mui/x-date-pickers/DatePicker'
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
 import { Controller, useFormContext, useWatch } from 'react-hook-form'
 import dayjs from 'dayjs'
 import type { Priority } from '../../types/task'
@@ -45,14 +45,25 @@ export const AdvancedSettingsSection = ({
 	const selectedCategoryId = useWatch({ control, name: 'categoryId' })
 	const selectedGroupId = useWatch({ control, name: 'groupId' })
 
+	// Авто-назначение должно срабатывать только когда пользователь реально меняет
+	// категорию/группу. При восстановлении черновика categoryId/groupId уже
+	// заполнены на первом рендере, и без этой защиты эффекты затирали бы
+	// выбранные вручную группу/исполнителя значениями по умолчанию.
+	const prevCategoryId = useRef(selectedCategoryId)
+	const prevGroupId = useRef(selectedGroupId)
+
 	useEffect(() => {
 		if (!autoAssign) return
+		if (prevCategoryId.current === selectedCategoryId) return
+		prevCategoryId.current = selectedCategoryId
 		const cat = categories.find(c => c.id === selectedCategoryId)
 		setValue('groupId', cat?.groupId ?? null)
 	}, [selectedCategoryId, categories, autoAssign, setValue])
 
 	useEffect(() => {
 		if (!autoAssign) return
+		if (prevGroupId.current === selectedGroupId) return
+		prevGroupId.current = selectedGroupId
 		if (!selectedGroupId) {
 			setValue('assigneeId', null)
 			return
@@ -164,9 +175,13 @@ export const AdvancedSettingsSection = ({
 							control={control}
 							name='dueDate'
 							render={({ field }) => (
-								<DatePicker
+								<DateTimePicker
 									value={field.value ? dayjs(field.value) : null}
-									onChange={date => field.onChange(date ? date.endOf('day').toISOString() : null)}
+									onChange={date =>
+										field.onChange(
+											date ? (field.value ? date : date.endOf('day')).toISOString() : null,
+										)
+									}
 									disabled={!canEditDueDate}
 									slots={{
 										textField: DateTextField,

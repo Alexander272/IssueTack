@@ -381,7 +381,7 @@ func (s *MattermostService) HandleDialogSubmission(ctx context.Context, submissi
 
 	settings, err := s.repo.GetByRealm(ctx, realmID)
 	if err == nil {
-		s.sendTicketCreatedDM(settings, submission.UserId, dto)
+		s.sendTicketCreatedDM(settings, submission.UserId, dto, creator)
 		s.deleteButtonPost(settings, submission)
 		s.processPendingFiles(ctx, settings.BotToken, submission, dto)
 	}
@@ -704,7 +704,7 @@ func (s *MattermostService) applyListEdit(ctx context.Context, settings *models.
 		return fmt.Errorf("failed to reload user tickets: %w", err)
 	}
 
-	chunk, ok := s.myTicketsChunkAfterEdit(tickets, state.From, removed, user.ID)
+	chunk, ok := s.myTicketsChunkAfterEdit(tickets, state.From, removed, user)
 	if !ok {
 		// Сообщение опустело только когда карточка была в нём единственной,
 		// то есть смещение ровно совпало с новым концом списка. Смещение больше
@@ -713,7 +713,7 @@ func (s *MattermostService) applyListEdit(ctx context.Context, settings *models.
 		if state.From == len(tickets) {
 			return s.most.Post.Delete(settings.BotToken, state.PostID)
 		}
-		chunk, ok = s.myTicketsChunkAt(tickets, 0, user.ID)
+		chunk, ok = s.myTicketsChunkAt(tickets, 0, user)
 		if !ok {
 			return nil
 		}
@@ -797,14 +797,16 @@ func (s *MattermostService) sendMyTickets(ctx context.Context, input *models.Int
 // sendTicketCreatedDM отправляет пользователю личное сообщение с подтверждением
 // создания заявки и ссылкой на неё. Ошибки отправки не фатальны — заявка уже
 // создана, поэтому проблема лишь логируется.
-func (s *MattermostService) sendTicketCreatedDM(settings *models.RealmMattermost, mmUserID string, dto *models.TicketDTO) {
+func (s *MattermostService) sendTicketCreatedDM(settings *models.RealmMattermost, mmUserID string, dto *models.TicketDTO, creator *models.UserData) {
 	if settings.BotToken == "" {
 		return
 	}
 	msg := fmt.Sprintf("Заявка №%d создана.\nЗаголовок: %s",
 		dto.TicketNumber, dto.Title)
-	if s.baseURL != "" {
+	if s.showWebLink(creator, dto.RealmID) {
 		msg += fmt.Sprintf("\nОткрыть: %s/tasks/%s", s.baseURL, dto.ID.String())
+	} else {
+		msg += fmt.Sprintf("\n[Открыть в плагине](%s)", pluginDeepLink(*dto.ID))
 	}
 	msg += "\nОтправьте файлы следующим сообщением в течение 30 минут — они прикрепятся автоматически к этой заявке. Или можете указать номер заявки (например, №123) вместе с файлами."
 	if err := s.most.DM.Send(settings.BotToken, settings.BotUserID, mmUserID, msg); err != nil {
