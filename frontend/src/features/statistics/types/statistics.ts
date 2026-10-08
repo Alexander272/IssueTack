@@ -25,6 +25,15 @@ export interface IWorkloadBucket {
 	total: number
 }
 
+// IByOwnerBucket — разрез по заказчику. active/total нужны для двухкольцевой
+// диаграммы: внутреннее кольцо — total, внешнее — активные и остальные.
+export interface IByOwnerBucket {
+	id: string
+	name: string
+	total: number
+	active: number
+}
+
 export interface ITrendPoint {
 	date: string
 	created: number
@@ -38,6 +47,7 @@ export interface ITicketStatistics {
 	byCategory: IStatisticsBucket[]
 	byGroup: IStatisticsBucket[]
 	bySite: IStatisticsBucket[]
+	byOwner: IByOwnerBucket[]
 	workload: IWorkloadBucket[]
 }
 

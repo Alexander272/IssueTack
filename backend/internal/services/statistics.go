@@ -12,8 +12,9 @@ import (
 )
 
 // statisticsBucketLimit — предел числа строк в разрезах «топ-N» (категории, группы,
-// площадки, исполнители). Хвост длинного распределения не отбрасывается: остальные
-// заявки учтены в KPI-карточках и динамике.
+// площадки). Хвост длинного распределения не отбрасывается: остальные заявки учтены
+// в KPI-карточках и динамике. Разрезы «заказчики»/«исполнители» идут без лимита:
+// фронт сворачивает хвост в «Прочие», и для этого ему нужен полный хвост.
 const statisticsBucketLimit = 20
 
 // Statistics — сервис статистики заявок. Срез видимых заявок вычисляется по роли
@@ -26,13 +27,13 @@ type Statistics interface {
 
 // StatisticsService реализует Statistics.
 type StatisticsService struct {
-	repo   repository.Tickets
+	repo   repository.Statistics
 	groups Groups
 	access TicketAccessChecker
 }
 
 // NewStatisticsService создаёт сервис статистики.
-func NewStatisticsService(repo repository.Tickets, groups Groups, access TicketAccessChecker) *StatisticsService {
+func NewStatisticsService(repo repository.Statistics, groups Groups, access TicketAccessChecker) *StatisticsService {
 	return &StatisticsService{
 		repo:   repo,
 		groups: groups,
@@ -70,8 +71,15 @@ func (s *StatisticsService) Get(ctx context.Context, filter *models.StatisticsFi
 
 	stats := &models.TicketStatistics{
 		ByGroup:  []*models.StatisticsBucket{},
+		ByOwner:  []*models.StatisticsBreakdownBucket{},
 		Workload: []*models.WorkloadBucket{},
 	}
+
+	// Разрезы «заказчики» и «исполнители» на фронте показываются как топ-N
+	// (максимум 20) + «Прочие»: хвост нужен для точного «Прочие», поэтому
+	// Limit = 0 — репозиторий не добавляет LIMIT в SQL.
+	breakdownQuery := query
+	breakdownQuery.Limit = 0
 
 	g, gctx := errgroup.WithContext(ctx)
 
@@ -127,7 +135,15 @@ func (s *StatisticsService) Get(ctx context.Context, filter *models.StatisticsFi
 			return nil
 		})
 		g.Go(func() error {
-			workload, err := s.repo.GetStatisticsWorkload(gctx, query)
+			byOwner, err := s.repo.GetStatisticsByOwner(gctx, breakdownQuery)
+			if err != nil {
+				return fmt.Errorf("failed to get statistics by owner: %w", err)
+			}
+			stats.ByOwner = byOwner
+			return nil
+		})
+		g.Go(func() error {
+			workload, err := s.repo.GetStatisticsWorkload(gctx, breakdownQuery)
 			if err != nil {
 				return fmt.Errorf("failed to get statistics workload: %w", err)
 			}

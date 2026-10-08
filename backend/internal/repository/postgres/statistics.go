@@ -8,7 +8,30 @@ import (
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// StatisticsRepo — агрегаты статистики заявок. Живёт отдельно от TicketRepo:
+// только читает по таблице tickets (и связанным справочникам), транзакции не
+// использует, поэтому держит лишь пул.
+type StatisticsRepo struct {
+	db *pgxpool.Pool
+}
+
+func NewStatisticsRepo(db *pgxpool.Pool) *StatisticsRepo {
+	return &StatisticsRepo{
+		db: db,
+	}
+}
+
+type Statistics interface {
+	GetStatisticsSummary(ctx context.Context, query models.StatisticsQuery) (*models.StatisticsSummary, error)
+	GetStatisticsByStatus(ctx context.Context, query models.StatisticsQuery) ([]*models.StatusBucket, error)
+	GetStatisticsByDimension(ctx context.Context, query models.StatisticsQuery) ([]*models.StatisticsBucket, error)
+	GetStatisticsByOwner(ctx context.Context, query models.StatisticsQuery) ([]*models.StatisticsBreakdownBucket, error)
+	GetStatisticsWorkload(ctx context.Context, query models.StatisticsQuery) ([]*models.WorkloadBucket, error)
+	GetStatisticsTrend(ctx context.Context, query models.StatisticsQuery) ([]*models.TrendPoint, error)
+}
 
 // statisticsScope добавляет в построитель условие видимости заявок для актора:
 // реалм плюс (если актор не начальник области) дизъюнкция измерений среза.
@@ -84,7 +107,7 @@ func (w *whereBuilder) rangeArgs(from, to time.Time) (string, string) {
 // GetStatisticsSummary возвращает агрегаты верхнего уровня по видимым заявкам.
 // Периодные метрики (Total, Resolved) считаются за [from, to), а TotalPrev и
 // ResolvedPrev — за предыдущее окно той же длины, чтобы клиент мог показать дельту.
-func (r *TicketRepo) GetStatisticsSummary(ctx context.Context, q models.StatisticsQuery) (*models.StatisticsSummary, error) {
+func (r *StatisticsRepo) GetStatisticsSummary(ctx context.Context, q models.StatisticsQuery) (*models.StatisticsSummary, error) {
 	from, to := q.Filter.From, q.Filter.To
 	w := &whereBuilder{}
 	w.statisticsWhere(q)
@@ -118,7 +141,7 @@ func (r *TicketRepo) GetStatisticsSummary(ctx context.Context, q models.Statisti
 
 // GetStatisticsByStatus возвращает распределение видимых заявок по статусу за
 // период по created_at (заявки, созданные в окне, по их текущему статусу).
-func (r *TicketRepo) GetStatisticsByStatus(ctx context.Context, q models.StatisticsQuery) ([]*models.StatusBucket, error) {
+func (r *StatisticsRepo) GetStatisticsByStatus(ctx context.Context, q models.StatisticsQuery) ([]*models.StatusBucket, error) {
 	from, to := q.Filter.From, q.Filter.To
 	w := &whereBuilder{}
 	w.statisticsWhere(q)
@@ -183,7 +206,7 @@ var statisticsDimensions = map[string]statisticsDimension{
 
 // GetStatisticsByDimension возвращает разрез видимых заявок, созданных за период,
 // по измерению (category|group|site), отсортированный по убыванию количества.
-func (r *TicketRepo) GetStatisticsByDimension(ctx context.Context, q models.StatisticsQuery) ([]*models.StatisticsBucket, error) {
+func (r *StatisticsRepo) GetStatisticsByDimension(ctx context.Context, q models.StatisticsQuery) ([]*models.StatisticsBucket, error) {
 	d, ok := statisticsDimensions[q.Dim]
 	if !ok {
 		return nil, fmt.Errorf("unknown statistics dimension: %q", q.Dim)
@@ -236,34 +259,91 @@ func (r *TicketRepo) GetStatisticsByDimension(ctx context.Context, q models.Stat
 	return data, nil
 }
 
-// GetStatisticsWorkload возвращает нагрузку по исполнителям за период: total —
-// заявки, созданные за период и назначенные исполнителю, active — из них ещё активные.
-func (r *TicketRepo) GetStatisticsWorkload(ctx context.Context, q models.StatisticsQuery) ([]*models.WorkloadBucket, error) {
+// GetStatisticsByOwner возвращает разрез видимых заявок, созданных за период, по
+// заказчику: Total — все заявки за период, Active — из них ещё в активном статусе.
+// Заявки без заказчика собираются в бакет «Без заказчика» с пустым ID.
+func (r *StatisticsRepo) GetStatisticsByOwner(ctx context.Context, q models.StatisticsQuery) ([]*models.StatisticsBreakdownBucket, error) {
 	from, to := q.Filter.From, q.Filter.To
 	w := &whereBuilder{}
 	w.statisticsWhere(q)
 	fromPh, toPh := w.rangeArgs(from, to)
 
-	limit := q.Limit
-	if limit <= 0 {
-		limit = 20
+	// 0 (или отрицательное) — без LIMIT: фронт сворачивает хвост в «Прочие»
+	// (топ-N, максимум 20), поэтому строки за пределами топа тоже нужны.
+	limitClause := ""
+	if q.Limit > 0 {
+		w.idx++
+		limitPh := fmt.Sprintf("$%d", w.idx)
+		w.args = append(w.args, q.Limit)
+		limitClause = fmt.Sprintf(" LIMIT %s", limitPh)
 	}
-	w.idx++
-	limitPh := fmt.Sprintf("$%d", w.idx)
-	w.args = append(w.args, limit)
+
+	query := fmt.Sprintf(`SELECT
+			COALESCE(u.id::text, ''),
+			COALESCE(NULLIF(TRIM(COALESCE(u.last_name, '') || ' ' || COALESCE(u.first_name, '')), ''), u.username, 'Без заказчика') AS name,
+			COUNT(*) AS total,
+			COUNT(*) FILTER (WHERE t.status IN ('open', 'in_progress', 'pending', 'on_hold')) AS active
+		FROM %s t
+		LEFT JOIN %s u ON t.owner_id = u.id
+		WHERE %s AND t.created_at >= %s AND t.created_at < %s
+		GROUP BY u.id, u.last_name, u.first_name, u.username
+		ORDER BY total DESC, name ASC%s`,
+		Tables.Tickets, Tables.Users, strings.Join(w.clauses, " AND "), fromPh, toPh, limitClause,
+	)
+
+	rows, err := r.db.Query(ctx, query, w.args...)
+	if err != nil {
+		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	defer rows.Close()
+
+	data := []*models.StatisticsBreakdownBucket{}
+	for rows.Next() {
+		bucket := &models.StatisticsBreakdownBucket{}
+		var idStr string
+		if err := rows.Scan(&idStr, &bucket.Name, &bucket.Total, &bucket.Active); err != nil {
+			return nil, MapError(fmt.Errorf("scan row error: %w", err))
+		}
+		if id, err := uuid.Parse(idStr); err == nil {
+			bucket.ID = id
+		}
+		data = append(data, bucket)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
+	return data, nil
+}
+
+// GetStatisticsWorkload возвращает нагрузку по исполнителям за период: total —
+// заявки, созданные за период и назначенные исполнителю, active — из них ещё активные.
+func (r *StatisticsRepo) GetStatisticsWorkload(ctx context.Context, q models.StatisticsQuery) ([]*models.WorkloadBucket, error) {
+	from, to := q.Filter.From, q.Filter.To
+	w := &whereBuilder{}
+	w.statisticsWhere(q)
+	fromPh, toPh := w.rangeArgs(from, to)
+
+	// 0 (или отрицательное) — без LIMIT: сортировка нужна только для порядка строк,
+	// обрезать хвост нельзя (см. комментарий в GetStatisticsByOwner).
+	limitClause := ""
+	if q.Limit > 0 {
+		w.idx++
+		limitPh := fmt.Sprintf("$%d", w.idx)
+		w.args = append(w.args, q.Limit)
+		limitClause = fmt.Sprintf(" LIMIT %s", limitPh)
+	}
 
 	query := fmt.Sprintf(`SELECT
 			u.id::text,
-			COALESCE(NULLIF(TRIM(COALESCE(u.last_name, '') || ' ' || COALESCE(u.first_name, '')), ''), u.username),
-			COUNT(*) FILTER (WHERE t.status IN ('open', 'in_progress', 'pending', 'on_hold')),
-			COUNT(*)
+			COALESCE(NULLIF(TRIM(COALESCE(u.last_name, '') || ' ' || COALESCE(u.first_name, '')), ''), u.username) AS name,
+			COUNT(*) FILTER (WHERE t.status IN ('open', 'in_progress', 'pending', 'on_hold')) AS active,
+			COUNT(*) AS total
 		FROM %s t
 		JOIN %s u ON t.assignee_id = u.id
 		WHERE %s AND t.created_at >= %s AND t.created_at < %s
 		GROUP BY u.id, u.last_name, u.first_name, u.username
-		ORDER BY 3 DESC, 4 DESC
-		LIMIT %s`,
-		Tables.Tickets, Tables.Users, strings.Join(w.clauses, " AND "), fromPh, toPh, limitPh,
+		ORDER BY total DESC, active DESC, name ASC%s`,
+		Tables.Tickets, Tables.Users, strings.Join(w.clauses, " AND "), fromPh, toPh, limitClause,
 	)
 
 	rows, err := r.db.Query(ctx, query, w.args...)
@@ -292,7 +372,7 @@ func (r *TicketRepo) GetStatisticsWorkload(ctx context.Context, q models.Statist
 
 // GetStatisticsTrend возвращает динамику «создано vs решено» по бакетам
 // гранулярности (day|week|month) за период [from, to).
-func (r *TicketRepo) GetStatisticsTrend(ctx context.Context, q models.StatisticsQuery) ([]*models.TrendPoint, error) {
+func (r *StatisticsRepo) GetStatisticsTrend(ctx context.Context, q models.StatisticsQuery) ([]*models.TrendPoint, error) {
 	from, to := q.Filter.From, q.Filter.To
 
 	gran := "day"

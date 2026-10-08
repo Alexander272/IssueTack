@@ -38,8 +38,8 @@ type StatisticsScope struct {
 }
 
 // IsManagerial сообщает, доступны ли актору «управленческие» разрезы статистики:
-// разбивка по группам и нагрузка по исполнителям. True для начальника области
-// и менеджеров групп.
+// разбивка по группам, по заказчикам и нагрузка по исполнителям. True для начальника
+// области и менеджеров групп.
 func (s StatisticsScope) IsManagerial() bool {
 	return s.AllRealm || len(s.GroupIDs) > 0
 }
@@ -65,7 +65,7 @@ type StatisticsQuery struct {
 	Scope       StatisticsScope
 	Filter      *StatisticsFilter
 	Dim         string // разрез для GetStatisticsByDimension: category|group|site
-	Limit       int    // топ-N для разрезов и нагрузки
+	Limit       int    // топ-N; у byOwner/workload 0 — без LIMIT в SQL (нужен полный хвост для «Прочие»), у GetStatisticsByDimension 0 заменяется на 20
 	Granularity string // разрешённая гранулярность динамики: day|week|month
 }
 
@@ -91,6 +91,17 @@ type StatusBucket struct {
 	Count  int    `json:"count"`
 }
 
+// StatisticsBreakdownBucket — строка разреза, у которой известно и общее число
+// заявок (Total), и число ещё активных (Active): два нужны для двухкольцевой
+// диаграммы (внутреннее кольцо — Total, внешнее — активные/неактивные).
+// ID пустой, когда сущность отсутствует (заявка без заказчика).
+type StatisticsBreakdownBucket struct {
+	ID     uuid.UUID `json:"id"`
+	Name   string    `json:"name"`
+	Total  int       `json:"total"`
+	Active int       `json:"active"`
+}
+
 // WorkloadBucket — нагрузка на исполнителя за период.
 type WorkloadBucket struct {
 	UserID uuid.UUID `json:"userId"`
@@ -109,11 +120,12 @@ type TrendPoint struct {
 // TicketStatistics — ответ страницы статистики. Все срезы всегда не-nil: фронт
 // считает их массивами, а nil сериализуется в JSON null (см. AGENTS.md).
 type TicketStatistics struct {
-	Summary    StatisticsSummary   `json:"summary"`
-	Trend      []*TrendPoint       `json:"trend"`
-	ByStatus   []*StatusBucket     `json:"byStatus"`
-	ByCategory []*StatisticsBucket `json:"byCategory"`
-	ByGroup    []*StatisticsBucket `json:"byGroup"`
-	BySite     []*StatisticsBucket `json:"bySite"`
-	Workload   []*WorkloadBucket   `json:"workload"`
+	Summary    StatisticsSummary            `json:"summary"`
+	Trend      []*TrendPoint                `json:"trend"`
+	ByStatus   []*StatusBucket              `json:"byStatus"`
+	ByCategory []*StatisticsBucket          `json:"byCategory"`
+	ByGroup    []*StatisticsBucket          `json:"byGroup"`
+	BySite     []*StatisticsBucket          `json:"bySite"`
+	ByOwner    []*StatisticsBreakdownBucket `json:"byOwner"`
+	Workload   []*WorkloadBucket            `json:"workload"`
 }

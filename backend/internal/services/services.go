@@ -114,7 +114,7 @@ func NewServices(deps *Deps) *Services {
 	sites := NewSiteService(deps.Repo.Sites)
 	logs := NewActivityLogService(deps.Repo.ActivityLog, transaction)
 	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs, access)
-	statistics := NewStatisticsService(deps.Repo.Tickets, groups, access)
+	statistics := NewStatisticsService(deps.Repo.Statistics, groups, access)
 	subscriptionOps := NewTicketSubscriptionOpsService(deps.Repo.TicketSubscriptions)
 
 	// Канал уведомлений в Mattermost: DM от бота реалма. Собирается до NotificationService,

@@ -276,6 +276,13 @@ func (m *MockTicketsRepo) GetStatisticsByDimension(ctx context.Context, query mo
 	}
 	return args.Get(0).([]*models.StatisticsBucket), args.Error(1)
 }
+func (m *MockTicketsRepo) GetStatisticsByOwner(ctx context.Context, query models.StatisticsQuery) ([]*models.StatisticsBreakdownBucket, error) {
+	args := m.Called(ctx, query)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.StatisticsBreakdownBucket), args.Error(1)
+}
 func (m *MockTicketsRepo) GetStatisticsWorkload(ctx context.Context, query models.StatisticsQuery) ([]*models.WorkloadBucket, error) {
 	args := m.Called(ctx, query)
 	if args.Get(0) == nil {

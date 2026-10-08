@@ -109,7 +109,7 @@ export const KpiCards: FC<Props> = ({ summary, isLoading }) => {
 				const Icon = card.icon
 				return (
 					<Grid key={card.key} size={{ xs: 12, sm: 6, md: 3 }}>
-						<Paper sx={{ py: 2, px: 3, border: '1px solid #eee', borderRadius: 2 }} elevation={0}>
+						<Paper sx={{ py: 2, px: 3, border: '1px solid #e5e7eb', borderRadius: '12px' }} elevation={0}>
 							<Box
 								sx={{
 									display: 'flex',

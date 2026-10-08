@@ -13,7 +13,8 @@ import { KpiCards } from '../components/KpiCards'
 import { TrendChart } from '../components/TrendChart'
 import { StatusChart } from '../components/StatusChart'
 import { BreakdownChart } from '../components/BreakdownChart'
-import { WorkloadTable } from '../components/WorkloadTable'
+import { NestedDonut, type IDonutBucket } from '../components/NestedDonut'
+import { DEFAULT_TOP_N } from '../components/TopNSelect'
 import { StatisticsFilters } from '../components/StatisticsFilters'
 import type { IStatisticsFilter, IStatisticsRefinements } from '../types/statistics'
 
@@ -25,6 +26,10 @@ const refinementKeys: (keyof IStatisticsRefinements)[] = ['assigneeId', 'categor
 export const StatisticsView: FC = () => {
 	const isManager = useAppSelector(getIsManager)
 	const [range, setRange] = useState<DateRange>(() => getPresetDates('month', 'month', 1))
+	// Сколько исполнителей/заказчиков показывать в донат-диаграммах; хвост
+	// сворачивается в «Прочие» (см. NestedDonut).
+	const [topNAssignee, setTopNAssignee] = useState(DEFAULT_TOP_N)
+	const [topNOwner, setTopNOwner] = useState(DEFAULT_TOP_N)
 	const [searchParams, setSearchParams] = useSearchParams()
 
 	const refinements = useMemo<IStatisticsRefinements>(
@@ -69,6 +74,18 @@ export const StatisticsView: FC = () => {
 	const { data, isFetching } = useGetTicketStatisticsQuery(query)
 	const stats = data?.data
 
+	const assigneeBuckets = useMemo<IDonutBucket[]>(
+		() =>
+			(stats?.workload ?? []).map(item => ({
+				id: item.userId,
+				name: item.name,
+				total: item.total,
+				active: item.active,
+			})),
+		[stats?.workload],
+	)
+	const ownerBuckets = useMemo<IDonutBucket[]>(() => stats?.byOwner ?? [], [stats?.byOwner])
+
 	return (
 		<Box sx={{ flexGrow: 1, overflow: 'auto', p: 3 }}>
 			<Box
@@ -111,10 +128,11 @@ export const StatisticsView: FC = () => {
 			</Grid>
 
 			<Grid container spacing={3} sx={{ mb: isManager ? 3 : 0 }}>
-				<Grid size={{ xs: 12, md: 6 }}>
+				{/* Менеджеру три в ряд с 900px (md), не-менеджеру две по 6; lg всплывает из md. */}
+				<Grid size={{ xs: 12, md: isManager ? 4 : 6 }}>
 					<BreakdownChart title='По категориям' buckets={stats?.byCategory ?? []} isLoading={isFetching} />
 				</Grid>
-				<Grid size={{ xs: 12, md: 6 }}>
+				<Grid size={{ xs: 12, md: isManager ? 4 : 6 }}>
 					<BreakdownChart
 						title='По площадкам'
 						buckets={stats?.bySite ?? []}
@@ -122,11 +140,8 @@ export const StatisticsView: FC = () => {
 						isLoading={isFetching}
 					/>
 				</Grid>
-			</Grid>
-
-			{isManager && (
-				<Grid container spacing={3}>
-					<Grid size={{ xs: 12, md: 5 }}>
+				{isManager && (
+					<Grid size={{ xs: 12, md: 4 }}>
 						<BreakdownChart
 							title='По группам'
 							buckets={stats?.byGroup ?? []}
@@ -134,8 +149,28 @@ export const StatisticsView: FC = () => {
 							isLoading={isFetching}
 						/>
 					</Grid>
-					<Grid size={{ xs: 12, md: 7 }}>
-						<WorkloadTable workload={stats?.workload ?? []} isLoading={isFetching} />
+				)}
+			</Grid>
+
+			{isManager && (
+				<Grid container spacing={3}>
+					<Grid size={{ xs: 12, lg: 6 }}>
+						<NestedDonut
+							title='Нагрузка исполнителей'
+							buckets={assigneeBuckets}
+							topN={topNAssignee}
+							onTopNChange={setTopNAssignee}
+							isLoading={isFetching}
+						/>
+					</Grid>
+					<Grid size={{ xs: 12, lg: 6 }}>
+						<NestedDonut
+							title='Задачи от заказчиков'
+							buckets={ownerBuckets}
+							topN={topNOwner}
+							onTopNChange={setTopNOwner}
+							isLoading={isFetching}
+						/>
 					</Grid>
 				</Grid>
 			)}

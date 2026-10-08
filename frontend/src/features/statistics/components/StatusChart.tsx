@@ -26,7 +26,7 @@ export const StatusChart: FC<Props> = ({ buckets, isLoading }) => {
 	}))
 
 	return (
-		<Paper sx={{ p: 3, border: '1px solid #eee', borderRadius: 2, height: '100%' }} elevation={0}>
+		<Paper sx={{ p: 3, border: '1px solid #e5e7eb', borderRadius: '12px', height: '100%' }} elevation={0}>
 			<Typography variant='h6' sx={{ fontWeight: 600, mb: 2 }}>
 				Заявки по статусам
 			</Typography>
@@ -44,7 +44,8 @@ export const StatusChart: FC<Props> = ({ buckets, isLoading }) => {
 							paddingAngle: 3,
 							cornerRadius: 8,
 							arcLabel: 'value',
-							arcLabelMinAngle: 18,
+							arcLabelMinAngle: 10,
+							highlightScope: { fade: 'global', highlight: 'item' },
 						},
 					]}
 					margin={{ top: 8, bottom: 8, left: 8, right: 8 }}

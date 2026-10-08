@@ -37,17 +37,36 @@ func queryMatcher(scope models.StatisticsScope, filter *models.StatisticsFilter,
 	})
 }
 
+// breakdownMatcher, в отличие от queryMatcher, дополнительно проверяет лимит:
+// разрезы «заказчики» и «исполнители» обязаны уходить с Limit = 0 (без LIMIT в SQL —
+// фронт сворачивает хвост в «Прочие» и ему нужен полный), категории/группы/площадки — statisticsBucketLimit.
+func breakdownMatcher(scope models.StatisticsScope, filter *models.StatisticsFilter, dim string, limit int) interface{} {
+	return mock.MatchedBy(func(q models.StatisticsQuery) bool {
+		if q.Limit != limit {
+			return false
+		}
+		if !assert.ObjectsAreEqual(scope, q.Scope) {
+			return false
+		}
+		if filter != nil && q.Filter != filter {
+			return false
+		}
+		return dim == "" || q.Dim == dim
+	})
+}
+
 // expectStatisticsRepo регистрирует базовые агрегаты статистики. Управленческие
-// разрезы (byGroup/workload) ожидаются только при managerial=true.
+// разрезы (byGroup/byOwner/workload) ожидаются только при managerial=true.
 func expectStatisticsRepo(repo *MockTicketsRepo, scope models.StatisticsScope, managerial bool) {
 	repo.On("GetStatisticsSummary", mock.Anything, queryMatcher(scope, nil, "")).Return(&models.StatisticsSummary{Total: 3, Active: 1}, nil)
-	repo.On("GetStatisticsByDimension", mock.Anything, queryMatcher(scope, nil, "category")).Return([]*models.StatisticsBucket{}, nil)
-	repo.On("GetStatisticsByDimension", mock.Anything, queryMatcher(scope, nil, "site")).Return([]*models.StatisticsBucket{}, nil)
+	repo.On("GetStatisticsByDimension", mock.Anything, breakdownMatcher(scope, nil, "category", statisticsBucketLimit)).Return([]*models.StatisticsBucket{}, nil)
+	repo.On("GetStatisticsByDimension", mock.Anything, breakdownMatcher(scope, nil, "site", statisticsBucketLimit)).Return([]*models.StatisticsBucket{}, nil)
 	repo.On("GetStatisticsByStatus", mock.Anything, queryMatcher(scope, nil, "")).Return([]*models.StatusBucket{}, nil)
 	repo.On("GetStatisticsTrend", mock.Anything, queryMatcher(scope, nil, "")).Return([]*models.TrendPoint{}, nil)
 	if managerial {
-		repo.On("GetStatisticsByDimension", mock.Anything, queryMatcher(scope, nil, "group")).Return([]*models.StatisticsBucket{}, nil)
-		repo.On("GetStatisticsWorkload", mock.Anything, queryMatcher(scope, nil, "")).Return([]*models.WorkloadBucket{}, nil)
+		repo.On("GetStatisticsByDimension", mock.Anything, breakdownMatcher(scope, nil, "group", statisticsBucketLimit)).Return([]*models.StatisticsBucket{}, nil)
+		repo.On("GetStatisticsByOwner", mock.Anything, breakdownMatcher(scope, nil, "", 0)).Return([]*models.StatisticsBreakdownBucket{}, nil)
+		repo.On("GetStatisticsWorkload", mock.Anything, breakdownMatcher(scope, nil, "", 0)).Return([]*models.WorkloadBucket{}, nil)
 	}
 }
 
@@ -77,6 +96,7 @@ func TestStatisticsService_Get_Supervisor(t *testing.T) {
 	assert.NotNil(t, stats)
 	assert.Equal(t, 3, stats.Summary.Total)
 	assert.NotNil(t, stats.ByGroup)
+	assert.NotNil(t, stats.ByOwner)
 	assert.NotNil(t, stats.Workload)
 	repo.AssertExpectations(t)
 	policies.AssertExpectations(t)
@@ -124,8 +144,10 @@ func TestStatisticsService_Get_Executor(t *testing.T) {
 	assert.NotNil(t, stats)
 	// Управленческие разрезы пусты, но не nil: фронт считает их массивами.
 	assert.Empty(t, stats.ByGroup)
+	assert.Empty(t, stats.ByOwner)
 	assert.Empty(t, stats.Workload)
 	assert.NotNil(t, stats.ByGroup)
+	assert.NotNil(t, stats.ByOwner)
 	assert.NotNil(t, stats.Workload)
 	assert.NotNil(t, stats.ByStatus)
 	repo.AssertExpectations(t)
@@ -179,7 +201,8 @@ func TestStatisticsService_Get_PassesRefinements(t *testing.T) {
 	repo.On("GetStatisticsByStatus", mock.Anything, queryMatcher(scope, filter, "")).Return([]*models.StatusBucket{}, nil)
 	repo.On("GetStatisticsTrend", mock.Anything, queryMatcher(scope, filter, "")).Return([]*models.TrendPoint{}, nil)
 	repo.On("GetStatisticsByDimension", mock.Anything, queryMatcher(scope, filter, "group")).Return([]*models.StatisticsBucket{}, nil)
-	repo.On("GetStatisticsWorkload", mock.Anything, queryMatcher(scope, filter, "")).Return([]*models.WorkloadBucket{}, nil)
+	repo.On("GetStatisticsByOwner", mock.Anything, breakdownMatcher(scope, filter, "", 0)).Return([]*models.StatisticsBreakdownBucket{}, nil)
+	repo.On("GetStatisticsWorkload", mock.Anything, breakdownMatcher(scope, filter, "", 0)).Return([]*models.WorkloadBucket{}, nil)
 
 	stats, err := svc.Get(context.Background(), filter)
 	assert.NoError(t, err)

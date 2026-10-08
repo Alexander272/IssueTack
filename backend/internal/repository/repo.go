@@ -53,6 +53,9 @@ type Sites interface {
 type Tickets interface {
 	postgres.Tickets
 }
+type Statistics interface {
+	postgres.Statistics
+}
 type Subtasks interface {
 	postgres.Subtasks
 }
@@ -96,6 +99,7 @@ type Repository struct {
 	CategoryGroups
 	Sites
 	Tickets
+	Statistics
 	Subtasks
 	Attachments
 	Checklists
@@ -127,6 +131,7 @@ func NewRepository(pool *pgxpool.Pool, memDB *redis.Client, conf config.AuthConf
 		CategoryGroups:      postgres.NewCategoryGroupRepo(pool),
 		Sites:               postgres.NewSiteRepo(pool),
 		Tickets:             postgres.NewTicketRepo(pool, transaction),
+		Statistics:          postgres.NewStatisticsRepo(pool),
 		Subtasks:            postgres.NewSubtaskRepo(pool, transaction),
 		Attachments:         postgres.NewAttachmentRepo(pool, transaction),
 		Checklists:          postgres.NewChecklistRepo(pool, transaction),
