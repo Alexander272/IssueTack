@@ -22,4 +22,7 @@ export interface TaskFiltersProps {
 	onChange: (patch: Partial<FilterValues>) => void
 	onReset: () => void
 	hideGrouping?: boolean
+	// statusOptions — допустимые статусы текущей вкладки (см. statusOptionsFor);
+	// без него Popover предлагает все статусы, в том числе дающие пустой список.
+	statusOptions: TicketStatus[]
 }

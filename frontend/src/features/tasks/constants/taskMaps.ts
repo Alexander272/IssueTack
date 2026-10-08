@@ -83,6 +83,28 @@ export const STATUS_OPTIONS: { value: TicketStatus | 'all'; label: string }[] = 
 	{ value: 'cancelled', label: 'Отменены' },
 ]
 
+// statusOptionsFor — статусы, которые реально может показать вкладка текущей страницы
+// (mode). На активной вкладке нет closed/cancelled (это архивные статусы); на «Мои
+// задачи» (assigned) вдобавок нет resolved — он тоже считается архивом (бэкенд
+// ArchiveWithResolved). Цель — не давать в фильтре опции, выбранные в которых всегда
+// дают пустой список («правило страницы сильнее явного фильтра»).
+// Активные без resolved — уже есть как экспорт выше (ACTIVE_STATUSES).
+const FULL_ACTIVE_STATUSES: TicketStatus[] = [...ACTIVE_STATUSES, 'resolved']
+const ARCHIVE_STATUSES: TicketStatus[] = ['closed', 'cancelled']
+const ASSIGNED_ARCHIVE_STATUSES: TicketStatus[] = ['resolved', 'closed', 'cancelled']
+const ALL_STATUSES: TicketStatus[] = [...FULL_ACTIVE_STATUSES, ...ARCHIVE_STATUSES]
+
+export type StatusOptionsMode = 'default' | 'assigned' | 'favorites'
+
+export const statusOptionsFor = (isArchive: boolean, mode: StatusOptionsMode = 'default'): TicketStatus[] => {
+	// Избранное живёт вне статусного split'а: звезду можно поставить на любой статус
+	// (включая закрытые), пин — только на активные. Поэтому «Избранные» (архивная
+	// вкладка) показывают все статусы, «Закреплённые» — активные.
+	if (mode === 'favorites') return isArchive ? ALL_STATUSES : FULL_ACTIVE_STATUSES
+	if (isArchive) return mode === 'assigned' ? ASSIGNED_ARCHIVE_STATUSES : ARCHIVE_STATUSES
+	return mode === 'assigned' ? ACTIVE_STATUSES : FULL_ACTIVE_STATUSES
+}
+
 export const SORT_OPTIONS = [
 	{ value: 'ticketNumber_asc', label: 'По номеру (возр.)' },
 	{ value: 'ticketNumber_desc', label: 'По номеру (убыв.)' },

@@ -123,7 +123,10 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 	// «Мои задачи» (mode=assigned): лично назначенные ИЛИ задачи групп пользователя.
 	// Работает и для рядовых пользователей, и для супервайзеров: супервайзер видит
 	// в «Задачах» свои назначения и задачи групп, где состоит (а не все заявки реалма).
+	// Здесь же resolved уходит в архив: список исполнителя — рабочий, и решённые
+	// заявки (до подтверждения/авто-закрытия могут висеть неделями) его не засоряют.
 	if req.Mode != nil && *req.Mode == "assigned" {
+		req.ArchiveWithResolved = true
 		member, err := s.groups.GetMemberGroups(ctx, req.Actor.ID, nil)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to get member groups: %w", err)

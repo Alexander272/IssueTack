@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router'
 import { ArchiveIcon, InboxIcon, PlusIcon } from 'lucide-mui'
 
 import type { GroupByField } from '../constants/taskMaps'
+import { statusOptionsFor } from '../constants/taskMaps'
 import type { FilterValues } from '../components/filters'
 import type { ITask, ITaskFilter } from '../types/task'
 import { AppRoutes } from '@/pages/router/routes'
@@ -62,10 +63,22 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 
 	const STORAGE_KEY = `@issueTrack/taskFilters_${mode}`
 
+	// clampStatuses — фильтр по статусам должен уметься во вкладку: сохранённые
+	// в localStorage статусы, которых на текущей вкладке уже нет (например «Решены»
+	// в «Мои задачи» после переноса в архив), выкидываем — иначе висящий чип
+	// в фильтре даёт всегда пустой список.
+	const clampStatuses = (f: FilterValues, isArchiveTab: boolean): FilterValues => {
+		const allowed = new Set(statusOptionsFor(isArchiveTab, mode === 'assigned' ? 'assigned' : 'default'))
+		const statuses = f.statuses?.filter(s => allowed.has(s))
+		if (statuses === undefined) return f
+		if (statuses.length === (f.statuses?.length ?? -1)) return f
+		return { ...f, statuses }
+	}
+
 	const loadFilters = (): FilterValues => {
 		try {
 			const saved = localStorage.getItem(STORAGE_KEY)
-			if (saved) return { ...DEFAULT_FILTERS, ...JSON.parse(saved) }
+			if (saved) return clampStatuses({ ...DEFAULT_FILTERS, ...JSON.parse(saved) }, false)
 		} catch {
 			/* ignore */
 		}
@@ -82,6 +95,13 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 	}, [filters, STORAGE_KEY])
 
 	const isArchive = tab === 'archive'
+
+	// Статусы, доступные на текущей вкладке: на «Активных» нет закрытых/отменённых,
+	// на «Мои задачи» (assigned) — и решённых (они ушли в архив).
+	const statusOptions = useMemo(
+		() => statusOptionsFor(isArchive, mode === 'assigned' ? 'assigned' : 'default'),
+		[isArchive, mode],
+	)
 
 	// Сетевой запрос дебаунсится, чтобы не долбить бэкенд на каждое нажатие
 	// клавиши в поиске; сам инпут фильтров остаётся мгновенным.
@@ -178,6 +198,7 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 				onChange={(_, v: Tab) => {
 					setTab(v)
 					setPage(0)
+					setFilters(prev => clampStatuses(prev, v === 'archive'))
 				}}
 				sx={{
 					mb: 2,
@@ -195,7 +216,13 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 				<Tab value='archive' label='Архив' iconPosition='start' icon={<ArchiveIcon sx={{ fontSize: 14 }} />} />
 			</Tabs>
 
-			<TaskFilters filters={filters} onChange={handleFilterChange} onReset={handleReset} hideGrouping={isArchive} />
+			<TaskFilters
+				filters={filters}
+				onChange={handleFilterChange}
+				onReset={handleReset}
+				hideGrouping={isArchive}
+				statusOptions={statusOptions}
+			/>
 
 			<TaskListView
 				tasks={tasks}

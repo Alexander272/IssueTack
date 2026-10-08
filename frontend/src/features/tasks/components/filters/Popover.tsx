@@ -1,5 +1,15 @@
 import { useState, type FC } from 'react'
-import { Box, Button, TextField, Select, MenuItem, Autocomplete, Popover as MuiPopover, Chip, Typography } from '@mui/material'
+import {
+	Box,
+	Button,
+	TextField,
+	Select,
+	MenuItem,
+	Autocomplete,
+	Popover as MuiPopover,
+	Chip,
+	Typography,
+} from '@mui/material'
 
 import type { TicketStatus, Priority } from '../../types/task'
 import { STATUS_OPTIONS, PRIORITY_MAP } from '../../constants/taskMaps'
@@ -18,6 +28,9 @@ interface Props {
 	onApply: (patch: Partial<FilterValues>) => void
 	siteOptions: Option[]
 	userOptions: Option[]
+	// statusOptions — статусы, доступные на текущей вкладке (см. statusOptionsFor):
+	// на активной нет закрытых/отменённых, на «Мои задачи» — и решённых.
+	statusOptions: TicketStatus[]
 }
 
 const PRIORITY_OPTIONS: { value: Priority; label: string }[] = Object.entries(PRIORITY_MAP).map(([value, info]) => ({
@@ -25,16 +38,25 @@ const PRIORITY_OPTIONS: { value: Priority; label: string }[] = Object.entries(PR
 	label: info.label,
 }))
 
-export const Popover: FC<Props> = ({ open, anchorEl, onClose, initial, onApply, siteOptions, userOptions }) => {
+export const Popover: FC<Props> = ({
+	open,
+	anchorEl,
+	onClose,
+	initial,
+	onApply,
+	siteOptions,
+	userOptions,
+	statusOptions,
+}) => {
 	const [local, setLocal] = useState(() => ({
 		ticketNumber: initial.ticketNumber ?? '',
-		ownerId: initial.ownerId ?? null as string | null,
-		siteIds: initial.siteIds ?? [] as string[],
+		ownerId: initial.ownerId ?? (null as string | null),
+		siteIds: initial.siteIds ?? ([] as string[]),
 		dueDateFrom: initial.dueDateFrom ?? '',
 		dueDateTo: initial.dueDateTo ?? '',
-		priorities: initial.priorities ?? [] as Priority[],
-		assigneeId: initial.assigneeId ?? null as string | null,
-		statuses: initial.statuses ?? [] as TicketStatus[],
+		priorities: initial.priorities ?? ([] as Priority[]),
+		assigneeId: initial.assigneeId ?? (null as string | null),
+		statuses: initial.statuses ?? ([] as TicketStatus[]),
 	}))
 
 	const update = <K extends keyof typeof local>(key: K, value: (typeof local)[K]) => {
@@ -118,7 +140,12 @@ export const Popover: FC<Props> = ({ open, anchorEl, onClose, initial, onApply, 
 						disableCloseOnSelect
 						options={siteOptions}
 						value={currentSites}
-						onChange={(_, v) => update('siteIds', v.map(s => s.id))}
+						onChange={(_, v) =>
+							update(
+								'siteIds',
+								v.map(s => s.id),
+							)
+						}
 						getOptionLabel={o => o.label}
 						renderInput={params => <TextField {...params} placeholder='Выберите...' />}
 						noOptionsText='Нет площадок'
@@ -155,19 +182,25 @@ export const Popover: FC<Props> = ({ open, anchorEl, onClose, initial, onApply, 
 						renderValue={selected => (
 							<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
 								{selected.map(v => (
-									<Chip key={v} label={PRIORITY_OPTIONS.find(o => o.value === v)?.label ?? v} size='small' />
+									<Chip
+										key={v}
+										label={PRIORITY_OPTIONS.find(o => o.value === v)?.label ?? v}
+										size='small'
+									/>
 								))}
 							</Box>
 						)}
 					>
 						{PRIORITY_OPTIONS.map(o => (
-							<MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+							<MenuItem key={o.value} value={o.value}>
+								{o.label}
+							</MenuItem>
 						))}
 					</Select>
 				</Box>
 
 				<Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #eaeef2' }}>
-					<Typography sx={sectionSx}>Назначено</Typography>
+					<Typography sx={sectionSx}>Исполнитель</Typography>
 					<Autocomplete
 						options={userOptions}
 						value={currentAssignee}
@@ -188,18 +221,33 @@ export const Popover: FC<Props> = ({ open, anchorEl, onClose, initial, onApply, 
 						renderValue={selected => (
 							<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
 								{selected.map(v => (
-									<Chip key={v} label={STATUS_OPTIONS.find(o => o.value === v)?.label ?? v} size='small' />
+									<Chip
+										key={v}
+										label={STATUS_OPTIONS.find(o => o.value === v)?.label ?? v}
+										size='small'
+									/>
 								))}
 							</Box>
 						)}
 					>
-						{STATUS_OPTIONS.filter(o => o.value !== 'all').map(o => (
-							<MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+						{statusOptions.map(o => (
+							<MenuItem key={o} value={o}>
+								{STATUS_OPTIONS.find(s => s.value === o)?.label ?? o}
+							</MenuItem>
 						))}
 					</Select>
 				</Box>
 
-				<Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, mt: 2, pt: 2, borderTop: '1px solid #eaeef2' }}>
+				<Box
+					sx={{
+						display: 'flex',
+						justifyContent: 'space-between',
+						gap: 1,
+						mt: 2,
+						pt: 2,
+						borderTop: '1px solid #eaeef2',
+					}}
+				>
 					<Button
 						onClick={handleReset}
 						sx={{
@@ -212,7 +260,11 @@ export const Popover: FC<Props> = ({ open, anchorEl, onClose, initial, onApply, 
 					>
 						Сбросить всё
 					</Button>
-					<Button variant='contained' onClick={handleApply} sx={{ textTransform: 'none', borderRadius: '6px' }}>
+					<Button
+						variant='contained'
+						onClick={handleApply}
+						sx={{ textTransform: 'none', borderRadius: '6px' }}
+					>
 						Применить
 					</Button>
 				</Box>

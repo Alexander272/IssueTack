@@ -10,7 +10,13 @@ import type { FilterValues, TaskFiltersProps } from './types'
 export type { FilterValues }
 export type { TaskFiltersProps }
 
-export const TaskFilters: FC<TaskFiltersProps> = ({ filters, onChange, onReset, hideGrouping = false }) => {
+export const TaskFilters: FC<TaskFiltersProps> = ({
+	filters,
+	onChange,
+	onReset,
+	hideGrouping = false,
+	statusOptions,
+}) => {
 	const [filterAnchorEl, setFilterAnchorEl] = useState<HTMLElement | null>(null)
 
 	const { data: sitesData } = useGetAllSitesQuery()
@@ -64,6 +70,7 @@ export const TaskFilters: FC<TaskFiltersProps> = ({ filters, onChange, onReset, 
 				onApply={onChange}
 				siteOptions={siteOptions}
 				userOptions={userOptions}
+				statusOptions={statusOptions}
 			/>
 
 			<Chips filters={filters} onChange={onChange} siteOptions={siteOptions} userOptions={userOptions} />

@@ -134,6 +134,7 @@ func TestTicketService_Get_Assigned_Regular(t *testing.T) {
 		Actor: &models.Actor{ID: actorID, Name: "test"},
 		Mode:  &mode,
 		Limit: 20, Offset: 0,
+		ArchiveWithResolved: true,
 	}
 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
@@ -146,7 +147,8 @@ func TestTicketService_Get_Assigned_Regular(t *testing.T) {
 		Actor: &models.Actor{ID: actorID, Name: "test"},
 		Mode:  &mode,
 		Limit: 20, Offset: 0,
-		MyWork: &models.MyWorkFilter{UserID: actorID, GroupIDs: []uuid.UUID{managedID, memberID}},
+		ArchiveWithResolved: true,
+		MyWork:              &models.MyWorkFilter{UserID: actorID, GroupIDs: []uuid.UUID{managedID, memberID}},
 	}
 	mockRepo.On("Get", mock.Anything, expectedFilter).Return(expected, 0, nil)
 	mockSubtasks.On("GetByTicketIDs", mock.Anything, mock.Anything).Return((map[uuid.UUID][]*models.Subtask)(nil), nil)
@@ -168,6 +170,7 @@ func TestTicketService_Get_Assigned_Supervisor(t *testing.T) {
 		Actor: &models.Actor{ID: actorID, Name: "test"},
 		Mode:  &mode,
 		Limit: 20, Offset: 0,
+		ArchiveWithResolved: true,
 	}
 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(true, nil)
@@ -178,7 +181,8 @@ func TestTicketService_Get_Assigned_Supervisor(t *testing.T) {
 		Actor: &models.Actor{ID: actorID, Name: "test"},
 		Mode:  &mode,
 		Limit: 20, Offset: 0,
-		MyWork: &models.MyWorkFilter{UserID: actorID, GroupIDs: []uuid.UUID{memberID}},
+		ArchiveWithResolved: true,
+		MyWork:              &models.MyWorkFilter{UserID: actorID, GroupIDs: []uuid.UUID{memberID}},
 	}
 	mockRepo.On("Get", mock.Anything, expectedFilter).Return(expected, 0, nil)
 	mockSubtasks.On("GetByTicketIDs", mock.Anything, mock.Anything).Return((map[uuid.UUID][]*models.Subtask)(nil), nil)

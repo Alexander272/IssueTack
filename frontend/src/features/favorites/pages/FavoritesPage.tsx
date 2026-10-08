@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router'
 import { Pin, Star } from 'lucide-mui'
 
 import type { GroupByField } from '@/features/tasks/constants/taskMaps'
+import { statusOptionsFor } from '@/features/tasks/constants/taskMaps'
 import type { FilterValues } from '@/features/tasks/components/filters'
 import type { ITask, ITaskFilter } from '@/features/tasks/types/task'
 import { AppRoutes } from '@/pages/router/routes'
@@ -35,10 +36,21 @@ export const FavoritesPage = () => {
 
 	const STORAGE_KEY = '@issueTrack/favoritesFilters'
 
+	// clampStatuses — фильтр по статусам должен уметься во вкладку: сохранённые
+	// в localStorage статусы сверх допустимых выкидываем, иначе висящий чип
+	// в фильтре даёт всегда пустой список.
+	const clampStatuses = (f: FilterValues, isArchiveTab: boolean): FilterValues => {
+		const allowed = new Set(statusOptionsFor(isArchiveTab, 'favorites'))
+		const statuses = f.statuses?.filter(s => allowed.has(s))
+		if (statuses === undefined) return f
+		if (statuses.length === (f.statuses?.length ?? -1)) return f
+		return { ...f, statuses }
+	}
+
 	const loadFilters = (): FilterValues => {
 		try {
 			const saved = localStorage.getItem(STORAGE_KEY)
-			if (saved) return { ...DEFAULT_FILTERS, ...JSON.parse(saved) }
+			if (saved) return clampStatuses({ ...DEFAULT_FILTERS, ...JSON.parse(saved) }, false)
 		} catch {
 			/* ignore */
 		}
@@ -55,6 +67,11 @@ export const FavoritesPage = () => {
 
 	const isArchive = tab === 'permanent'
 
+	// Избранное живёт вне статусного split'а: звезда ставится на любой статус (включая
+	// закрытые), пин — только на активные. «Избранные» (permanent) — все статусы,
+	// «Закреплённые» (temporary) — только активные; бэкенд statusMode для избранного не применяет.
+	const statusOptions = useMemo(() => statusOptionsFor(isArchive, 'favorites'), [isArchive])
+
 	const queryFilter: ITaskFilter = useMemo(
 		() => ({
 			number: filters.ticketNumber ? Number(filters.ticketNumber) : undefined,
@@ -68,6 +85,8 @@ export const FavoritesPage = () => {
 			search: filters.search || undefined,
 			sort: filters.sort,
 			favoritesType: tab,
+			// archived для избранного — только триггер пагинации (бэкенд statusMode
+			// при FavoritesByUser не применяет, статусы не режутся по вкладке).
 			archived: isArchive || undefined,
 			limit: isArchive ? rowsPerPage : undefined,
 			offset: isArchive ? page * rowsPerPage : undefined,
@@ -118,6 +137,7 @@ export const FavoritesPage = () => {
 				onChange={(_, v: FavoriteTab) => {
 					setTab(v)
 					setPage(0)
+					setFilters(prev => clampStatuses(prev, v === 'permanent'))
 				}}
 				sx={{
 					mb: 2,
@@ -130,7 +150,13 @@ export const FavoritesPage = () => {
 				<Tab value='permanent' label='Избранные' iconPosition='start' icon={<Star sx={{ fontSize: 14 }} />} />
 			</Tabs>
 
-			<TaskFilters filters={filters} onChange={handleFilterChange} onReset={handleReset} hideGrouping={isArchive} />
+			<TaskFilters
+				filters={filters}
+				onChange={handleFilterChange}
+				onReset={handleReset}
+				hideGrouping={isArchive}
+				statusOptions={statusOptions}
+			/>
 
 			<TaskListView
 				tasks={tasks}

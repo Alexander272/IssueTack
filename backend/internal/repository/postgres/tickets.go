@@ -122,7 +122,12 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 	w.search(req.Search)
 	w.dueDate(req.DueDateFrom, req.DueDateTo)
 	w.priorities(req.Priorities)
-	w.statusMode(req.Archived)
+	// Избранные пользователя не режутся по статусам вкладки: звезда ставится на любой
+	// статус (включая закрытые), пин — только на активные (проверка в сервисе
+	// избранного). Archived при этом остаётся — он включает пагинацию архива.
+	if req.FavoritesByUser == nil {
+		w.statusMode(req.Archived, req.ArchiveWithResolved)
+	}
 	w.myWork(req.MyWork)
 	w.favorites(req.FavoritesByUser, req.FavoriteType)
 

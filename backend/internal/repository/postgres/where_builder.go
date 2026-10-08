@@ -51,10 +51,25 @@ func (w *whereBuilder) statuses(st *models.TicketStatus, many []models.TicketSta
 	}
 }
 
-func (w *whereBuilder) statusMode(archived *bool) {
-	list := activeStatuses
-	if archived != nil && *archived {
-		list = archiveStatuses
+// statusMode ограничивает список статусов вкладкой: «Активные» — activeStatuses,
+// «Архив» — archiveStatuses. withResolved (страница «Мои задачи», mode=assigned)
+// переносит resolved в архив: активная вкладка его не показывает, архивная — включает.
+// Наборы собираются в новый слайс — append к пакетным мутировал бы их.
+func (w *whereBuilder) statusMode(archived *bool, withResolved bool) {
+	isArchive := archived != nil && *archived
+	list := make([]models.TicketStatus, 0, len(activeStatuses)+1)
+	if isArchive {
+		if withResolved {
+			list = append(list, models.StatusResolved)
+		}
+		list = append(list, archiveStatuses...)
+	} else {
+		for _, st := range activeStatuses {
+			if withResolved && st == models.StatusResolved {
+				continue
+			}
+			list = append(list, st)
+		}
 	}
 	w.args = append(w.args, toAny(list)...)
 	w.add("t.status IN (" + w.place(len(list)) + ")")
