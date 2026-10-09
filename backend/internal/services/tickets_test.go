@@ -517,6 +517,108 @@ func TestTicketService_Create_Executor_OwnGroup(t *testing.T) {
 	assert.Nil(t, dto.DueDate)
 }
 
+// Исполнитель может явно назначить исполнителем себя, даже если категория ведёт
+// в чужую группу (берёт заявку на себя).
+func TestTicketService_Create_Executor_SelfAssignForeignGroup(t *testing.T) {
+	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	realmID := uuid.New()
+	memberGroupID := uuid.New()
+	foreignGroupID := uuid.New()
+	categoryID := uuid.New()
+	ownerID := uuid.New()
+	id := uuid.New()
+	dto := &models.TicketDTO{
+		ID:         &id,
+		Actor:      &models.Actor{ID: actorID, Name: "test"},
+		Title:      "New Ticket",
+		RealmID:    &realmID,
+		CategoryID: categoryID,
+		OwnerID:    &ownerID,
+		CreatorID:  actorID,
+		AssigneeID: &actorID,
+	}
+
+	mockCategories := new(MockCategoriesRepo)
+	svc.categories = mockCategories
+
+	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, actorID, &realmID).Return([]uuid.UUID{memberGroupID}, nil)
+	mockGroups.On("GetByID", mock.Anything, &models.GetGroupDTO{ID: foreignGroupID, RealmID: &realmID}).Return(&models.Group{
+		ID: foreignGroupID,
+	}, nil)
+	mockCategories.On("GetByID", mock.Anything, &models.GetCategoryByIdDTO{ID: categoryID, RealmID: realmID}).Return(&models.Category{
+		ID:       categoryID,
+		GroupID:  foreignGroupID,
+		Priority: models.PriorityHigh,
+	}, nil)
+	mockRepo.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: id}).Return(&models.Ticket{ID: id}, nil)
+	mockNotifications.On("TicketCreated", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+	err := svc.Create(context.Background(), dto)
+	assert.NoError(t, err)
+	assert.Equal(t, foreignGroupID, *dto.GroupID)
+	assert.Equal(t, actorID, *dto.AssigneeID)
+	assert.Equal(t, models.PriorityHigh, dto.Priority)
+	assert.Nil(t, dto.DueDate)
+}
+
+// Чужой id исполнителя из тела исполнитель не может подставить: он отбрасывается,
+// и заявка на чужую группу остаётся без исполнителя (system default не подставляется).
+func TestTicketService_Create_Executor_ForeignAssigneeIgnored(t *testing.T) {
+	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	realmID := uuid.New()
+	memberGroupID := uuid.New()
+	foreignGroupID := uuid.New()
+	categoryID := uuid.New()
+	ownerID := uuid.New()
+	foreignAssigneeID := uuid.New()
+	id := uuid.New()
+	dto := &models.TicketDTO{
+		ID:         &id,
+		Actor:      &models.Actor{ID: actorID, Name: "test"},
+		Title:      "New Ticket",
+		RealmID:    &realmID,
+		CategoryID: categoryID,
+		OwnerID:    &ownerID,
+		CreatorID:  actorID,
+		AssigneeID: &foreignAssigneeID,
+	}
+
+	mockCategories := new(MockCategoriesRepo)
+	svc.categories = mockCategories
+
+	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, actorID, &realmID).Return([]uuid.UUID{memberGroupID}, nil)
+	mockGroups.On("GetByID", mock.Anything, &models.GetGroupDTO{ID: foreignGroupID, RealmID: &realmID}).Return(&models.Group{
+		ID: foreignGroupID,
+	}, nil)
+	// В чужой группе нет ответственного по умолчанию, а участников больше одного —
+	// autoAssign никого не подставляет, заявка остаётся без исполнителя.
+	mockGroups.On("GetMemberCount", mock.Anything, foreignGroupID).Return(2, nil)
+	mockCategories.On("GetByID", mock.Anything, &models.GetCategoryByIdDTO{ID: categoryID, RealmID: realmID}).Return(&models.Category{
+		ID:       categoryID,
+		GroupID:  foreignGroupID,
+		Priority: models.PriorityHigh,
+	}, nil)
+	mockRepo.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: id}).Return(&models.Ticket{ID: id}, nil)
+	mockNotifications.On("TicketCreated", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+	err := svc.Create(context.Background(), dto)
+	assert.NoError(t, err)
+	assert.Equal(t, foreignGroupID, *dto.GroupID)
+	assert.Nil(t, dto.AssigneeID)
+	assert.Equal(t, models.PriorityHigh, dto.Priority)
+	assert.Nil(t, dto.DueDate)
+}
+
 // Группа — часть реалма тикета: попытка привязать её к группе чужого реалма
 // (по id из тела) давала бы её участникам read-доступ к заявке, менеджеру —
 // write/delete, а ответственному по умолчанию — назначение исполнителем.

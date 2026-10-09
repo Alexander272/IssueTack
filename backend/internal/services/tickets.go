@@ -514,8 +514,10 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 
 // applyExecutorCreateRestrictions применяет ограничения при создании заявки исполнителем
 // (участником группы, не имеющим полных прав). Заказчик обязателен; группа и приоритет
-// принудительно берутся из категории, срок отсутствует. Если категория принадлежит одной
-// из групп исполнителя — заявку назначают на него, иначе исполнитель подбирается по умолчанию.
+// принудительно берутся из категории, срок отсутствует. Исполнителем исполнитель может
+// назначить только себя (явно — на любую группу, включая чужую; чужой id из тела
+// отбрасывается). Если категория принадлежит одной из групп исполнителя, заявку и без
+// явного выбора назначают на него, иначе исполнитель подбирается системой по умолчанию.
 func (s *TicketService) applyExecutorCreateRestrictions(ctx context.Context, dto *models.TicketDTO, memberGroups []uuid.UUID) error {
 	if dto.OwnerID == nil {
 		return models.ErrOwnerRequired
@@ -536,7 +538,13 @@ func (s *TicketService) applyExecutorCreateRestrictions(ctx context.Context, dto
 	dto.Priority = category.Priority
 	dto.DueDate = nil
 
-	if containsUUID(memberGroups, category.GroupID) {
+	// Исполнитель может назначить исполнителем только себя — на любую группу, в т.ч. чужую
+	// (берёт заявку на себя). Чужой id из тела доверять нельзя: без этой отбраковки он
+	// прошёл бы в autoAssign и подставился бы ответственным группы уже чужой.
+	if dto.AssigneeID != nil && *dto.AssigneeID != dto.CreatorID {
+		dto.AssigneeID = nil
+	}
+	if containsUUID(memberGroups, category.GroupID) && dto.AssigneeID == nil {
 		dto.AssigneeID = &dto.CreatorID
 	}
 	return nil

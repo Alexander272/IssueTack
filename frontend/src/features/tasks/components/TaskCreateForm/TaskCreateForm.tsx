@@ -156,7 +156,7 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 				creatorId: currentUserId,
 				ownerId: isManager || isExecutor ? data.ownerId || null : null,
 				groupId: isManager ? data.groupId || null : category?.groupId || null,
-				assigneeId: isManager ? data.assigneeId || null : null,
+				assigneeId: isManager || isExecutor ? data.assigneeId || null : null,
 				managerId: null,
 				dueDate: isManager ? data.dueDate || null : null,
 				closedAt: null,
@@ -218,7 +218,7 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 
 						{(isManager || isExecutor) && <SubtasksCreationSection />}
 
-						{isExecutor && <CustomerSelectionSection />}
+						{isExecutor && <CustomerSelectionSection currentUserId={currentUserId} />}
 
 						{isManager && <AdvancedSettingsSection />}
 
