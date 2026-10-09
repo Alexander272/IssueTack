@@ -570,6 +570,7 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 	}
 
 	assignedOnly := false
+	adminOnlyEdit := false
 	ownerOnly := false
 	if err := s.access.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: *dto.ID, UserID: dto.Actor.ID, Action: string(access.Write)}); err != nil {
 		if workErr := s.access.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: *dto.ID, UserID: dto.Actor.ID}); workErr != nil {
@@ -727,13 +728,24 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 		// может менять только статус; передача исполнителя выполняется через
 		// отдельный эндпоинт Transfer (см. выше), а смена assignee via Update
 		// доступна только админу/менеджеру группы (проверено в «тонких правах»).
+		// Начальник области (realm supervisor), не являющийся создателем/
+		// менеджером/владельцем тикета, получает отдельный режим adminOnlyEdit:
+		// ему разрешено править любые поля кроме заголовка и описания.
 		if !assignedOnly && !ownerOnly {
 			canEdit, editErr := s.canEditFields(ctx, oldTicket, dto.Actor.ID)
 			if editErr != nil {
 				return editErr
 			}
 			if !canEdit {
-				assignedOnly = true
+				supervisor, supErr := s.access.IsRealmSupervisor(ctx, dto.Actor.ID, ticketRealm(oldTicket))
+				if supErr != nil {
+					return fmt.Errorf("failed to check supervisor access: %w", supErr)
+				}
+				if supervisor {
+					adminOnlyEdit = true
+				} else {
+					assignedOnly = true
+				}
 			}
 		}
 
@@ -749,6 +761,19 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 					// проведена в «тонких правах» выше (исполнитель с work-доступом
 					// сюда не попадает — его передача идёт через Transfer)
 				default:
+					return models.ErrPermissionDenied
+				}
+			}
+		}
+
+		// Режим правки начальника области: любые поля кроме заголовка/описания.
+		// Смена статуса остаётся под canChangeStatus (проверен выше), закрытие/
+		// отмена — под строгой проверкой, «замороженные» — под ErrTicketFrozen,
+		// менеджер группы (manager_id) — под запретом в «тонких правах».
+		if adminOnlyEdit && !ownerOnly {
+			for _, change := range changes {
+				switch change.Tag {
+				case models.ActionTitleChanged, models.ActionDescriptionChanged:
 					return models.ErrPermissionDenied
 				}
 			}
@@ -1168,8 +1193,10 @@ func (s *TicketService) isOwner(ticket *models.Ticket, actorID uuid.UUID) bool {
 // canEditFields определяет, может ли пользователь править не-статусные поля тикета
 // (заголовок/описание/приоритет/срок/группа/исполнитель и т.п.): создатель или
 // менеджер группы — всегда; владелец — только пока заявка ещё в статусе open
-// (не взята в работу). Политика Casbin write сама право правки полей не даёт,
-// поэтому write-пользователи без роли здесь получают false.
+// (не взята в работу). Начальника области это НЕ включает — он правит чужие заявки
+// через отдельный режим adminOnlyEdit в Update (все поля кроме заголовка/описания).
+// Политика Casbin write сама право правки полей не даёт, поэтому write-пользователи
+// без роли здесь получают false.
 func (s *TicketService) canEditFields(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) (bool, error) {
 	creatorOrManager, err := s.isCreatorOrManager(ctx, ticket, actorID)
 	if err != nil {

@@ -2430,3 +2430,134 @@ func TestTicketService_GetSummary_NotFound(t *testing.T) {
 	assert.ErrorIs(t, err, models.ErrNoRows)
 	mockRepo.AssertExpectations(t)
 }
+
+// TestTicketService_Update_Supervisor_MultiField_Allowed — начальник области может
+// править любые поля чужой заявки кроме заголовка/описания: приоритет, категорию,
+// площадку, срок и заявителя. Ранее супервизор после провала canEditFields уходил
+// в assignedOnly и получал ErrPermissionDenied на любом не-статусном поле.
+func TestTicketService_Update_Supervisor_MultiField_Allowed(t *testing.T) {
+	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	realmID := uuid.New()
+	ticketID := uuid.New()
+	oldCategoryID := uuid.New()
+	newCategoryID := uuid.New()
+	oldSiteID := uuid.New()
+	newSiteID := uuid.New()
+	oldOwnerID := uuid.New()
+	newOwnerID := uuid.New()
+	dueDate := time.Now().Add(48 * time.Hour)
+
+	dto := &models.TicketDTO{
+		ID:         &ticketID,
+		Actor:      &models.Actor{ID: actorID, Name: "test"},
+		Priority:   models.PriorityHigh,
+		CategoryID: newCategoryID,
+		SiteID:     newSiteID,
+		OwnerID:    &newOwnerID,
+		DueDate:    &dueDate,
+		Provided: map[string]bool{
+			"priority":   true,
+			"categoryId": true,
+			"siteId":     true,
+			"ownerId":    true,
+			"dueDate":    true,
+		},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:       ticketID,
+		RealmID:  &realmID,
+		Title:    "Original Ticket",
+		Status:   models.StatusOpen,
+		Creator:  models.UserShort{ID: uuid.New()},
+		Group:    &models.GroupShort{ID: uuid.New(), Name: "Test Group"},
+		Category: &models.CategoryShort{ID: oldCategoryID, Name: "Old"},
+		Site:     &models.SiteShort{ID: oldSiteID, Name: "Old Site"},
+		Owner:    &models.UserShort{ID: oldOwnerID},
+		Priority: models.PriorityMedium,
+	}
+
+	// CheckAccess(Write): атрибуты не дают доступа (создатель чужой, менеджером группы
+	// не является), решение принимает обход начальника области.
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(true, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockLogs.AssertExpectations(t)
+}
+
+// TestTicketService_Update_Supervisor_Title_Denied — заголовок чужой заявки начальнику
+// области менять запрещено: режим adminOnlyEdit пропускает любые поля кроме
+// заголовка и описания.
+func TestTicketService_Update_Supervisor_Title_Denied(t *testing.T) {
+	mockRepo, _, _, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	realmID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Title:    "Updated Title",
+		Provided: map[string]bool{"title": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:      ticketID,
+		RealmID: &realmID,
+		Title:   "Original Title",
+		Status:  models.StatusOpen,
+		Creator: models.UserShort{ID: uuid.New()},
+		Group:   &models.GroupShort{ID: uuid.New(), Name: "Test Group"},
+	}
+
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(true, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+	mockRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything, mock.Anything)
+}
+
+// TestTicketService_Update_Supervisor_Description_Denied — описание чужой заявки
+// начальнику области менять запрещено (см. Title_Denied).
+func TestTicketService_Update_Supervisor_Description_Denied(t *testing.T) {
+	mockRepo, _, _, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	realmID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:          &ticketID,
+		Actor:       &models.Actor{ID: actorID, Name: "test"},
+		Description: "Updated description",
+		Provided:    map[string]bool{"description": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:          ticketID,
+		RealmID:     &realmID,
+		Title:       "Original Title",
+		Description: "Original description",
+		Status:      models.StatusOpen,
+		Creator:     models.UserShort{ID: uuid.New()},
+		Group:       &models.GroupShort{ID: uuid.New(), Name: "Test Group"},
+	}
+
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(true, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+	mockRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything, mock.Anything)
+}

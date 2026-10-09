@@ -1,14 +1,17 @@
 import { Box, Button, Stack, TextField, Typography } from '@mui/material'
 import { Controller, FormProvider, useForm, useFormContext } from 'react-hook-form'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'react-toastify'
 
 import type { ITask, ITaskDTO } from '../../types/task'
 import type { FormValues } from './types'
 import { useAppSelector } from '@/hooks/redux'
 import { getIsManager, getCurrentCapabilities } from '@/features/user/userSlice'
+import { useGetAllCategoriesQuery } from '@/features/categories/categoriesApiSlice'
+import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
 import { useUpdateTaskMutation } from '../../tasksApiSlice'
 import { AdvancedSettingsSection } from '../TaskCreateForm/AdvancedSettingsSection'
+import { CategoryAndSiteSection } from '../TaskCreateForm/CategoryAndSiteSection'
 import { SectionCard } from '../TaskCreateForm/SectionCard'
 import { fieldLabelSx } from '../TaskCreateForm/styles'
 
@@ -20,7 +23,7 @@ type Props = {
 	onSavingChange?: (saving: boolean) => void
 }
 
-const EditDescriptionSection = () => {
+const EditDescriptionSection = ({ readOnly }: { readOnly: boolean }) => {
 	const { control } = useFormContext<FormValues>()
 
 	return (
@@ -45,6 +48,7 @@ const EditDescriptionSection = () => {
 								{...field}
 								fullWidth
 								size='small'
+								disabled={readOnly}
 								error={Boolean(fieldState.error)}
 								helperText={fieldState.error?.message}
 								slotProps={{ htmlInput: { maxLength: 150 } }}
@@ -66,7 +70,9 @@ const EditDescriptionSection = () => {
 				<Controller
 					control={control}
 					name='description'
-					render={({ field }) => <TextField {...field} fullWidth size='small' multiline minRows={6} />}
+					render={({ field }) => (
+						<TextField {...field} fullWidth size='small' multiline minRows={6} disabled={readOnly} />
+					)}
 				/>
 			</Box>
 		</SectionCard>
@@ -78,6 +84,17 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 	const capabilities = useAppSelector(getCurrentCapabilities)
 
 	const [updateTask, { isLoading }] = useUpdateTaskMutation()
+	const { data: categoriesData } = useGetAllCategoriesQuery()
+	const { data: sitesData } = useGetAllSitesQuery()
+
+	const categories = useMemo(() => categoriesData?.data ?? [], [categoriesData])
+	const sites = useMemo(() => sitesData?.data ?? [], [sitesData])
+
+	// Заголовок/описание может править только создатель/менеджер группы/владелец
+	// (canEditFields). Начальник области (task.access.isAdmin) правит через форму
+	// остальные поля — категорию, площадку, приоритет, срок, группу, исполнителя —
+	// но не содержимое (см. режим adminOnlyEdit в TicketService.Update).
+	const canEditContent = Boolean(task.access?.canEditFields)
 
 	useEffect(() => {
 		onSavingChange?.(isLoading)
@@ -111,8 +128,8 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 				status: task.status,
 				priority: data.priority,
 				realmId: task.realmId ?? '',
-				siteId: task.site.id,
-				categoryId: task.category.id,
+				siteId: data.siteId,
+				categoryId: data.categoryId,
 				creatorId: task.creator.id,
 				ownerId: data.ownerId || null,
 				groupId: data.groupId || null,
@@ -147,11 +164,13 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 			<FormProvider {...methods}>
 				<Box component='form' onSubmit={onSubmit}>
 					<Stack sx={{ gap: 1 }}>
-						<EditDescriptionSection />
+						<EditDescriptionSection readOnly={!canEditContent} />
+
+						<CategoryAndSiteSection number={2} categories={categories} sites={sites} />
 
 						{isManager && (
 							<AdvancedSettingsSection
-								number={2}
+								number={3}
 								autoAssign={false}
 								isAdmin={task.access?.isAdmin ?? false}
 								isManager={task.access?.isManager ?? false}

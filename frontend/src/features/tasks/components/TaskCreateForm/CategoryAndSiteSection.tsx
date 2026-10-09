@@ -9,6 +9,7 @@ import type { FormValues } from './types'
 import { Stack } from '@mui/system'
 
 type Props = {
+	number?: number
 	categories: ICategory[]
 	sites: ISite[]
 }
@@ -16,12 +17,12 @@ type Props = {
 // Ключ группировки для Autocomplete: раздел категории либо «Без раздела».
 const sectionOfCategory = (category: ICategory) => category.categoryGroup?.name || 'Без раздела'
 
-export const CategoryAndSiteSection = ({ categories, sites }: Props) => {
+export const CategoryAndSiteSection = ({ number = 1, categories, sites }: Props) => {
 	const { control } = useFormContext<FormValues>()
 
 	return (
 		<SectionCard
-			number={1}
+			number={number}
 			title='Что случилось и где'
 			subtitle='Выберите категорию и площадку — это поможет быстрее направить заявку нужной группе'
 		>

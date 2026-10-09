@@ -35,7 +35,7 @@ export const TaskDetailPage = () => {
 	// Неактивные (замороженные) статусы: решения, закрытые и отменённые заявки
 	// недоступны для изменения данных.
 	const isInactive = task.status === 'resolved' || task.status === 'closed' || task.status === 'cancelled'
-	const canEdit = !isInactive && task.access?.canEditFields
+	const canEdit = !isInactive && (task.access?.canEditFields || task.access?.isAdmin)
 	const canUploadAttachments = !isInactive && task.access?.canWork
 	const canCreate = Boolean(
 		task.creator?.id === userId ||
