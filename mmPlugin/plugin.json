@@ -2,7 +2,7 @@
     "id": "issuetrack",
     "name": "IssueTrack",
     "description": "Создание заявок и просмотр активных заявок IssueTrack прямо из Mattermost",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "min_server_version": "10.0.0",
     "server": {
         "executables": {

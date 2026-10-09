@@ -1,4 +1,4 @@
-import { Box, Typography } from '@mui/material'
+import { Box, Tooltip, Typography } from '@mui/material'
 
 import type { IUserShort } from '@/features/user/types/user'
 import { Avatar } from '@/components/Avatar'
@@ -15,21 +15,23 @@ export const TaskAssignmentChip = ({ assignee }: Props) => {
 				<Avatar size={24} bgcolor={getAvatarColor(assignee.id)}>
 					{getInitials(assignee)}
 				</Avatar>
-				<Typography
-					component='span'
-					sx={{
-						fontSize: '0.75rem',
-						fontWeight: 500,
-						lineHeight: 1,
-						color: '#374151',
-						minWidth: 0,
-						overflow: 'hidden',
-						textOverflow: 'ellipsis',
-						whiteSpace: 'nowrap',
-					}}
-				>
-					{assignee.lastName} {assignee.firstName}
-				</Typography>
+				<Tooltip title={`${assignee.lastName} ${assignee.firstName}`} placement='top'>
+					<Typography
+						component='span'
+						sx={{
+							fontSize: '0.75rem',
+							fontWeight: 500,
+							lineHeight: 1,
+							color: '#374151',
+							minWidth: 0,
+							overflow: 'hidden',
+							textOverflow: 'ellipsis',
+							whiteSpace: 'nowrap',
+						}}
+					>
+						{assignee.lastName} {assignee.firstName}
+					</Typography>
+				</Tooltip>
 			</Box>
 		)
 	}

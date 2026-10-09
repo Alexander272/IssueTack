@@ -286,6 +286,96 @@
     padding: 6px;
 }
 
+/* Чекбокс «Назначить меня исполнителем» — строка с нативным чекбоксом. */
+.it-f-check {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.it-f-check__box {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--button-bg, #166de0);
+    cursor: pointer;
+}
+
+.it-f-check__text {
+    font-size: 13px;
+    color: var(--center-channel-color, #3d3c40);
+}
+
+/* Карточки приоритета в «Расширенных настройках» менеджера — как PriorityCard
+в вебе: цветной кружок + заголовок сверху, описание снизу. */
+.it-f-priority {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+@media (max-width: 560px) {
+    .it-f-priority {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 380px) {
+    .it-f-priority {
+        grid-template-columns: 1fr;
+    }
+}
+
+.it-f-priority-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px;
+    border: 2px solid rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.16);
+    border-radius: 12px;
+    background: var(--center-channel-bg, #fff);
+    color: var(--center-channel-color, #3d3c40);
+    text-align: left;
+    cursor: pointer;
+    transition: transform 0.15s ease-in-out, border-color 0.15s ease-in-out, background-color 0.15s ease-in-out;
+}
+
+.it-f-priority-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.08);
+}
+
+.it-f-priority-card--active {
+    border-color: var(--button-bg, #166de0);
+    background: rgba(var(--button-bg-rgb, 22, 109, 224), 0.08);
+}
+
+.it-f-priority-card__head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.it-f-priority-card__dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.it-f-priority-card__label {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+.it-f-priority-card__desc {
+    font-size: 12px;
+    line-height: 1.35;
+    color: rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.64);
+}
+
 .it-ticket-form__footer {
     display: flex;
     justify-content: flex-end;

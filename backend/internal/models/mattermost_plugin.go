@@ -25,6 +25,18 @@ type PluginContextResult struct {
 	User       PluginUser  `json:"user"`
 	Categories []*Category `json:"categories"`
 	Sites      []*Site     `json:"sites"`
+	// IsManager — менеджер реалма: начальник области ИЛИ управляет хотя бы одной
+	// группой. Зеркало веб-selector'а getIsManager (isRealmAdmin || managedGroupIds>0).
+	IsManager bool `json:"isManager"`
+	// MemberGroupIds — группы, в которых состоит пользователь: по ним фронт
+	// определяет исполнителя (isExecutor = !isManager && memberGroupIds>0).
+	MemberGroupIds []uuid.UUID `json:"memberGroupIds"`
+	// Groups — активные группы реалма для селекта «Группа» у менеджера.
+	Groups []GroupShort `json:"groups"`
+	// Executors/Customers — списки для селектов «Исполнитель» и «Заказчик»
+	// (та же разбивка по членству, что в веб /users/by-realm).
+	Executors []UserShort `json:"executors"`
+	Customers []UserShort `json:"customers"`
 }
 
 // PluginScope — контекст запроса webapp-плагина, из которого определяется
@@ -66,13 +78,22 @@ type PluginTicketLinkContext struct {
 }
 
 // PluginCreateTicketInput — данные для создания заявки из плагина MM.
-// CategoryID/SiteID равны uuid.Nil, если не выбраны.
+// CategoryID/SiteID равны uuid.Nil, если не выбраны. GroupID/AssigneeID/OwnerID
+// передаются только когда пользователь выбрал их в форме (у менеджера/исполнителя):
+// дефолтные значения берузся сервисом, а ролевые ограничения (обязательный
+// заказчик у исполнителя, срок только менеджеру, самоназначение) применяет
+// TicketService.Create.
 type PluginCreateTicketInput struct {
 	PluginScope
 	Title       string
 	Description string
 	CategoryID  uuid.UUID
 	SiteID      uuid.UUID
+	Priority    string
+	GroupID     uuid.UUID
+	AssigneeID  uuid.UUID
+	OwnerID     uuid.UUID
+	DueDate     *time.Time
 	Files       []PluginFile
 }
 

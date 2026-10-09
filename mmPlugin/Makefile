@@ -1,7 +1,7 @@
 # Makefile для сборки dist-пакета MM-плагина IssueTrack.
 # Итог: dist/issuetrack-<версия>.tar.gz — готов к загрузке в System Console.
 
-MM_VER ?= 0.1.0
+MM_VER ?= 1.0.0
 PLUGIN_ID = issuetrack
 
 DIST = dist

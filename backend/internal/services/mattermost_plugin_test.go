@@ -59,11 +59,38 @@ func (f *fakeSitesSvc) Get(ctx context.Context, req *models.GetSitesDTO) ([]*mod
 
 type fakeGroupsSvc struct {
 	Groups
-	getByID func(ctx context.Context, req *models.GetGroupDTO) (*models.Group, error)
+	get        func(ctx context.Context, req *models.GetGroupsDTO) ([]*models.Group, error)
+	getByID    func(ctx context.Context, req *models.GetGroupDTO) (*models.Group, error)
+	getMember  func(ctx context.Context, userID uuid.UUID, realmID *uuid.UUID) ([]uuid.UUID, error)
+	getManaged func(ctx context.Context, userID uuid.UUID, realmID *uuid.UUID) ([]uuid.UUID, error)
+}
+
+func (f *fakeGroupsSvc) Get(ctx context.Context, req *models.GetGroupsDTO) ([]*models.Group, error) {
+	if f.get == nil {
+		return nil, nil
+	}
+	return f.get(ctx, req)
 }
 
 func (f *fakeGroupsSvc) GetByID(ctx context.Context, req *models.GetGroupDTO) (*models.Group, error) {
+	if f.getByID == nil {
+		return nil, nil
+	}
 	return f.getByID(ctx, req)
+}
+
+func (f *fakeGroupsSvc) GetMemberGroups(ctx context.Context, userID uuid.UUID, realmID *uuid.UUID) ([]uuid.UUID, error) {
+	if f.getMember == nil {
+		return nil, nil
+	}
+	return f.getMember(ctx, userID, realmID)
+}
+
+func (f *fakeGroupsSvc) GetManagedGroups(ctx context.Context, userID uuid.UUID, realmID *uuid.UUID) ([]uuid.UUID, error) {
+	if f.getManaged == nil {
+		return nil, nil
+	}
+	return f.getManaged(ctx, userID, realmID)
 }
 
 func pluginMocks() (*MockMattermostRepo, *MockUserService, *MockUserRealmsService, *MockTicketsService) {
@@ -203,10 +230,20 @@ func TestPluginContext_HappyPath(t *testing.T) {
 	sites := &fakeSitesSvc{get: func(_ context.Context, _ *models.GetSitesDTO) ([]*models.Site, error) {
 		return []*models.Site{{ID: siteID, Name: "Площадка"}}, nil
 	}}
+	groups := &fakeGroupsSvc{get: func(_ context.Context, _ *models.GetGroupsDTO) ([]*models.Group, error) {
+		defaultAssignee := uuid.New()
+		return []*models.Group{{ID: uuid.New(), Name: "Группа", DefaultAssigneeID: &defaultAssignee}}, nil
+	}}
+	users.On("GetByMembership", mock.Anything, realmID, models.MembershipExecutors).Return([]*models.UserData{{ID: uuid.New(), Username: "ex1"}}, nil)
+	users.On("GetByMembership", mock.Anything, realmID, models.MembershipCustomers).Return([]*models.UserData{{ID: uuid.New(), Username: "cu1"}}, nil)
+
+	access := new(MockTicketAccessChecker)
+	access.On("IsRealmSupervisor", mock.Anything, userID, realmID.String()).Return(false, nil)
 
 	svc := NewMattermostService(&MattermostDeps{
 		Repo: repo, Users: users, UserRealms: userRealms,
-		Realms: realms, Categories: categories, Sites: sites,
+		Realms: realms, Categories: categories, Sites: sites, Groups: groups,
+		Access: access,
 	})
 
 	result, err := svc.PluginContext(context.Background(), pluginScopeFixture("ch1"))
@@ -220,6 +257,16 @@ func TestPluginContext_HappyPath(t *testing.T) {
 	assert.Equal(t, "a1b2c3d4-0000-0000-0000-000000000001", *result.User.SiteID)
 	assert.Len(t, result.Categories, 1)
 	assert.Len(t, result.Sites, 1)
+	// Роли и списки формы.
+	assert.False(t, result.IsManager)
+	assert.Empty(t, result.MemberGroupIds)
+	assert.Len(t, result.Groups, 1)
+	assert.Equal(t, "Группа", result.Groups[0].Name)
+	// defaultAssigneeId групп нужен фронту для веб-подобного автозаполнения
+	// исполнителя при смене группы менеджером.
+	assert.NotNil(t, result.Groups[0].DefaultAssigneeID)
+	assert.Len(t, result.Executors, 1)
+	assert.Len(t, result.Customers, 1)
 }
 
 // TestPluginContext_KnownUser_NoWrite фиксирует отсутствие записи в users на
@@ -244,10 +291,18 @@ func TestPluginContext_KnownUser_NoWrite(t *testing.T) {
 	sites := &fakeSitesSvc{get: func(_ context.Context, _ *models.GetSitesDTO) ([]*models.Site, error) {
 		return []*models.Site{{ID: siteID}}, nil
 	}}
+	groups := &fakeGroupsSvc{get: func(_ context.Context, _ *models.GetGroupsDTO) ([]*models.Group, error) {
+		return nil, nil
+	}}
+	users.On("GetByMembership", mock.Anything, realmID, mock.Anything).Return([]*models.UserData{}, nil)
+
+	access := new(MockTicketAccessChecker)
+	access.On("IsRealmSupervisor", mock.Anything, userID, realmID.String()).Return(false, nil)
 
 	svc := NewMattermostService(&MattermostDeps{
 		Repo: repo, Users: users, UserRealms: userRealms,
-		Realms: realms, Categories: categories, Sites: sites,
+		Realms: realms, Categories: categories, Sites: sites, Groups: groups,
+		Access: access,
 	})
 
 	// Два вызова подряд — как два переключения канала одним пользователем.
@@ -330,6 +385,72 @@ func TestPluginCreateTicket_HappyPath(t *testing.T) {
 	assert.NotEmpty(t, result.ID)
 	tickets.AssertExpectations(t)
 	tickets.AssertNumberOfCalls(t, "UploadAttachment", 2)
+}
+
+// TestPluginCreateTicket_ManagerFields: явные поля менеджера (приоритет,
+// группа, исполнитель, заказчик, срок) перебивают значения категории и дефолты
+// группы. Дальше их роль ещё раз подтверждает TicketService.Create как coarse-
+// правами, так и applyExecutorCreateRestrictions — плагин только прокидывает.
+func TestPluginCreateTicket_ManagerFields(t *testing.T) {
+	realmID := uuid.New()
+	userID := uuid.New()
+	categoryID := uuid.New()
+	catGroupID := uuid.New()
+	chosenGroupID := uuid.New()
+	assigneeID := uuid.New()
+	ownerID := uuid.New()
+	due := time.Date(2026, 10, 20, 15, 0, 0, 0, time.UTC)
+	repo, users, userRealms, tickets := pluginMocks()
+
+	repo.On("GetByChannelID", mock.Anything, "ch1").Return(&models.RealmMattermost{RealmID: realmID, ChannelID: "ch1", IsActive: true}, nil)
+	expectExistingUser(users, userRealms, userID, realmID)
+
+	categories := &fakeCategoriesSvc{getByID: func(_ context.Context, req *models.GetCategoryByIdDTO) (*models.Category, error) {
+		assert.Equal(t, categoryID, req.ID)
+		// Категория по умолчанию ведёт в catGroupID с приоритетом high —
+		// менеджер выбирает другую группу и low, и его выбор должен победить.
+		return &models.Category{ID: categoryID, GroupID: catGroupID, Priority: models.PriorityHigh}, nil
+	}}
+	groups := &fakeGroupsSvc{getByID: func(_ context.Context, req *models.GetGroupDTO) (*models.Group, error) {
+		assert.Equal(t, chosenGroupID, req.ID)
+		return &models.Group{ID: chosenGroupID, DefaultAssigneeID: nil, ManagerID: nil}, nil
+	}}
+
+	tickets.On("Create", mock.Anything, mock.MatchedBy(func(dto *models.TicketDTO) bool {
+		return dto.CategoryID == categoryID &&
+			dto.GroupID != nil && *dto.GroupID == chosenGroupID &&
+			dto.Priority == models.PriorityLow &&
+			dto.AssigneeID != nil && *dto.AssigneeID == assigneeID &&
+			dto.OwnerID != nil && *dto.OwnerID == ownerID &&
+			dto.DueDate != nil && dto.DueDate.Equal(due)
+	})).Run(func(args mock.Arguments) {
+		dto := args.Get(1).(*models.TicketDTO)
+		id := uuid.New()
+		dto.ID = &id
+		if dto.RealmID == nil {
+			dto.RealmID = &realmID
+		}
+	}).Return(nil)
+
+	svc := NewMattermostService(&MattermostDeps{
+		Repo: repo, Users: users, UserRealms: userRealms,
+		Tickets: tickets, Categories: categories, Groups: groups,
+	})
+
+	input := &models.PluginCreateTicketInput{
+		PluginScope: pluginScopeFixture("ch1"),
+		Title:       "Заявка менеджера",
+		CategoryID:  categoryID,
+		Priority:    "low",
+		GroupID:     chosenGroupID,
+		AssigneeID:  assigneeID,
+		OwnerID:     ownerID,
+		DueDate:     &due,
+	}
+
+	_, err := svc.PluginCreateTicket(context.Background(), input)
+	require.NoError(t, err)
+	tickets.AssertExpectations(t)
 }
 
 func TestPluginCreateTicket_UnboundChannel(t *testing.T) {
@@ -870,10 +991,18 @@ func TestPluginContext_DMWithBot(t *testing.T) {
 	sites := &fakeSitesSvc{get: func(_ context.Context, _ *models.GetSitesDTO) ([]*models.Site, error) {
 		return []*models.Site{{ID: siteID, Name: "Площадка"}}, nil
 	}}
+	groups := &fakeGroupsSvc{get: func(_ context.Context, _ *models.GetGroupsDTO) ([]*models.Group, error) {
+		return nil, nil
+	}}
+	users.On("GetByMembership", mock.Anything, realmID, mock.Anything).Return([]*models.UserData{}, nil)
+
+	access := new(MockTicketAccessChecker)
+	access.On("IsRealmSupervisor", mock.Anything, userID, realmID.String()).Return(false, nil)
 
 	svc := NewMattermostService(&MattermostDeps{
 		Repo: repo, Users: users, UserRealms: userRealms, Most: most,
-		Realms: realms, Categories: categories, Sites: sites,
+		Realms: realms, Categories: categories, Sites: sites, Groups: groups,
+		Access: access,
 	})
 
 	result, err := svc.PluginContext(context.Background(), dmScopeFixture())

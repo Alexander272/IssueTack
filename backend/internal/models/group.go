@@ -22,8 +22,9 @@ type Group struct {
 }
 
 type GroupShort struct {
-	ID   uuid.UUID `json:"id" db:"id"`
-	Name string    `json:"name" db:"name"`
+	ID               uuid.UUID  `json:"id" db:"id"`
+	Name             string     `json:"name" db:"name"`
+	DefaultAssigneeID *uuid.UUID `json:"defaultAssigneeId,omitempty" db:"default_assignee_id"`
 }
 
 // GetGroupDTO — запрос одной группы. RealmID заполняется сервером из

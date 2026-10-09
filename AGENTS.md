@@ -178,6 +178,15 @@
 - **Авто-назначение в вебе (`AdvancedSettingsSection`) не должно затирать черновик.** Эффекты `autoAssign` (группа из категории, исполнитель из группы) срабатывают только при реальном изменении поля пользователем (сравнение с `useRef` prev), а не на первом рендере/загрузке списков.
 - `reset()` в вебе сбрасывает к константе `EMPTY_FORM`, а не к `defaultValues`: последние могут быть восстановленным черновиком.
 
+### Доп. поля формы создания в плагине (менеджер/исполнитель)
+
+Условия формы создания перенесены из веба (`TaskCreateForm`) в плагин (`CreateTab`), **не** в плагин-сервер: `mmPlugin/server/plugin.go` — прозрачный прокси. Вся ролевая логика остаётся на бэкенде в `TicketService.Create` (`CanCreateTicket`/coarse-права, `applyExecutorCreateRestrictions`, `autoAssign`, dueDate-гейт `CanManage`), плагин только прокидывает поля — условия не дублируются, подмена полей через запрос ничего не даёт. Подзадачи/шаблоны в плагине не переносились (решение).
+
+- **Роли и списки приходят в `/plugin/context`** (`PluginContextResult`: `isManager`, `memberGroupIds`, `groups` (реалма), `executors`/`customers` — участники по `GetByMembership`). Формула ролей — зеркало веба: `isManager = isRealmSupervisor || managedGroups>0`, `isExecutor = !isManager && memberGroupIds>0`. Справочники реалма (категории, площадки, группы) кэшируются per-realm (`pluginCache`, `pluginRealmData`), роли/списки — per-user, ошибки их загрузки — best-effort (`Warn`-лог): пользователь видит базовую форму, финальные права всё равно у `TicketService.Create`.
+- **Секции**: исполнитель — «Заказчик» (селект + чекбокс «Назначить меня исполнителем», `assigneeId = currentUserId`); менеджер — «Расширенные настройки» (приоритет-чипы, заявитель, группа, исполнитель, `datetime-local` срок). Обычный заявитель доп. полей не видит. Менеджер в payload шлёт `priority/groupId/assigneeId/ownerId/dueDate`, исполнитель — только `ownerId`/`assigneeId`; пустой `priority`/`groupId` у менеджера = «по категории» (`PluginCreateTicket` подставляет из категории, если явного выбора нет).
+- **`CreateTab` делает веб-подобное авто-назначение (`autoAssign`), но бэкенд всё равно авторитетен.** Эффекты `AdvancedSettingsSection` перенесены в плагин: смена категории подставляет группу (по `category.groupId`) и дефолтный приоритет категории (по `category.priority`), смена группы — её `defaultAssigneeId` (поэтому `PluginContextResult.Groups` несёт `DefaultAssigneeID`, см. `models.GroupShort`). Оба эффекта, как в вебе, защищены `useRef`-prev и работают только на реальном изменении поля — восстановленный черновик не затирается. Подставленные значения совпадают с теми, что `TicketService.Create` применил бы сам при пустых полях; сервер применяет ограничения (`applyExecutorCreateRestrictions`, `autoAssign`) даже при подмене полей через запрос, поэтому дублирование логики не даёт менеджеру/исполнителю лишних прав.
+- Черновик плагина дополнен полями секций (`createDraft.ts`, `v=2`): `priority/groupId/assigneeId/ownerId/dueDate` — опциональные строки, старые черновики инвалидируются бампом версии.
+
 ## Уведомления
 
 Реализованы в `backend/internal/services/notifications.go` (`NotificationService`).

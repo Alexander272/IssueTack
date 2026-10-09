@@ -34,6 +34,14 @@ export interface PluginSite {
     updatedAt: string;
 }
 
+export interface PluginGroupShort {
+    id: string;
+    name: string;
+    // Дефолтный исполнитель группы — для веб-подобного автозаполнения: при
+    // смене группы менеджеру подставляется defaultAssigneeId этой группы.
+    defaultAssigneeId?: string | null;
+}
+
 // PluginScope — контекст вызова плагина: канал и Mattermost-пользователь.
 // botUserId заполняется только для личного диалога с ботом реалма: такие каналы
 // не привязаны к реалму, и сервер определяет его по собеседнику (проверяя состав
@@ -51,6 +59,15 @@ export interface PluginContextResult {
     user: PluginUser;
     categories: PluginCategory[];
     sites: PluginSite[];
+    // Роли и справочники формы создания. isManager (начальник области ИЛИ
+    // управляет группой) открывает «Расширенные настройки», наличие групп
+    // членства — секцию исполнителя «Заказчик». Зеркало веб-формы: условия
+    // показа секций совпадают с web, финальные права всё равно у TicketService.Create.
+    isManager: boolean;
+    memberGroupIds: string[];
+    groups: PluginGroupShort[];
+    executors: PluginUserShort[];
+    customers: PluginUserShort[];
 }
 
 export interface PluginTicketShort {

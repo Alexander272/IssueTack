@@ -392,7 +392,7 @@ func (s *MattermostService) PluginContext(ctx context.Context, scope models.Plug
 		return &models.PluginContextResult{Bound: false}, nil
 	}
 
-	realmName, categories, sites, err := s.pluginRealmData(ctx, settings.RealmID)
+	realmName, categories, sites, groups, err := s.pluginRealmData(ctx, settings.RealmID)
 	if err != nil {
 		return nil, err
 	}
@@ -402,41 +402,114 @@ func (s *MattermostService) PluginContext(ctx context.Context, scope models.Plug
 		return nil, fmt.Errorf("failed to resolve user: %w", err)
 	}
 
+	// Роли и списки — зеркало веб-формы создания: isManager (начальник области
+	// ИЛИ управляет группой) открывает «Расширенные настройки», наличие групп
+	// членства — секцию исполнителя «Заказчик». Ошибки загрузки не роняют
+	// контекст: пользователь просто увидит базовую форму (права всё равно
+	// финально проверяет TicketService.Create).
+	isManager := s.isRealmSupervisor(ctx, user.ID, settings.RealmID)
+	memberGroups, err := s.groups.GetMemberGroups(ctx, user.ID, &settings.RealmID)
+	if err != nil {
+		logger.Warn("plugin context: failed to get member groups",
+			logger.StringAttr("user_id", user.ID.String()),
+			logger.StringAttr("realm_id", settings.RealmID.String()),
+			logger.ErrAttr(err))
+		memberGroups = nil
+	}
+	managedGroups, err := s.groups.GetManagedGroups(ctx, user.ID, &settings.RealmID)
+	if err != nil {
+		logger.Warn("plugin context: failed to get managed groups",
+			logger.StringAttr("user_id", user.ID.String()),
+			logger.StringAttr("realm_id", settings.RealmID.String()),
+			logger.ErrAttr(err))
+		managedGroups = nil
+	}
+	if len(managedGroups) > 0 {
+		isManager = true
+	}
+
+	executors := s.pluginMembers(ctx, settings.RealmID, models.MembershipExecutors)
+	customers := s.pluginMembers(ctx, settings.RealmID, models.MembershipCustomers)
+
 	return &models.PluginContextResult{
-		Bound:      true,
-		RealmID:    settings.RealmID,
-		RealmName:  realmName,
-		User:       models.PluginUser{ID: user.ID, Username: user.Username, SiteID: user.SiteID},
-		Categories: categories,
-		Sites:      sites,
+		Bound:          true,
+		RealmID:        settings.RealmID,
+		RealmName:      realmName,
+		User:           models.PluginUser{ID: user.ID, Username: user.Username, SiteID: user.SiteID},
+		Categories:     categories,
+		Sites:          sites,
+		IsManager:      isManager,
+		MemberGroupIds: memberGroups,
+		Groups:         groups,
+		Executors:      executors,
+		Customers:      customers,
 	}, nil
 }
 
+// pluginMembers возвращает пользователей реалма по членству для селектов формы
+// плагина (исполнители/заказчики). Ошибка не роняет контекст — список пуст.
+func (s *MattermostService) pluginMembers(ctx context.Context, realmID uuid.UUID, membership models.MembershipFilter) []models.UserShort {
+	users, err := s.users.GetByMembership(ctx, realmID, membership)
+	if err != nil {
+		logger.Warn("plugin context: failed to get members",
+			logger.StringAttr("realm_id", realmID.String()),
+			logger.StringAttr("membership", string(membership)),
+			logger.ErrAttr(err))
+		return nil
+	}
+	list := make([]models.UserShort, 0, len(users))
+	for _, u := range users {
+		if u == nil {
+			continue
+		}
+		list = append(list, models.UserShort{
+			ID:        u.ID,
+			Username:  u.Username,
+			FirstName: u.FirstName,
+			LastName:  u.LastName,
+			Email:     u.Email,
+		})
+	}
+	return list
+}
+
 // pluginRealmData отдаёт название реалма и его общие справочники (категории,
-// площадки). Они одинаковы для всех пользователей реалма, поэтому кэшируются,
-// чтобы всплеск /plugin/context не перечитывал их из БД на каждый запрос.
-func (s *MattermostService) pluginRealmData(ctx context.Context, realmID uuid.UUID) (string, []*models.Category, []*models.Site, error) {
+// площадки, группы). Они одинаковы для всех пользователей реалма, поэтому
+// кэшируются, чтобы всплеск /plugin/context не перечитывал их из БД на каждый запрос.
+func (s *MattermostService) pluginRealmData(ctx context.Context, realmID uuid.UUID) (string, []*models.Category, []*models.Site, []models.GroupShort, error) {
 	if ent, ok := s.pluginCache.getRealm(realmID); ok {
-		return ent.realmName, ent.categories, ent.sites, nil
+		return ent.realmName, ent.categories, ent.sites, ent.groups, nil
 	}
 
 	realm, err := s.realms.GetByID(ctx, &models.GetRealmByIdDTO{ID: realmID})
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("failed to get realm: %w", err)
+		return "", nil, nil, nil, fmt.Errorf("failed to get realm: %w", err)
 	}
 
 	categories, err := s.categories.Get(ctx, &models.GetCategoriesDTO{RealmID: realmID})
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("failed to get categories: %w", err)
+		return "", nil, nil, nil, fmt.Errorf("failed to get categories: %w", err)
 	}
 
 	sites, err := s.sites.Get(ctx, &models.GetSitesDTO{})
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("failed to get sites: %w", err)
+		return "", nil, nil, nil, fmt.Errorf("failed to get sites: %w", err)
 	}
 
-	s.pluginCache.setRealm(realmID, realm.Name, categories, sites)
-	return realm.Name, categories, sites, nil
+	groups, err := s.groups.Get(ctx, &models.GetGroupsDTO{RealmID: &realmID})
+	if err != nil {
+		return "", nil, nil, nil, fmt.Errorf("failed to get groups: %w", err)
+	}
+	groupShorts := make([]models.GroupShort, 0, len(groups))
+	for _, g := range groups {
+		if g == nil {
+			continue
+		}
+		groupShorts = append(groupShorts, models.GroupShort{ID: g.ID, Name: g.Name, DefaultAssigneeID: g.DefaultAssigneeID})
+	}
+
+	s.pluginCache.setRealm(realmID, realm.Name, categories, sites, groupShorts)
+	return realm.Name, categories, sites, groupShorts, nil
 }
 
 // PluginCreateTicket создаёт заявку из формы плагина (аналог
@@ -469,17 +542,39 @@ func (s *MattermostService) PluginCreateTicket(ctx context.Context, input *model
 		dto.Description = input.Description
 	}
 
+	// Категория подставляет группу и приоритет по умолчанию, но только если
+	// менеджер не выбрал их явно в форме. Дальше ролевые ограничения применяет
+	// TicketService.Create: для пользователя без полных прав группа/приоритет
+	// всё равно принудительно берутся из категории, заказчик обязателен, срок
+	// отбрасывается, а исполнителем можно назначить только себя.
 	if input.CategoryID != uuid.Nil {
 		dto.CategoryID = input.CategoryID
 		cat, err := s.categories.GetByID(ctx, &models.GetCategoryByIdDTO{ID: input.CategoryID, RealmID: settings.RealmID})
 		if err != nil {
 			return nil, fmt.Errorf("invalid category: %w", err)
 		}
-		groupID := cat.GroupID
-		dto.GroupID = &groupID
-		if cat.Priority != "" {
+		if input.GroupID == uuid.Nil {
+			groupID := cat.GroupID
+			dto.GroupID = &groupID
+		}
+		if input.Priority == "" && cat.Priority != "" {
 			dto.Priority = cat.Priority
 		}
+	}
+	if input.GroupID != uuid.Nil {
+		dto.GroupID = &input.GroupID
+	}
+	if input.Priority != "" {
+		dto.Priority = models.Priority(input.Priority)
+	}
+	if input.AssigneeID != uuid.Nil {
+		dto.AssigneeID = &input.AssigneeID
+	}
+	if input.OwnerID != uuid.Nil {
+		dto.OwnerID = &input.OwnerID
+	}
+	if input.DueDate != nil {
+		dto.DueDate = input.DueDate
 	}
 
 	if dto.GroupID != nil {

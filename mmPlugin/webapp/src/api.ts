@@ -123,6 +123,14 @@ export interface CreateTicketPayload {
     categoryId?: string | null;
     siteId?: string | null;
     files: File[];
+    // Доп. секции формы (менеджер/исполнитель). Сервер сам применяет ролевые
+    // ограничения: для пользователя без полных прав группа/приоритет всё равно
+    // берутся из категории, заказчик обязателен, срок отбрасывается.
+    priority?: string;
+    groupId?: string;
+    assigneeId?: string;
+    ownerId?: string;
+    dueDate?: string;
 }
 
 const contextCache = new Map<string, {scope: PluginScope; ts: number; data: PluginContextResult}>();
@@ -247,6 +255,21 @@ export async function createTicket(scope: PluginScope, payload: CreateTicketPayl
     }
     if (payload.siteId) {
         fd.append('siteId', payload.siteId);
+    }
+    if (payload.priority) {
+        fd.append('priority', payload.priority);
+    }
+    if (payload.groupId) {
+        fd.append('groupId', payload.groupId);
+    }
+    if (payload.assigneeId) {
+        fd.append('assigneeId', payload.assigneeId);
+    }
+    if (payload.ownerId) {
+        fd.append('ownerId', payload.ownerId);
+    }
+    if (payload.dueDate) {
+        fd.append('dueDate', payload.dueDate);
     }
     for (const file of payload.files || []) {
         fd.append('files', file);

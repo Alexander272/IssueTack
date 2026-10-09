@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/config"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
@@ -63,6 +64,26 @@ func pluginScope(c *gin.Context) models.PluginScope {
 		MmUserID:  c.Query("userId"),
 		BotUserID: c.Query("botUserId"),
 	}
+}
+
+// isValidPriority проверяет значение поля приоритета из формы плагина.
+func isValidPriority(v string) bool {
+	switch models.Priority(v) {
+	case models.PriorityLow, models.PriorityMedium, models.PriorityHigh, models.PriorityUrgent:
+		return true
+	}
+	return false
+}
+
+// parsePluginDueDate разбирает срок из формы плагина: нативный datetime-local
+// ("2006-01-02T15:04", локальное время) либо RFC3339 (ISO-строка веб-формы).
+func parsePluginDueDate(raw string) (*time.Time, error) {
+	for _, layout := range []string{"2006-01-02T15:04", time.RFC3339} {
+		if t, err := time.Parse(layout, raw); err == nil {
+			return &t, nil
+		}
+	}
+	return nil, fmt.Errorf("invalid dueDate format")
 }
 
 // handlePluginContext возвращает контекст канала (реалм, справочники,
@@ -196,6 +217,41 @@ func (h *Handler) handlePluginCreateTicket(c *gin.Context) {
 			return
 		}
 		input.SiteID = id
+	}
+
+	// Поля доп. секций формы (менеджер/исполнитель). Ролевые ограничения
+	// применяет TicketService.Create, здесь — только валидация формата.
+	if input.Priority = strings.TrimSpace(c.Request.FormValue("priority")); input.Priority != "" {
+		if !isValidPriority(input.Priority) {
+			response.SendError(c, models.ErrInvalidInput)
+			return
+		}
+	}
+	for _, f := range []struct {
+		field string
+		set   func(uuid.UUID)
+	}{
+		{field: "groupId", set: func(id uuid.UUID) { input.GroupID = id }},
+		{field: "assigneeId", set: func(id uuid.UUID) { input.AssigneeID = id }},
+		{field: "ownerId", set: func(id uuid.UUID) { input.OwnerID = id }},
+	} {
+		if raw := c.Request.FormValue(f.field); raw != "" {
+			id, err := uuid.Parse(raw)
+			if err != nil {
+				response.SendError(c, models.ErrInvalidInput)
+				return
+			}
+			f.set(id)
+		}
+	}
+
+	if raw := strings.TrimSpace(c.Request.FormValue("dueDate")); raw != "" {
+		dueDate, err := parsePluginDueDate(raw)
+		if err != nil {
+			response.SendError(c, models.ErrInvalidInput)
+			return
+		}
+		input.DueDate = dueDate
 	}
 
 	files := c.Request.MultipartForm.File["files"]

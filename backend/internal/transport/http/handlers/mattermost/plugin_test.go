@@ -190,9 +190,6 @@ func (s *stubScopeMattermost) PluginContext(_ context.Context, scope models.Plug
 	return &models.PluginContextResult{Bound: false}, nil
 }
 
-// TestPluginContextPassesBotUserID проверяет, что хендлер /plugin/context
-// доносит botUserId собеседника: по нему сервис определяет реалм для личного
-// диалога, который не привязан к каналу.
 func TestPluginContextPassesBotUserID(t *testing.T) {
 	engine := gin.New()
 	stub := &stubScopeMattermost{}
@@ -211,4 +208,80 @@ func TestPluginContextPassesBotUserID(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.Equal(t, models.PluginScope{ChannelID: "dm1", MmUserID: "u1", BotUserID: "bot1"}, stub.got)
+}
+
+// stubCaptureCreate захватывает input, дошедший до сервиса.
+type stubCaptureCreate struct {
+	services.Mattermost
+	got *models.PluginCreateTicketInput
+}
+
+func (s *stubCaptureCreate) PluginCreateTicket(_ context.Context, in *models.PluginCreateTicketInput) (*models.PluginCreateTicketResult, error) {
+	s.got = in
+	return &models.PluginCreateTicketResult{ID: uuid.New(), Title: in.Title}, nil
+}
+
+// TestPluginCreateTicketParsesExtendedFields проверяет, что хендлер разбирает
+// поля доп. секций менеджера/исполнителя и кладёт их в input: priority enum,
+// uuid-поля и дату срока.
+func TestPluginCreateTicketParsesExtendedFields(t *testing.T) {
+	ownerID := uuid.New()
+	groupID := uuid.New()
+	engine := gin.New()
+	stub := &stubCaptureCreate{}
+	h := &Handler{service: stub}
+	h.registerPluginRoutes(engine.Group("/api/v1"), config.MattermostConfig{
+		PluginToken:      "secret",
+		AllowedServerIPs: []string{"192.0.2.0/24"},
+	})
+
+	body := &bytes.Buffer{}
+	mw := multipart.NewWriter(body)
+	require.NoError(t, mw.WriteField("channelId", "c1"))
+	require.NoError(t, mw.WriteField("userId", "u1"))
+	require.NoError(t, mw.WriteField("title", "t"))
+	require.NoError(t, mw.WriteField("priority", "urgent"))
+	require.NoError(t, mw.WriteField("groupId", groupID.String()))
+	require.NoError(t, mw.WriteField("ownerId", ownerID.String()))
+	require.NoError(t, mw.WriteField("dueDate", "2026-11-05T14:30"))
+	require.NoError(t, mw.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/plugin/tickets", body)
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.NotNil(t, stub.got)
+	assert.Equal(t, "urgent", stub.got.Priority)
+	assert.Equal(t, groupID, stub.got.GroupID)
+	assert.Equal(t, ownerID, stub.got.OwnerID)
+	require.NotNil(t, stub.got.DueDate)
+	assert.Equal(t, "2026-11-05T14:30", stub.got.DueDate.Format("2006-01-02T15:04"))
+}
+
+func TestPluginCreateTicketRejectsBadPriority(t *testing.T) {
+	engine := gin.New()
+	h := &Handler{service: nil}
+	h.registerPluginRoutes(engine.Group("/api/v1"), config.MattermostConfig{
+		PluginToken:      "secret",
+		AllowedServerIPs: []string{"192.0.2.0/24"},
+	})
+
+	body := &bytes.Buffer{}
+	mw := multipart.NewWriter(body)
+	require.NoError(t, mw.WriteField("channelId", "c1"))
+	require.NoError(t, mw.WriteField("userId", "u1"))
+	require.NoError(t, mw.WriteField("title", "t"))
+	require.NoError(t, mw.WriteField("priority", "top-priority"))
+	require.NoError(t, mw.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/plugin/tickets", body)
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 }

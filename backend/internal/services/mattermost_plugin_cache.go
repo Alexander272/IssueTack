@@ -25,6 +25,7 @@ type pluginRealmEntry struct {
 	realmName  string
 	categories []*models.Category
 	sites      []*models.Site
+	groups     []models.GroupShort
 	expires    time.Time
 }
 
@@ -80,16 +81,18 @@ func (c *pluginContextCache) getRealm(id uuid.UUID) (pluginRealmEntry, bool) {
 	}
 	ent.categories = slices.Clone(ent.categories)
 	ent.sites = slices.Clone(ent.sites)
+	ent.groups = slices.Clone(ent.groups)
 	return ent, true
 }
 
-func (c *pluginContextCache) setRealm(id uuid.UUID, realmName string, categories []*models.Category, sites []*models.Site) {
+func (c *pluginContextCache) setRealm(id uuid.UUID, realmName string, categories []*models.Category, sites []*models.Site, groups []models.GroupShort) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.realms[id] = pluginRealmEntry{
 		realmName:  realmName,
 		categories: slices.Clone(categories),
 		sites:      slices.Clone(sites),
+		groups:     slices.Clone(groups),
 		expires:    time.Now().Add(pluginContextCacheTTL),
 	}
 }

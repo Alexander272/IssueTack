@@ -9,12 +9,25 @@ export interface PluginCreateDraft {
 	description: string
 	categoryId: string
 	siteId: string
+	// Доп. секции менеджера/исполнителя — опциональны: поле появляется только
+	// если пользователь выбрал его, у «чистого» заявителя их нет вовсе.
+	priority?: string
+	groupId?: string
+	assigneeId?: string
+	ownerId?: string
+	dueDate?: string
 }
 
-const VERSION = 1
+const VERSION = 2
 
 function draftKey(realmId: string, userId: string) {
 	return `it-plugin-create-draft:${realmId}:${userId}`
+}
+
+// isOptionalStr — строка либо отсутствует вовсе (не «»): выбор «не выбрано»
+// в селекте тоже валиден как пропущенное значение.
+function isOptionalStr(v: unknown): boolean {
+	return v === undefined || typeof v === 'string'
 }
 
 function isDraft(value: unknown): value is PluginCreateDraft {
@@ -24,7 +37,12 @@ function isDraft(value: unknown): value is PluginCreateDraft {
 		typeof d.title === 'string' &&
 		typeof d.description === 'string' &&
 		typeof d.categoryId === 'string' &&
-		typeof d.siteId === 'string'
+		typeof d.siteId === 'string' &&
+		isOptionalStr(d.priority) &&
+		isOptionalStr(d.groupId) &&
+		isOptionalStr(d.assigneeId) &&
+		isOptionalStr(d.ownerId) &&
+		isOptionalStr(d.dueDate)
 	)
 }
 
