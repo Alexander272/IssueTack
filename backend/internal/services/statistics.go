@@ -23,6 +23,9 @@ const statisticsBucketLimit = 20
 type Statistics interface {
 	// Get возвращает агрегаты статистики заявок за период с учётом среза актора.
 	Get(ctx context.Context, filter *models.StatisticsFilter) (*models.TicketStatistics, error)
+	// GetTickets — drill-down статистики: заявки, стоящие за сектором диаграммы
+	// (нагрузка исполнителя / задачи от заказчика) с учётом того же среза и периода.
+	GetTickets(ctx context.Context, query models.StatisticsTicketsQuery) ([]*models.Ticket, int, error)
 }
 
 // StatisticsService реализует Statistics.
@@ -157,6 +160,24 @@ func (s *StatisticsService) Get(ctx context.Context, filter *models.StatisticsFi
 	}
 
 	return stats, nil
+}
+
+// GetTickets — drill-down статистики: заявки, стоящие за сектором диаграммы
+// «Нагрузка исполнителей» / «Задачи от заказчиков». Срез актора и уточнения
+// фильтра те же, что у агрегатов, поэтому список совпадает с числом в секции.
+// Как и Get, требует актора: без него срез доступа не вычислить.
+func (s *StatisticsService) GetTickets(ctx context.Context, query models.StatisticsTicketsQuery) ([]*models.Ticket, int, error) {
+	if query.Filter == nil || query.Filter.Actor == nil {
+		return nil, 0, models.ErrPermissionDenied
+	}
+
+	scope, err := s.resolveScope(ctx, query.Filter.Actor.ID, query.Filter.RealmID)
+	if err != nil {
+		return nil, 0, err
+	}
+	query.Scope = scope
+
+	return s.repo.GetStatisticsTickets(ctx, query)
 }
 
 // resolveScope определяет срез видимых актору заявок. Приоритет ролей:

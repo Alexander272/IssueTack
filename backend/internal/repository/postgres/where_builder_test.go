@@ -67,3 +67,23 @@ func TestStatusMode(t *testing.T) {
 	assert.Equal(t, []models.TicketStatus{"open", "in_progress", "pending", "on_hold", "resolved"}, activeStatuses)
 	assert.Equal(t, []models.TicketStatus{"closed", "cancelled"}, archiveStatuses)
 }
+
+// TestStatisticsDrilldownStatusSets фиксирует статусные наборы drill-down: клик по
+// сектору обязан показать ровно то, что посчитал агрегат. «Активные» здесь, в
+// отличие от activeStatuses, без resolved (в статистике он неактивен), «закрытые»
+// — resolved/closed/cancelled.
+func TestStatisticsDrilldownStatusSets(t *testing.T) {
+	assert.Equal(t,
+		[]models.TicketStatus{"open", "in_progress", "pending", "on_hold"},
+		statisticsDrilldownActive,
+	)
+	assert.Equal(t,
+		[]models.TicketStatus{"resolved", "closed", "cancelled"},
+		statisticsDrilldownClosed,
+	)
+
+	w := &whereBuilder{}
+	w.statuses(nil, statisticsDrilldownActive)
+	assert.Equal(t, "t.status IN ($1,$2,$3,$4)", w.clauses[0])
+	assert.Equal(t, toAny(statisticsDrilldownActive), w.args)
+}

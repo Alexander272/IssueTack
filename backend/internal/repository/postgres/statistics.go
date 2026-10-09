@@ -31,6 +31,7 @@ type Statistics interface {
 	GetStatisticsByOwner(ctx context.Context, query models.StatisticsQuery) ([]*models.StatisticsBreakdownBucket, error)
 	GetStatisticsWorkload(ctx context.Context, query models.StatisticsQuery) ([]*models.WorkloadBucket, error)
 	GetStatisticsTrend(ctx context.Context, query models.StatisticsQuery) ([]*models.TrendPoint, error)
+	GetStatisticsTickets(ctx context.Context, query models.StatisticsTicketsQuery) ([]*models.Ticket, int, error)
 }
 
 // statisticsScope добавляет в построитель условие видимости заявок для актора:
@@ -425,4 +426,92 @@ func (r *StatisticsRepo) GetStatisticsTrend(ctx context.Context, q models.Statis
 		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
 	}
 	return data, nil
+}
+
+// statisticsDrilldownActive/Closed — статусные наборы колец диаграммы. «Активные»
+// здесь, в отличие от activeStatuses, НЕ включают resolved: в статистике он
+// считается неактивным (см. GetStatisticsWorkload/ByOwner), поэтому список
+// drill-down обязан повторять именно это деление.
+var (
+	statisticsDrilldownActive = []models.TicketStatus{
+		models.StatusOpen, models.StatusInProgress, models.StatusPending, models.StatusOnHold,
+	}
+	statisticsDrilldownClosed = []models.TicketStatus{
+		models.StatusResolved, models.StatusClosed, models.StatusCancelled,
+	}
+)
+
+// GetStatisticsTickets возвращает заявки, стоящие за сектором двухкольцевой
+// диаграммы («Нагрузка исполнителей» / «Задачи от заказчиков»). Срез/уточнения и
+// период берутся те же, что у агрегатов (statisticsWhere + created_at), плюс
+// человек (исполнитель или заказчик) и статусная группа кольца — поэтому список
+// совпадает с числом в секции.
+func (r *StatisticsRepo) GetStatisticsTickets(ctx context.Context, q models.StatisticsTicketsQuery) ([]*models.Ticket, int, error) {
+	if q.Filter == nil {
+		return nil, 0, MapError(fmt.Errorf("statistics tickets: nil filter"))
+	}
+
+	w := &whereBuilder{}
+	w.statisticsWhere(models.StatisticsQuery{Scope: q.Scope, Filter: q.Filter})
+	fromPh, toPh := w.rangeArgs(q.Filter.From, q.Filter.To)
+	w.add(fmt.Sprintf("t.created_at >= %s AND t.created_at < %s", fromPh, toPh))
+
+	switch q.Dimension {
+	case "owner":
+		if q.OwnerNone {
+			w.add("t.owner_id IS NULL")
+		} else {
+			eq(w, "t.owner_id", q.PersonID)
+		}
+	default: // assignee
+		eq(w, "t.assignee_id", q.PersonID)
+	}
+
+	switch q.StatusGroup {
+	case "active":
+		w.statuses(nil, statisticsDrilldownActive)
+	case "closed":
+		w.statuses(nil, statisticsDrilldownClosed)
+	}
+
+	limit := q.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	offset := q.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	w.idx++
+	limitPh := fmt.Sprintf("$%d", w.idx)
+	w.args = append(w.args, limit)
+	w.idx++
+	offsetPh := fmt.Sprintf("$%d", w.idx)
+	w.args = append(w.args, offset)
+
+	query := fmt.Sprintf(`%s WHERE %s ORDER BY t.created_at DESC LIMIT %s OFFSET %s`,
+		ticketSelectBase(), strings.Join(w.clauses, " AND "), limitPh, offsetPh,
+	)
+
+	rows, err := r.db.Query(ctx, query, w.args...)
+	if err != nil {
+		return nil, 0, MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	defer rows.Close()
+
+	data := []*models.Ticket{}
+	total := 0
+	for rows.Next() {
+		ticket, rowTotal, err := scanTicketRow(rows)
+		if err != nil {
+			return nil, 0, MapError(fmt.Errorf("scan row error: %w", err))
+		}
+		total = rowTotal
+		data = append(data, ticket)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
+	return data, total, nil
 }

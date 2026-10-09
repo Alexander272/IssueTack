@@ -32,6 +32,7 @@ func Register(api *gin.RouterGroup, service services.Statistics, middleware *mid
 	statistics := api.Group("/statistics", middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Read()))
 	{
 		statistics.GET("/tickets", handlers.getTickets)
+		statistics.GET("/tickets/list", handlers.getTicketsList)
 	}
 }
 
@@ -39,6 +40,54 @@ type statisticsQuery struct {
 	From        string `form:"from"`
 	To          string `form:"to"`
 	Granularity string `form:"granularity" binding:"omitempty,oneof=day week month"`
+}
+
+// statisticsTicketsQuery — параметры drill-down: разрез (dim), идентификатор
+// человека (id), кольцо диаграммы (ring) и постраничность. Период и уточнения
+// фильтра читаются так же, как у агрегатов.
+type statisticsTicketsQuery struct {
+	From        string `form:"from"`
+	To          string `form:"to"`
+	Granularity string `form:"granularity" binding:"omitempty,oneof=day week month"`
+	Dimension   string `form:"dim" binding:"required,oneof=assignee owner"`
+	ID          string `form:"id"`
+	Ring        string `form:"ring" binding:"omitempty,oneof=active closed"`
+	Limit       int    `form:"limit" binding:"omitempty,min=1,max=100"`
+	Offset      int    `form:"offset" binding:"min=0"`
+}
+
+// buildFilter собирает фильтр статистики: период + уточнения + актор. Общий для
+// агрегатов и drill-down, поэтому список заявок сектора совпадает с числом в
+// самой секции.
+func buildFilter(c *gin.Context, actor *models.Actor, realmID uuid.UUID, from, to time.Time, granularity string) (*models.StatisticsFilter, error) {
+	assigneeIDs, err := parseUUIDList(c, "assigneeId")
+	if err != nil {
+		return nil, err
+	}
+	categoryIDs, err := parseUUIDList(c, "categoryId")
+	if err != nil {
+		return nil, err
+	}
+	groupIDs, err := parseUUIDList(c, "groupId")
+	if err != nil {
+		return nil, err
+	}
+	siteIDs, err := parseUUIDList(c, "siteId")
+	if err != nil {
+		return nil, err
+	}
+
+	return &models.StatisticsFilter{
+		Actor:       actor,
+		RealmID:     realmID,
+		From:        from,
+		To:          to,
+		Granularity: granularity,
+		AssigneeIDs: assigneeIDs,
+		CategoryIDs: categoryIDs,
+		GroupIDs:    groupIDs,
+		SiteIDs:     siteIDs,
+	}, nil
 }
 
 func (h *Handler) getTickets(c *gin.Context) {
@@ -63,37 +112,10 @@ func (h *Handler) getTickets(c *gin.Context) {
 		return
 	}
 
-	assigneeIDs, err := parseUUIDList(c, "assigneeId")
+	filter, err := buildFilter(c, actor, realmID, from, to, query.Granularity)
 	if err != nil {
 		response.SendError(c, err)
 		return
-	}
-	categoryIDs, err := parseUUIDList(c, "categoryId")
-	if err != nil {
-		response.SendError(c, err)
-		return
-	}
-	groupIDs, err := parseUUIDList(c, "groupId")
-	if err != nil {
-		response.SendError(c, err)
-		return
-	}
-	siteIDs, err := parseUUIDList(c, "siteId")
-	if err != nil {
-		response.SendError(c, err)
-		return
-	}
-
-	filter := &models.StatisticsFilter{
-		Actor:       actor,
-		RealmID:     realmID,
-		From:        from,
-		To:          to,
-		Granularity: query.Granularity,
-		AssigneeIDs: assigneeIDs,
-		CategoryIDs: categoryIDs,
-		GroupIDs:    groupIDs,
-		SiteIDs:     siteIDs,
 	}
 
 	data, err := h.service.Get(c, filter)
@@ -102,6 +124,65 @@ func (h *Handler) getTickets(c *gin.Context) {
 		return
 	}
 	response.SendData(c, data)
+}
+
+// getTicketsList отдаёт список заявок, стоящих за сектором двухкольцевой
+// диаграммы («Нагрузка исполнителей» / «Задачи от заказчиков»). Срез доступа,
+// уточнения и период те же, что у агрегатов, поэтому список совпадает с числом
+// в секции. Нулевой id при dim=owner означает бакет «Без заказчика».
+func (h *Handler) getTicketsList(c *gin.Context) {
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+
+	query := &statisticsTicketsQuery{}
+	if err := c.ShouldBindQuery(query); err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	from, to, err := parseRange(query.From, query.To)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+
+	filter, err := buildFilter(c, actor, realmID, from, to, query.Granularity)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+
+	id, err := uuid.Parse(query.ID)
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: invalid id", models.ErrInvalidInput))
+		return
+	}
+
+	drill := models.StatisticsTicketsQuery{
+		Filter:      filter,
+		Dimension:   query.Dimension,
+		StatusGroup: query.Ring,
+		Limit:       query.Limit,
+		Offset:      query.Offset,
+	}
+	if query.Dimension == "owner" && id == uuid.Nil {
+		drill.OwnerNone = true
+	} else {
+		drill.PersonID = &id
+	}
+
+	data, total, err := h.service.GetTickets(c.Request.Context(), drill)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	response.SendData(c, data, total)
 }
 
 // parseRange разбирает период запроса. Даты — в формате YYYY-MM-DD; верхняя граница

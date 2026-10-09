@@ -298,6 +298,14 @@ func (m *MockTicketsRepo) GetStatisticsTrend(ctx context.Context, query models.S
 	return args.Get(0).([]*models.TrendPoint), args.Error(1)
 }
 
+func (m *MockTicketsRepo) GetStatisticsTickets(ctx context.Context, query models.StatisticsTicketsQuery) ([]*models.Ticket, int, error) {
+	args := m.Called(ctx, query)
+	if args.Get(0) == nil {
+		return nil, args.Int(1), args.Error(2)
+	}
+	return args.Get(0).([]*models.Ticket), args.Int(1), args.Error(2)
+}
+
 // MockTicketsService — мок сервисного интерфейса Tickets (владельца агрегата тикетов).
 // Используется тестами зависимости сервисов-потребителей (comments/subscriptions/favorites).
 type MockTicketsService struct {

@@ -14,14 +14,29 @@ import { TrendChart } from '../components/TrendChart'
 import { StatusChart } from '../components/StatusChart'
 import { BreakdownChart } from '../components/BreakdownChart'
 import { NestedDonut, type IDonutBucket } from '../components/NestedDonut'
+import { StatisticsTicketsModal } from '../components/StatisticsTicketsModal'
 import { DEFAULT_TOP_N } from '../components/TopNSelect'
 import { StatisticsFilters } from '../components/StatisticsFilters'
-import type { IStatisticsFilter, IStatisticsRefinements } from '../types/statistics'
+import type {
+	IStatisticsFilter,
+	IStatisticsRefinements,
+	StatisticsDrilldownDimension,
+	StatisticsDrilldownRing,
+} from '../types/statistics'
 
 // refinementKeys — имена query-параметров URL, в которых хранится состояние панели
 // фильтров. Повторяющиеся параметры (?assigneeId=a&assigneeId=b) сохраняют
 // мультивыбор и делают ссылку на отфильтрованный вид шарящейся.
 const refinementKeys: (keyof IStatisticsRefinements)[] = ['assigneeId', 'categoryId', 'groupId', 'siteId']
+
+// IDrilldown — выбранный сектор диаграммы: разрез, сущность и кольцо. Пока он
+// задан, поверх статистики открыт список заявок (StatisticsTicketsModal).
+interface IDrilldown {
+	dimension: StatisticsDrilldownDimension
+	bucketId: string
+	bucketName: string
+	ring: StatisticsDrilldownRing
+}
 
 export const StatisticsView: FC = () => {
 	const isManager = useAppSelector(getIsManager)
@@ -30,6 +45,7 @@ export const StatisticsView: FC = () => {
 	// сворачивается в «Прочие» (см. NestedDonut).
 	const [topNAssignee, setTopNAssignee] = useState(DEFAULT_TOP_N)
 	const [topNOwner, setTopNOwner] = useState(DEFAULT_TOP_N)
+	const [drilldown, setDrilldown] = useState<IDrilldown | null>(null)
 	const [searchParams, setSearchParams] = useSearchParams()
 
 	const refinements = useMemo<IStatisticsRefinements>(
@@ -85,6 +101,23 @@ export const StatisticsView: FC = () => {
 		[stats?.workload],
 	)
 	const ownerBuckets = useMemo<IDonutBucket[]>(() => stats?.byOwner ?? [], [stats?.byOwner])
+
+	// Клик по сектору открывает список заявок этого человека. Имя берём из уже
+	// загруженных бакетов (диаграмма отдаёт только id), чтобы не ходить на бэкенд.
+	const openAssignee = useCallback(
+		(bucketId: string, ring: StatisticsDrilldownRing) => {
+			const name = assigneeBuckets.find(bucket => bucket.id === bucketId)?.name ?? ''
+			setDrilldown({ dimension: 'assignee', bucketId, bucketName: name, ring })
+		},
+		[assigneeBuckets],
+	)
+	const openOwner = useCallback(
+		(bucketId: string, ring: StatisticsDrilldownRing) => {
+			const name = ownerBuckets.find(bucket => bucket.id === bucketId)?.name ?? ''
+			setDrilldown({ dimension: 'owner', bucketId, bucketName: name, ring })
+		},
+		[ownerBuckets],
+	)
 
 	return (
 		<Box sx={{ flexGrow: 1, overflow: 'auto', p: 3 }}>
@@ -161,6 +194,7 @@ export const StatisticsView: FC = () => {
 							topN={topNAssignee}
 							onTopNChange={setTopNAssignee}
 							isLoading={isFetching}
+							onSliceClick={openAssignee}
 						/>
 					</Grid>
 					<Grid size={{ xs: 12, lg: 6 }}>
@@ -170,9 +204,21 @@ export const StatisticsView: FC = () => {
 							topN={topNOwner}
 							onTopNChange={setTopNOwner}
 							isLoading={isFetching}
+							onSliceClick={openOwner}
 						/>
 					</Grid>
 				</Grid>
+			)}
+
+			{drilldown && (
+				<StatisticsTicketsModal
+					dimension={drilldown.dimension}
+					bucketId={drilldown.bucketId}
+					bucketName={drilldown.bucketName}
+					ring={drilldown.ring}
+					filter={query}
+					onClose={() => setDrilldown(null)}
+				/>
 			)}
 		</Box>
 	)

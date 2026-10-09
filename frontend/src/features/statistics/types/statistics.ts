@@ -53,6 +53,13 @@ export interface ITicketStatistics {
 
 export type StatisticsGranularity = 'day' | 'week' | 'month'
 
+// Разрез drill-down статистики: кого показать — исполнителя или заказчика.
+export type StatisticsDrilldownDimension = 'assignee' | 'owner'
+
+// Кольцо диаграммы: пусто — внутреннее (все заявки), active — внешнее активное,
+// closed — внешнее закрытое. Значения совпадают с параметром `ring` API.
+export type StatisticsDrilldownRing = '' | 'active' | 'closed'
+
 export interface IStatisticsFilter {
 	from: string
 	to: string
@@ -61,6 +68,16 @@ export interface IStatisticsFilter {
 	categoryId?: string[]
 	groupId?: string[]
 	siteId?: string[]
+}
+
+// IStatisticsTicketsFilter — запрос списка заявок сектора диаграммы: тот же
+// период и уточнения, что у агрегатов, плюс разрез (dim), человек (id) и кольцо.
+export interface IStatisticsTicketsFilter extends IStatisticsFilter {
+	dim: StatisticsDrilldownDimension
+	id: string
+	ring?: Exclude<StatisticsDrilldownRing, ''>
+	limit?: number
+	offset?: number
 }
 
 // IStatisticsRefinements — уточнения выборки без периода: то, чем управляет панель

@@ -217,6 +217,54 @@ func TestStatisticsService_Get_NoActor(t *testing.T) {
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 }
 
+// TestStatisticsService_GetTickets проверяет, что drill-down получает тот же
+// вычисленный срез доступа, что и агрегаты, и прокидывает разрез, человека и
+// кольцо до репозитория без изменения.
+func TestStatisticsService_GetTickets(t *testing.T) {
+	repo, groups, policies, svc := statisticsFixtures()
+
+	userID := uuid.New()
+	realmID := uuid.New()
+	groupID := uuid.New()
+	personID := uuid.New()
+
+	policies.On("Enforce", userID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	policies.On("Enforce", userID.String(), realmID.String(), string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	groups.On("GetManagedGroups", mock.Anything, userID, &realmID).Return([]uuid.UUID{groupID}, nil)
+
+	filter := statisticsFilter(userID, realmID)
+	scope := models.StatisticsScope{RealmID: realmID, GroupIDs: []uuid.UUID{groupID}, AssigneeID: &userID}
+
+	repo.On("GetStatisticsTickets", mock.Anything, mock.MatchedBy(func(q models.StatisticsTicketsQuery) bool {
+		return assert.ObjectsAreEqual(scope, q.Scope) &&
+			q.Filter == filter &&
+			q.Dimension == "assignee" &&
+			q.PersonID != nil && *q.PersonID == personID &&
+			q.StatusGroup == "active"
+	})).Return([]*models.Ticket{{}}, 5, nil)
+
+	data, total, err := svc.GetTickets(context.Background(), models.StatisticsTicketsQuery{
+		Filter:      filter,
+		Dimension:   "assignee",
+		PersonID:    &personID,
+		StatusGroup: "active",
+	})
+	assert.NoError(t, err)
+	assert.Len(t, data, 1)
+	assert.Equal(t, 5, total)
+	repo.AssertExpectations(t)
+	policies.AssertExpectations(t)
+}
+
+func TestStatisticsService_GetTickets_NoActor(t *testing.T) {
+	_, _, _, svc := statisticsFixtures()
+
+	_, _, err := svc.GetTickets(context.Background(), models.StatisticsTicketsQuery{
+		Filter: &models.StatisticsFilter{RealmID: uuid.New()},
+	})
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+}
+
 func TestAutoGranularity(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	assert.Equal(t, "day", autoGranularity(base, base.AddDate(0, 0, 7)))

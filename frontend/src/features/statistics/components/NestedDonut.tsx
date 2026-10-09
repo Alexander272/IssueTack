@@ -1,7 +1,7 @@
 import { useMemo, type FC } from 'react'
 import { Box, Paper, Skeleton, Typography } from '@mui/material'
 import { PieChart } from '@mui/x-charts/PieChart'
-import type { PieValueType } from '@mui/x-charts'
+import type { DefaultizedPieValueType, PieItemIdentifier, PieValueType } from '@mui/x-charts'
 
 import { getAvatarColor } from '@/utils/avatar'
 import { getChartColorFromText } from '../utils/color'
@@ -16,12 +16,18 @@ export interface IDonutBucket {
 	active: number
 }
 
+// DonutRing — какое кольцо нажали: пусто — внутреннее (все заявки), active и
+// closed — половины внешнего кольца. Значения совпадают с параметром `ring` API.
+export type DonutRing = '' | 'active' | 'closed'
+
 interface Props {
 	title: string
 	buckets: IDonutBucket[]
 	topN: number
 	onTopNChange: (value: number) => void
 	isLoading: boolean
+	// Клик по сектору: id сущности и кольцо. «Прочие» не кликается.
+	onSliceClick?: (bucketId: string, ring: DonutRing) => void
 }
 
 const REST_ID = '__rest'
@@ -57,8 +63,23 @@ const aggregate = (buckets: IDonutBucket[], topN: number): IDonutBucket[] => {
 	return [...shown, { id: REST_ID, name: 'Прочие', total: sum(rest, 'total'), active: sum(rest, 'active') }]
 }
 
-export const NestedDonut: FC<Props> = ({ title, buckets, topN, onTopNChange, isLoading }) => {
+export const NestedDonut: FC<Props> = ({ title, buckets, topN, onTopNChange, isLoading, onSliceClick }) => {
 	const rows = useMemo(() => aggregate(buckets, topN), [buckets, topN])
+
+	// id сектора — `inner-<bucketId>` / `active-<bucketId>` / `inactive-<bucketId>`.
+	// Разбираем по первому дефису: сам id — uuid (дефисы внутри) или `__rest`.
+	// «Прочие» не кликаются — за ними нет одной сущности.
+	const handleItemClick = (_event: unknown, _identifier: PieItemIdentifier, item: DefaultizedPieValueType) => {
+		if (!onSliceClick) return
+		const raw = `${item.id ?? ''}`
+		const sep = raw.indexOf('-')
+		if (sep < 0) return
+		const bucketId = raw.slice(sep + 1)
+		if (bucketId === REST_ID) return
+		const prefix = raw.slice(0, sep)
+		const ring: DonutRing = prefix === 'active' ? 'active' : prefix === 'inactive' ? 'closed' : ''
+		onSliceClick(bucketId, ring)
+	}
 
 	// Оба кольца строятся в одном порядке элементов и с paddingAngle: 0 — иначе
 	// границы секторов внешнего кольца уехали бы относительно внутреннего.
@@ -128,6 +149,7 @@ export const NestedDonut: FC<Props> = ({ title, buckets, topN, onTopNChange, isL
 					<PieChart
 						height={280}
 						hideLegend
+						onItemClick={handleItemClick}
 						series={[
 							{
 								id: 'inner',

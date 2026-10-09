@@ -77,6 +77,24 @@ func (q StatisticsQuery) WithDimension(dim string) StatisticsQuery {
 	return q
 }
 
+// StatisticsTicketsQuery — вход drill-down статистики: клик по сектору
+// двухкольцевой диаграммы («Нагрузка исполнителей» / «Задачи от заказчиков»).
+// Scope и Filter те же, что у агрегатов, поэтому список совпадает с числом в
+// секции — тот же период и те же уточнения фильтра. Dimension задаёт поле
+// человека: assignee — t.assignee_id, owner — t.owner_id.
+type StatisticsTicketsQuery struct {
+	Scope     StatisticsScope
+	Filter    *StatisticsFilter
+	Dimension string // assignee|owner
+	PersonID  *uuid.UUID
+	OwnerNone bool // owner_id IS NULL — бакет «Без заказчика»
+	// StatusGroup — кольцо диаграммы: "" (внутреннее — все заявки), active
+	// (open/in_progress/pending/on_hold), closed (resolved/closed/cancelled).
+	StatusGroup string
+	Limit       int
+	Offset      int
+}
+
 // StatisticsBucket — одна строка разреза (категория, группа или площадка).
 type StatisticsBucket struct {
 	ID    uuid.UUID `json:"id"`

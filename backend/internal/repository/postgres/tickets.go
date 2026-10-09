@@ -85,8 +85,11 @@ func (a *nullableTicketAssoc) assign(ticket *models.Ticket) {
 	}
 }
 
-func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, int, error) {
-	base := fmt.Sprintf(`SELECT 
+// ticketSelectBase — общий SELECT с джойнами для постраничной выборки заявок
+// (список заявок и drill-down статистики): единый набор колонок, включая
+// COUNT(*) OVER() AS total_count для тотала страницы.
+func ticketSelectBase() string {
+	return fmt.Sprintf(`SELECT 
 			t.id, t.title, t.description, t.status, t.priority, t.ticket_number, t.realm_id, t.due_date, t.closed_at, t.resolved_at, t.created_at, t.updated_at,
 			u_creator.id, u_creator.username AS creator_username, u_creator.first_name AS creator_first_name, u_creator.last_name AS creator_last_name, u_creator.internal_number AS creator_internal_number,
 			u_owner.id, u_owner.username AS owner_username, u_owner.first_name AS owner_first_name, u_owner.last_name AS owner_last_name, u_owner.internal_number AS owner_internal_number,
@@ -108,7 +111,38 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 		Tables.Tickets, Tables.Users, Tables.Users, Tables.Users, Tables.Users,
 		Tables.Groups, Tables.Categories, Tables.CategoryGroups, Tables.Sites,
 	)
+}
 
+// scanTicketRow читает одну строку выдачи ticketSelectBase: заявку и total_count.
+func scanTicketRow(row rowScanner) (*models.Ticket, int, error) {
+	assoc := nullableTicketAssoc{}
+	ticket := &models.Ticket{
+		Site:     &models.SiteShort{},
+		Category: &models.CategoryShort{},
+		Creator:  models.UserShort{},
+	}
+	var total int
+	if err := row.Scan(
+		&ticket.ID, &ticket.Title, &ticket.Description,
+		&ticket.Status, &ticket.Priority,
+		&ticket.TicketNumber, &ticket.RealmID,
+		&ticket.DueDate, &ticket.ClosedAt, &ticket.ResolvedAt, &ticket.CreatedAt, &ticket.UpdatedAt,
+		&ticket.Creator.ID, &ticket.Creator.Username, &ticket.Creator.FirstName, &ticket.Creator.LastName, &ticket.Creator.InternalNumber,
+		&assoc.OwnerID, &assoc.OwnerUsername, &assoc.OwnerFirstName, &assoc.OwnerLastName, &assoc.OwnerInternalNumber,
+		&assoc.AssigneeID, &assoc.AssigneeUsername, &assoc.AssigneeFirstName, &assoc.AssigneeLastName, &assoc.AssigneeInternalNumber,
+		&assoc.ManagerID, &assoc.ManagerUsername, &assoc.ManagerFirstName, &assoc.ManagerLastName, &assoc.ManagerInternalNumber,
+		&assoc.GroupID, &assoc.GroupName,
+		&ticket.Category.ID, &ticket.Category.Name, &ticket.Category.CategoryGroupName,
+		&ticket.Site.ID, &ticket.Site.Name,
+		&total,
+	); err != nil {
+		return nil, 0, err
+	}
+	assoc.assign(ticket)
+	return ticket, total, nil
+}
+
+func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*models.Ticket, int, error) {
 	w := &whereBuilder{}
 	w.sites(req.SiteIDs)
 	w.statuses(req.Status, req.Statuses)
@@ -131,7 +165,7 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 	w.myWork(req.MyWork)
 	w.favorites(req.FavoritesByUser, req.FavoriteType)
 
-	query := base
+	query := ticketSelectBase()
 	if len(w.clauses) > 0 {
 		query += " WHERE " + strings.Join(w.clauses, " AND ")
 	}
@@ -178,39 +212,18 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 	}
 	defer rows.Close()
 
-	var data []*models.Ticket
+	data := []*models.Ticket{}
 	total := 0
 	for rows.Next() {
-		assoc := nullableTicketAssoc{}
-		ticket := &models.Ticket{
-			Site:     &models.SiteShort{},
-			Category: &models.CategoryShort{},
-			Creator:  models.UserShort{},
-		}
-		if err := rows.Scan(
-			&ticket.ID, &ticket.Title, &ticket.Description,
-			&ticket.Status, &ticket.Priority,
-			&ticket.TicketNumber, &ticket.RealmID,
-			&ticket.DueDate, &ticket.ClosedAt, &ticket.ResolvedAt, &ticket.CreatedAt, &ticket.UpdatedAt,
-			&ticket.Creator.ID, &ticket.Creator.Username, &ticket.Creator.FirstName, &ticket.Creator.LastName, &ticket.Creator.InternalNumber,
-			&assoc.OwnerID, &assoc.OwnerUsername, &assoc.OwnerFirstName, &assoc.OwnerLastName, &assoc.OwnerInternalNumber,
-			&assoc.AssigneeID, &assoc.AssigneeUsername, &assoc.AssigneeFirstName, &assoc.AssigneeLastName, &assoc.AssigneeInternalNumber,
-			&assoc.ManagerID, &assoc.ManagerUsername, &assoc.ManagerFirstName, &assoc.ManagerLastName, &assoc.ManagerInternalNumber,
-			&assoc.GroupID, &assoc.GroupName,
-			&ticket.Category.ID, &ticket.Category.Name, &ticket.Category.CategoryGroupName,
-			&ticket.Site.ID, &ticket.Site.Name,
-			&total,
-		); err != nil {
+		ticket, rowTotal, err := scanTicketRow(rows)
+		if err != nil {
 			return nil, 0, MapError(fmt.Errorf("scan row error: %w", err))
 		}
-		assoc.assign(ticket)
+		total = rowTotal
 		data = append(data, ticket)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, 0, MapError(fmt.Errorf("rows iteration error: %w", err))
-	}
-	if data == nil {
-		return []*models.Ticket{}, 0, nil
 	}
 	return data, total, nil
 }
