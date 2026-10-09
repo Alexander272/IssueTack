@@ -14,7 +14,15 @@ export const getShortDate = (date: string | null) => {
 		return '—'
 	}
 
-	return dayjs(date).format('D MMM')
+	const target = dayjs(date)
+	const now = dayjs()
+
+	// Проверяем, совпадает ли год с текущим
+	if (target.year() === now.year()) {
+		return target.format('D MMM') // Текущий год: "9 окт"
+	} else {
+		return target.format('D MMM YY') // Другой год: "9 окт 25"
+	}
 }
 
 export const getDate = (date: string) => {

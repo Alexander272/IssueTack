@@ -27,7 +27,9 @@ interface Props {
 	initial: FilterValues
 	onApply: (patch: Partial<FilterValues>) => void
 	siteOptions: Option[]
-	userOptions: Option[]
+	// ownerOptions — «Заказчик»: все участники реалма. assigneeOptions — «Исполнитель»: только участники групп.
+	ownerOptions: Option[]
+	assigneeOptions: Option[]
 	// statusOptions — статусы, доступные на текущей вкладке (см. statusOptionsFor):
 	// на активной нет закрытых/отменённых, на «Мои задачи» — и решённых.
 	statusOptions: TicketStatus[]
@@ -45,7 +47,8 @@ export const Popover: FC<Props> = ({
 	initial,
 	onApply,
 	siteOptions,
-	userOptions,
+	ownerOptions,
+	assigneeOptions,
 	statusOptions,
 }) => {
 	const [local, setLocal] = useState(() => ({
@@ -90,9 +93,9 @@ export const Popover: FC<Props> = ({
 		})
 	}
 
-	const currentOwner = userOptions.find(u => u.id === local.ownerId) ?? null
+	const currentOwner = ownerOptions.find(u => u.id === local.ownerId) ?? null
 	const currentSites = siteOptions.filter(s => local.siteIds.includes(s.id))
-	const currentAssignee = userOptions.find(u => u.id === local.assigneeId) ?? null
+	const currentAssignee = assigneeOptions.find(u => u.id === local.assigneeId) ?? null
 
 	const sectionSx = { fontSize: 12, fontWeight: 600, color: '#57606a', textTransform: 'uppercase' as const, mb: 0.75 }
 
@@ -124,7 +127,7 @@ export const Popover: FC<Props> = ({
 				<Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #eaeef2' }}>
 					<Typography sx={sectionSx}>Заказчик</Typography>
 					<Autocomplete
-						options={userOptions}
+						options={ownerOptions}
 						value={currentOwner}
 						onChange={(_, v) => update('ownerId', v?.id ?? null)}
 						getOptionLabel={o => o.label}
@@ -202,7 +205,7 @@ export const Popover: FC<Props> = ({
 				<Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #eaeef2' }}>
 					<Typography sx={sectionSx}>Исполнитель</Typography>
 					<Autocomplete
-						options={userOptions}
+						options={assigneeOptions}
 						value={currentAssignee}
 						onChange={(_, v) => update('assigneeId', v?.id ?? null)}
 						getOptionLabel={o => o.label}

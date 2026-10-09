@@ -1,6 +1,6 @@
 import { useState, useMemo, type FC } from 'react'
 import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
-import { useGetAvailableUsersQuery } from '@/features/user/usersApiSlice'
+import { useGetAvailableUsersQuery, useGetRealmUsersQuery } from '@/features/user/usersApiSlice'
 
 import { Toolbar } from './Toolbar'
 import { Popover } from './Popover'
@@ -21,16 +21,24 @@ export const TaskFilters: FC<TaskFiltersProps> = ({
 
 	const { data: sitesData } = useGetAllSitesQuery()
 	const { data: usersData } = useGetAvailableUsersQuery()
+	const { data: executorsData } = useGetRealmUsersQuery('executors')
 
 	const siteOptions = useMemo(() => (sitesData?.data ?? []).map(s => ({ id: s.id, label: s.name })), [sitesData])
-	const userOptions = useMemo(
+	// «Заказчик» — все участники реалма; «Исполнитель» — только участники групп (как в статистике).
+	// В обоих списках локальные пользователи: импортированные из Mattermost и системные не участвуют.
+	const ownerOptions = useMemo(
 		() =>
 			(usersData?.data ?? [])
-				// Фильтр по исполнителю — только локальные пользователи: импортированные
-				// из Mattermost и системные в выборе исполнителя не участвуют.
 				.filter(u => u.source !== 'mattermost' && !u.isSystem)
 				.map(u => ({ id: u.id, label: `${u.lastName} ${u.firstName} (${u.username})` })),
 		[usersData],
+	)
+	const assigneeOptions = useMemo(
+		() =>
+			(executorsData?.data ?? [])
+				.filter(u => u.source !== 'mattermost' && !u.isSystem)
+				.map(u => ({ id: u.id, label: `${u.lastName} ${u.firstName} (${u.username})` })),
+		[executorsData],
 	)
 
 	const activeCount = useMemo(() => {
@@ -69,11 +77,18 @@ export const TaskFilters: FC<TaskFiltersProps> = ({
 				initial={filters}
 				onApply={onChange}
 				siteOptions={siteOptions}
-				userOptions={userOptions}
+				ownerOptions={ownerOptions}
+				assigneeOptions={assigneeOptions}
 				statusOptions={statusOptions}
 			/>
 
-			<Chips filters={filters} onChange={onChange} siteOptions={siteOptions} userOptions={userOptions} />
+			<Chips
+				filters={filters}
+				onChange={onChange}
+				siteOptions={siteOptions}
+				ownerOptions={ownerOptions}
+				assigneeOptions={assigneeOptions}
+			/>
 		</>
 	)
 }

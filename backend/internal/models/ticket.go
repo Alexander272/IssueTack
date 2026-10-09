@@ -63,12 +63,12 @@ type GetTicketByIdDTO struct {
 type TicketFilter struct {
 	Actor                      *Actor         `json:"actor"`
 	Number                     *int           `form:"number" json:"number"`
-	RealmID                    *uuid.UUID     `form:"realmId" json:"realmId"`
+	RealmID                    *uuid.UUID     `form:"realmId,parser=encoding.TextUnmarshaler" json:"realmId"`
 	SiteIDs                    []string       `form:"siteIds" json:"siteIds"`
 	Status                     *TicketStatus  `form:"status" json:"status" db:"status" binding:"omitempty,enum"`
 	Statuses                   []TicketStatus `form:"statuses" json:"statuses"`
-	OwnerID                    *uuid.UUID     `form:"ownerId" json:"ownerId" db:"owner_id"`
-	AssigneeID                 *uuid.UUID     `form:"assigneeId" json:"assigneeId" db:"assignee_id"`
+	OwnerID                    *uuid.UUID     `form:"ownerId,parser=encoding.TextUnmarshaler" json:"ownerId" db:"owner_id"`
+	AssigneeID                 *uuid.UUID     `form:"assigneeId,parser=encoding.TextUnmarshaler" json:"assigneeId" db:"assignee_id"`
 	GroupIDs                   []uuid.UUID    `json:"-"`
 	IncludeUngroupedAssignedTo *uuid.UUID     `json:"-"`
 	Priorities                 []Priority     `form:"priorities" json:"priorities"`

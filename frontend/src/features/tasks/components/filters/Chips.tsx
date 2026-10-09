@@ -14,7 +14,8 @@ interface Props {
 	filters: FilterValues
 	onChange: (patch: Partial<FilterValues>) => void
 	siteOptions: Option[]
-	userOptions: Option[]
+	ownerOptions: Option[]
+	assigneeOptions: Option[]
 }
 
 const PRIORITY_OPTIONS = Object.entries(PRIORITY_MAP).map(([value, info]) => ({
@@ -22,7 +23,7 @@ const PRIORITY_OPTIONS = Object.entries(PRIORITY_MAP).map(([value, info]) => ({
 	label: info.label,
 }))
 
-export const Chips: FC<Props> = ({ filters, onChange, siteOptions, userOptions }) => {
+export const Chips: FC<Props> = ({ filters, onChange, siteOptions, ownerOptions, assigneeOptions }) => {
 	const activeChips = useMemo(() => {
 		const chips: { key: string; prefix: string; values: string[]; onClear: () => void }[] = []
 
@@ -35,7 +36,7 @@ export const Chips: FC<Props> = ({ filters, onChange, siteOptions, userOptions }
 			})
 		}
 		if (filters.ownerId) {
-			const name = userOptions.find(u => u.id === filters.ownerId)?.label
+			const name = ownerOptions.find(u => u.id === filters.ownerId)?.label
 			chips.push({
 				key: 'ownerId',
 				prefix: 'Заказчик',
@@ -70,7 +71,7 @@ export const Chips: FC<Props> = ({ filters, onChange, siteOptions, userOptions }
 			})
 		}
 		if (filters.assigneeId) {
-			const name = userOptions.find(u => u.id === filters.assigneeId)?.label
+			const name = assigneeOptions.find(u => u.id === filters.assigneeId)?.label
 			chips.push({
 				key: 'assigneeId',
 				prefix: 'Назначено',
@@ -89,7 +90,7 @@ export const Chips: FC<Props> = ({ filters, onChange, siteOptions, userOptions }
 		}
 
 		return chips
-	}, [filters, onChange, userOptions, siteOptions])
+	}, [filters, onChange, ownerOptions, assigneeOptions, siteOptions])
 
 	if (activeChips.length === 0) return null
 
