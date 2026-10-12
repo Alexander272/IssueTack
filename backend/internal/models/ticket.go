@@ -40,6 +40,7 @@ type Ticket struct {
 	Subtasks    []*Subtask    `json:"subtasks,omitempty"`
 	Attachments []*Attachment `json:"attachments,omitempty"`
 	Access      *AccessFlags  `json:"access,omitempty"`
+	Equipment   *EquipmentShort `json:"equipment,omitempty"`
 }
 
 type AccessFlags struct {
@@ -89,6 +90,7 @@ type TicketFilter struct {
 	FavoritesByUser     *uuid.UUID    `json:"-"`
 	FavoriteType        *FavoriteType `json:"-"`
 	MyWork              *MyWorkFilter `json:"-"`
+	EquipmentID         *uuid.UUID    `form:"equipmentId,parser=encoding.TextUnmarshaler" json:"equipmentId"`
 	Limit               int           `json:"limit" db:"limit"`
 	Offset              int           `json:"offset" db:"offset"`
 }
@@ -132,6 +134,8 @@ type TicketDTO struct {
 	// Подзадачи, создаваемые вместе с заявкой (используется только при Create;
 	// при Update — запланированные значения игнорируются).
 	Subtasks []*SubtaskDTO `json:"subtasks,omitempty"`
+
+	EquipmentID *uuid.UUID `json:"equipmentId" db:"equipment_id"`
 
 	// Поля, переданные в запросе (заполняется при UnmarshalJSON). Позволяет делать partial update.
 	Provided map[string]bool `json:"-"`
@@ -310,6 +314,19 @@ func (dto *TicketDTO) GetChanges(old *Ticket) []*FieldChange {
 			changes = append(changes, &FieldChange{ActionOwnerChanged, oldVal, dto.OwnerID.String()})
 		} else if dto.OwnerID == nil && old.Owner != nil {
 			changes = append(changes, &FieldChange{ActionOwnerChanged, old.Owner.ID.String(), "none"})
+		}
+	}
+	if dto.HasField("equipmentId") {
+		oldVal := "none"
+		if old.Equipment != nil {
+			oldVal = old.Equipment.ID.String()
+		}
+		newVal := "none"
+		if dto.EquipmentID != nil {
+			newVal = dto.EquipmentID.String()
+		}
+		if oldVal != newVal {
+			changes = append(changes, &FieldChange{ActionEquipmentChanged, oldVal, newVal})
 		}
 	}
 

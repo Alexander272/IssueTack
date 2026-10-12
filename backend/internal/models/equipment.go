@@ -310,3 +310,9 @@ type EquipmentEventsFilter struct {
 	Limit  int `form:"limit" json:"limit"`
 	Offset int `form:"offset" json:"offset"`
 }
+
+// EquipmentShort — сокращённое представление оборудования.
+type EquipmentShort struct {
+	ID   uuid.UUID `json:"id" db:"id"`
+	Name string    `json:"name" db:"name"`
+}

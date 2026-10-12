@@ -47,6 +47,7 @@ const (
 	ActionDueDateChanged     ActivityType = "due_date_changed" // Изменен срок
 	ActionSiteChanged        ActivityType = "site_changed"     // Изменена площадка
 	ActionCategoryChanged    ActivityType = "category_changed" // Изменена категория
+	ActionEquipmentChanged   ActivityType = "equipment_changed" // Изменено оборудование
 	ActionCommentAdded       ActivityType = "comment_added"
 )
 
@@ -55,7 +56,7 @@ func (a ActivityType) IsValid() bool {
 	case ActionCreated, ActionClosed, ActionTitleChanged, ActionDescriptionChanged, ActionStatusChanged,
 		ActionPriorityChanged, ActionAssigned, ActionAssignChanged, ActionOwnerChanged, ActionGroupChanged,
 		ActionGroupAssigned, ActionManagerChanged, ActionDueDateChanged, ActionSiteChanged, ActionCategoryChanged,
-		ActionCommentAdded:
+		ActionEquipmentChanged, ActionCommentAdded:
 		return true
 	}
 	return false

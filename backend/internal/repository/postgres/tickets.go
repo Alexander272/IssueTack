@@ -56,6 +56,8 @@ type nullableTicketAssoc struct {
 	ManagerUsername, ManagerFirstName, ManagerLastName, ManagerInternalNumber     *string
 	GroupID                                                                       *uuid.UUID
 	GroupName                                                                     *string
+	EquipmentID                                                                   *uuid.UUID
+	EquipmentName                                                                 *string
 }
 
 func (a *nullableTicketAssoc) assign(ticket *models.Ticket) {
@@ -83,6 +85,9 @@ func (a *nullableTicketAssoc) assign(ticket *models.Ticket) {
 	if a.GroupID != nil {
 		ticket.Group = &models.GroupShort{ID: *a.GroupID, Name: *a.GroupName}
 	}
+	if a.EquipmentID != nil {
+		ticket.Equipment = &models.EquipmentShort{ID: *a.EquipmentID, Name: *a.EquipmentName}
+	}
 }
 
 // ticketSelectBase — общий SELECT с джойнами для постраничной выборки заявок
@@ -98,6 +103,7 @@ func ticketSelectBase() string {
 			g.id, g.name,
 			c.id, c.name, cg.name AS category_group_name,
 			s.id, s.name,
+			e.id AS equipment_id, e.name AS equipment_name,
 			COUNT(*) OVER() AS total_count
 		FROM %s t
 		JOIN %s u_creator ON t.creator_id = u_creator.id
@@ -107,9 +113,11 @@ func ticketSelectBase() string {
 		LEFT JOIN %s g ON t.group_id = g.id
 		JOIN %s c ON t.category_id = c.id
 		LEFT JOIN %s cg ON c.category_group_id = cg.id
-		JOIN %s s ON t.site_id = s.id`,
+		JOIN %s s ON t.site_id = s.id
+		LEFT JOIN %s e ON t.equipment_id = e.id`,
 		Tables.Tickets, Tables.Users, Tables.Users, Tables.Users, Tables.Users,
 		Tables.Groups, Tables.Categories, Tables.CategoryGroups, Tables.Sites,
+		Tables.Equipment,
 	)
 }
 
@@ -134,6 +142,7 @@ func scanTicketRow(row rowScanner) (*models.Ticket, int, error) {
 		&assoc.GroupID, &assoc.GroupName,
 		&ticket.Category.ID, &ticket.Category.Name, &ticket.Category.CategoryGroupName,
 		&ticket.Site.ID, &ticket.Site.Name,
+		&assoc.EquipmentID, &assoc.EquipmentName,
 		&total,
 	); err != nil {
 		return nil, 0, err
@@ -156,6 +165,7 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 	w.search(req.Search)
 	w.dueDate(req.DueDateFrom, req.DueDateTo)
 	w.priorities(req.Priorities)
+	eq(w, "t.equipment_id", req.EquipmentID)
 	// Избранные пользователя не режутся по статусам вкладки: звезда ставится на любой
 	// статус (включая закрытые), пин — только на активные (проверка в сервисе
 	// избранного). Archived при этом остаётся — он включает пагинацию архива.
@@ -244,7 +254,8 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 			-- Данные категории
 			c.id, c.name, cg.name AS category_group_name,
 			-- Данные площадки
-			s.id, s.name
+			s.id, s.name,
+			e.id AS equipment_id, e.name AS equipment_name
 		FROM %s t
 		LEFT JOIN %s u_owner ON t.owner_id = u_owner.id
 		JOIN %s u_creator ON t.creator_id = u_creator.id
@@ -254,9 +265,11 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 		JOIN %s c ON t.category_id = c.id
 		LEFT JOIN %s cg ON c.category_group_id = cg.id
 		JOIN %s s ON t.site_id = s.id
+		LEFT JOIN %s e ON t.equipment_id = e.id
 		WHERE t.id = $1;`,
 		Tables.Tickets, Tables.Users, Tables.Users, Tables.Users, Tables.Users,
 		Tables.Groups, Tables.Categories, Tables.CategoryGroups, Tables.Sites,
+		Tables.Equipment,
 	)
 
 	ticket := &models.Ticket{
@@ -277,6 +290,7 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 		&assoc.GroupID, &assoc.GroupName,
 		&ticket.Category.ID, &ticket.Category.Name, &ticket.Category.CategoryGroupName,
 		&ticket.Site.ID, &ticket.Site.Name,
+		&assoc.EquipmentID, &assoc.EquipmentName,
 	); err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -317,8 +331,8 @@ func (r *TicketRepo) Create(ctx context.Context, tx Tx, dto *models.TicketDTO) e
 	dto.TicketNumber = ticketNumber
 
 	query := fmt.Sprintf(`INSERT INTO %s (id, title, description, status, priority, site_id, category_id,
-		creator_id, owner_id, group_id, assignee_id, manager_id, due_date, ticket_number, realm_id) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+		creator_id, owner_id, group_id, assignee_id, manager_id, due_date, ticket_number, realm_id, equipment_id) 
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
 		Tables.Tickets,
 	)
 
@@ -332,7 +346,7 @@ func (r *TicketRepo) Create(ctx context.Context, tx Tx, dto *models.TicketDTO) e
 
 	_, err := r.getExec(tx).Exec(
 		ctx, query, dto.ID, dto.Title, dto.Description, dto.Status, dto.Priority, siteID, categoryID,
-		dto.CreatorID, dto.OwnerID, dto.GroupID, dto.AssigneeID, dto.ManagerID, dto.DueDate, ticketNumber, dto.RealmID,
+		dto.CreatorID, dto.OwnerID, dto.GroupID, dto.AssigneeID, dto.ManagerID, dto.DueDate, ticketNumber, dto.RealmID, dto.EquipmentID,
 	)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
@@ -367,6 +381,7 @@ func (r *TicketRepo) Update(ctx context.Context, tx Tx, dto *models.TicketDTO) e
 	add("dueDate", "due_date", dto.DueDate)
 	add("closedAt", "closed_at", dto.ClosedAt)
 	add("resolvedAt", "resolved_at", dto.ResolvedAt)
+	add("equipmentId", "equipment_id", dto.EquipmentID)
 
 	if len(sets) == 0 {
 		return nil
