@@ -1,39 +1,94 @@
-import { useState, type FC } from 'react'
+import { useMemo, useState, type FC } from 'react'
 import {
 	Box,
 	Button,
 	IconButton,
-	Table,
-	TableBody,
-	TableCell,
-	TableContainer,
-	TableHead,
-	TableRow,
 	Tooltip,
 	Typography,
-	useTheme,
 } from '@mui/material'
-import { PencilIcon, PlusIcon, Trash2Icon } from 'lucide-mui'
-import { toast } from 'react-toastify'
+import {
+	HardDriveIcon,
+	KeyboardIcon,
+	LaptopIcon,
+	MemoryStickIcon,
+	MicrochipIcon,
+	MonitorIcon,
+	MousePointer2Icon,
+	PencilIcon,
+	PhoneCallIcon,
+	PlusIcon,
+	PrinterIcon,
+	Trash2Icon,
+} from 'lucide-mui'
 
 import type { IEquipmentType } from '../types/equipment'
-import { useDeleteEquipmentTypeMutation, useGetAllEquipmentTypesQuery } from '../equipmentApiSlice'
+import { useGetAllEquipmentTypesQuery } from '../equipmentApiSlice'
 import { EquipmentTypeDialog } from './EquipmentTypeDialog'
 import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
-import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
-import type { IFetchError } from '@/app/types/error'
+
+type GroupKey = 'devices' | 'components' | 'periphery'
+
+const GROUP_LABELS: Record<GroupKey, { title: string; countLabel: string }> = {
+	devices: { title: 'Устройства', countLabel: 'единиц' },
+	components: { title: 'Комплектующие', countLabel: 'единиц' },
+	periphery: { title: 'Периферия', countLabel: 'единиц' },
+}
+
+const getGroup = (type: IEquipmentType): GroupKey => {
+	if (type.isComponent) return 'components'
+	const name = type.name.toLowerCase()
+	if (name.includes('мыш') || name.includes('клав') || name.includes('перифер')) return 'periphery'
+	return 'devices'
+}
+
+const getIcon = (type: IEquipmentType) => {
+	const name = type.name.toLowerCase()
+	if (name.includes('ноут')) return <LaptopIcon sx={{ color: '#0432a5' }} />
+	if (name.includes('монит') || name.includes('диспл')) return <MonitorIcon sx={{ color: '#6b7280' }} />
+	if (name.includes('принт') || name.includes('мфу')) return <PrinterIcon sx={{ color: '#6b7280' }} />
+	if (name.includes('тел') || name.includes('смартф') || name.includes('phone')) return <PhoneCallIcon sx={{ color: '#6b7280' }} />
+	if (name.includes('ram') || name.includes('памя') || name.includes('memory')) return <MemoryStickIcon sx={{ color: '#ea580c' }} />
+	if (name.includes('ssd') || name.includes('hdd') || name.includes('диск') || name.includes('hard')) return <HardDriveIcon sx={{ color: '#9333ea' }} />
+	if (name.includes('cpu') || name.includes('проц') || name.includes('микро')) return <MicrochipIcon sx={{ color: '#ea580c' }} />
+	if (name.includes('мыш')) return <MousePointer2Icon sx={{ color: '#6b7280' }} />
+	if (name.includes('клав')) return <KeyboardIcon sx={{ color: '#6b7280' }} />
+	return <LaptopIcon sx={{ color: '#6b7280' }} />
+}
+
+const getIconBg = (type: IEquipmentType): string => {
+	const name = type.name.toLowerCase()
+	if (name.includes('ноут')) return '#eaeefc'
+	if (name.includes('ram') || name.includes('памя') || name.includes('memory')) return '#fff7ed'
+	if (name.includes('ssd') || name.includes('hdd') || name.includes('диск')) return '#f3e8ff'
+	if (name.includes('cpu') || name.includes('проц') || name.includes('микро')) return '#fff7ed'
+	return '#f3f4f6'
+}
 
 export const EquipmentTypesSection: FC = () => {
-	const { palette } = useTheme()
 	const canWrite = useCheckPermissions({ anyOf: ['equipment:write'] })
 
 	const { data } = useGetAllEquipmentTypesQuery()
-	const types = data?.data ?? []
-
-	const [dialogOpen, setDialogOpen] = useState(false)
+		const [dialogOpen, setDialogOpen] = useState(false)
 	const [editType, setEditType] = useState<IEquipmentType | null>(null)
-	const [deleteType, setDeleteType] = useState<IEquipmentType | null>(null)
-	const [remove, { isLoading: isDeleting }] = useDeleteEquipmentTypeMutation()
+
+	const grouped = useMemo(() => {
+		const types = data?.data ?? []
+		const map: Record<GroupKey, IEquipmentType[]> = {
+			devices: [],
+			components: [],
+			periphery: [],
+		}
+		types.forEach(t => {
+			map[getGroup(t)].push(t)
+		})
+		return map
+	}, [data])
+
+	const counts: Record<GroupKey, number> = {
+		devices: grouped.devices.length,
+		components: grouped.components.length,
+		periphery: grouped.periphery.length,
+	}
 
 	const openCreate = () => {
 		setEditType(null)
@@ -45,125 +100,143 @@ export const EquipmentTypesSection: FC = () => {
 		setDialogOpen(true)
 	}
 
-	const closeDialog = () => {
-		setEditType(null)
-		setDialogOpen(false)
-	}
 
-	const handleDelete = async () => {
-		if (!deleteType) return
-		try {
-			await remove(deleteType.id).unwrap()
-			toast.success('Тип удалён')
-			setDeleteType(null)
-		} catch (error) {
-			const fetchError = error as IFetchError
-			toast.error(fetchError.data?.message, { autoClose: false })
-		}
+	const renderGroup = (key: GroupKey) => {
+		const list = grouped[key]
+		const g = GROUP_LABELS[key]
+		if (list.length === 0) return null
+		return (
+			<Box key={key} sx={{ mb: 3 }}>
+				<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+					<Typography variant='subtitle2' sx={{ color: '#374151', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3 }}>
+						{g.title}
+					</Typography>
+					<Typography variant='caption' sx={{ color: '#6b7280' }}>
+						· {counts[key]} {g.countLabel}
+					</Typography>
+				</Box>
+				<Box sx={{ bgcolor: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', boxShadow: '0 1px 2px 0 rgba(0,0,0,0.05)' }}>
+					{list.map((type, idx) => (
+						<Box
+							key={type.id}
+							sx={{
+								display: 'grid',
+								gridTemplateColumns: 'repeat(12, 1fr)',
+								gap: 2,
+								px: 3,
+								py: 2,
+								alignItems: 'center',
+								borderBottom: idx < list.length - 1 ? '1px solid #f3f4f6' : 'none',
+								'&:hover': { bgcolor: '#f9fafb' },
+							}}
+						>
+							<Box sx={{ gridColumn: 'span 5', display: 'flex', alignItems: 'center', gap: 1.5 }}>
+								<Box
+									sx={{
+										width: 40,
+										height: 40,
+										borderRadius: '8px',
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'center',
+										bgcolor: getIconBg(type),
+									}}
+								>
+									{getIcon(type)}
+								</Box>
+								<Box>
+									<Typography variant='body2' sx={{ fontWeight: 600, color: '#111827' }}>
+										{type.name}
+									</Typography>
+									<Typography variant='caption' sx={{ color: '#6b7280' }}>
+										Создан {new Date(type.createdAt).toLocaleDateString('ru-RU')}
+									</Typography>
+								</Box>
+							</Box>
+							<Box sx={{ gridColumn: 'span 3' }}>
+								<Box
+									component='span'
+									sx={{
+										display: 'inline-flex',
+										alignItems: 'center',
+										px: 1,
+										py: 0.5,
+										borderRadius: '4px',
+										fontSize: '11px',
+										fontWeight: 500,
+										bgcolor: key === 'components' ? '#fff7ed' : key === 'periphery' ? '#eff6ff' : '#f3f4f6',
+										color: key === 'components' ? '#9a3412' : key === 'periphery' ? '#1e40af' : '#374151',
+									}}
+								>
+									{key === 'components' ? 'Комплектующее' : key === 'periphery' ? 'Периферия' : 'Устройство'}
+								</Box>
+							</Box>
+							<Box sx={{ gridColumn: 'span 2' }}>
+								<Typography variant='body2' sx={{ color: '#374151' }}>
+									— единиц
+								</Typography>
+							</Box>
+							<Box sx={{ gridColumn: 'span 2', textAlign: 'right' }}>
+								{canWrite && (
+									<>
+										<Tooltip title='Редактировать'>
+											<IconButton size='small' onClick={() => openEdit(type)}>
+												<PencilIcon sx={{ fontSize: 16, color: '#9ca3af' }} />
+											</IconButton>
+										</Tooltip>
+										<Tooltip title={type.isComponent ? 'Нельзя удалить: используется' : 'Удалить'}>
+											<span>
+												<IconButton size='small' disabled >
+													<Trash2Icon sx={{ fontSize: 16, color: '#9ca3af' }} />
+												</IconButton>
+											</span>
+										</Tooltip>
+									</>
+								)}
+							</Box>
+						</Box>
+					))}
+				</Box>
+			</Box>
+		)
 	}
 
 	return (
-		<Box>
-			<Box
-				sx={{
-					display: 'flex',
-					justifyContent: 'space-between',
-					alignItems: 'center',
-					mb: 2,
-				}}
-			>
-				<Typography variant='body2' sx={{ color: '#6b7280' }}>
-					Типы, добавляемые в карточку оборудования: ноутбук, RAM, SSD, принтер…
-				</Typography>
+		<Box sx={{ p: 3, maxWidth: 1200, mx: 'auto' }}>
+			<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+				<Box>
+					<Typography variant='h6' sx={{ fontWeight: 700, color: '#111827' }}>
+						Типы оборудования
+					</Typography>
+					<Typography variant='body2' sx={{ color: '#6b7280', mt: 0.5 }}>
+						Справочник типов для вашего реалма
+					</Typography>
+				</Box>
 				{canWrite && (
 					<Button
-						variant='outlined'
-						sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 500, gap: 1 }}
+						variant='contained'
 						onClick={openCreate}
+						startIcon={<PlusIcon sx={{ fontSize: 16 }} />}
+						sx={{ textTransform: 'none', fontWeight: 500, borderRadius: '8px', bgcolor: '#0432a5', '&:hover': { bgcolor: '#002d91' } }}
 					>
-						<PlusIcon sx={{ color: palette.primary.main, fontSize: 16 }} />
 						Добавить тип
 					</Button>
 				)}
 			</Box>
 
-			<Box
-				sx={{
-					border: '1px solid #eef2f6',
-					borderRadius: '16px',
-					overflow: 'hidden',
-					bgcolor: '#fff',
-				}}
-			>
-				<TableContainer>
-					<Table size='small'>
-						<TableHead>
-							<TableRow sx={{ bgcolor: '#fafbfc' }}>
-								<TableCell sx={{ fontWeight: 600, color: '#6b7280', width: 60 }}>
-									Порядок
-								</TableCell>
-								<TableCell sx={{ fontWeight: 600, color: '#6b7280' }}>Название</TableCell>
-								<TableCell sx={{ fontWeight: 600, color: '#6b7280' }}>Вид</TableCell>
-								<TableCell align='right' sx={{ width: 100 }} />
-							</TableRow>
-						</TableHead>
-						<TableBody>
-							{types.length === 0 ? (
-								<TableRow>
-									<TableCell colSpan={4} align='center' sx={{ py: 6, color: '#6b7280' }}>
-										Типы оборудования не добавлены
-									</TableCell>
-								</TableRow>
-							) : (
-								types.map(type => (
-									<TableRow key={type.id} hover>
-										<TableCell sx={{ color: '#6b7280', whiteSpace: 'nowrap' }}>
-											{type.sortOrder}
-										</TableCell>
-										<TableCell sx={{ fontWeight: 500 }}>{type.name}</TableCell>
-										<TableCell sx={{ color: '#9ca3af', fontSize: 13 }}>
-											{type.isComponent ? 'Компонент' : 'Единица'}
-										</TableCell>
-										<TableCell align='right'>
-											{canWrite && (
-												<>
-													<Tooltip title='Редактировать'>
-														<IconButton size='small' onClick={() => openEdit(type)}>
-															<PencilIcon sx={{ fontSize: 16 }} />
-														</IconButton>
-													</Tooltip>
-													<Tooltip title='Удалить'>
-														<IconButton
-															size='small'
-															onClick={() => setDeleteType(type)}
-														>
-															<Trash2Icon
-																sx={{ fontSize: 16, color: palette.error.main }}
-															/>
-														</IconButton>
-													</Tooltip>
-												</>
-											)}
-										</TableCell>
-									</TableRow>
-								))
-							)}
-						</TableBody>
-					</Table>
-				</TableContainer>
+			<Box sx={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+				{renderGroup('devices')}
+				{renderGroup('components')}
+				{renderGroup('periphery')}
 			</Box>
 
-			<EquipmentTypeDialog open={dialogOpen} onClose={closeDialog} type={editType} />
-
-			<ConfirmDialog
-				open={Boolean(deleteType)}
-				title='Удаление типа'
-				message={`Вы уверены, что хотите удалить тип «${deleteType?.name}»?`}
-				confirmLabel='Удалить'
-				confirmColor='error'
-				onConfirm={handleDelete}
-				onCancel={() => setDeleteType(null)}
-				loading={isDeleting}
+			<EquipmentTypeDialog
+				open={dialogOpen}
+				onClose={() => {
+					setEditType(null)
+					setDialogOpen(false)
+				}}
+				type={editType}
 			/>
 		</Box>
 	)

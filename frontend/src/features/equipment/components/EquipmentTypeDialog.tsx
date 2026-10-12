@@ -3,18 +3,17 @@ import type { Dispatch, SetStateAction } from 'react'
 import {
 	Box,
 	Button,
-	Checkbox,
 	Dialog,
 	DialogActions,
 	DialogContent,
 	DialogTitle,
-	FormControlLabel,
 	FormHelperText,
 	IconButton,
+	MenuItem,
 	TextField,
 	Typography,
 } from '@mui/material'
-import { Controller, useForm, useWatch } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { XIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
@@ -34,7 +33,11 @@ type Props = {
 	setType?: Dispatch<SetStateAction<IEquipmentTypeDTO | null>>
 }
 
-const fieldLabelSx = { fontWeight: 600, mb: 0.5, display: 'block' }
+const CATEGORIES = [
+	{ value: 'device', label: 'Устройство' },
+	{ value: 'component', label: 'Комплектующее' },
+	{ value: 'periphery', label: 'Периферия' },
+]
 
 export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType }) => {
 	const isEdit = Boolean(type?.id)
@@ -44,24 +47,37 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 	const [update, { isLoading: isUpdating }] = useUpdateEquipmentTypeMutation()
 	const [remove, { isLoading: isDeleting }] = useDeleteEquipmentTypeMutation()
 
-	const { control, handleSubmit, formState } = useForm<IEquipmentTypeDTO>({
+	const defaultIsComponent = type?.isComponent ?? false
+	const defaultCategory = defaultIsComponent ? 'component' : 'device'
+
+	const { control, handleSubmit, formState } = useForm<IEquipmentTypeDTO & { category: string }>({
 		values: type
-			? { id: type.id, name: type.name, isComponent: type.isComponent, sortOrder: type.sortOrder }
-			: { id: undefined, name: '', isComponent: false, sortOrder: 0 },
+			? {
+				id: type.id,
+				name: type.name,
+				isComponent: type.isComponent,
+				sortOrder: type.sortOrder,
+				category: defaultCategory,
+			}
+			: { id: undefined, name: '', isComponent: false, sortOrder: 0, category: 'device' },
 		mode: 'onTouched',
 	})
 
 	const isLoading = isCreating || isUpdating || isDeleting
 
-	const isComponent = useWatch({ control, name: 'isComponent' })
-
 	const saveHandler = handleSubmit(async form => {
+		const dto: IEquipmentTypeDTO = {
+			id: form.id,
+			name: form.name,
+			isComponent: form.category === 'component',
+			sortOrder: form.sortOrder ?? 0,
+		}
 		try {
-			if (form.id) {
-				await update(form).unwrap()
+			if (dto.id) {
+				await update(dto).unwrap()
 				toast.success('Тип обновлён')
 			} else {
-				await create(form).unwrap()
+				await create(dto).unwrap()
 				toast.success('Тип создан')
 			}
 			onClose()
@@ -93,32 +109,24 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 				fullWidth
 				maxWidth='sm'
 				slotProps={{
-					paper: { sx: { borderRadius: '16px', p: 1 } },
+					paper: { sx: { borderRadius: '12px' } },
 				}}
 			>
-				<DialogTitle
-					sx={{ m: 0, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-				>
-					<Typography variant='h6' component='div' sx={{ fontWeight: 'bold' }}>
-						{isEdit ? 'Редактирование типа' : 'Создание типа'}
+				<DialogTitle sx={{ m: 0, px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+					<Typography variant='h6' sx={{ fontWeight: 700 }}>
+						{isEdit ? 'Редактирование типа' : 'Новый тип оборудования'}
 					</Typography>
-					<IconButton onClick={onClose} sx={{ color: 'text.secondary' }}>
-						<XIcon sx={{ fontSize: 16 }} />
+					<IconButton onClick={onClose} size='small'>
+						<XIcon sx={{ fontSize: 18 }} />
 					</IconButton>
 				</DialogTitle>
 
 				<form onSubmit={saveHandler}>
-					<DialogContent
-						dividers
-						sx={{ borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', py: 3 }}
-					>
+					<DialogContent dividers sx={{ px: 3, py: 2.5 }}>
 						<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
 							<Box>
-								<Typography variant='caption' sx={fieldLabelSx}>
-									Название типа{' '}
-									<Typography component='span' color='error'>
-										*
-									</Typography>
+								<Typography variant='caption' sx={{ fontWeight: 600, mb: 0.5, display: 'block', color: '#374151' }}>
+									Название *
 								</Typography>
 								<Controller
 									control={control}
@@ -129,59 +137,46 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 											{...field}
 											fullWidth
 											size='small'
-											placeholder='Например: Ноутбук, Память (RAM), Принтер'
+											placeholder='Например: Веб-камера'
 											error={Boolean(fieldState.error)}
 											helperText={fieldState.error?.message}
+											sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
 										/>
 									)}
 								/>
 							</Box>
-
 							<Box>
-								<Typography variant='caption' sx={fieldLabelSx}>
-									Порядок сортировки
+								<Typography variant='caption' sx={{ fontWeight: 600, mb: 0.5, display: 'block', color: '#374151' }}>
+									Категория *
 								</Typography>
 								<Controller
 									control={control}
-									name='sortOrder'
-									render={({ field }) => (
+									name='category'
+									rules={{ required: 'Обязательное поле' }}
+									render={({ field, fieldState }) => (
 										<TextField
 											{...field}
-											type='number'
+											select
 											fullWidth
 											size='small'
-											onChange={e => field.onChange(Number(e.target.value))}
-										/>
+											error={Boolean(fieldState.error)}
+											helperText={fieldState.error?.message}
+											sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
+										>
+											{CATEGORIES.map(c => (
+												<MenuItem key={c.value} value={c.value}>
+													{c.label}
+												</MenuItem>
+											))}
+										</TextField>
 									)}
 								/>
-							</Box>
-
-							<Box>
-								<Controller
-									control={control}
-									name='isComponent'
-									render={({ field }) => (
-										<FormControlLabel
-											control={
-												<Checkbox
-													checked={field.value}
-													onChange={e => field.onChange(e.target.checked)}
-												/>
-											}
-											label='Компонент (входит в состав комплекта)'
-										/>
-									)}
-								/>
-								{isComponent && (
-									<FormHelperText>
-										Компоненты — запчасти и периферия: RAM, SSD, мышь. Их нельзя выдать отдельно.
-									</FormHelperText>
-								)}
+								<FormHelperText sx={{ mt: 0.5 }}>Комплектующие — запчасти и периферия, их нельзя выдать отдельно</FormHelperText>
 							</Box>
 						</Box>
 					</DialogContent>
 
-					<DialogActions sx={{ p: 2, gap: 1, justifyContent: isEdit ? 'space-between' : 'flex-end' }}>
+					<DialogActions sx={{ px: 3, py: 2, gap: 1, justifyContent: isEdit ? 'space-between' : 'flex-end' }}>
 						{isEdit && (
 							<Button
 								type='button'
@@ -189,11 +184,7 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 								color='error'
 								onClick={() => setDeleteOpen(true)}
 								disabled={isDeleting}
-								sx={{
-									textTransform: 'none',
-									borderColor: '#fecaca',
-									'&:hover': { borderColor: '#fca5a5' },
-								}}
+								sx={{ textTransform: 'none', borderRadius: '8px' }}
 							>
 								Удалить
 							</Button>
@@ -203,7 +194,7 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 								type='button'
 								onClick={onClose}
 								variant='outlined'
-								sx={{ textTransform: 'none', color: 'text.primary', borderColor: '#ddd' }}
+								sx={{ textTransform: 'none', color: '#374151', borderColor: '#d1d5db', borderRadius: '8px' }}
 							>
 								Отмена
 							</Button>
@@ -211,7 +202,7 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 								type='submit'
 								variant='contained'
 								disabled={isLoading || !formState.isValid || (isEdit && !formState.isDirty)}
-								sx={{ textTransform: 'none', px: 3 }}
+								sx={{ textTransform: 'none', px: 3, borderRadius: '8px', bgcolor: '#0432a5', '&:hover': { bgcolor: '#002d91' } }}
 							>
 								{isEdit ? 'Сохранить' : 'Создать'}
 							</Button>
@@ -222,13 +213,12 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 
 			<ConfirmDialog
 				open={deleteOpen}
-				title='Удаление типа'
-				message={`Вы уверены, что хотите удалить тип «${type?.name}»?`}
+				title='Удаление типа оборудования'
+				message={`Удалить тип «${type?.name}»?`}
 				confirmLabel='Удалить'
 				confirmColor='error'
 				onConfirm={handleDelete}
 				onCancel={() => setDeleteOpen(false)}
-				loading={isDeleting}
 			/>
 		</>
 	)
