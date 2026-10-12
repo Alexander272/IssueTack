@@ -79,6 +79,12 @@
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.24);
 }
 
+/* Модалка получает фокус программно при открытии (см. ModalController) —
+   рамка вокруг всего окна тут лишняя. */
+.it-ticket-modal:focus {
+    outline: none;
+}
+
 .it-ticket-modal__header {
     display: flex;
     align-items: center;

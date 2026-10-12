@@ -27,11 +27,25 @@ const formatFileSize = (bytes: number) => {
 // при перетаскивании выделенного текста.
 const dragHasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files')
 
+// Файлы из буфера обмена (скриншот, файл из проводника). Опираться на
+// navigator.clipboard нельзя: на LAN без TLS это не secure context и API нет.
+// В событии paste clipboardData доступен всегда, поэтому Ctrl+V работает везде.
+const clipboardFiles = (e: ClipboardEvent): File[] | null => {
+	const dt = e.clipboardData
+	if (!dt) return null
+	if (dt.files && dt.files.length > 0) return Array.from(dt.files)
+	const fromItems = Array.from(dt.items ?? [])
+		.filter(item => item.kind === 'file')
+		.map(item => item.getAsFile())
+		.filter((f): f is File => f !== null)
+	return fromItems.length > 0 ? fromItems : null
+}
+
 export const FileDropZone = ({ files = [], onChange, onUpload, compact = false }: Props) => {
 	const inputRef = useRef<HTMLInputElement>(null)
 	const [dragging, setDragging] = useState(false)
 
-	const handleFiles = (list: FileList | null) => {
+	const handleFiles = (list: FileList | File[] | null) => {
 		if (!list || list.length === 0) return
 		const all = Array.from(list)
 		const valid = all.filter(f => f.size <= MAX_FILE_SIZE)
@@ -94,15 +108,25 @@ export const FileDropZone = ({ files = [], onChange, onUpload, compact = false }
 			handleFilesRef.current(e.dataTransfer?.files ?? null)
 		}
 
+		// Ctrl+V с файлом/скриншотом; текстовую вставку не трогаем (files пуст).
+		const onPaste = (e: ClipboardEvent) => {
+			const files = clipboardFiles(e)
+			if (!files) return
+			e.preventDefault()
+			handleFilesRef.current(files)
+		}
+
 		window.addEventListener('dragenter', onDragEnter)
 		window.addEventListener('dragover', onDragOver)
 		window.addEventListener('dragleave', onDragLeave)
 		window.addEventListener('drop', onDrop)
+		window.addEventListener('paste', onPaste)
 		return () => {
 			window.removeEventListener('dragenter', onDragEnter)
 			window.removeEventListener('dragover', onDragOver)
 			window.removeEventListener('dragleave', onDragLeave)
 			window.removeEventListener('drop', onDrop)
+			window.removeEventListener('paste', onPaste)
 		}
 	}, [])
 
@@ -135,7 +159,7 @@ export const FileDropZone = ({ files = [], onChange, onUpload, compact = false }
 							Нажмите для загрузки
 						</Typography>
 					</Typography>
-					<Typography sx={{ fontSize: '0.6875rem', color: '#9ca3af' }}>или перетащите файлы сюда</Typography>
+					<Typography sx={{ fontSize: '0.6875rem', color: '#9ca3af' }}>перетащите или вставьте (Ctrl+V)</Typography>
 				</Box>
 			) : (
 				<Box
@@ -158,7 +182,7 @@ export const FileDropZone = ({ files = [], onChange, onUpload, compact = false }
 						или перетащите файлы сюда
 					</Typography>
 					<Typography sx={{ fontSize: '0.75rem', color: '#9ca3af', mt: 0.5 }}>
-						Скриншоты, логи, документы
+						Скриншоты, логи, документы — или вставьте из буфера (Ctrl+V)
 					</Typography>
 				</Box>
 			)}

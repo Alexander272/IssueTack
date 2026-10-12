@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ApiError, createTicket } from '../api'
 import type { CreateTicketPayload } from '../api'
@@ -13,6 +13,7 @@ import type {
 } from '../types'
 import { formatBytes } from '../labels'
 import { clearDraft, loadDraft, saveDraft } from '../createDraft'
+import { useClipboardFiles } from '../useClipboardFiles'
 import { FileIcon } from './icons'
 
 // pluginUserLabel — подпись пользователя в селектах формы: «Фамилия Имя
@@ -188,12 +189,20 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		setResult(null)
 	}
 
-	const onPickFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
-		const picked = Array.from(e.target.files || [])
+	// addFiles — общая точка для выбора файлов и вставки из буфера: вложения
+	// дедуплицируются по имени и размеру (как в вебе).
+	const addFiles = useCallback((picked: File[]) => {
+		if (picked.length === 0) return
 		setFiles(prev => {
 			const seen = new Set(prev.map(f => `${f.name}:${f.size}`))
 			return [...prev, ...picked.filter(f => !seen.has(`${f.name}:${f.size}`))]
 		})
+	}, [])
+
+	useClipboardFiles(addFiles)
+
+	const onPickFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+		addFiles(Array.from(e.target.files || []))
 		e.target.value = ''
 	}
 
@@ -458,6 +467,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 					<div className='it-f-label'>
 						<span className='it-f-label__text'>Вложения</span>
 						<input className='it-f it-f--file' type='file' multiple onChange={onPickFiles} />
+						<div className='it-f-label__hint'>Можно вставить из буфера обмена (Ctrl+V)</div>
 						{files.length > 0 ? (
 							<ul className='it-ticket-files'>
 								{files.map(f => (

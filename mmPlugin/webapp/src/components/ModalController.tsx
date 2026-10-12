@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 
 import type { PluginContextResult, PluginScope } from '../types'
 import CreateTab from './CreateTab'
@@ -35,6 +35,17 @@ export default function ModalController({scope, context, initialPendingOpenId, o
 	// иначе заполненная форма терялась бы от случайного клика. Пустая форма
 	// закрывается как раньше.
 	const [hasDraft, setHasDraft] = useState(false)
+	const modalRef = useRef<HTMLDivElement>(null)
+
+	// Модалка забирает фокус при открытии. Без этого фокус остаётся в поле
+	// сообщения Mattermost за подложкой, и Ctrl+V с файлом уходит в чат, а не в
+	// плагин: событие paste приходит тому элементу, который в фокусе. Заодно это
+	// правильное поведение модального окна для клавиатуры (role="dialog" +
+	// aria-modal сами фокус не переносят). Глобальный перехват paste (см.
+	// useClipboardFiles) страхует случай, когда фокус всё же остался в composer.
+	useEffect(() => {
+		modalRef.current?.focus()
+	}, [])
 
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
@@ -50,6 +61,8 @@ export default function ModalController({scope, context, initialPendingOpenId, o
 		<div className='it-ticket-overlay' onClick={() => (hasDraft ? undefined : onClose())}>
 			<div
 				className='it-ticket-modal'
+				ref={modalRef}
+				tabIndex={-1}
 				role='dialog'
 				aria-modal='true'
 				aria-label='IssueTrack'
