@@ -98,7 +98,7 @@ func TestMattermostNotifier_SendsCreatedDM(t *testing.T) {
 	mockSender.On("Send", "bt", "bb", mmID, mock.MatchedBy(func(msg string) bool {
 		return assert.Contains(t, msg, "**Новая задача №12: Тестовая заявка**") &&
 			assert.Contains(t, msg, "http://localhost:9000/tasks/"+ticket.ID.String()) &&
-			assert.Contains(t, msg, "[Открыть в плагине](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
+			assert.Contains(t, msg, "[Открыть](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
 	})).Return(nil).Once()
 
 	delivered, err := svc.Notify(context.Background(), userID, dto, ticket)
@@ -139,7 +139,7 @@ func TestMattermostNotifier_SendsUpdatedDMWithChanges(t *testing.T) {
 			assert.Contains(t, msg, "• Статус: Новая → В работе") &&
 			assert.Contains(t, msg, "• Приоритет: — → Высокий") &&
 			// Ветка format с action != "" тоже содержит обе ссылки.
-			assert.Contains(t, msg, "[Открыть в плагине](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
+			assert.Contains(t, msg, "[Открыть](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
 	})).Return(nil).Once()
 
 	delivered, err := svc.Notify(context.Background(), userID, dto, ticket)
@@ -271,12 +271,12 @@ func TestMattermostNotifier_Links_WebLinkGatedByTicketRead(t *testing.T) {
 			assert.NoError(t, err)
 			assert.True(t, delivered)
 
-			webLink := "Открыть: http://localhost:9000/tasks/" + ticket.ID.String()
-			pluginLink := "[Открыть в плагине](/plug/issuetrack/ticket/" + ticket.ID.String() + ")"
+			webLink := "Открыть в браузере: http://localhost:9000/tasks/" + ticket.ID.String()
+			pluginLink := "[Открыть](/plug/issuetrack/ticket/" + ticket.ID.String() + ")"
 			if tt.wantWebLink {
 				assert.Contains(t, sent, webLink)
 			} else {
-				assert.NotContains(t, sent, "Открыть: ")
+				assert.NotContains(t, sent, "Открыть в браузере")
 				assert.NotContains(t, sent, "http://localhost:9000/tasks/")
 			}
 			assert.Contains(t, sent, pluginLink)
@@ -312,8 +312,8 @@ func TestMattermostNotifier_Links_WebLinkGatedOnUpdatedEvent(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, delivered)
 	assert.Contains(t, sent, "**Задача №12 обновлена: Тестовая заявка**")
-	assert.NotContains(t, sent, "Открыть: ")
-	assert.Contains(t, sent, "[Открыть в плагине](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
+	assert.NotContains(t, sent, "Открыть в браузере")
+	assert.Contains(t, sent, "[Открыть](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
 	mockSender.AssertExpectations(t)
 }
 
@@ -343,7 +343,7 @@ func TestMattermostNotifier_Links_EnforceUsesTicketRealm(t *testing.T) {
 	}, ticket)
 	assert.NoError(t, err)
 	assert.True(t, delivered)
-	assert.Contains(t, sent, "Открыть: http://localhost:9000/tasks/"+ticket.ID.String())
+	assert.Contains(t, sent, "Открыть в браузере: http://localhost:9000/tasks/"+ticket.ID.String())
 	mockPolicies.AssertExpectations(t)
 	mockSender.AssertExpectations(t)
 }
@@ -374,8 +374,8 @@ func TestMattermostNotifier_Links_NilPolicies_StillDelivers(t *testing.T) {
 	}, ticket)
 	assert.NoError(t, err)
 	assert.True(t, delivered)
-	assert.NotContains(t, sent, "Открыть: ")
-	assert.Contains(t, sent, "[Открыть в плагине](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
+	assert.NotContains(t, sent, "Открыть в браузере")
+	assert.Contains(t, sent, "[Открыть](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
 	mockSender.AssertExpectations(t)
 }
 
@@ -406,8 +406,8 @@ func TestMattermostNotifier_Links_MattermostSource_NoWebLink(t *testing.T) {
 	}, ticket)
 	assert.NoError(t, err)
 	assert.True(t, delivered)
-	assert.NotContains(t, sent, "Открыть: ")
-	assert.Contains(t, sent, "[Открыть в плагине](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
+	assert.NotContains(t, sent, "Открыть в браузере")
+	assert.Contains(t, sent, "[Открыть](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
 	mockPolicies.AssertNotCalled(t, "Enforce", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	mockSender.AssertExpectations(t)
 }

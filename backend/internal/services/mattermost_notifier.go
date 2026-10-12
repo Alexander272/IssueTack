@@ -247,7 +247,7 @@ func (n *mattermostNotifier) links(ctx context.Context, user *models.UserData, t
 		)
 		return links
 	}
-	return fmt.Sprintf("\nОткрыть: %s/tasks/%s", n.baseURL, ticket.ID.String()) + links
+	return fmt.Sprintf("\nОткрыть в браузере: %s/tasks/%s", n.baseURL, ticket.ID.String()) + links
 }
 
 // pluginLink возвращает вторую ссылку в DM — на заявку внутри Mattermost.
@@ -260,7 +260,7 @@ func (n *mattermostNotifier) links(ctx context.Context, user *models.UserData, t
 // на URL со схемой (http://, mailto:), поэтому site-relative путь в виде обычного
 // текста остаётся некликабельным.
 func (n *mattermostNotifier) pluginLink(ticketID uuid.UUID) string {
-	return fmt.Sprintf("\n[Открыть в плагине](%s)", pluginDeepLink(ticketID))
+	return fmt.Sprintf("\n[Открыть](%s)", pluginDeepLink(ticketID))
 }
 
 // changeTagLabels — русские подписи полей в сводке изменений тикета. Значения

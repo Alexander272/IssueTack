@@ -804,9 +804,9 @@ func (s *MattermostService) sendTicketCreatedDM(settings *models.RealmMattermost
 	msg := fmt.Sprintf("Заявка №%d создана.\nЗаголовок: %s",
 		dto.TicketNumber, dto.Title)
 	if s.showWebLink(creator, dto.RealmID) {
-		msg += fmt.Sprintf("\nОткрыть: %s/tasks/%s", s.baseURL, dto.ID.String())
+		msg += fmt.Sprintf("\nОткрыть в браузере: %s/tasks/%s", s.baseURL, dto.ID.String())
 	} else {
-		msg += fmt.Sprintf("\n[Открыть в плагине](%s)", pluginDeepLink(*dto.ID))
+		msg += fmt.Sprintf("\n[Открыть](%s)", pluginDeepLink(*dto.ID))
 	}
 	msg += "\nОтправьте файлы следующим сообщением в течение 30 минут — они прикрепятся автоматически к этой заявке. Или можете указать номер заявки (например, №123) вместе с файлами."
 	if err := s.most.DM.Send(settings.BotToken, settings.BotUserID, mmUserID, msg); err != nil {

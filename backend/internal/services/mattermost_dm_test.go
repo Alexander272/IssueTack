@@ -1238,7 +1238,7 @@ func TestSendTicketCreatedDM_WebLinkBySource(t *testing.T) {
 				assert.Contains(t, posts[0].message, testBaseURL+"/tasks/"+ticketID.String())
 			} else {
 				assert.NotContains(t, posts[0].message, "/tasks/")
-				assert.Contains(t, posts[0].message, "[Открыть в плагине](/plug/issuetrack/ticket/"+ticketID.String()+")")
+				assert.Contains(t, posts[0].message, "[Открыть](/plug/issuetrack/ticket/"+ticketID.String()+")")
 			}
 		})
 	}
