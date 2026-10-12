@@ -1,0 +1,160 @@
+package postgres
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/Alexander272/IssueTrack/backend/internal/models"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// Заготовка окружения для интеграционных тестов оборудования.
+type eqFixture struct {
+	realmID uuid.UUID
+	userID  uuid.UUID
+	typeID  uuid.UUID
+	kitType uuid.UUID
+}
+
+func newEqFixture(t *testing.T, pool *pgxpool.Pool) *eqFixture {
+	t.Helper()
+	ctx := context.Background()
+	f := &eqFixture{realmID: uuid.New(), userID: uuid.New(), typeID: uuid.New(), kitType: uuid.New()}
+
+	_, err := pool.Exec(ctx, `INSERT INTO realms (id, code, name) VALUES ($1, $2, $3)`,
+		f.realmID, "eqtest-"+f.realmID.String()[:8], "Equipment Test Realm")
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx, `INSERT INTO users (id, username, first_name, last_name) VALUES ($1, $2, $3, $4)`,
+		f.userID, "eqtestuser", "Тест", "Тестов")
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx, `INSERT INTO equipment_types (id, realm_id, name, is_component) VALUES ($1, $2, 'Ноутбук', false)`,
+		f.typeID, f.realmID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO equipment_types (id, realm_id, name, is_component) VALUES ($1, $2, 'RAM', true)`,
+		f.kitType, f.realmID)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM realms WHERE id = $1`, f.realmID)
+		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id = $1`, f.userID)
+	})
+	return f
+}
+
+func eqString(s string) *string { return &s }
+
+func newEquipmentDTO(f *eqFixture, typeID uuid.UUID, name string) *models.EquipmentDTO {
+	return &models.EquipmentDTO{
+		RealmID:      f.realmID,
+		TypeID:       typeID,
+		Name:         name,
+		Status:       models.EquipmentStatusInStock,
+		Location:     eqString("Склад"),
+		CreatedBy:    &f.userID,
+		Specs:        []byte("{}"),
+		Vendor:       "",
+		Model:        "",
+		HolderName:   nil,
+		SerialNumber: nil,
+	}
+}
+
+func TestEquipmentRepo_Stage3Flow(t *testing.T) {
+	pool := itPool(t)
+	f := newEqFixture(t, pool)
+	ctx := context.Background()
+
+	repo := NewEquipmentRepo(pool, NewTransactionRepo(pool))
+
+	kit, err := repo.Create(ctx, newEquipmentDTO(f, f.typeID, "Комплект A"))
+	require.NoError(t, err)
+
+	// Помечаем как комплект напрямую (Create не выставляет is_kit).
+	_, err = pool.Exec(ctx, `UPDATE equipment SET is_kit = true WHERE id = $1`, kit.ID)
+	require.NoError(t, err)
+
+	comp, err := repo.Create(ctx, newEquipmentDTO(f, f.kitType, "Модуль памяти"))
+	require.NoError(t, err)
+
+	// addComposition + setHolderAndStatus + event в одной транзакции.
+	tx, err := repo.BeginTx(ctx)
+	require.NoError(t, err)
+	require.NoError(t, repo.OpenComposition(ctx, tx, &models.KitComposition{
+		KitID: kit.ID, ComponentID: comp.ID, StartedAt: time.Now(), StartedBy: &f.userID, Reason: "сборка",
+	}))
+	require.NoError(t, repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
+		EquipmentID: kit.ID, EventType: models.EquipmentEventComponentAdded, OperationID: uuid.New(),
+		ComponentID: &comp.ID, UserID: &f.userID,
+	}))
+	require.NoError(t, tx.Commit(ctx))
+
+	members, err := repo.GetOpenComposition(ctx, kit.ID)
+	require.NoError(t, err)
+	require.Len(t, members, 1)
+	assert.Equal(t, comp.ID, members[0].ID)
+
+	// Выдача.
+	now := time.Now()
+	tx, err = repo.BeginTx(ctx)
+	require.NoError(t, err)
+	require.NoError(t, repo.CreateAssignment(ctx, tx, &models.EquipmentAssignment{
+		EquipmentID: kit.ID, UserID: &f.userID, AssignedAt: now, AssignedBy: &f.userID,
+	}))
+	require.NoError(t, repo.SetHolderAndStatus(ctx, tx, kit.ID, &f.userID, nil, nil, nil, models.EquipmentStatusInUse))
+	require.NoError(t, tx.Commit(ctx))
+
+	open, err := repo.GetOpenAssignment(ctx, kit.ID)
+	require.NoError(t, err)
+	assert.Equal(t, f.userID, *open.UserID)
+
+	history, err := repo.GetAssignmentHistory(ctx, f.realmID, kit.ID)
+	require.NoError(t, err)
+	require.Len(t, history, 1)
+
+	events, err := repo.GetEvents(ctx, f.realmID, kit.ID, 100, 0)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	assert.Equal(t, models.EquipmentEventComponentAdded, events[0].EventType)
+
+	// Акт.
+	tx, err = repo.BeginTx(ctx)
+	require.NoError(t, err)
+	seq, err := repo.NextActSeq(ctx, tx, f.realmID)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, seq, 1)
+	require.NoError(t, repo.CreateAct(ctx, tx, &models.EquipmentAct{
+		RealmID: f.realmID, Number: "АКТ-2026-0001", KitEquipmentID: &kit.ID,
+		RecipientUserID: &f.userID, IssuedBy: &f.userID, IssuedAt: now,
+		Content: []byte(`[{"name":"Комплект A"}]`),
+	}))
+	require.NoError(t, tx.Commit(ctx))
+
+	acts, total, err := repo.GetActs(ctx, &models.EquipmentActsFilter{RealmID: f.realmID, Limit: 10})
+	require.NoError(t, err)
+	assert.Equal(t, 1, total)
+	require.Len(t, acts, 1)
+	act, err := repo.GetActByID(ctx, &models.GetEquipmentActByIDDTO{ID: acts[0].ID, RealmID: f.realmID})
+	require.NoError(t, err)
+	assert.Equal(t, "АКТ-2026-0001", act.Number)
+
+	// Закрытие состава.
+	tx, err = repo.BeginTx(ctx)
+	require.NoError(t, err)
+	require.NoError(t, repo.CloseOpenByComponent(ctx, tx, comp.ID, &f.userID, "разборка", nil))
+	require.NoError(t, tx.Commit(ctx))
+
+	members, err = repo.GetOpenComposition(ctx, kit.ID)
+	require.NoError(t, err)
+	assert.Empty(t, members)
+
+	compHistory, err := repo.GetCompositionHistory(ctx, kit.ID)
+	require.NoError(t, err)
+	require.Len(t, compHistory, 1)
+	require.NotNil(t, compHistory[0].EndedAt)
+}

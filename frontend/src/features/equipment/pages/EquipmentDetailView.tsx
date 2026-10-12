@@ -13,13 +13,23 @@ import {
 	Typography,
 	useTheme,
 } from '@mui/material'
-import { ArrowLeftIcon, PencilIcon, PlusIcon, Trash2Icon } from 'lucide-mui'
+import { ArrowLeftIcon, PackageCheckIcon, PackageMinusIcon, PencilIcon, PlusIcon, Trash2Icon } from 'lucide-mui'
 import { toast } from 'react-toastify'
 import { Link as RouterLink, useNavigate, useParams } from 'react-router'
 
 import { getEquipmentStatus } from '../types/equipment'
-import { useDeleteEquipmentMutation, useGetEquipmentChildrenQuery, useGetEquipmentQuery } from '../equipmentApiSlice'
+import {
+	useDeleteEquipmentMutation,
+	useGetEquipmentChildrenQuery,
+	useGetEquipmentCompositionQuery,
+	useGetEquipmentQuery,
+	useUnassignEquipmentMutation,
+} from '../equipmentApiSlice'
 import { EquipmentDialog } from '../components/EquipmentDialog'
+import { EquipmentAssignDialog } from '../components/EquipmentAssignDialog'
+import { EquipmentCompositionDialog } from '../components/EquipmentCompositionDialog'
+import { EquipmentHistory } from '../components/EquipmentHistory'
+import { EquipmentStatusMenu } from '../components/EquipmentStatusMenu'
 import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
 import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
 import type { IFetchError } from '@/app/types/error'
@@ -36,13 +46,18 @@ export const EquipmentDetailView: FC = () => {
 	const canWrite = useCheckPermissions({ anyOf: ['equipment:write'] })
 
 	const { data } = useGetEquipmentQuery(id)
-	const { data: childrenData } = useGetEquipmentChildrenQuery(id, { skip: !id })
-	const children = childrenData?.data ?? []
 	const unit = data
 
+	const { data: childrenData } = useGetEquipmentChildrenQuery(id, { skip: !id || Boolean(data?.isKit) })
+	const { data: compositionData } = useGetEquipmentCompositionQuery(id, { skip: !id || !data?.isKit })
+	const members = data?.isKit ? (compositionData?.data ?? []) : (childrenData?.data ?? [])
+
 	const [dialogOpen, setDialogOpen] = useState(false)
+	const [assignOpen, setAssignOpen] = useState(false)
+	const [compositionOpen, setCompositionOpen] = useState(false)
 	const [deleteOpen, setDeleteOpen] = useState(false)
 	const [remove, { isLoading: isDeleting }] = useDeleteEquipmentMutation()
+	const [unassign, { isLoading: isUnassigning }] = useUnassignEquipmentMutation()
 
 	const handleDelete = async () => {
 		try {
@@ -55,10 +70,21 @@ export const EquipmentDetailView: FC = () => {
 		}
 	}
 
+	const handleUnassign = async () => {
+		try {
+			await unassign({ id, body: { comment: 'Возврат со страницы оборудования' } }).unwrap()
+			toast.success('Оборудование возвращено')
+		} catch (error) {
+			const fetchError = error as IFetchError
+			toast.error(fetchError.data?.message, { autoClose: false })
+		}
+	}
+
 	if (!unit) return null
 
 	const status = getEquipmentStatus(unit.status)
 	const holder = unit.holderFullName || unit.holderName
+	const hasHolder = Boolean(unit.holderUserId || unit.holderName)
 
 	return (
 		<Box sx={{ p: 3 }}>
@@ -99,6 +125,22 @@ export const EquipmentDetailView: FC = () => {
 						>
 							{status.label}
 						</Typography>
+						{unit.isKit && (
+							<Typography
+								component='span'
+								sx={{
+									px: 1,
+									py: 0.25,
+									borderRadius: '6px',
+									fontSize: 12,
+									fontWeight: 600,
+									bgcolor: `${palette.primary.main}1a`,
+									color: palette.primary.main,
+								}}
+							>
+								Комплект
+							</Typography>
+						)}
 					</Box>
 					<Typography variant='body2' sx={{ color: '#6b7280' }}>
 						{unit.typeName}
@@ -116,7 +158,28 @@ export const EquipmentDetailView: FC = () => {
 					</Typography>
 				</Box>
 				{canWrite && (
-					<Stack direction='row' spacing={1}>
+					<Stack direction='row' spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+						{hasHolder ? (
+							<Button
+								variant='outlined'
+								disabled={isUnassigning}
+								startIcon={<PackageMinusIcon sx={{ fontSize: 16 }} />}
+								onClick={handleUnassign}
+								sx={{ borderRadius: '8px', textTransform: 'none' }}
+							>
+								Возврат
+							</Button>
+						) : (
+							<Button
+								variant='outlined'
+								startIcon={<PackageCheckIcon sx={{ fontSize: 16 }} />}
+								onClick={() => setAssignOpen(true)}
+								sx={{ borderRadius: '8px', textTransform: 'none' }}
+							>
+								Выдать
+							</Button>
+						)}
+						{unit.status !== 'written_off' && <EquipmentStatusMenu unit={unit} />}
 						<Button
 							variant='outlined'
 							sx={{ borderRadius: '8px', textTransform: 'none', gap: 0.5 }}
@@ -174,17 +237,17 @@ export const EquipmentDetailView: FC = () => {
 			<Box sx={{ mb: 4 }}>
 				<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5, gap: 2 }}>
 					<Typography variant='h6' sx={{ fontWeight: 'bold', color: '#1f2937' }}>
-						Состав комплекта
+						{unit.isKit ? 'Состав комплекта' : 'Физический состав'}
 					</Typography>
 					{canWrite && (
 						<Button
 							variant='outlined'
 							size='small'
 							sx={{ borderRadius: '8px', textTransform: 'none', gap: 0.5 }}
-							onClick={() => setDialogOpen(true)}
+							onClick={() => (unit.isKit ? setCompositionOpen(true) : setDialogOpen(true))}
 						>
 							<PlusIcon sx={{ color: palette.primary.main, fontSize: 16 }} />
-							Добавить
+							{unit.isKit ? 'Изменить состав' : 'Добавить'}
 						</Button>
 					)}
 				</Box>
@@ -207,14 +270,14 @@ export const EquipmentDetailView: FC = () => {
 								</TableRow>
 							</TableHead>
 							<TableBody>
-								{children.length === 0 ? (
+								{members.length === 0 ? (
 									<TableRow>
 										<TableCell colSpan={4} align='center' sx={{ py: 4, color: '#6b7280' }}>
-											Комплект пуст — состав пока не добавлен
+											{unit.isKit ? 'Комплект пуст — состав пока не добавлен' : 'Составных частей нет'}
 										</TableCell>
 									</TableRow>
 								) : (
-									children.map(child => {
+									members.map(child => {
 										const st = getEquipmentStatus(child.status)
 										return (
 											<TableRow
@@ -254,7 +317,22 @@ export const EquipmentDetailView: FC = () => {
 				</Box>
 			</Box>
 
+			<Box sx={{ mb: 4 }}>
+				<Typography variant='h6' sx={{ fontWeight: 'bold', color: '#1f2937', mb: 1.5 }}>
+					История
+				</Typography>
+				<EquipmentHistory unit={unit} />
+			</Box>
+
 			<EquipmentDialog open={dialogOpen} onClose={() => setDialogOpen(false)} unit={unit} />
+			<EquipmentAssignDialog open={assignOpen} onClose={() => setAssignOpen(false)} unit={unit} />
+			{unit.isKit && (
+				<EquipmentCompositionDialog
+					open={compositionOpen}
+					onClose={() => setCompositionOpen(false)}
+					unit={unit}
+				/>
+			)}
 
 			<ConfirmDialog
 				open={deleteOpen}

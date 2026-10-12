@@ -3,10 +3,12 @@ import {
 	Autocomplete,
 	Box,
 	Button,
+	Checkbox,
 	Dialog,
 	DialogActions,
 	DialogContent,
 	DialogTitle,
+	FormControlLabel,
 	IconButton,
 	MenuItem,
 	TextField,
@@ -60,6 +62,7 @@ const toDefault = (unit?: IEquipment | null): IEquipmentDTO => ({
 	warrantyUntil: unit?.warrantyUntil ?? '',
 	cost: unit?.cost ?? null,
 	notes: unit?.notes ?? '',
+	isKit: unit?.isKit ?? false,
 })
 
 export const EquipmentDialog: FC<Props> = ({ open, onClose, unit }) => {
@@ -417,6 +420,22 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit }) => {
 								)}
 							/>
 						</Box>
+
+						<Controller
+							control={control}
+							name='isKit'
+							render={({ field }) => (
+								<FormControlLabel
+									control={
+										<Checkbox
+											checked={Boolean(field.value)}
+											onChange={e => field.onChange(e.target.checked)}
+										/>
+									}
+									label='Это комплект (можно вести логический состав и выдавать вместе)'
+								/>
+							)}
+						/>
 					</Box>
 				</DialogContent>
 

@@ -76,6 +76,11 @@ var (
 	ErrEquipmentWrittenOff    = NewDomainError(errors.New("equipment is written off"), http.StatusConflict, "EQ006", "Списанное оборудование изменить нельзя")
 	ErrEquipmentNotAssignable = NewDomainError(errors.New("equipment is not available for assignment"), http.StatusConflict, "EQ007", "Нельзя выдать оборудование в этом статусе")
 	ErrEquipmentNoHoldersOrLocation = NewDomainError(errors.New("equipment must have a holder or location"), http.StatusConflict, "EQ008", "Укажите держателя или локацию — единица должна быть физически учтена")
+	ErrEquipmentAssigned            = NewDomainError(errors.New("equipment is already assigned to another holder"), http.StatusConflict, "EQ009", "Оборудование уже выдано другому держателю — снимите выдачу или повторите с принудительным переназначением")
+	ErrEquipmentComponentInKit      = NewDomainError(errors.New("component already belongs to a kit"), http.StatusConflict, "EQ010", "Компонент уже входит в комплект — сначала исключите его оттуда")
+	ErrEquipmentNotKit              = NewDomainError(errors.New("equipment is not a kit"), http.StatusConflict, "EQ011", "Состав можно вести только для комплекта")
+	ErrEquipmentActGeneration       = NewDomainError(errors.New("failed to build act content"), http.StatusConflict, "EQ012", "Не удалось сформировать акт")
+	ErrEquipmentStatusTransition    = NewDomainError(errors.New("equipment status transition is not allowed"), http.StatusConflict, "EQ013", "Недопустимый переход статуса оборудования")
 
 	// 400 Bad Request
 	ErrInvalidInput          = NewDomainError(errors.New("invalid input data"), http.StatusBadRequest, "BR001", "Переданы некорректные данные")

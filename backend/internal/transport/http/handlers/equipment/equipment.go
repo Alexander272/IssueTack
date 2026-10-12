@@ -30,14 +30,26 @@ func Register(api *gin.RouterGroup, service services.Equipment, middleware *midd
 		equipment.GET("", handlers.getAll)
 		equipment.GET("/:id", handlers.getByID)
 		equipment.GET("/:id/children", handlers.getChildren)
+		equipment.GET("/:id/assignments", handlers.getAssignmentHistory)
+		equipment.GET("/:id/events", handlers.getEvents)
+		equipment.GET("/:id/composition", handlers.getComposition)
+		equipment.GET("/:id/composition/history", handlers.getCompositionHistory)
 		equipment.GET("/types", handlers.getTypes)
 		equipment.GET("/types/:id", handlers.getTypeByID)
+		equipment.GET("/acts", handlers.getActs)
+		equipment.GET("/acts/:id", handlers.getActByID)
 
 		equipment.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceEquipment).Write()))
 		equipment.POST("", handlers.create)
 		equipment.PUT("/:id", handlers.update)
+		equipment.POST("/:id/assign", handlers.assign)
+		equipment.POST("/:id/unassign", handlers.unassign)
+		equipment.POST("/:id/status", handlers.changeStatus)
+		equipment.POST("/:id/composition", handlers.addComponents)
+		equipment.DELETE("/:id/composition", handlers.removeComponents)
 		equipment.POST("/types", handlers.createType)
 		equipment.PUT("/types/:id", handlers.updateType)
+		equipment.POST("/acts", handlers.createAct)
 
 		equipment.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceEquipment).Delete()))
 		equipment.DELETE("/:id", handlers.delete)
@@ -284,4 +296,311 @@ func (h *Handler) deleteType(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) assign(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	dto := &models.AssignEquipmentDTO{}
+	if err := c.BindJSON(dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+	dto.ID = id
+	dto.RealmID = realmID
+	dto.Actor = actor
+
+	if err := h.service.Assign(c, dto); err != nil {
+		response.SendError(c, err, dto)
+		return
+	}
+	c.JSON(http.StatusOK, response.IdResponse{Id: id, Message: "Оборудование выдано"})
+}
+
+func (h *Handler) unassign(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	dto := &models.UnassignEquipmentDTO{}
+	if err := c.BindJSON(dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+	dto.ID = id
+	dto.RealmID = realmID
+	dto.Actor = actor
+
+	if err := h.service.Unassign(c, dto); err != nil {
+		response.SendError(c, err, dto)
+		return
+	}
+	c.JSON(http.StatusOK, response.IdResponse{Id: id, Message: "Оборудование возвращено"})
+}
+
+func (h *Handler) changeStatus(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	dto := &models.ChangeStatusDTO{}
+	if err := c.BindJSON(dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+	dto.ID = id
+	dto.RealmID = realmID
+	dto.Actor = actor
+
+	data, err := h.service.ChangeStatus(c, dto)
+	if err != nil {
+		response.SendError(c, err, dto)
+		return
+	}
+	response.SendData(c, data)
+}
+
+func (h *Handler) getAssignmentHistory(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	data, err := h.service.GetAssignmentHistory(c, realmID, id)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	response.SendData(c, data, len(data))
+}
+
+func (h *Handler) getEvents(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	filter := &models.EquipmentEventsFilter{}
+	if err := c.ShouldBindQuery(filter); err != nil {
+		response.SendError(c, err)
+		return
+	}
+
+	data, err := h.service.GetEvents(c, realmID, id, filter.Limit, filter.Offset)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	response.SendData(c, data, len(data))
+}
+
+func (h *Handler) getComposition(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	data, err := h.service.GetComposition(c, realmID, id)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	response.SendData(c, data, len(data))
+}
+
+func (h *Handler) getCompositionHistory(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	data, err := h.service.GetCompositionHistory(c, realmID, id)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	response.SendData(c, data, len(data))
+}
+
+func (h *Handler) addComponents(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	dto := &models.KitCompositionOpDTO{}
+	if err := c.BindJSON(dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+	dto.ID = id
+	dto.RealmID = realmID
+	dto.Actor = actor
+
+	if err := h.service.AddComponents(c, dto); err != nil {
+		response.SendError(c, err, dto)
+		return
+	}
+	c.JSON(http.StatusOK, response.IdResponse{Id: id, Message: "Состав комплекта обновлён"})
+}
+
+func (h *Handler) removeComponents(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	dto := &models.KitCompositionOpDTO{}
+	if err := c.BindJSON(dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+	dto.ID = id
+	dto.RealmID = realmID
+	dto.Actor = actor
+
+	if err := h.service.RemoveComponents(c, dto); err != nil {
+		response.SendError(c, err, dto)
+		return
+	}
+	c.JSON(http.StatusOK, response.IdResponse{Id: id, Message: "Состав комплекта обновлён"})
+}
+
+func (h *Handler) getActs(c *gin.Context) {
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	filter := &models.EquipmentActsFilter{}
+	if err := c.ShouldBindQuery(filter); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	filter.RealmID = realmID
+
+	data, total, err := h.service.GetActs(c, filter)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	response.SendData(c, data, total)
+}
+
+func (h *Handler) getActByID(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	data, err := h.service.GetActByID(c, &models.GetEquipmentActByIDDTO{ID: id, RealmID: realmID})
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	response.SendData(c, data)
+}
+
+func (h *Handler) createAct(c *gin.Context) {
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	dto := &models.EquipmentActDTO{}
+	if err := c.BindJSON(dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+	dto.RealmID = realmID
+	dto.Actor = actor
+
+	data, err := h.service.CreateAct(c, dto)
+	if err != nil {
+		response.SendError(c, err, dto)
+		return
+	}
+	c.JSON(http.StatusCreated, response.IdResponse{Id: data.ID, Message: "Акт сформирован"})
 }

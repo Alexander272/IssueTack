@@ -63,6 +63,8 @@ export interface IEquipment {
 	warrantyUntil: string | null
 	cost: number | null
 	notes: string
+	isKit: boolean
+	kitId: string | null
 	createdBy: string | null
 	createdAt: string
 	updatedAt: string
@@ -87,6 +89,8 @@ export interface IEquipmentDTO {
 	warrantyUntil?: string | null
 	cost?: number | null
 	notes?: string
+	isKit?: boolean
+	kitId?: string | null
 }
 
 export interface IEquipmentFilter {
@@ -103,5 +107,142 @@ export interface IEquipmentFilter {
 
 export interface IEquipmentList {
 	data: IEquipment[]
+	total: number
+}
+
+export interface IEquipmentAssignment {
+	id: string
+	equipmentId: string
+	userId: string | null
+	holderName: string | null
+	siteId: string | null
+	location: string | null
+	assignedAt: string
+	unassignedAt: string | null
+	assignedBy: string | null
+	comment: string
+}
+
+export type EquipmentEventType =
+	| 'created'
+	| 'updated'
+	| 'assigned'
+	| 'unassigned'
+	| 'moved'
+	| 'status_changed'
+	| 'component_added'
+	| 'component_removed'
+	| 'component_replaced'
+	| 'repaired'
+	| 'written_off'
+
+const EQUIPMENT_EVENT_LABELS: Record<EquipmentEventType, string> = {
+	created: 'Создано',
+	updated: 'Изменено',
+	assigned: 'Выдано',
+	unassigned: 'Возвращено',
+	moved: 'Перемещено',
+	status_changed: 'Смена статуса',
+	component_added: 'Добавлен компонент',
+	component_removed: 'Удалён компонент',
+	component_replaced: 'Замена компонента',
+	repaired: 'Ремонт',
+	written_off: 'Списание',
+}
+
+export const getEquipmentEventLabel = (type: EquipmentEventType) => EQUIPMENT_EVENT_LABELS[type] ?? type
+
+export interface IEquipmentEvent {
+	id: string
+	equipmentId: string
+	eventType: EquipmentEventType
+	operationId: string
+	componentId: string | null
+	oldValue: Record<string, unknown> | null
+	newValue: Record<string, unknown> | null
+	userId: string | null
+	comment: string
+	createdAt: string
+}
+
+export interface IKitComposition {
+	id: string
+	kitId: string
+	componentId: string
+	startedAt: string
+	endedAt: string | null
+	startedBy: string | null
+	endedBy: string | null
+	reason: string
+	actId: string | null
+}
+
+export interface IAssignEquipmentDTO {
+	userId?: string | null
+	holderName?: string | null
+	siteId?: string | null
+	location?: string | null
+	comment?: string
+	force?: boolean
+	skipAct?: boolean
+}
+
+export interface IUnassignEquipmentDTO {
+	siteId?: string | null
+	location?: string | null
+	comment?: string
+}
+
+export interface IChangeStatusDTO {
+	status: EquipmentStatus
+	comment?: string
+}
+
+export interface ICompositionOpDTO {
+	components: { componentId: string }[]
+	reason?: string
+}
+
+export interface IActPosition {
+	equipmentId: string
+	typeName: string
+	name: string
+	serialNumber: string | null
+	inventoryNumber: string | null
+}
+
+export interface IEquipmentAct {
+	id: string
+	realmId: string
+	number: string
+	kitEquipmentId: string | null
+	recipientUserId: string | null
+	recipientName: string | null
+	siteId: string | null
+	location: string | null
+	issuedBy: string | null
+	issuedAt: string
+	content: IActPosition[]
+	comment: string
+	createdAt: string
+}
+
+export interface IEquipmentActDTO {
+	kitEquipmentId?: string | null
+	recipientUserId?: string | null
+	recipientName?: string | null
+	siteId?: string | null
+	location?: string | null
+	comment?: string
+}
+
+export interface IEquipmentActFilter {
+	kitId?: string
+	limit?: number
+	offset?: number
+}
+
+export interface IEquipmentActList {
+	data: IEquipmentAct[]
 	total: number
 }
