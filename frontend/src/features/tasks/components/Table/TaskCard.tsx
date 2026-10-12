@@ -9,6 +9,8 @@ import {
 	DUE_DATE_DEFAULT_ICON,
 } from '../../constants/taskMaps'
 import { getDueDateTone, getShortDate } from '@/utils/date'
+import { useAppSelector } from '@/hooks/redux'
+import { getHasNoGroups } from '@/features/user/userSlice'
 import { TaskStatusBadge } from '../TaskStatusBadge'
 import { TaskPriorityBadge } from '../TaskPriorityBadge'
 import { TaskAssignmentChip } from '../TaskAssignmentChip'
@@ -20,6 +22,7 @@ interface Props {
 }
 
 export const TaskCard = ({ task, onClick }: Props) => {
+	const hasNoGroups = useAppSelector(getHasNoGroups)
 	const priorityColor = PRIORITY_MAP[task.priority]?.barColor ?? '#6b7280'
 	const dueTone = ACTIVE_STATUSES.includes(task.status) ? getDueDateTone(task.dueDate) : null
 	const DueDateIcon = dueTone ? DUE_DATE_ICONS[dueTone] : DUE_DATE_DEFAULT_ICON
@@ -56,17 +59,19 @@ export const TaskCard = ({ task, onClick }: Props) => {
 				},
 			}}
 		>
-			<Box
-				sx={{
-					position: 'absolute',
-					left: 0,
-					top: 0,
-					bottom: 0,
-					width: 4,
-					borderRadius: '12px 0 0 12px',
-					bgcolor: priorityColor,
-				}}
-			/>
+			{!hasNoGroups && (
+				<Box
+					sx={{
+						position: 'absolute',
+						left: 0,
+						top: 0,
+						bottom: 0,
+						width: 4,
+						borderRadius: '12px 0 0 12px',
+						bgcolor: priorityColor,
+					}}
+				/>
+			)}
 
 			<Box sx={{ p: 1.5, pl: 2.5 }}>
 				<Stack direction='row' spacing={1} useFlexGap sx={{ alignItems: 'center', mb: 0.5, flexWrap: 'wrap' }}>
@@ -77,7 +82,9 @@ export const TaskCard = ({ task, onClick }: Props) => {
 					)}
 
 					<TaskStatusBadge status={task.status} sx={{ px: 1, py: 0.5, fontSize: '0.625rem' }} />
-					<TaskPriorityBadge priority={task.priority} sx={{ px: 1, py: 0.5, fontSize: '0.625rem' }} />
+					{!hasNoGroups && (
+						<TaskPriorityBadge priority={task.priority} sx={{ px: 1, py: 0.5, fontSize: '0.625rem' }} />
+					)}
 
 					{/* <Typography sx={{ fontSize: '0.75rem', color: '#41454a' }}>{createdDate}</Typography> */}
 				</Stack>
@@ -162,22 +169,24 @@ export const TaskCard = ({ task, onClick }: Props) => {
 					spacing={2}
 					sx={{ alignItems: 'center', pt: 0.5, mt: 1, borderTop: '1px solid #f3f4f6' }}
 				>
-					<Box
-						sx={{
-							display: 'inline-flex',
-							alignItems: 'center',
-							gap: 0.5,
-							fontSize: '0.75rem',
-							color: task.closedAt ? '#059669' : dueTone ? DUE_DATE_COLORS[dueTone] : '#9ca3af',
-							fontWeight: task.closedAt || (dueTone && dueTone !== 'soon') ? 600 : 400,
-						}}
-					>
-						{!task.closedAt && <DueDateIcon sx={{ fontSize: 14 }} />}
-						<Typography component='span' sx={{ fontSize: '0.75rem', lineHeight: 1 }}>
-							{task.closedAt ? 'Закрыта' : 'Срок'}:{' '}
-							{task.closedAt ? getShortDate(task.closedAt) : getShortDate(task.dueDate)}
-						</Typography>
-					</Box>
+					{(!hasNoGroups || task.closedAt) && (
+						<Box
+							sx={{
+								display: 'inline-flex',
+								alignItems: 'center',
+								gap: 0.5,
+								fontSize: '0.75rem',
+								color: task.closedAt ? '#059669' : dueTone ? DUE_DATE_COLORS[dueTone] : '#9ca3af',
+								fontWeight: task.closedAt || (dueTone && dueTone !== 'soon') ? 600 : 400,
+							}}
+						>
+							{!task.closedAt && <DueDateIcon sx={{ fontSize: 14 }} />}
+							<Typography component='span' sx={{ fontSize: '0.75rem', lineHeight: 1 }}>
+								{task.closedAt ? 'Закрыта' : 'Срок'}:{' '}
+								{task.closedAt ? getShortDate(task.closedAt) : getShortDate(task.dueDate)}
+							</Typography>
+						</Box>
+					)}
 
 					{attachmentsCount > 0 && (
 						<Typography

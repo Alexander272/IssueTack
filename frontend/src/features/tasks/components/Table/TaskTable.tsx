@@ -14,6 +14,8 @@ import { ArrowDownAZ, ArrowUpAZ } from 'lucide-mui'
 
 import type { ITask } from '../../types/task'
 import type { GroupByField } from '../../constants/taskMaps'
+import { useAppSelector } from '@/hooks/redux'
+import { getHasNoGroups } from '@/features/user/userSlice'
 import { TaskTableEmpty } from './TaskTableEmpty'
 import { TaskTableBody } from './TaskTableBody'
 import { TaskTableGrouped } from './TaskTableGrouped'
@@ -40,11 +42,16 @@ const COLUMNS: readonly Column[] = [
 	{ field: 'status', label: 'Статус', sortable: true, width: 130 },
 	{ field: 'subtasks', label: 'Подзадачи', sortable: false, width: 130 },
 ]
-const TABLE_MIN_WIDTH = COLUMNS.reduce((sum, col) => sum + (col.width ?? 240), 0)
+// Колонки, скрываемые у «обычного пользователя» без групп: срок и приоритет ему не нужны.
+const GROUPLESS_HIDDEN_FIELDS = new Set(['dueDate', 'priority'])
 
 export const TaskTable = ({ tasks, groupBy, groupEnabled, onTaskClick, sort, onSortChange }: Props) => {
 	const theme = useTheme()
 	const isMobile = useMediaQuery(theme.breakpoints.down('md'))
+	const hasNoGroups = useAppSelector(getHasNoGroups)
+
+	const columns = hasNoGroups ? COLUMNS.filter(col => !GROUPLESS_HIDDEN_FIELDS.has(col.field)) : COLUMNS
+	const tableMinWidth = columns.reduce((sum, col) => sum + (col.width ?? 240), 0)
 
 	const currentBase = sort.replace(/_(asc|desc)$/, '')
 	const isDesc = sort.endsWith('_desc')
@@ -63,7 +70,7 @@ export const TaskTable = ({ tasks, groupBy, groupEnabled, onTaskClick, sort, onS
 
 	const headRow = (
 		<TableRow sx={{ borderBottom: '1px solid #f3f4f6' }}>
-			{COLUMNS.map(col => {
+			{columns.map(col => {
 				const cellSx: Record<string, unknown> = {
 					color: 'text.secondary',
 					fontSize: '0.875rem',
@@ -110,7 +117,7 @@ export const TaskTable = ({ tasks, groupBy, groupEnabled, onTaskClick, sort, onS
 		</TableRow>
 	)
 
-	const columnsCount = COLUMNS.length
+	const columnsCount = columns.length
 
 	const body = !tasks.length ? (
 		<TaskTableEmpty columnsCount={columnsCount} />
@@ -126,7 +133,7 @@ export const TaskTable = ({ tasks, groupBy, groupEnabled, onTaskClick, sort, onS
 			elevation={0}
 			sx={{ borderRadius: 3, border: '1px solid #f3f4f6', overflow: 'hidden', overflowX: 'auto' }}
 		>
-			<Table sx={{ tableLayout: 'fixed', minWidth: TABLE_MIN_WIDTH }}>
+			<Table sx={{ tableLayout: 'fixed', minWidth: tableMinWidth }}>
 				<TableHead>{headRow}</TableHead>
 				<TableBody>{body}</TableBody>
 			</Table>

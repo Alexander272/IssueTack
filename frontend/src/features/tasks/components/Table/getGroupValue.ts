@@ -2,7 +2,7 @@ import type { ITask } from '../../types/task'
 import type { GroupByField } from '../../constants/taskMaps'
 import { STATUS_MAP, PRIORITY_MAP, PRIORITY_ORDER } from '../../constants/taskMaps'
 
-export function getGroupValue(task: ITask, groupBy: GroupByField): string {
+export function getGroupValue(task: ITask, groupBy: GroupByField, hasNoGroups = false): string {
 	switch (groupBy) {
 		case 'category':
 			return task.category.name
@@ -16,7 +16,9 @@ export function getGroupValue(task: ITask, groupBy: GroupByField): string {
 			return task.site?.name || 'Без площадки'
 		case 'assignee': {
 			if (task.assignee) return `👤 ${task.assignee.lastName} ${task.assignee.firstName}`
-			if (task.group) return `👥 ${task.group.name}`
+			// Безгрупповому группа заявки ни о чём не говорит — не подписываем ею
+			// неназначенные заявки (см. Participants).
+			if (task.group && !hasNoGroups) return `👥 ${task.group.name}`
 			return 'Без назначения'
 		}
 		case 'creator':

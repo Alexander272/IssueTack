@@ -3,7 +3,9 @@ import { Box, Button, TextField, Menu, MenuItem } from '@mui/material'
 import { SearchIcon, FilterIcon, LayersIcon, RefreshCwIcon } from 'lucide-mui'
 
 import type { GroupByField } from '../../constants/taskMaps'
-import { GROUP_BY_OPTIONS } from '../../constants/taskMaps'
+import { groupByOptionsFor } from '../../constants/taskMaps'
+import { useAppSelector } from '@/hooks/redux'
+import { getHasNoGroups } from '@/features/user/userSlice'
 
 interface Props {
 	search: string
@@ -29,6 +31,8 @@ export const Toolbar: FC<Props> = ({
 	onReset,
 }) => {
 	const [groupAnchorEl, setGroupAnchorEl] = useState<HTMLElement | null>(null)
+	const hasNoGroups = useAppSelector(getHasNoGroups)
+	const groupByOptions = groupByOptionsFor(hasNoGroups)
 
 	return (
 		<Box
@@ -87,7 +91,7 @@ export const Toolbar: FC<Props> = ({
 						>
 							Без группировки
 						</MenuItem>
-						{GROUP_BY_OPTIONS.map(opt => (
+						{groupByOptions.map(opt => (
 							<MenuItem
 								key={opt.value}
 								value={opt.value}

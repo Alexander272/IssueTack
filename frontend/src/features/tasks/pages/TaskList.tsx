@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router'
 import { ArchiveIcon, InboxIcon, PlusIcon } from 'lucide-mui'
 
 import type { GroupByField } from '../constants/taskMaps'
-import { statusOptionsFor } from '../constants/taskMaps'
+import { statusOptionsFor, groupByFieldHidden } from '../constants/taskMaps'
 import type { FilterValues } from '../components/filters'
 import type { ITask, ITaskFilter } from '../types/task'
 import { AppRoutes } from '@/pages/router/routes'
@@ -12,13 +12,13 @@ import { PermRules } from '@/features/access/constants/permissions'
 import { useAppSelector } from '@/hooks/redux'
 import { useCan } from '@/features/access/utils/can'
 import { useGetTasksQuery } from '../tasksApiSlice'
-import { getIsManager } from '@/features/user/userSlice'
+import { getHasNoGroups, getIsManager } from '@/features/user/userSlice'
 import { useDebounce } from '@/hooks/useDebounce'
 import { TaskFilters } from '../components/filters'
 import { TaskListView } from '../components/Table'
 import { TaskCreateModal } from '../components/TaskCreateModal'
 
-type Mode = 'created' | 'assigned'
+type Mode = 'created' | 'created_or_owned' | 'assigned'
 type Tab = 'active' | 'archive'
 
 type Props = {
@@ -43,11 +43,13 @@ const DEFAULT_FILTERS: FilterValues = {
 
 const PAGE_TITLE: Record<Mode, string> = {
 	created: 'Заявки',
+	created_or_owned: 'Заявки',
 	assigned: 'Мои задачи',
 }
 
 const PAGE_DESC: Record<Mode, string> = {
 	created: 'Созданные вами заявки',
+	created_or_owned: 'Созданные вами заявки и заявки, где вы заказчик',
 	assigned: 'Задачи, назначенные лично или группам',
 }
 
@@ -56,10 +58,11 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 	const navigate = useNavigate()
 	const canCreate = useCan(PermRules.Tasks.Write)
 	const isManager = useAppSelector(getIsManager)
+	const hasNoGroups = useAppSelector(getHasNoGroups)
 	const rowsPerPage = 20
 
 	const title = PAGE_TITLE[mode]
-	const desc = isManager && mode === 'created' ? 'Все доступные заявки' : PAGE_DESC[mode]
+	const desc = isManager && mode !== 'assigned' ? 'Все доступные заявки' : PAGE_DESC[mode]
 
 	const STORAGE_KEY = `@issueTrack/taskFilters_${mode}`
 
@@ -75,10 +78,34 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 		return { ...f, statuses }
 	}
 
+	// clampHiddenFields — у «обычного пользователя» без групп скрыты срок и приоритет,
+	// поэтому сохранённые в localStorage значения этих фильтров и группировки надо
+	// вычищать: невидимый чип/поле иначе продолжит фильтровать список (пусто) и
+	// останется в запросе. Группировку по скрытому полю откатываем на площадку.
+	const clampHiddenFields = useCallback(
+		(f: FilterValues): FilterValues => {
+			if (!hasNoGroups) return f
+			const hasHidden =
+				f.dueDateFrom !== undefined ||
+				f.dueDateTo !== undefined ||
+				f.priorities !== undefined ||
+				groupByFieldHidden(f.groupBy, hasNoGroups)
+			if (!hasHidden) return f
+			return {
+				...f,
+				dueDateFrom: undefined,
+				dueDateTo: undefined,
+				priorities: undefined,
+				groupBy: groupByFieldHidden(f.groupBy, hasNoGroups) ? DEFAULT_FILTERS.groupBy : f.groupBy,
+			}
+		},
+		[hasNoGroups],
+	)
+
 	const loadFilters = (): FilterValues => {
 		try {
 			const saved = localStorage.getItem(STORAGE_KEY)
-			if (saved) return clampStatuses({ ...DEFAULT_FILTERS, ...JSON.parse(saved) }, false)
+			if (saved) return clampHiddenFields(clampStatuses({ ...DEFAULT_FILTERS, ...JSON.parse(saved) }, false))
 		} catch {
 			/* ignore */
 		}
@@ -90,9 +117,14 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 	const [page, setPage] = useState(0)
 	const [tab, setTab] = useState<Tab>('active')
 
+	// Роль пользователя могла стать «без групп» при смене реалма: скрытые фильтры
+	// не вычищаем из состояния (иначе setState в эффекте), а отдаём производное
+	// значение — в запрос и в UI уходит уже очищенный набор.
+	const effectiveFilters = useMemo(() => clampHiddenFields(filters), [filters, clampHiddenFields])
+
 	useEffect(() => {
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(filters))
-	}, [filters, STORAGE_KEY])
+		localStorage.setItem(STORAGE_KEY, JSON.stringify(effectiveFilters))
+	}, [effectiveFilters, STORAGE_KEY])
 
 	const isArchive = tab === 'archive'
 
@@ -112,21 +144,21 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 	const queryFilter: ITaskFilter = useMemo(
 		() => ({
 			number: Number.isNaN(numberFilter) ? undefined : numberFilter,
-			ownerId: filters.ownerId ?? undefined,
-			assigneeId: filters.assigneeId ?? undefined,
-			siteIds: filters.siteIds?.length ? filters.siteIds : undefined,
-			priorities: filters.priorities?.length ? filters.priorities : undefined,
-			statuses: filters.statuses?.length ? filters.statuses : undefined,
-			dueDateFrom: filters.dueDateFrom || undefined,
-			dueDateTo: filters.dueDateTo || undefined,
+			ownerId: effectiveFilters.ownerId ?? undefined,
+			assigneeId: effectiveFilters.assigneeId ?? undefined,
+			siteIds: effectiveFilters.siteIds?.length ? effectiveFilters.siteIds : undefined,
+			priorities: effectiveFilters.priorities?.length ? effectiveFilters.priorities : undefined,
+			statuses: effectiveFilters.statuses?.length ? effectiveFilters.statuses : undefined,
+			dueDateFrom: effectiveFilters.dueDateFrom || undefined,
+			dueDateTo: effectiveFilters.dueDateTo || undefined,
 			search: debouncedSearch || undefined,
-			sort: filters.sort,
+			sort: effectiveFilters.sort,
 			mode,
 			archived: isArchive || undefined,
 			limit: isArchive ? rowsPerPage : undefined,
 			offset: isArchive ? page * rowsPerPage : undefined,
 		}),
-		[filters, mode, page, isArchive, numberFilter, debouncedSearch],
+		[effectiveFilters, mode, page, isArchive, numberFilter, debouncedSearch],
 	)
 
 	const { data, isFetching } = useGetTasksQuery(queryFilter)
@@ -176,7 +208,7 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 						{desc}
 					</Typography>
 				</Box>
-				{mode === 'created' && canCreate && (
+				{mode !== 'assigned' && canCreate && (
 					<Button
 						variant='outlined'
 						sx={{
@@ -217,7 +249,7 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 			</Tabs>
 
 			<TaskFilters
-				filters={filters}
+				filters={effectiveFilters}
 				onChange={handleFilterChange}
 				onReset={handleReset}
 				hideGrouping={isArchive}
@@ -229,10 +261,10 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 				isFetching={isFetching}
 				total={total}
 				isArchive={isArchive}
-				groupBy={filters.groupBy as GroupByField}
-				groupEnabled={!isArchive && filters.groupEnabled}
+				groupBy={effectiveFilters.groupBy as GroupByField}
+				groupEnabled={!isArchive && effectiveFilters.groupEnabled}
 				onTaskClick={handleTaskClick}
-				sort={filters.sort}
+				sort={effectiveFilters.sort}
 				onSortChange={sort => handleFilterChange({ sort })}
 				page={page}
 				totalPages={totalPages}

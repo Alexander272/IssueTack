@@ -108,9 +108,7 @@ export const Attachments = ({ attachments, canWork, taskId }: Props) => {
 		if (!taskId) return
 		try {
 			await Promise.all(
-				files.map(file =>
-					uploadAttachment({ entityType: 'ticket', entityId: taskId, file }).unwrap(),
-				),
+				files.map(file => uploadAttachment({ entityType: 'ticket', entityId: taskId, file }).unwrap()),
 			)
 			if (files.length > 1) {
 				toast.success(`Загружено файлов: ${files.length}`)
@@ -171,7 +169,8 @@ export const Attachments = ({ attachments, canWork, taskId }: Props) => {
 						display: 'grid',
 						gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
 						gap: 1.5,
-						p: 2.5,
+						pb: 2.5,
+						px: 2.5,
 					}}
 				>
 					{files.map(file => {

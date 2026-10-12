@@ -13,6 +13,8 @@ import {
 
 import type { TicketStatus, Priority } from '../../types/task'
 import { STATUS_OPTIONS, PRIORITY_MAP } from '../../constants/taskMaps'
+import { useAppSelector } from '@/hooks/redux'
+import { getHasNoGroups } from '@/features/user/userSlice'
 import type { FilterValues } from './types'
 
 interface Option {
@@ -51,6 +53,7 @@ export const Popover: FC<Props> = ({
 	assigneeOptions,
 	statusOptions,
 }) => {
+	const hasNoGroups = useAppSelector(getHasNoGroups)
 	const [local, setLocal] = useState(() => ({
 		ticketNumber: initial.ticketNumber ?? '',
 		ownerId: initial.ownerId ?? (null as string | null),
@@ -71,9 +74,9 @@ export const Popover: FC<Props> = ({
 			ticketNumber: local.ticketNumber || undefined,
 			ownerId: local.ownerId ?? undefined,
 			siteIds: local.siteIds.length > 0 ? local.siteIds : undefined,
-			dueDateFrom: local.dueDateFrom || undefined,
-			dueDateTo: local.dueDateTo || undefined,
-			priorities: local.priorities.length > 0 ? local.priorities : undefined,
+			dueDateFrom: hasNoGroups ? undefined : local.dueDateFrom || undefined,
+			dueDateTo: hasNoGroups ? undefined : local.dueDateTo || undefined,
+			priorities: hasNoGroups || local.priorities.length === 0 ? undefined : local.priorities,
 			assigneeId: local.assigneeId ?? undefined,
 			statuses: local.statuses.length > 0 ? local.statuses : undefined,
 		})
@@ -155,52 +158,56 @@ export const Popover: FC<Props> = ({
 					/>
 				</Box>
 
-				<Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #eaeef2' }}>
-					<Typography sx={sectionSx}>Срок</Typography>
-					<Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
-						<TextField
-							type='date'
-							label='С'
-							value={local.dueDateFrom}
-							onChange={e => update('dueDateFrom', e.target.value)}
-							slotProps={{ inputLabel: { shrink: true } }}
-						/>
-						<TextField
-							type='date'
-							label='По'
-							value={local.dueDateTo}
-							onChange={e => update('dueDateTo', e.target.value)}
-							slotProps={{ inputLabel: { shrink: true } }}
-						/>
+				{!hasNoGroups && (
+					<Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #eaeef2' }}>
+						<Typography sx={sectionSx}>Срок</Typography>
+						<Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+							<TextField
+								type='date'
+								label='С'
+								value={local.dueDateFrom}
+								onChange={e => update('dueDateFrom', e.target.value)}
+								slotProps={{ inputLabel: { shrink: true } }}
+							/>
+							<TextField
+								type='date'
+								label='По'
+								value={local.dueDateTo}
+								onChange={e => update('dueDateTo', e.target.value)}
+								slotProps={{ inputLabel: { shrink: true } }}
+							/>
+						</Box>
 					</Box>
-				</Box>
+				)}
 
-				<Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #eaeef2' }}>
-					<Typography sx={sectionSx}>Приоритет</Typography>
-					<Select
-						multiple
-						fullWidth
-						value={local.priorities}
-						onChange={e => update('priorities', e.target.value as Priority[])}
-						renderValue={selected => (
-							<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-								{selected.map(v => (
-									<Chip
-										key={v}
-										label={PRIORITY_OPTIONS.find(o => o.value === v)?.label ?? v}
-										size='small'
-									/>
-								))}
-							</Box>
-						)}
-					>
-						{PRIORITY_OPTIONS.map(o => (
-							<MenuItem key={o.value} value={o.value}>
-								{o.label}
-							</MenuItem>
-						))}
-					</Select>
-				</Box>
+				{!hasNoGroups && (
+					<Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #eaeef2' }}>
+						<Typography sx={sectionSx}>Приоритет</Typography>
+						<Select
+							multiple
+							fullWidth
+							value={local.priorities}
+							onChange={e => update('priorities', e.target.value as Priority[])}
+							renderValue={selected => (
+								<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+									{selected.map(v => (
+										<Chip
+											key={v}
+											label={PRIORITY_OPTIONS.find(o => o.value === v)?.label ?? v}
+											size='small'
+										/>
+									))}
+								</Box>
+							)}
+						>
+							{PRIORITY_OPTIONS.map(o => (
+								<MenuItem key={o.value} value={o.value}>
+									{o.label}
+								</MenuItem>
+							))}
+						</Select>
+					</Box>
+				)}
 
 				<Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #eaeef2' }}>
 					<Typography sx={sectionSx}>Исполнитель</Typography>

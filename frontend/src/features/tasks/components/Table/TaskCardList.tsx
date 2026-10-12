@@ -4,6 +4,8 @@ import { ChevronDownIcon } from 'lucide-mui'
 
 import type { ITask } from '../../types/task'
 import type { GroupByField } from '../../constants/taskMaps'
+import { useAppSelector } from '@/hooks/redux'
+import { getHasNoGroups } from '@/features/user/userSlice'
 import { getGroupValue, sortGroupKeys } from './getGroupValue'
 import { TaskCard } from './TaskCard'
 
@@ -16,6 +18,7 @@ interface Props {
 
 export const TaskCardList = ({ tasks, groupBy, groupEnabled, onTaskClick }: Props) => {
 	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+	const hasNoGroups = useAppSelector(getHasNoGroups)
 
 	const toggleGroup = (key: string) => {
 		setCollapsedGroups(prev => {
@@ -44,7 +47,7 @@ export const TaskCardList = ({ tasks, groupBy, groupEnabled, onTaskClick }: Prop
 
 	const groups: Record<string, ITask[]> = {}
 	tasks.forEach(task => {
-		const key = getGroupValue(task, groupBy)
+		const key = getGroupValue(task, groupBy, hasNoGroups)
 		if (!groups[key]) groups[key] = []
 		groups[key].push(task)
 	})

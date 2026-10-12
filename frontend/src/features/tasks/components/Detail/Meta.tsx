@@ -10,6 +10,8 @@ import {
 	DUE_DATE_DEFAULT_ICON,
 } from '../../constants/taskMaps'
 import { getDueDateTone, getSmartDate } from '@/utils/date'
+import { useAppSelector } from '@/hooks/redux'
+import { getHasNoGroups } from '@/features/user/userSlice'
 import { useIsRoot } from '@/features/access/utils/can'
 
 interface Props {
@@ -19,6 +21,7 @@ interface Props {
 export const Meta = ({ task }: Props) => {
 	const priorityInfo = PRIORITY_MAP[task.priority]
 	const isRoot = useIsRoot()
+	const hasNoGroups = useAppSelector(getHasNoGroups)
 	const dueTone = ACTIVE_STATUSES.includes(task.status) ? getDueDateTone(task.dueDate) : null
 	const DueDateIcon = dueTone ? DUE_DATE_ICONS[dueTone] : DUE_DATE_DEFAULT_ICON
 
@@ -68,50 +71,56 @@ export const Meta = ({ task }: Props) => {
 					}
 				/>
 				<MetaRow label='Площадка' icon={<Building2 sx={{ fontSize: 14 }} />} value={task.site?.name || '—'} />
-				<MetaRow
-					label='Приоритет'
-					icon={<Flag sx={{ fontSize: 14 }} />}
-					value={
-						<Box
-							sx={{
-								display: 'inline-flex',
-								alignItems: 'center',
-								gap: 0.5,
-								px: 1.5,
-								py: 0.25,
-								borderRadius: '999px',
-								fontSize: '0.75rem',
-								fontWeight: 500,
-								bgcolor: priorityInfo.bgColor,
-								color: priorityInfo.textColor,
-							}}
-						>
-							{priorityInfo.label}
-						</Box>
-					}
-				/>
+				{!hasNoGroups && (
+					<MetaRow
+						label='Приоритет'
+						icon={<Flag sx={{ fontSize: 14 }} />}
+						value={
+							<Box
+								sx={{
+									display: 'inline-flex',
+									alignItems: 'center',
+									gap: 0.5,
+									px: 1.5,
+									py: 0.25,
+									borderRadius: '999px',
+									fontSize: '0.75rem',
+									fontWeight: 500,
+									bgcolor: priorityInfo.bgColor,
+									color: priorityInfo.textColor,
+								}}
+							>
+								{priorityInfo.label}
+							</Box>
+						}
+					/>
+				)}
 				<Box sx={{ borderTop: '1px solid #e5e7eb', pt: 2 }} />
 				<MetaRow
 					label='Создана'
 					icon={<Calendar sx={{ fontSize: 14 }} />}
 					value={getSmartDate(task.createdAt)}
 				/>
-				<MetaRow
-					label='Срок'
-					icon={<DueDateIcon sx={{ fontSize: 14, color: dueTone ? DUE_DATE_COLORS[dueTone] : undefined }} />}
-					value={
-						<Typography
-							sx={{
-								fontSize: '0.75rem',
-								color: dueTone ? DUE_DATE_COLORS[dueTone] : '#374151',
-								fontWeight: dueTone && dueTone !== 'soon' ? 600 : 500,
-								textAlign: 'right',
-							}}
-						>
-							{getSmartDate(task.dueDate || '')}
-						</Typography>
-					}
-				/>
+				{!hasNoGroups && (
+					<MetaRow
+						label='Срок'
+						icon={
+							<DueDateIcon sx={{ fontSize: 14, color: dueTone ? DUE_DATE_COLORS[dueTone] : undefined }} />
+						}
+						value={
+							<Typography
+								sx={{
+									fontSize: '0.75rem',
+									color: dueTone ? DUE_DATE_COLORS[dueTone] : '#374151',
+									fontWeight: dueTone && dueTone !== 'soon' ? 600 : 500,
+									textAlign: 'right',
+								}}
+							>
+								{getSmartDate(task.dueDate || '')}
+							</Typography>
+						}
+					/>
+				)}
 				<MetaRow
 					label='Обновлена'
 					icon={<Clock sx={{ fontSize: 14 }} />}

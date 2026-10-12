@@ -3,7 +3,7 @@ import { Outlet, useLocation } from 'react-router'
 import { Box, Stack } from '@mui/material'
 
 import { useAppSelector } from '@/hooks/redux'
-import { getCurrentCapabilities, getIsManager } from '@/features/user/userSlice'
+import { getCurrentCapabilities, getHasNoGroups, getIsManager } from '@/features/user/userSlice'
 import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
 import { Fallback } from '@/components/Fallback/Fallback'
 import { MobileHeader } from './MobileHeader'
@@ -13,12 +13,17 @@ import { AppRoutes } from '@/pages/router/routes'
 
 const managerOnlyRoutes = new Set([AppRoutes.Groups, AppRoutes.Categories, AppRoutes.Sites])
 
+// Разделы, недоступные «обычному пользователю» без групп: рабочие списки
+// («Задачи»), аналитика («Статистика») и «Избранное» ему не нужны.
+const grouplessHiddenRoutes = new Set([AppRoutes.Tasks, AppRoutes.Favorites, AppRoutes.Statistics])
+
 // Право на доступ к админскому разделу: наличие любого из write-пермишенов администрирования.
 const adminPermissions = ['user:write', 'role:write', 'realm:write', 'permission:write']
 
 export const Layout = () => {
 	const location = useLocation()
 	const isManager = useAppSelector(getIsManager)
+	const hasNoGroups = useAppSelector(getHasNoGroups)
 	const { memberGroupIds } = useAppSelector(getCurrentCapabilities)
 	const isMember = memberGroupIds.length > 0
 	const isAdminAccess = useCheckPermissions({ anyOf: adminPermissions })
@@ -30,6 +35,7 @@ export const Layout = () => {
 				...sidebarConfig,
 				items: sidebarConfig.items.filter(item => {
 					if (!isManager && managerOnlyRoutes.has(item.path as '/groups')) return false
+					if (hasNoGroups && grouplessHiddenRoutes.has(item.path as '/tasks')) return false
 					if (item.path === AppRoutes.NotificationSettings && !isManager && !isMember) return false
 					if (location.pathname.startsWith(AppRoutes.Accesses) && !isAdminAccess) return false
 					return true

@@ -35,10 +35,14 @@ export const TaskDetailPage = () => {
 	// Неактивные (замороженные) статусы: решения, закрытые и отменённые заявки
 	// недоступны для изменения данных.
 	const isInactive = task.status === 'resolved' || task.status === 'closed' || task.status === 'cancelled'
+	const isCreator = task.creator?.id === userId
+	const isOwner = task.owner?.id === userId
 	const canEdit = !isInactive && (task.access?.canEditFields || task.access?.isAdmin)
-	const canUploadAttachments = !isInactive && task.access?.canWork
+	// Вложение к заявке доступно «рабочему» (work-доступ) и заказчику — автору или
+	// владельцу активной заявки (см. бэкенд CanAttachToTicket). Замороженные закрыты.
+	const canUploadAttachments = !isInactive && (Boolean(task.access?.canWork) || isCreator || isOwner)
 	const canCreate = Boolean(
-		task.creator?.id === userId ||
+		isCreator ||
 		task.assignee?.id === userId ||
 		task.access?.isManager ||
 		capabilities.isRealmAdmin,
@@ -88,7 +92,7 @@ export const TaskDetailPage = () => {
 								canWork={canUploadAttachments}
 								taskId={task.id}
 							/>
-							<Comments taskId={task.id} isInactive={isInactive} />
+							<Comments taskId={task.id} isInactive={isInactive} canWork={Boolean(task.access?.canWork)} />
 						</Grid>
 
 						<Grid size={{ xs: 12, lg: 3 }} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

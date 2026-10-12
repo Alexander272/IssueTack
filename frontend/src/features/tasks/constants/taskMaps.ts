@@ -138,3 +138,19 @@ export const GROUP_BY_OPTIONS = [
 ] as const
 
 export type GroupByField = (typeof GROUP_BY_OPTIONS)[number]['value']
+
+// Поля группировки, недоступные «обычному пользователю» без групп: приоритет и
+// срок ему не нужны, поэтому из меню группировки они убираются.
+const GROUPLESS_HIDDEN_GROUP_FIELDS = new Set<string>(['priority', 'dueDate'])
+
+// groupByOptionsFor отдаёт пункты группировки под роль пользователя: безгрупповому
+// скрываются «По приоритету» и «По сроку». Хранит правило скрытия в одном месте.
+export const groupByOptionsFor = (hasNoGroups: boolean) =>
+	hasNoGroups
+		? GROUP_BY_OPTIONS.filter(o => !GROUPLESS_HIDDEN_GROUP_FIELDS.has(o.value))
+		: [...GROUP_BY_OPTIONS]
+
+// groupByFieldHidden сообщает, является ли поле группировки скрытым для безгруппового
+// пользователя (нужно для санитайза сохранённого в localStorage фильтра).
+export const groupByFieldHidden = (field: GroupByField, hasNoGroups: boolean) =>
+	hasNoGroups && GROUPLESS_HIDDEN_GROUP_FIELDS.has(field)

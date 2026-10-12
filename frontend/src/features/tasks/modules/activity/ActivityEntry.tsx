@@ -1,5 +1,7 @@
 import { Box, Typography } from '@mui/material'
 import { getAvatarColor, getInitials as getInitialsBase, getDisplayName as getDisplayNameBase } from '@/utils/avatar'
+import { useAppSelector } from '@/hooks/redux'
+import { getHasNoGroups } from '@/features/user/userSlice'
 
 import type { IActivityLog } from '../../types/activity'
 import { STATUS_MAP } from '../../constants/taskMaps'
@@ -27,6 +29,14 @@ const FIELD_LABELS: Record<string, string> = {
 	category_changed: 'Категория',
 	closed: 'Закрытие',
 }
+
+// Поля активности, которые «обычному пользователю» без групп не показываем: группа
+// заявки ему ни о чём не говорит (см. Participants). Если у изменения не остаётся
+// ни одного видимого поля, весь лог-вход скрывается.
+const GROUPLESS_HIDDEN_FIELDS = new Set(['group_changed', 'group_assigned'])
+
+const visibleEntries = (values: Record<string, string>, hasNoGroups: boolean) =>
+	Object.entries(values).filter(([key]) => !(hasNoGroups && GROUPLESS_HIDDEN_FIELDS.has(key)))
 
 const getDisplayName = (log: IActivityLog): string => {
 	return getDisplayNameBase(log.actor) || log.changedByName
@@ -93,11 +103,11 @@ const DiffLine = ({
 	)
 }
 
-const ActivityDiff = ({ log }: { log: IActivityLog }) => {
+const ActivityDiff = ({ log, hasNoGroups }: { log: IActivityLog; hasNoGroups: boolean }) => {
 	if (log.action === 'created' && log.newValues) {
 		return (
 			<Box>
-				{Object.entries(log.newValues).map(([key, value]) => (
+				{visibleEntries(log.newValues, hasNoGroups).map(([key, value]) => (
 					<DiffLine key={key} fieldKey={key} label={FIELD_LABELS[key] ?? key} oldValue={value} />
 				))}
 			</Box>
@@ -107,7 +117,7 @@ const ActivityDiff = ({ log }: { log: IActivityLog }) => {
 	if (log.action === 'deleted' && log.oldValues) {
 		return (
 			<Box>
-				{Object.entries(log.oldValues).map(([key, value]) => (
+				{visibleEntries(log.oldValues, hasNoGroups).map(([key, value]) => (
 					<DiffLine key={key} fieldKey={key} label={FIELD_LABELS[key] ?? key} oldValue={value} />
 				))}
 			</Box>
@@ -115,7 +125,7 @@ const ActivityDiff = ({ log }: { log: IActivityLog }) => {
 	}
 
 	if (log.action === 'updated' && log.oldValues && log.newValues) {
-		const fields = Object.keys(log.newValues)
+		const fields = visibleEntries(log.newValues, hasNoGroups).map(([key]) => key)
 		return (
 			<Box>
 				{fields.map(key => (
@@ -135,9 +145,17 @@ const ActivityDiff = ({ log }: { log: IActivityLog }) => {
 }
 
 export const ActivityEntry = ({ log }: { log: IActivityLog }) => {
+	const hasNoGroups = useAppSelector(getHasNoGroups)
 	const displayName = getDisplayName(log)
 	const initials = getInitials(log)
 	const color = getAvatarColor(displayName)
+
+	// Если у изменения не осталось видимых полей (меняли только группу),
+	// безгрупповому весь лог-вход не показываем — иначе была бы пустая плашка.
+	const changedValues = log.action === 'updated' ? log.newValues : log.action === 'deleted' ? log.oldValues : undefined
+	if (hasNoGroups && changedValues && visibleEntries(changedValues, true).length === 0) {
+		return null
+	}
 
 	return (
 		<Box sx={{ display: 'flex', gap: 1.5 }}>
@@ -189,11 +207,11 @@ export const ActivityEntry = ({ log }: { log: IActivityLog }) => {
 
 				{log.action === 'updated' ? (
 					<Box sx={{ bgcolor: '#f3f4f6', borderRadius: '8px', p: 1.5 }}>
-						<ActivityDiff log={log} />
+						<ActivityDiff log={log} hasNoGroups={hasNoGroups} />
 					</Box>
 				) : log.action === 'deleted' ? (
 					<Box sx={{ bgcolor: '#fef2f2', borderRadius: '8px', p: 1.5 }}>
-						<ActivityDiff log={log} />
+						<ActivityDiff log={log} hasNoGroups={hasNoGroups} />
 					</Box>
 				) : (
 					<Box sx={{ fontSize: '0.8125rem', color: '#6b7280' }}>

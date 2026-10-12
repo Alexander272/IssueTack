@@ -35,6 +35,9 @@ import type { IAttachment } from '../../types/task'
 interface Props {
 	taskId: string
 	isInactive?: boolean
+	/** Есть ли у пользователя «рабочий» доступ (write или исполнитель). От него зависит
+	 *  возможность писать внутренние комментарии: заказчику (без групп) они недоступны. */
+	canWork?: boolean
 }
 
 type TabKey = 'comments' | 'history'
@@ -284,7 +287,7 @@ const CommentEntry = ({
 	)
 }
 
-export const Comments = ({ taskId, isInactive = false }: Props) => {
+export const Comments = ({ taskId, isInactive = false, canWork = true }: Props) => {
 	const [activeTab, setActiveTab] = useState<TabKey>('comments')
 	const [text, setText] = useState('')
 	const [isInternal, setIsInternal] = useState(isInactive)
@@ -312,7 +315,7 @@ export const Comments = ({ taskId, isInactive = false }: Props) => {
 			await createComment({
 				ticketId: taskId,
 				text: text.trim(),
-				isInternal: isInactive || isInternal,
+				isInternal: canWork && (isInactive || isInternal),
 				files,
 			}).unwrap()
 			setText('')
@@ -515,28 +518,32 @@ export const Comments = ({ taskId, isInactive = false }: Props) => {
 										<Paperclip sx={{ fontSize: 18 }} />
 									</IconButton>
 								</Tooltip>
-								<EyeOff sx={{ fontSize: 16, color: isInactive || isInternal ? '#92400e' : '#9ca3af' }} />
-								{isInactive ? (
-									<Typography sx={{ fontSize: '0.75rem', color: '#92400e' }}>
-										Внутренний (заявка закрыта)
-									</Typography>
-								) : (
-									<Switch
-										size='small'
-										checked={isInternal}
-										onChange={e => setIsInternal(e.target.checked)}
-										sx={{
-											'& .MuiSwitch-switchBase.Mui-checked': { color: '#f59e0b' },
-											'& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
-												bgcolor: '#f59e0b',
-											},
-										}}
-									/>
-								)}
-								{!isInactive && (
-									<Typography sx={{ fontSize: '0.75rem', color: isInternal ? '#92400e' : '#6b7280' }}>
-										Внутренний
-									</Typography>
+								{canWork && (
+									<>
+										<EyeOff sx={{ fontSize: 16, color: isInactive || isInternal ? '#92400e' : '#9ca3af' }} />
+										{isInactive ? (
+											<Typography sx={{ fontSize: '0.75rem', color: '#92400e' }}>
+												Внутренний (заявка закрыта)
+											</Typography>
+										) : (
+											<Switch
+												size='small'
+												checked={isInternal}
+												onChange={e => setIsInternal(e.target.checked)}
+												sx={{
+													'& .MuiSwitch-switchBase.Mui-checked': { color: '#f59e0b' },
+													'& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+														bgcolor: '#f59e0b',
+													},
+												}}
+											/>
+										)}
+										{!isInactive && (
+											<Typography sx={{ fontSize: '0.75rem', color: isInternal ? '#92400e' : '#6b7280' }}>
+												Внутренний
+											</Typography>
+										)}
+									</>
 								)}
 							</Box>
 							<Button

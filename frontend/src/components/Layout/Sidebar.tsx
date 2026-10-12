@@ -180,6 +180,7 @@ export const Sidebar = ({ config, mobileOpen, onMobileClose }: SidebarProps) => 
 					})}
 				</ListItem>
 			)}
+			<Divider component='li' sx={{ my: 1 }} />
 			<ListItem key='log-out' disablePadding sx={{ mb: 0.5 }}>
 				{renderButton({
 					icon: <LogOutIcon sx={{ fontSize: 20 }} />,

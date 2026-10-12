@@ -1,11 +1,11 @@
 import { Box, Button, Menu, MenuItem } from '@mui/material'
-import { ChevronDown, Check, Tag, Building2, CheckCircle2, RotateCcw, XCircle, Hand } from 'lucide-mui'
+import { ChevronDown, Check, CheckCircle2, RotateCcw, XCircle, Hand } from 'lucide-mui'
 import { useState } from 'react'
 
 import type { ITask, TicketStatus } from '../../types/task'
 import { STATUS_MAP } from '../../constants/taskMaps'
 import { useAppSelector } from '@/hooks/redux'
-import { getUserId, getCurrentCapabilities } from '@/features/user/userSlice'
+import { getUserId, getCurrentCapabilities, getHasNoGroups } from '@/features/user/userSlice'
 import { useUpdateTaskMutation, useTakeTaskMutation } from '../../tasksApiSlice'
 import { useCreateCommentMutation } from '../../modules/comments/commentsApiSlice'
 import { TaskStatusBadge } from '../TaskStatusBadge'
@@ -28,19 +28,28 @@ export const InfoBar = ({ task }: Props) => {
 	const [createComment] = useCreateCommentMutation()
 	const currentUserId = useAppSelector(getUserId)
 	const capabilities = useAppSelector(getCurrentCapabilities)
-	const isOwner = currentUserId != null && currentUserId === task.owner?.id
-	// Меню «Изменить статус» доступно только автору, исполнителю, менеджеру группы
-	// или админу реалма. Права Casbin write/canWork сами по себе его не открывают.
+	const hasNoGroups = useAppSelector(getHasNoGroups)
 	const isCreator = currentUserId != null && currentUserId === task.creator?.id
+	// «Владелец» решений — сам владелец заявки или её автор: автор ведёт заявку теми
+	// же тремя решениями (отмена/подтверждение/возврат).
+	const isOwner = isCreator || (currentUserId != null && currentUserId === task.owner?.id)
 	const isAssignee = currentUserId != null && currentUserId === task.assignee?.id
 	const isManager = Boolean(task.access?.isManager) || capabilities.isRealmAdmin
-	const isStatusManager = isCreator || isAssignee || isManager
+	// Меню «Изменить статус» — только «рабочим» и менеджерам: исполнителю (заявку
+	// назначили явно, он ведёт её по статусам) и менеджеру группы/админу реалма.
+	// Автор и владелец меню не видят, даже если автор состоит в группе: они ведут
+	// заявку решениями владельца (Отменить/Подтвердить/Вернуть).
+	const isStatusManager = isAssignee || isManager
 	// Закрытая/отменённая заявка терминальна — меню «Изменить статус» не показываем.
 	const isTerminal = task.status === 'closed' || task.status === 'cancelled'
 	const isActive = ACTIVE_STATUSES.includes(task.status)
 	const canUseMenu = !isTerminal && isStatusManager
 	const canTake = Boolean(task.access?.canTake)
 	const allowedStatuses = task.access?.allowedStatuses
+	// «Терминальные» статусы (Закрыта/Отменена) — решения менеджера. Чистому
+	// исполнителю их не показываем (бэкенд всё равно не даст — canChangeStatus /
+	// isCreatorOrManager), чтобы в меню не висели серые недоступные пункты.
+	const canSeeTerminalStatuses = isManager
 	const canAccept = isOwner && task.status === 'resolved'
 	const canReturn = isOwner && task.status === 'resolved'
 	// Отменить можно только новую (open) заявку.
@@ -106,53 +115,11 @@ export const InfoBar = ({ task }: Props) => {
 		>
 			<Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1.5 }}>
 				<TaskStatusBadge status={task.status} sx={{ height: 33 }} />
-				<TaskPriorityBadge priority={task.priority} />
-
-				{task.category && (
-					<Box
-						sx={{
-							display: 'inline-flex',
-							alignItems: 'center',
-							gap: 0.5,
-							px: 1.5,
-							py: 0.5,
-							height: 33,
-							borderRadius: '999px',
-							fontSize: '0.75rem',
-							fontWeight: 500,
-							bgcolor: '#f3e8ff',
-							color: '#6b21a8',
-						}}
-					>
-						<Tag sx={{ fontSize: 14 }} />
-						{task.category.name}
-					</Box>
-				)}
-
-				{task.site && (
-					<Box
-						sx={{
-							display: 'inline-flex',
-							alignItems: 'center',
-							gap: 0.5,
-							px: 1.5,
-							py: 0.5,
-							height: 33,
-							borderRadius: '999px',
-							fontSize: '0.75rem',
-							fontWeight: 500,
-							bgcolor: '#f3f4f6',
-							color: '#374151',
-						}}
-					>
-						<Building2 sx={{ fontSize: 14 }} />
-						{task.site.name}
-					</Box>
-				)}
+				{!hasNoGroups && <TaskPriorityBadge priority={task.priority} />}
 			</Box>
 
 			<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
-				{(task.access?.isManager || capabilities.isRealmAdmin) && isActive && !task.dueDate && (
+				{!hasNoGroups && (task.access?.isManager || capabilities.isRealmAdmin) && isActive && !task.dueDate && (
 					<DeadlinePopover onSetDueDate={handleSetDueDate} />
 				)}
 
@@ -227,8 +194,16 @@ export const InfoBar = ({ task }: Props) => {
 							},
 						}}
 					>
-						{(Object.entries(STATUS_MAP) as [TicketStatus, (typeof STATUS_MAP)[TicketStatus]][]).map(
-							([value, info]) => {
+						{(
+							Object.entries(STATUS_MAP) as [TicketStatus, (typeof STATUS_MAP)[TicketStatus]][]
+						)
+							.filter(
+								([value]) =>
+									canSeeTerminalStatuses ||
+									(value !== 'closed' && value !== 'cancelled') ||
+									value === task.status,
+							)
+							.map(([value, info]) => {
 								const isAllowed = !allowedStatuses || allowedStatuses.includes(value)
 								const isCurrent = value === task.status
 								return (
