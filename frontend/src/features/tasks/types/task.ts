@@ -20,6 +20,11 @@ export interface IGroupShort {
 	name: string
 }
 
+export interface IEquipmentShort {
+	id: string
+	name: string
+}
+
 export interface IAttachment {
 	id: string
 	entityType: string
@@ -67,6 +72,7 @@ export interface ITask {
 	subtasks?: ISubtask[]
 	attachments?: IAttachment[]
 	access?: IAccessFlags
+	equipment?: IEquipmentShort | null
 }
 
 export interface ITaskFilter {
@@ -85,6 +91,7 @@ export interface ITaskFilter {
 	limit?: number
 	offset?: number
 	mode?: string
+	equipmentId?: string
 }
 
 export interface ISubtaskCreateDTO {
@@ -111,6 +118,7 @@ export interface ITaskDTO {
 	resolvedAt?: string | null
 	/** Подзадачи, создаваемые вместе с заявкой (автор, статус, приоритет и порядок проставит бэкенд). */
 	subtasks?: ISubtaskCreateDTO[]
+	equipmentId?: string | null
 }
 
 export interface ISubtask {

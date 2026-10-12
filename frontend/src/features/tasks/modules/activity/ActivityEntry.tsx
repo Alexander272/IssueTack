@@ -25,6 +25,7 @@ const FIELD_LABELS: Record<string, string> = {
 	due_date_changed: 'Срок',
 	site_changed: 'Площадка',
 	category_changed: 'Категория',
+	equipment_changed: 'Оборудование',
 	closed: 'Закрытие',
 }
 

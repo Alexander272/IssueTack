@@ -1,5 +1,6 @@
-import { Box, Typography } from '@mui/material'
-import { Info, Layers, Building2, Flag, Calendar, Clock, Hash } from 'lucide-mui'
+import { Link as RouterLink } from 'react-router'
+import { Box, Typography, Link } from '@mui/material'
+import { Info, Layers, Building2, Flag, Calendar, Clock, Hash, PackageIcon } from 'lucide-mui'
 
 import type { ITask } from '../../types/task'
 import {
@@ -67,7 +68,31 @@ export const Meta = ({ task }: Props) => {
 						)
 					}
 				/>
-				<MetaRow label='Площадка' icon={<Building2 sx={{ fontSize: 14 }} />} value={task.site?.name || '—'} />
+				<MetaRow
+					label='Площадка'
+					icon={<Building2 sx={{ fontSize: 14 }} />}
+					value={task.site?.name || '—'}
+				/>
+				{task.equipment && (
+					<MetaRow
+						label='Оборудование'
+						icon={<PackageIcon sx={{ fontSize: 14 }} />}
+						value={
+							<Link
+								component={RouterLink}
+								to={`/equipment/${task.equipment.id}`}
+								sx={{
+									fontSize: '0.8125rem',
+									color: 'primary.main',
+									textDecoration: 'none',
+									'&:hover': { textDecoration: 'underline' },
+								}}
+							>
+								{task.equipment.name}
+							</Link>
+						}
+					/>
+				)}
 				<MetaRow
 					label='Приоритет'
 					icon={<Flag sx={{ fontSize: 14 }} />}

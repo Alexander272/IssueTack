@@ -6,7 +6,7 @@ import type { FormValues } from './types'
 // подхватить чужой черновик. Вложения (File) не сохраняются — их нельзя
 // сериализовать.
 
-const VERSION = 1
+const VERSION = 2
 
 function draftKey(realmId: string, userId: string) {
 	return `@issueTrack/taskCreateDraft:${realmId}:${userId}`
@@ -32,7 +32,8 @@ function isFormValues(value: unknown): value is FormValues {
 		typeof v.siteId === 'string' &&
 		(v.dueDate === null || typeof v.dueDate === 'string') &&
 		Array.isArray(v.subtasks) &&
-		v.subtasks.every(isSubtask)
+		v.subtasks.every(isSubtask) &&
+		(v.equipmentId === null || typeof v.equipmentId === 'string')
 	)
 }
 

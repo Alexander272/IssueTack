@@ -111,6 +111,8 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 			assigneeId: task.assignee?.id ?? null,
 			siteId: task.site.id,
 			dueDate: task.dueDate ?? null,
+			subtasks: [],
+			equipmentId: task.equipment?.id ?? null,
 		},
 		mode: 'onTouched',
 	})
@@ -136,6 +138,7 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 				assigneeId: data.assigneeId || null,
 				managerId: task.manager?.id ?? null,
 				dueDate: data.dueDate || null,
+				equipmentId: data.equipmentId || null,
 			}
 
 			try {

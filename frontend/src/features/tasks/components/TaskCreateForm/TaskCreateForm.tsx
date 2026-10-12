@@ -35,6 +35,7 @@ const EMPTY_FORM: FormValues = {
 	siteId: '',
 	dueDate: null,
 	subtasks: [],
+	equipmentId: null,
 }
 
 export type TaskCreateFormHandle = { requestReset: () => void }
@@ -163,6 +164,7 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 				subtasks: data.subtasks
 					.map(s => ({ title: s.title.trim(), description: s.description.trim() }))
 					.filter(s => s.title.length > 0),
+				equipmentId: data.equipmentId || null,
 			}
 
 			try {

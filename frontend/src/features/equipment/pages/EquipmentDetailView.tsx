@@ -18,8 +18,7 @@ import { toast } from 'react-toastify'
 import { Link as RouterLink, useNavigate, useParams } from 'react-router'
 
 import { getEquipmentStatus } from '../types/equipment'
-import {
-	useDeleteEquipmentMutation,
+import { useDeleteEquipmentMutation,
 	useGetEquipmentChildrenQuery,
 	useGetEquipmentCompositionQuery,
 	useGetEquipmentQuery,
@@ -28,9 +27,11 @@ import {
 import { EquipmentDialog } from '../components/EquipmentDialog'
 import { EquipmentAssignDialog } from '../components/EquipmentAssignDialog'
 import { EquipmentCompositionDialog } from '../components/EquipmentCompositionDialog'
-import { EquipmentHistory } from '../components/EquipmentHistory'
 import { EquipmentStatusMenu } from '../components/EquipmentStatusMenu'
 import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
+import { useGetTasksQuery } from '@/features/tasks/tasksApiSlice'
+import { TaskCardList } from '@/features/tasks/components/Table/TaskCardList'
+import { Loader } from '@/components/Fallback/Loader'
 import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
 import type { IFetchError } from '@/app/types/error'
 
@@ -319,9 +320,9 @@ export const EquipmentDetailView: FC = () => {
 
 			<Box sx={{ mb: 4 }}>
 				<Typography variant='h6' sx={{ fontWeight: 'bold', color: '#1f2937', mb: 1.5 }}>
-					История
+					Заявки по оборудованию
 				</Typography>
-				<EquipmentHistory unit={unit} />
+				<EquipmentTasks unitId={unit.id} />
 			</Box>
 
 			<EquipmentDialog open={dialogOpen} onClose={() => setDialogOpen(false)} unit={unit} />
@@ -346,4 +347,28 @@ export const EquipmentDetailView: FC = () => {
 			/>
 		</Box>
 	)
+}
+
+const EquipmentTasks = ({ unitId }: { unitId: string }) => {
+	const { data, isLoading, isError } = useGetTasksQuery({ equipmentId: unitId, limit: 50 })
+
+	if (isLoading) {
+		return <Loader />
+	}
+	if (isError || !data?.data) {
+		return (
+			<Box sx={{ p: 2, color: '#6b7280', fontSize: 14, border: '1px dashed #e5e7eb', borderRadius: '12px' }}>
+				Заявки не найдены
+			</Box>
+		)
+	}
+	if (data.data.length === 0) {
+		return (
+			<Box sx={{ p: 2, color: '#6b7280', fontSize: 14, border: '1px solid #eef2f6', borderRadius: '12px', bgcolor: '#fff' }}>
+				По этому оборудованию заявок нет
+			</Box>
+		)
+	}
+
+	return <TaskCardList tasks={data.data} groupBy='category' groupEnabled={false} onTaskClick={() => {}} />
 }

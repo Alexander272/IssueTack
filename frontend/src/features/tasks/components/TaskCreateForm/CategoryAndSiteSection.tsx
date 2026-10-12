@@ -1,8 +1,10 @@
 import { Autocomplete, Box, TextField, Typography } from '@mui/material'
 import { Controller, useFormContext } from 'react-hook-form'
-import { Building2, Layers, ListTreeIcon } from 'lucide-mui'
+import { Building2, Layers, ListTreeIcon, PackageIcon } from 'lucide-mui'
 import type { ICategory } from '@/features/categories/types/category'
 import type { ISite } from '@/features/sites/types/site'
+import type { IEquipment } from '@/features/equipment/types/equipment'
+import { useGetAllEquipmentQuery } from '@/features/equipment/equipmentApiSlice'
 import { SectionCard } from './SectionCard'
 import { fieldLabelSx } from './styles'
 import type { FormValues } from './types'
@@ -19,6 +21,9 @@ const sectionOfCategory = (category: ICategory) => category.categoryGroup?.name 
 
 export const CategoryAndSiteSection = ({ number = 1, categories, sites }: Props) => {
 	const { control } = useFormContext<FormValues>()
+	const { data: equipmentData } = useGetAllEquipmentQuery({ limit: 500 })
+
+	const equipment = (equipmentData?.data ?? []) as IEquipment[]
 
 	return (
 		<SectionCard
@@ -212,6 +217,69 @@ export const CategoryAndSiteSection = ({ number = 1, categories, sites }: Props)
 										helperText={fieldState.error?.message}
 										placeholder='Выберите площадку'
 									/>
+								)}
+							/>
+						)}
+					/>
+				</Box>
+				<Box sx={{ gridColumn: { xs: '1 / -1', sm: '1 / -1' } }}>
+					<Typography variant='caption' sx={fieldLabelSx}>
+						Оборудование
+					</Typography>
+					<Controller
+						control={control}
+						name='equipmentId'
+						render={({ field }) => (
+							<Autocomplete
+								options={equipment}
+								getOptionLabel={o => o.name}
+								getOptionKey={o => o.id}
+								value={equipment.find(e => e.id === field.value) ?? null}
+								onChange={(_, value) => field.onChange(value?.id ?? null)}
+								noOptionsText='Нет оборудования'
+								renderOption={(props, option) => {
+									const { key, ...rest } = props
+									return (
+										<Box component='li' key={key} {...rest}>
+											<Box
+												sx={{
+													width: 32,
+													height: 32,
+													borderRadius: '8px',
+													bgcolor: '#dbeafe',
+													color: 'primary.main',
+													display: 'flex',
+													alignItems: 'center',
+													justifyContent: 'center',
+													mr: 1.5,
+													flexShrink: 0,
+												}}
+											>
+												<PackageIcon sx={{ fontSize: 16 }} />
+											</Box>
+											<Box sx={{ minWidth: 0 }}>
+												<Typography sx={{ fontSize: '0.8125rem', fontWeight: 500 }}>
+													{option.name}
+												</Typography>
+												{(option.inventoryNumber || option.serialNumber) && (
+													<Typography
+														sx={{
+															fontSize: '0.6875rem',
+															color: '#9ca3af',
+															overflow: 'hidden',
+															textOverflow: 'ellipsis',
+															whiteSpace: 'nowrap',
+														}}
+													>
+														{option.inventoryNumber || option.serialNumber}
+													</Typography>
+												)}
+											</Box>
+										</Box>
+									)
+								}}
+								renderInput={params => (
+									<TextField {...params} size='small' placeholder='Выберите оборудование' />
 								)}
 							/>
 						)}
