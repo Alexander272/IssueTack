@@ -1110,6 +1110,21 @@ func (m *MockTicketAccessChecker) CanAdministerTickets(ctx context.Context, user
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockTicketAccessChecker) ownerReadOnly(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) (bool, error) {
+	args := m.Called(ctx, ticket, userID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockTicketAccessChecker) IsCustomer(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) (bool, error) {
+	args := m.Called(ctx, ticket, userID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockTicketAccessChecker) CanAttachToTicket(ctx context.Context, dto *models.AccessCheckDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+
 func (m *MockTicketAccessChecker) CanEditSubtask(ctx context.Context, userID uuid.UUID, subtask *models.Subtask) (bool, error) {
 	args := m.Called(ctx, userID, subtask)
 	return args.Bool(0), args.Error(1)

@@ -578,7 +578,12 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 			if loadErr != nil {
 				return fmt.Errorf("failed to load ticket for access check: %w", loadErr)
 			}
-			if !s.isOwner(old, dto.Actor.ID) {
+			// Автор заявки, как и владелец, сохраняет ограниченный доступ к ней
+			// даже без write/work-прав (безгрупповой автор — «заказчик»): ему
+			// доступны решения по статусам через ownerTransitionAllowed и правка
+			// своих полей через canEditFields. Менеджерские права (write/группа)
+			// сюда не попадают — они прошли CheckAccess выше.
+			if !s.isOwnerOrCreator(old, dto.Actor.ID) {
 				return err
 			}
 			ownerOnly = true
@@ -779,9 +784,10 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 			}
 		}
 
-		// Для владельца без write/work-доступа переходы по статусам уже проверены
-		// через ownerTransitionAllowed выше; здесь ограничиваем правку не-статусных
-		// полей: владелец может их менять только пока заявка ещё в статусе open.
+		// Для владельца/автора без write/work-доступа переходы по статусам уже
+		// проверены через ownerTransitionAllowed выше; здесь ограничиваем правку
+		// не-статусных полей через canEditFields: автор правит всегда, владелец —
+		// только пока заявка ещё в статусе open.
 		if ownerOnly {
 			for _, change := range changes {
 				if change.Tag == models.ActionStatusChanged || change.Tag == models.ActionClosed {
@@ -867,6 +873,26 @@ func (s *TicketService) Take(ctx context.Context, dto *models.TakeTicketDTO) err
 
 	if err := s.access.CheckAccessOnTicket(ctx, ticket, dto.Actor.ID, string(access.Read)); err != nil {
 		return err
+	}
+
+	// Заказчик (owner) с доступом только по владению не может «взять заявку»: его
+	// роль — просмотр/комментарий/решения владельца (см. ownerReadOnly). Автор без
+	// групп (IsCustomer) — тоже заказчик, а не рабочий, поэтому «взять» ему нельзя.
+	ownerReadOnly, err := s.access.ownerReadOnly(ctx, ticket, dto.Actor.ID)
+	if err != nil {
+		return err
+	}
+	if ownerReadOnly {
+		return models.ErrPermissionDenied
+	}
+	if ticket.Creator.ID == dto.Actor.ID {
+		customer, err := s.access.IsCustomer(ctx, ticket, dto.Actor.ID)
+		if err != nil {
+			return err
+		}
+		if customer {
+			return models.ErrPermissionDenied
+		}
 	}
 
 	if ticket.Assignee != nil {
@@ -1190,6 +1216,13 @@ func (s *TicketService) isOwner(ticket *models.Ticket, actorID uuid.UUID) bool {
 	return ticket.Owner != nil && ticket.Owner.ID == actorID
 }
 
+// isOwnerOrCreator — владелец заявки или её автор. Оба получают «решения владельца»
+// (отмена/подтверждение/возврат), когда у них нет write/work-доступа: заказчик —
+// по владению, безгрупповой автор — как заказчик своей же заявки (см. Update).
+func (s *TicketService) isOwnerOrCreator(ticket *models.Ticket, actorID uuid.UUID) bool {
+	return s.isOwner(ticket, actorID) || ticket.Creator.ID == actorID
+}
+
 // canEditFields определяет, может ли пользователь править не-статусные поля тикета
 // (заголовок/описание/приоритет/срок/группа/исполнитель и т.п.): создатель или
 // менеджер группы — всегда; владелец — только пока заявка ещё в статусе open
@@ -1229,10 +1262,10 @@ func (s *TicketService) validateAssigneeForAssign(ctx context.Context, ticket *m
 	return nil
 }
 
-// ownerTransitionAllowed — допустимые переходы по статусам для «чистого» владельца (без
-// write/work-доступа). Владелец может только: open → cancelled (отменить новую заявку),
-// resolved → closed (принять решение) и resolved → in_progress (вернуть в работу). Все
-// прочие смены статусов и изменение полей для него запрещены (проверяется в Update).
+// ownerTransitionAllowed — допустимые переходы по статусам для «чистого» владельца
+// или автора заявки (без write/work-доступа). Разрешены только: open → cancelled
+// (отменить новую заявку), resolved → closed (принять решение) и resolved → in_progress
+// (вернуть в работу). Все прочие смены статусов для них запрещены (проверяется в Update).
 func (s *TicketService) ownerTransitionAllowed(ticket *models.Ticket, dto *models.TicketDTO) bool {
 	if !dto.HasField("status") || dto.Status == ticket.Status {
 		return false
@@ -1300,8 +1333,23 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 
 	// CanTake — заявку можно «взять в работу»: она активна (не resolved/closed/cancelled)
 	// и «забираема» — исполнителя нет совсем, либо исполнитель — другой пользователь,
-	// а заявка ещё в статусе open (см. Take).
-	flags.CanTake = !isTicketInactive(ticket.Status) &&
+	// а заявка ещё в статусе open (см. Take). Кнопка не показывается «не-рабочим»:
+	// чистому заказчику (ownerReadOnly) и автору-без-групп (IsCustomer) — их роль
+	// просмотр/комментарий/решения, а не работа.
+	ownerReadOnly, err := s.access.ownerReadOnly(ctx, ticket, userID)
+	if err != nil {
+		return nil, err
+	}
+	nonWorker := ownerReadOnly
+	if !nonWorker && ticket.Creator.ID == userID {
+		customer, err := s.access.IsCustomer(ctx, ticket, userID)
+		if err != nil {
+			return nil, err
+		}
+		nonWorker = customer
+	}
+	flags.CanTake = !nonWorker &&
+		!isTicketInactive(ticket.Status) &&
 		(ticket.Assignee == nil ||
 			(ticket.Assignee.ID != userID && ticket.Status == models.StatusOpen))
 
@@ -1403,7 +1451,8 @@ func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *mode
 		if isCreatorOrMgr || isOwner {
 			add(models.StatusClosed)
 		}
-		if hasWrite || hasWork || isOwner {
+		// Возврат в работу доступен владельцу и автору (как и ownerTransitionAllowed).
+		if hasWrite || hasWork || isOwner || isCreator {
 			add(models.StatusInProgress)
 		}
 		if hasWrite || hasWork {

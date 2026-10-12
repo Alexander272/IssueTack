@@ -35,6 +35,15 @@ func ticketServiceFixtures() (*MockTicketsRepo, *MockActivityLogService, *MockSu
 	return mockRepo, mockLogs, mockSubtasks, mockAttachments, mockNotifications, mockGroups, mockPolicies, svc
 }
 
+// markUserAsEmployee помечает пользователя «рабочим»: у него есть хотя бы одна
+// группа, поэтому IsCustomer=false и он сохраняет write/work-доступ к заявке.
+// Нужно тестам, где автор/исполнитель — сотрудник, а не внешний заказчик
+// (у заказчика групп нет, и он намеренно лишается write-доступа).
+func markUserAsEmployee(m *MockGroupsRepo, userID uuid.UUID) {
+	m.On("GetManagedGroups", mock.Anything, userID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	m.On("GetMemberGroups", mock.Anything, userID, (*uuid.UUID)(nil)).Return([]uuid.UUID{uuid.New()}, nil)
+}
+
 func TestTicketService_Get_Elevated(t *testing.T) {
 	mockRepo, _, mockSubtasks, _, _, _, mockPolicies, svc := ticketServiceFixtures()
 
@@ -261,19 +270,21 @@ func TestTicketService_Get_CreatedOrOwned_Regular(t *testing.T) {
 }
 
 func TestTicketService_GetByID_Success(t *testing.T) {
-	mockRepo, _, mockSubtasks, mockAttachments, _, _, mockPolicies, svc := ticketServiceFixtures()
+	mockRepo, _, mockSubtasks, mockAttachments, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
 
 	actorID := uuid.New()
 	ticketID := uuid.New()
 	req := &models.GetTicketByIdDTO{ID: ticketID, Actor: &models.Actor{ID: actorID, Name: "test"}}
 
 	// Создатель заявки читает собственную заявку: coarse-гейт Casbin даёт роль
-	// user, а решение принимает атрибутная модель (создатель).
+	// user, а решение принимает атрибутная модель (создатель). Автор здесь —
+	// сотрудник (есть группа), иначе он был бы заказчиком без write-доступа.
 	ticket := &models.Ticket{ID: ticketID, Title: "Test Ticket", Creator: models.UserShort{ID: actorID, Username: "test"}}
 	mockRepo.On("GetByID", mock.Anything, req).Return(ticket, nil)
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Read)).Return(true, nil)
 	mockSubtasks.On("GetByTicketID", mock.Anything, ticketID, actorID).Return([]*models.Subtask{}, nil)
 	mockAttachments.On("GetByEntity", mock.Anything, mock.AnythingOfType("*models.EntityAccessDTO")).Return([]*models.Attachment{}, nil)
+	markUserAsEmployee(mockGroups, actorID)
 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(true, nil)
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Delete)).Return(false, nil)
@@ -649,7 +660,7 @@ func TestTicketService_Create_ForeignRealmGroup_Denied(t *testing.T) {
 }
 
 func TestTicketService_Update_Success(t *testing.T) {
-	mockRepo, mockLogs, _, _, mockNotifications, _, mockPolicies, svc := ticketServiceFixtures()
+	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
 
 	actorID := uuid.New()
 	ticketID := uuid.New()
@@ -671,6 +682,7 @@ func TestTicketService_Update_Success(t *testing.T) {
 	// поэтому supervisor-роли у него нет (IsRealmSupervisor → category/site write).
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	markUserAsEmployee(mockGroups, actorID)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
@@ -765,7 +777,8 @@ func TestTicketService_Update_ManagerIdEcho_Allowed(t *testing.T) {
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
-	mockGroups.AssertNotCalled(t, "GetManagedGroups")
+	// Автор — сотрудник: для проверки «не заказчик» достаточно управляемых групп.
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{groupID}, nil)
 
 	err := svc.Update(context.Background(), dto)
 	assert.NoError(t, err)
@@ -1108,7 +1121,7 @@ func TestTicketService_Update_Assignee_SetClosed_Denied(t *testing.T) {
 }
 
 func TestTicketService_Update_Creator_SetClosed_Success(t *testing.T) {
-	mockRepo, mockLogs, _, _, mockNotifications, _, mockPolicies, svc := ticketServiceFixtures()
+	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
 
 	actorID := uuid.New()
 	groupID := uuid.New()
@@ -1131,6 +1144,7 @@ func TestTicketService_Update_Creator_SetClosed_Success(t *testing.T) {
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	markUserAsEmployee(mockGroups, actorID)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
@@ -1142,8 +1156,88 @@ func TestTicketService_Update_Creator_SetClosed_Success(t *testing.T) {
 	mockRepo.AssertExpectations(t)
 }
 
+// TestTicketService_Update_CustomerCreator_NotOwner_Cancel_Success — автор без групп,
+// не владелец и без write/work-доступа, всё равно может отменить свою заявку:
+// isOwnerOrCreator пропускает его в режим ownerOnly, а ownerTransitionAllowed
+// разрешает open → cancelled.
+func TestTicketService_Update_CustomerCreator_NotOwner_Cancel_Success(t *testing.T) {
+	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	ownerID := uuid.New()
+	groupID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Status:   models.StatusCancelled,
+		Provided: map[string]bool{"status": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:      ticketID,
+		Title:   "Original Ticket",
+		Status:  models.StatusOpen,
+		Creator: models.UserShort{ID: actorID},
+		Owner:   &models.UserShort{ID: ownerID},
+		Group:   &models.GroupShort{ID: groupID, Name: "Test Group"},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	// Автор без групп — «заказчик»: ни управляемых, ни членских групп.
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+}
+
+// TestTicketService_Update_CustomerCreator_NotOwner_ArbitraryStatus_Denied — автор без
+// групп не переводит активную заявку в произвольный статус (open → in_progress):
+// ownerTransitionAllowed оставляет ему только решения владельца (отмена/подтверждение/
+// возврат).
+func TestTicketService_Update_CustomerCreator_NotOwner_ArbitraryStatus_Denied(t *testing.T) {
+	mockRepo, _, _, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	ownerID := uuid.New()
+	groupID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Status:   models.StatusInProgress,
+		Provided: map[string]bool{"status": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:      ticketID,
+		Title:   "Original Ticket",
+		Status:  models.StatusOpen,
+		Creator: models.UserShort{ID: actorID},
+		Owner:   &models.UserShort{ID: ownerID},
+		Group:   &models.GroupShort{ID: groupID, Name: "Test Group"},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+	mockRepo.AssertNotCalled(t, "Update")
+}
+
 func TestTicketService_Update_Close_NotResolved_Denied(t *testing.T) {
-	mockRepo, _, _, _, _, _, mockPolicies, svc := ticketServiceFixtures()
+	mockRepo, _, _, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
 
 	actorID := uuid.New()
 	groupID := uuid.New()
@@ -1164,6 +1258,9 @@ func TestTicketService_Update_Close_NotResolved_Denied(t *testing.T) {
 	}
 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	markUserAsEmployee(mockGroups, actorID)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 
 	err := svc.Update(context.Background(), dto)
@@ -1471,7 +1568,7 @@ func TestTicketService_Update_PolicyWrite_NotManager_SetClosed_Denied(t *testing
 }
 
 func TestTicketService_Update_Group_NonAdmin_Denied(t *testing.T) {
-	mockRepo, _, _, _, _, _, mockPolicies, svc := ticketServiceFixtures()
+	mockRepo, _, _, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
 
 	actorID := uuid.New()
 	groupID := uuid.New()
@@ -1494,6 +1591,7 @@ func TestTicketService_Update_Group_NonAdmin_Denied(t *testing.T) {
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	markUserAsEmployee(mockGroups, actorID)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 
 	err := svc.Update(context.Background(), dto)
@@ -1610,6 +1708,7 @@ func TestTicketService_Update_Assignee_NonAdmin_NonManager_Denied(t *testing.T) 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
 	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{groupID}, nil)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 
 	err := svc.Update(context.Background(), dto)
@@ -1867,8 +1966,9 @@ func TestTicketService_CheckAccess_Denied(t *testing.T) {
 // coarse-права на тикет в модели доступа не участвуют.
 func TestTicketService_CheckAccess_AttributeMatrix(t *testing.T) {
 	type attrs struct {
-		creator, assignee, member, manager, supervisor, coarse bool
-		noGroup                                                bool
+		creator, assignee, owner, member, manager, supervisor, coarse bool
+		noGroup                                                       bool
+		groupless                                                     bool
 	}
 	// coarse в атрибутах не участвует — CheckAccessOnTicket больше не смотрит в
 	// Casbin за ticket:read/write. Поле осталось, чтобы кейсы прямо называли
@@ -1886,6 +1986,11 @@ func TestTicketService_CheckAccess_AttributeMatrix(t *testing.T) {
 		{"grouped/creator/delete", string(access.Delete), attrs{creator: true}, false},
 		{"grouped/assignee/read", string(access.Read), attrs{assignee: true}, true},
 		{"grouped/assignee/write", string(access.Write), attrs{assignee: true}, false},
+		// Заказчик (owner) видит заявку, но не правит и не удаляет её: доступ по
+		// владению даёт только чтение.
+		{"grouped/owner/read", string(access.Read), attrs{owner: true}, true},
+		{"grouped/owner/write", string(access.Write), attrs{owner: true}, false},
+		{"grouped/owner/delete", string(access.Delete), attrs{owner: true}, false},
 		{"grouped/member/read", string(access.Read), attrs{member: true}, true},
 		{"grouped/member/write", string(access.Write), attrs{member: true}, false},
 		{"grouped/manager/read", string(access.Read), attrs{manager: true}, true},
@@ -1916,12 +2021,22 @@ func TestTicketService_CheckAccess_AttributeMatrix(t *testing.T) {
 		{"ungrouped/creator/delete", string(access.Delete), attrs{creator: true, noGroup: true}, false},
 		{"ungrouped/assignee/read", string(access.Read), attrs{assignee: true, noGroup: true}, true},
 		{"ungrouped/assignee/write", string(access.Write), attrs{assignee: true, noGroup: true}, true},
+		{"ungrouped/owner/read", string(access.Read), attrs{owner: true, noGroup: true}, true},
+		{"ungrouped/owner/write", string(access.Write), attrs{owner: true, noGroup: true}, false},
+		{"ungrouped/owner/delete", string(access.Delete), attrs{owner: true, noGroup: true}, false},
 		{"ungrouped/stranger/read", string(access.Read), attrs{noGroup: true}, false},
 		{"ungrouped/stranger/write", string(access.Write), attrs{noGroup: true}, false},
 		{"ungrouped/member_no_group/read", string(access.Read), attrs{member: true, manager: true, noGroup: true}, false},
 		{"ungrouped/supervisor/foreign_read", string(access.Read), attrs{supervisor: true, coarse: true, noGroup: true}, true},
 		{"ungrouped/supervisor_no_coarse/foreign_read", string(access.Read), attrs{supervisor: true, noGroup: true}, true},
 		{"ungrouped/supervisor_no_coarse/foreign_write", string(access.Write), attrs{supervisor: true, noGroup: true}, true},
+		// Автор без групп — «заказчик», а не рабочий: write-доступа у него нет,
+		// хотя чтение своей заявки сохраняется. Модель едина и для тикета с
+		// группой, и без неё.
+		{"grouped/groupless_creator/read", string(access.Read), attrs{creator: true, groupless: true}, true},
+		{"grouped/groupless_creator/write", string(access.Write), attrs{creator: true, groupless: true}, false},
+		{"ungrouped/groupless_creator/read", string(access.Read), attrs{creator: true, noGroup: true, groupless: true}, true},
+		{"ungrouped/groupless_creator/write", string(access.Write), attrs{creator: true, noGroup: true, groupless: true}, false},
 	}
 
 	for _, tc := range cases {
@@ -1937,6 +2052,9 @@ func TestTicketService_CheckAccess_AttributeMatrix(t *testing.T) {
 			if tc.attrs.creator {
 				ticket.Creator.ID = actorID
 			}
+			if tc.attrs.owner {
+				ticket.Owner = &models.UserShort{ID: actorID}
+			}
 			if !tc.attrs.noGroup {
 				ticket.Group = &models.GroupShort{ID: groupID, Name: "G"}
 			}
@@ -1951,6 +2069,13 @@ func TestTicketService_CheckAccess_AttributeMatrix(t *testing.T) {
 				managed = append(managed, groupID)
 			}
 			mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return(managed, nil)
+			// Пользователь считается «рабочим» (не заказчиком), если у него есть
+			// хотя бы одна членская группа. Кейс groupless описывает заказчика.
+			memberGroups := []uuid.UUID{}
+			if !tc.attrs.groupless {
+				memberGroups = append(memberGroups, groupID)
+			}
+			mockGroups.On("GetMemberGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return(memberGroups, nil)
 			mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(tc.attrs.supervisor, nil)
 			mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
 
@@ -1967,7 +2092,7 @@ func TestTicketService_CheckAccess_AttributeMatrix(t *testing.T) {
 }
 
 func TestTicketService_Take_NoAssignee_Success(t *testing.T) {
-	mockRepo, mockLogs, _, _, mockNotifications, _, mockPolicies, svc := ticketServiceFixtures()
+	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
 
 	actorID := uuid.New()
 	ticketID := uuid.New()
@@ -1981,6 +2106,9 @@ func TestTicketService_Take_NoAssignee_Success(t *testing.T) {
 	}
 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Read)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	markUserAsEmployee(mockGroups, actorID)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 	mockRepo.On("Update", mock.Anything, nil, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		dtoUpdate := args.Get(2).(*models.TicketDTO)
@@ -1998,7 +2126,7 @@ func TestTicketService_Take_NoAssignee_Success(t *testing.T) {
 }
 
 func TestTicketService_Take_OtherAssignee_Open_Success(t *testing.T) {
-	mockRepo, mockLogs, _, _, mockNotifications, _, mockPolicies, svc := ticketServiceFixtures()
+	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
 
 	actorID := uuid.New()
 	otherID := uuid.New()
@@ -2014,6 +2142,9 @@ func TestTicketService_Take_OtherAssignee_Open_Success(t *testing.T) {
 	}
 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Read)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	markUserAsEmployee(mockGroups, actorID)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 	mockRepo.On("Update", mock.Anything, nil, mock.Anything).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
@@ -2024,7 +2155,7 @@ func TestTicketService_Take_OtherAssignee_Open_Success(t *testing.T) {
 }
 
 func TestTicketService_Take_OtherAssignee_NotOpen_Denied(t *testing.T) {
-	mockRepo, _, _, _, _, _, mockPolicies, svc := ticketServiceFixtures()
+	mockRepo, _, _, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
 
 	actorID := uuid.New()
 	otherID := uuid.New()
@@ -2041,6 +2172,7 @@ func TestTicketService_Take_OtherAssignee_NotOpen_Denied(t *testing.T) {
 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	markUserAsEmployee(mockGroups, actorID)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 
 	err := svc.Take(context.Background(), dto)
@@ -2048,7 +2180,7 @@ func TestTicketService_Take_OtherAssignee_NotOpen_Denied(t *testing.T) {
 }
 
 func TestTicketService_Take_AlreadyAssignee_Denied(t *testing.T) {
-	mockRepo, _, _, _, _, _, mockPolicies, svc := ticketServiceFixtures()
+	mockRepo, _, _, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
 
 	actorID := uuid.New()
 	ticketID := uuid.New()
@@ -2064,6 +2196,7 @@ func TestTicketService_Take_AlreadyAssignee_Denied(t *testing.T) {
 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	markUserAsEmployee(mockGroups, actorID)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 
 	err := svc.Take(context.Background(), dto)
@@ -2085,6 +2218,89 @@ func TestTicketService_Take_InactiveStatus_Frozen(t *testing.T) {
 
 	err := svc.Take(context.Background(), dto)
 	assert.ErrorIs(t, err, models.ErrTicketFrozen)
+}
+
+func TestTicketService_Take_OwnerOnly_Denied(t *testing.T) {
+	mockRepo, _, _, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	groupID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TakeTicketDTO{ID: ticketID, Actor: &models.Actor{ID: actorID, Name: "test"}}
+
+	oldTicket := &models.Ticket{
+		ID:      ticketID,
+		Title:   "Ticket",
+		Status:  models.StatusOpen,
+		Creator: models.UserShort{ID: uuid.New()},
+		Owner:   &models.UserShort{ID: actorID},
+		Group:   &models.GroupShort{ID: groupID, Name: "G"},
+	}
+
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockGroups.On("IsMember", mock.Anything, groupID, actorID).Return(false, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+
+	err := svc.Take(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+}
+
+// TestTicketService_Take_Customer_Denied — автор без групп («заказчик»), он же owner,
+// не берёт заявку в работу: роль заказчика — решения, а не работа.
+func TestTicketService_Take_Customer_Denied(t *testing.T) {
+	mockRepo, _, _, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TakeTicketDTO{ID: ticketID, Actor: &models.Actor{ID: actorID, Name: "test"}}
+
+	oldTicket := &models.Ticket{
+		ID:      ticketID,
+		Title:   "Ticket",
+		Status:  models.StatusOpen,
+		Creator: models.UserShort{ID: actorID},
+		Owner:   &models.UserShort{ID: actorID},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+
+	err := svc.Take(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+	mockRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestTicketService_Take_OwnerAndMember_Success(t *testing.T) {
+	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, _, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	groupID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TakeTicketDTO{ID: ticketID, Actor: &models.Actor{ID: actorID, Name: "test"}}
+
+	oldTicket := &models.Ticket{
+		ID:      ticketID,
+		Title:   "Ticket",
+		Status:  models.StatusOpen,
+		Creator: models.UserShort{ID: uuid.New()},
+		Owner:   &models.UserShort{ID: actorID},
+		Group:   &models.GroupShort{ID: groupID, Name: "G"},
+	}
+
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	// Заказчик, который ещё и участник группы тикета, — рабочий: «взять в работу» можно.
+	mockGroups.On("IsMember", mock.Anything, groupID, actorID).Return(true, nil)
+	mockRepo.On("Update", mock.Anything, nil, mock.Anything).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
+
+	err := svc.Take(context.Background(), dto)
+	assert.NoError(t, err)
 }
 
 func TestTicketService_Transfer_Success(t *testing.T) {
@@ -2401,6 +2617,44 @@ func TestTicketService_GetAccessFlags_NoRoles(t *testing.T) {
 	assert.NoError(t, err)
 	assert.False(t, flags.IsAdmin)
 	assert.False(t, flags.IsManager)
+}
+
+// TestTicketService_GetAccessFlags_Customer — автор без групп («заказчик»): не рабочий,
+// но правит свои поля и остаётся владельцем (если он же owner). Проверяем весь набор
+// флагов: write/work/take выключены, canEditFields — включён, статусы — только отмена
+// для активной заявки.
+func TestTicketService_GetAccessFlags_Customer(t *testing.T) {
+	_, _, mockSubtasks, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	userID := uuid.New()
+	ticketID := uuid.New()
+
+	mockPolicies.On("Enforce", userID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", userID.String(), "", string(access.ResourceTicket), string(access.Delete)).Return(false, nil)
+	mockPolicies.On("Enforce", userID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", userID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	// Заказчик: ни управляемых, ни членских групп.
+	mockGroups.On("GetManagedGroups", mock.Anything, userID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, userID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockSubtasks.On("GetUnresolvedCount", mock.Anything, mock.Anything).Return(0, nil)
+
+	ticket := &models.Ticket{
+		ID:      ticketID,
+		Title:   "Ticket",
+		Status:  models.StatusOpen,
+		Creator: models.UserShort{ID: userID},
+		Owner:   &models.UserShort{ID: userID},
+	}
+
+	flags, err := svc.GetAccessFlags(context.Background(), ticket, userID)
+	assert.NoError(t, err)
+	assert.False(t, flags.CanWrite, "заказчик не получает write-доступ")
+	assert.False(t, flags.CanWork, "заказчик не рабочий")
+	assert.False(t, flags.CanTake, "заказчику нельзя «взять в работу»")
+	assert.True(t, flags.CanEditFields, "автор правит свои поля")
+	assert.False(t, flags.IsAdmin)
+	assert.False(t, flags.IsManager)
+	assert.ElementsMatch(t, []models.TicketStatus{models.StatusCancelled}, flags.AllowedStatuses)
 }
 
 func TestTicketService_GetSummary(t *testing.T) {

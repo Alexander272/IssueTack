@@ -65,6 +65,20 @@ type TicketAccessChecker interface {
 	// они не должны ни переносить заявку в другую группу, ни переназначать чужую.
 	// Реалм берётся из тикета, а не извне — оба вызывающих места тикет уже загрузили.
 	CanAdministerTickets(ctx context.Context, userID uuid.UUID, ticket *models.Ticket) (bool, error)
+	// ownerReadOnly сообщает, что доступ пользователя к заявке держится только на
+	// владении (заказчик): он не автор, не исполнитель, не участник/менеджер группы
+	// и не начальник области. Нужен, чтобы заказчик не получал «взять в работу».
+	ownerReadOnly(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) (bool, error)
+	// IsCustomer сообщает, что пользователь в области тикета — «заказчик», а не
+	// «рабочий»: у него нет ни управляемых, ни членских групп, и он не начальник
+	// области. Такой пользователь не становится рабочим даже будучи автором заявки —
+	// его роль ограничена просмотром, внешними комментариями и решениями владельца.
+	IsCustomer(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) (bool, error)
+	// CanAttachToTicket проверяет право прикрепить файл к заявке: «рабочий» доступ
+	// (CheckWorkAccess) или роль заказчика — автор-без-групп/владелец активной заявки.
+	// Вложение к своей заявке — часть сценария заказчика, поэтому здесь он не отсекается,
+	// в отличие от подзадач и внутренних комментариев. Замороженные заявки запрещены.
+	CanAttachToTicket(ctx context.Context, dto *models.AccessCheckDTO) error
 }
 
 // TicketAccessService реализует проверку прав доступа к тикетам.
@@ -107,7 +121,7 @@ func NewTicketAccessService(repo repository.Tickets, groups Groups, policies Acc
 //
 // Атрибутная модель (первый шаг; поверх неё для любого действия может пройти
 // начальник области — см. ниже):
-//   - Read: создатель, исполнитель, участник группы тикета или её менеджер;
+//   - Read: создатель, исполнитель, заказчик (owner), участник группы тикета или её менеджер;
 //   - Write: создатель тикета или менеджер группы;
 //   - Delete: атрибутно только менеджер группы (создатель удалять не может),
 //     но supervisor обходит это так же, как Read/Write.
@@ -152,14 +166,36 @@ func ticketRealm(ticket *models.Ticket) string {
 func (s *TicketAccessService) checkTicketAttributes(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, action string) error {
 	isCreator := ticket.Creator.ID == userID
 	isAssignee := ticket.Assignee != nil && ticket.Assignee.ID == userID
+	// Заказчик (owner) — полноправный участник заявки: он видит свою заявку и может
+	// комментировать её/принимать решения. Чтение owner'у даётся здесь, а вот Write
+	// и Delete — нет: иначе owner прошёл бы общие проверки прав и смог бы выставлять
+	// произвольные статусы в обход строгих переходов ownerTransitionAllowed (см.
+	// TicketService.Update). Право на комментарий owner'у выдаётся отдельно в
+	// CommentService.Create, чтобы не расширять CheckWorkAccess.
+	isOwner := ticket.Owner != nil && ticket.Owner.ID == userID
 
 	// Тикет без группы: группа не может ни расширить, ни сузить доступ, поэтому
-	// решение принимается по автору и исполнителю. Создателю доступны и чтение,
-	// и правка — иначе он не смог бы отредактировать собственную внегрупповую заявку.
+	// решение принимается по автору, исполнителю и заказчику. Создателю доступны и
+	// чтение, и правка — иначе он не смог бы отредактировать собственную
+	// внегрупповую заявку; заказчику — только чтение. Автор-«заказчик» (без групп)
+	// правку не получает: его роль в work-модели — не рабочая (см. IsCustomer).
 	if ticket.Group == nil {
 		switch action {
-		case string(access.Read), string(access.Write):
-			if isCreator || isAssignee {
+		case string(access.Read):
+			if isCreator || isAssignee || isOwner {
+				return nil
+			}
+		case string(access.Write):
+			if isCreator {
+				customer, err := s.IsCustomer(ctx, ticket, userID)
+				if err != nil {
+					return err
+				}
+				if !customer {
+					return nil
+				}
+			}
+			if isAssignee {
 				return nil
 			}
 		}
@@ -168,7 +204,7 @@ func (s *TicketAccessService) checkTicketAttributes(ctx context.Context, ticket 
 
 	switch action {
 	case string(access.Read):
-		if isCreator || isAssignee {
+		if isCreator || isAssignee || isOwner {
 			return nil
 		}
 		isMember, err := s.groups.IsMember(ctx, ticket.Group.ID, userID)
@@ -181,7 +217,13 @@ func (s *TicketAccessService) checkTicketAttributes(ctx context.Context, ticket 
 		return s.checkGroupManager(ctx, ticket.Group.ID, userID)
 	case string(access.Write):
 		if isCreator {
-			return nil
+			customer, err := s.IsCustomer(ctx, ticket, userID)
+			if err != nil {
+				return err
+			}
+			if !customer {
+				return nil
+			}
 		}
 		return s.checkGroupManager(ctx, ticket.Group.ID, userID)
 	case string(access.Delete):
@@ -202,6 +244,96 @@ func (s *TicketAccessService) checkGroupManager(ctx context.Context, groupID uui
 		}
 	}
 	return models.ErrPermissionDenied
+}
+
+// ownerReadOnly сообщает, что доступ пользователя к заявке держится только на
+// владении (он заказчик): пользователь не автор, не исполнитель, не участник и
+// не менеджер группы, не начальник области. Заказчику доступны просмотр,
+// комментарии и решения владельца, но не «взять в работу» — работа не его роль.
+// Read-доступ при этом owner'у уже выдан в checkTicketAttributes, а вот Take
+// гейтится этим методом: иначе заказчик подхватывал бы чужую заявку в исполнители.
+func (s *TicketAccessService) ownerReadOnly(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) (bool, error) {
+	if ticket.Owner == nil || ticket.Owner.ID != userID {
+		return false, nil
+	}
+	if ticket.Creator.ID == userID {
+		return false, nil
+	}
+	if ticket.Assignee != nil && ticket.Assignee.ID == userID {
+		return false, nil
+	}
+	if ticket.Group != nil {
+		member, err := s.groups.IsMember(ctx, ticket.Group.ID, userID)
+		if err != nil {
+			return false, fmt.Errorf("failed to check membership: %w", err)
+		}
+		if member || s.checkGroupManager(ctx, ticket.Group.ID, userID) == nil {
+			return false, nil
+		}
+	}
+	supervisor, err := s.IsRealmSupervisor(ctx, userID, ticketRealm(ticket))
+	if err != nil {
+		return false, err
+	}
+	return !supervisor, nil
+}
+
+// IsCustomer сообщает, что пользователь в области тикета — «заказчик»: у него нет
+// ни управляемых, ни членских групп в этой области, и он не начальник области.
+// Такой пользователь не является «рабочим» даже если он автор заявки: создатель
+// с группами — сотрудник, а безгрупповой создатель — внешний заказчик, чья роль
+// ограничена просмотром, внешними комментариями и решениями владельца. Именно
+// поэтому checkTicketAttributes не выдаёт заказчику Write (см. там), а «взять в
+// работу»/подзадачи/внутренние комментарии для него отсекаются производно.
+func (s *TicketAccessService) IsCustomer(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) (bool, error) {
+	supervisor, err := s.IsRealmSupervisor(ctx, userID, ticketRealm(ticket))
+	if err != nil {
+		return false, err
+	}
+	if supervisor {
+		return false, nil
+	}
+
+	managed, err := s.groups.GetManagedGroups(ctx, userID, ticket.RealmID)
+	if err != nil {
+		return false, fmt.Errorf("failed to get managed groups: %w", err)
+	}
+	if len(managed) > 0 {
+		return false, nil
+	}
+
+	member, err := s.groups.GetMemberGroups(ctx, userID, ticket.RealmID)
+	if err != nil {
+		return false, fmt.Errorf("failed to get member groups: %w", err)
+	}
+	return len(member) == 0, nil
+}
+
+// CanAttachToTicket проверяет право прикрепить файл к заявке. Кроме «рабочего»
+// доступа (CheckWorkAccess) вложение разрешено заказчику — автору-без-групп или
+// владельцу: приложить файл к своей активной заявке — часть сценария заказчика,
+// поэтому здесь он не отсекается, в отличие от подзадач и внутренних комментариев.
+// Замороженные заявки (resolved/closed/cancelled) закрыты и для заказчика.
+func (s *TicketAccessService) CanAttachToTicket(ctx context.Context, dto *models.AccessCheckDTO) error {
+	workErr := s.CheckWorkAccess(ctx, dto)
+	if workErr == nil {
+		return nil
+	}
+
+	ticket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: dto.TicketID})
+	if err != nil {
+		return fmt.Errorf("failed to load ticket: %w", err)
+	}
+	if isTicketInactive(ticket.Status) {
+		return models.ErrTicketFrozen
+	}
+
+	isCreator := ticket.Creator.ID == dto.UserID
+	isOwner := ticket.Owner != nil && ticket.Owner.ID == dto.UserID
+	if !isCreator && !isOwner {
+		return workErr
+	}
+	return nil
 }
 
 // CheckAccess — точка входа проверки доступа по DTO. Загружает тикет и делегирует
@@ -350,7 +482,13 @@ func (s *TicketAccessService) CanCreateSubtask(ctx context.Context, userID uuid.
 		return false, nil
 	}
 	if ticket.Creator.ID == userID {
-		return true, nil
+		customer, err := s.IsCustomer(ctx, ticket, userID)
+		if err != nil {
+			return false, err
+		}
+		if !customer {
+			return true, nil
+		}
 	}
 	if ticket.Assignee != nil && ticket.Assignee.ID == userID {
 		return true, nil
