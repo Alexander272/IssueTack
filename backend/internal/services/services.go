@@ -40,6 +40,7 @@ type Services struct {
 	TicketFavorites
 	ActivityLog
 	UserRealms
+	Equipment
 	// Интеграции
 	Scheduler
 	Mattermost
@@ -112,6 +113,7 @@ func NewServices(deps *Deps) *Services {
 	categories := NewCategoryService(deps.Repo.Categories, deps.Repo.Tickets)
 	categoryGroups := NewCategoryGroupService(deps.Repo.CategoryGroups)
 	sites := NewSiteService(deps.Repo.Sites)
+	equipment := NewEquipmentService(deps.Repo.Equipment)
 	logs := NewActivityLogService(deps.Repo.ActivityLog, transaction)
 	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs, access)
 	statistics := NewStatisticsService(deps.Repo.Statistics, groups, access)
@@ -207,6 +209,7 @@ func NewServices(deps *Deps) *Services {
 		TicketFavorites: favorites,
 		ActivityLog:     logs,
 		UserRealms:      userRealms,
+		Equipment:       equipment,
 
 		// Интеграции
 		Scheduler:  scheduler,

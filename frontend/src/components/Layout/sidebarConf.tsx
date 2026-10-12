@@ -16,6 +16,7 @@ import {
 	StarIcon,
 	BellIcon,
 	ChartColumnIcon,
+	PackageIcon,
 } from 'lucide-mui'
 
 export interface SidebarItem {
@@ -47,6 +48,7 @@ const homeItems: SidebarItem[] = [
 	},
 	{ path: AppRoutes.Categories, label: 'Категории', icon: <LayersIcon sx={{ fontSize: 18 }} /> },
 	{ path: AppRoutes.Sites, label: 'Площадки', icon: <BuildingIcon sx={{ fontSize: 18 }} /> },
+	{ path: AppRoutes.Equipment, label: 'Оборудование', icon: <PackageIcon sx={{ fontSize: 18 }} /> },
 	{
 		path: AppRoutes.NotificationSettings,
 		label: 'Уведомления',
@@ -83,6 +85,7 @@ export const sidebarRules: SidebarRule[] = [
 				AppRoutes.Home,
 				AppRoutes.Tasks,
 				AppRoutes.Sites,
+				AppRoutes.Equipment,
 				AppRoutes.Groups,
 				AppRoutes.Categories,
 				AppRoutes.Statistics,

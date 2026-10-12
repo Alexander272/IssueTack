@@ -40,6 +40,11 @@ var Tables = struct {
 	Mattermost             string
 	TicketSubscriptions    string
 	TicketFavorites        string
+	EquipmentTypes         string
+	Equipment              string
+	EquipmentAssignments   string
+	EquipmentEvents        string
+	EquipmentActs          string
 }{
 	Sites:                  "sites",
 	Realms:                 "realms",
@@ -68,4 +73,9 @@ var Tables = struct {
 	Mattermost:             "realm_mattermost",
 	TicketSubscriptions:    "ticket_subscriptions",
 	TicketFavorites:        "ticket_favorites",
+	EquipmentTypes:         "equipment_types",
+	Equipment:              "equipment",
+	EquipmentAssignments:   "equipment_assignments",
+	EquipmentEvents:        "equipment_events",
+	EquipmentActs:          "equipment_acts",
 }

@@ -3,6 +3,9 @@ goose -dir internal/migrate/postgres/migrations create new_table sql
 scp -r ./dist administrator@route:/home/administrator/apps/issue_track
 npx vite-bundle-visualizer
 
+# Dev-сиды оборудования (НЕ goose-миграция, применять вручную на dev-БД):
+psql "postgresql://postgres:postgres@127.0.0.1:5436/issue_track?sslmode=disable" -f internal/migrate/postgres/seeds/equipment_dev.sql
+
 название ITS (Issue Tracking System) или IssueTrack (трекер инцидентов)
 
 export DOCKER_API_VERSION=1.44

@@ -12,6 +12,7 @@ import { Statistics } from '@/pages/statistics/StatisticsLazy'
 import { Sites } from '@/pages/sites/SitesLazy'
 import { Groups } from '@/pages/groups/GroupsLazy'
 import { Categories } from '@/pages/categories/CategoriesLazy'
+import { Equipment, EquipmentDetail } from '@/pages/equipment/EquipmentLazy'
 import { NotificationSettings } from '@/pages/settings/NotificationSettingsLazy'
 // import { Accesses } from '@/pages/accesses/AccessesLazy'
 import { Dashboard } from '@/pages/accesses/dashboard/DashboardLazy'
@@ -62,6 +63,20 @@ const config: RouteObject[] = [
 							{
 								index: true,
 								element: <Sites />,
+							},
+						],
+					},
+					{
+						path: AppRoutes.Equipment,
+						element: <RoleRoute permission='equipment:read' />,
+						children: [
+							{
+								index: true,
+								element: <Equipment />,
+							},
+							{
+								path: AppRoutes.EquipmentDetail,
+								element: <EquipmentDetail />,
 							},
 						],
 					},

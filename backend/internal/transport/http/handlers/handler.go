@@ -12,6 +12,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/category_groups"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/checklists"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/comments"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/equipment"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/favorites"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/groups"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/mattermost"
@@ -76,6 +77,7 @@ func (h *Handler) Init(group *gin.RouterGroup) {
 	categories.Register(secure, h.services.Categories, h.middleware)
 	category_groups.Register(secure, h.services.CategoryGroups, h.middleware)
 	sites.Register(secure, h.services.Sites, h.middleware)
+	equipment.Register(secure, h.services.Equipment, h.middleware)
 
 	permissions.Register(secure, h.services.Permissions, h.middleware)
 	roles.Register(secure, h.services.Roles, h.middleware)

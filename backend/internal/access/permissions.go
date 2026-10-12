@@ -12,6 +12,7 @@ const (
 	ResourceActivity  ResourceSlug = "activity_log"
 	ResourceTicket    ResourceSlug = "ticket"
 	ResourceChecklist ResourceSlug = "checklist"
+	ResourceEquipment ResourceSlug = "equipment"
 )
 
 var OrderOfResources = map[ResourceSlug]int{
@@ -20,6 +21,7 @@ var OrderOfResources = map[ResourceSlug]int{
 	ResourceGroup:     3,
 	ResourceSite:      4,
 	ResourceChecklist: 5,
+	ResourceEquipment: 6,
 	ResourceActivity:  10,
 	ResourceAudit:     11,
 	ResourceRealm:     20,
@@ -104,6 +106,13 @@ var Reg = NewRegistry(
 		Name:           "Чек-листы",
 		Group:          "Операции",
 		Description:    "Управление шаблонами чек-листов",
+		AllowedActions: actions(All),
+	},
+	Resource{
+		Slug:           ResourceEquipment,
+		Name:           "Оборудование",
+		Group:          "Операции",
+		Description:    "Учёт оборудования, комплектов и истории выдач",
 		AllowedActions: actions(All),
 	},
 )

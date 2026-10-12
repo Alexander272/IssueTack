@@ -67,6 +67,16 @@ var (
 	ErrCategoryHasOpenTickets = NewDomainError(errors.New("category has open tickets"), http.StatusConflict, "CT001", "Нельзя удалить категорию, пока в ней есть незакрытые заявки")
 	ErrCategoryGroupInUse     = NewDomainError(errors.New("category group has categories"), http.StatusConflict, "CT002", "Нельзя удалить раздел, пока в нём есть категории")
 
+	// 409 Conflict (оборудование)
+	ErrEquipmentTypeInUse     = NewDomainError(errors.New("equipment type has equipment"), http.StatusConflict, "EQ001", "Нельзя удалить тип, пока к нему привязано оборудование")
+	ErrEquipmentSerialExists  = NewDomainError(errors.New("equipment with this serial number already exists"), http.StatusConflict, "EQ002", "Оборудование с таким серийным номером уже существует")
+	ErrEquipmentInvExists     = NewDomainError(errors.New("equipment with this inventory number already exists"), http.StatusConflict, "EQ003", "Оборудование с таким инвентарным номером уже существует")
+	ErrEquipmentCycle         = NewDomainError(errors.New("equipment parent cycle detected"), http.StatusConflict, "EQ004", "Нельзя вложить оборудование в самого себя или в собственный компонент")
+	ErrEquipmentHasChildren   = NewDomainError(errors.New("equipment has components"), http.StatusConflict, "EQ005", "У оборудования есть состав — сначала отвяжите или спишите компоненты")
+	ErrEquipmentWrittenOff    = NewDomainError(errors.New("equipment is written off"), http.StatusConflict, "EQ006", "Списанное оборудование изменить нельзя")
+	ErrEquipmentNotAssignable = NewDomainError(errors.New("equipment is not available for assignment"), http.StatusConflict, "EQ007", "Нельзя выдать оборудование в этом статусе")
+	ErrEquipmentNoHoldersOrLocation = NewDomainError(errors.New("equipment must have a holder or location"), http.StatusConflict, "EQ008", "Укажите держателя или локацию — единица должна быть физически учтена")
+
 	// 400 Bad Request
 	ErrInvalidInput          = NewDomainError(errors.New("invalid input data"), http.StatusBadRequest, "BR001", "Переданы некорректные данные")
 	ErrRelatedRecordNotFound = NewDomainError(errors.New("related record not found"), http.StatusBadRequest, "BR002", "Указанный связанный ресурс не существует")

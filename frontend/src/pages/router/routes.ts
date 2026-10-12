@@ -8,6 +8,8 @@ export const AppRoutes = Object.freeze({
 	Statistics: '/statistics' as const,
 	Groups: '/groups' as const,
 	Sites: '/sites' as const,
+	Equipment: '/equipment' as const,
+	EquipmentDetail: '/equipment/:id' as const,
 	Categories: '/categories' as const,
 	NotificationSettings: '/settings/notifications' as const,
 

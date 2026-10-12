@@ -88,6 +88,13 @@ export const API = {
 		base: '/sites' as const,
 		byId: (id: string) => `/sites/${id}` as const,
 	},
+	equipment: {
+		base: '/equipment' as const,
+		byId: (id: string) => `/equipment/${id}` as const,
+		children: (id: string) => `/equipment/${id}/children` as const,
+		types: '/equipment/types' as const,
+		typeById: (id: string) => `/equipment/types/${id}` as const,
+	},
 	notifications: {
 		settings: '/notifications/settings',
 		getSettings: '/notifications',

@@ -35,6 +35,12 @@ func MapError(err error) error {
 
 		switch pgErr.Code {
 		case "23505": // unique_violation
+			switch pgErr.ConstraintName {
+			case "uq_equipment_realm_serial":
+				return fmt.Errorf("%w: %v", models.ErrEquipmentSerialExists, pgErr)
+			case "uq_equipment_realm_inventory":
+				return fmt.Errorf("%w: %v", models.ErrEquipmentInvExists, pgErr)
+			}
 			return fmt.Errorf("%w: %v", models.ErrAlreadyExists, pgErr)
 		case "23P01": // exclusion_violation
 			return fmt.Errorf("%w: %v", models.ErrAlreadyExists, pgErr)
@@ -42,6 +48,11 @@ func MapError(err error) error {
 			return fmt.Errorf("%w: %v", models.ErrRelatedRecordNotFound, pgErr) // если ссылаемся на несуществующий ID
 		case "23502": // not_null_violation
 			return fmt.Errorf("%w: %v", models.ErrInvalidInput, pgErr)
+		case "23514": // check_violation
+			switch pgErr.ConstraintName {
+			case "equipment_check", "equipment_assignments_check":
+				return models.ErrEquipmentNoHoldersOrLocation
+			}
 		}
 	}
 
