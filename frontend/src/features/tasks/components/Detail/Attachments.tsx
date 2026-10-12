@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { Box, Typography } from '@mui/material'
+import { Box, Stack, Typography } from '@mui/material'
 import { Paperclip } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
@@ -163,82 +163,77 @@ export const Attachments = ({ attachments, canWork, taskId }: Props) => {
 				</Box>
 			)}
 
-			{files.length > 0 && (
-				<Box
-					sx={{
-						display: 'grid',
-						gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-						gap: 1.5,
-						pb: 2.5,
-						px: 2.5,
-					}}
-				>
-					{files.map(file => {
-						const info = getFileIcon(file.mimeType)
-						const IconComponent = info.icon
-						return (
-							<Box
-								key={file.id}
-								component='button'
-								onClick={() => handleOpen(file)}
-								sx={{
-									border: '1px solid #e5e7eb',
-									borderRadius: '8px',
-									overflow: 'hidden',
-									cursor: 'pointer',
-									transition: 'box-shadow 0.2s',
-									textDecoration: 'none',
-									bgcolor: 'white',
-									p: 0,
-									textAlign: 'left',
-									width: '100%',
-									'&:hover': { boxShadow: '0 4px 12px rgba(0,0,0,0.08)' },
-								}}
-							>
-								{isImage(file.mimeType) ? (
-									<ImageThumbnail file={file} />
-								) : (
-									<Box
-										sx={{
-											height: 80,
-											background: info.bg,
-											display: 'flex',
-											alignItems: 'center',
-											justifyContent: 'center',
-											color: info.color,
-										}}
-									>
-										<IconComponent sx={{ fontSize: 28, color: info.color }} />
+			<Stack sx={{ p: 2.5, gap: 2 }}>
+				{(files.length > 0 || showUpload) && (
+					<Box
+						sx={{
+							display: 'grid',
+							gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+							gap: 1.5,
+						}}
+					>
+						{files.map(file => {
+							const info = getFileIcon(file.mimeType)
+							const IconComponent = info.icon
+							return (
+								<Box
+									key={file.id}
+									component='button'
+									onClick={() => handleOpen(file)}
+									sx={{
+										border: '1px solid #e5e7eb',
+										borderRadius: '8px',
+										overflow: 'hidden',
+										cursor: 'pointer',
+										transition: 'box-shadow 0.2s',
+										textDecoration: 'none',
+										bgcolor: 'white',
+										p: 0,
+										textAlign: 'left',
+										width: '100%',
+										'&:hover': { boxShadow: '0 4px 12px rgba(0,0,0,0.08)' },
+									}}
+								>
+									{isImage(file.mimeType) ? (
+										<ImageThumbnail file={file} />
+									) : (
+										<Box
+											sx={{
+												height: 80,
+												background: info.bg,
+												display: 'flex',
+												alignItems: 'center',
+												justifyContent: 'center',
+												color: info.color,
+											}}
+										>
+											<IconComponent sx={{ fontSize: 28, color: info.color }} />
+										</Box>
+									)}
+									<Box sx={{ p: 1.5 }}>
+										<Typography
+											sx={{
+												fontSize: '0.75rem',
+												fontWeight: 500,
+												color: '#1f2937',
+												overflow: 'hidden',
+												textOverflow: 'ellipsis',
+												whiteSpace: 'nowrap',
+											}}
+										>
+											{file.fileName}
+										</Typography>
+										<Typography sx={{ fontSize: '0.6875rem', color: '#9ca3af' }}>
+											{formatSize(file.fileSize)}
+										</Typography>
 									</Box>
-								)}
-								<Box sx={{ p: 1.5 }}>
-									<Typography
-										sx={{
-											fontSize: '0.75rem',
-											fontWeight: 500,
-											color: '#1f2937',
-											overflow: 'hidden',
-											textOverflow: 'ellipsis',
-											whiteSpace: 'nowrap',
-										}}
-									>
-										{file.fileName}
-									</Typography>
-									<Typography sx={{ fontSize: '0.6875rem', color: '#9ca3af' }}>
-										{formatSize(file.fileSize)}
-									</Typography>
 								</Box>
-							</Box>
-						)
-					})}
-				</Box>
-			)}
-
-			{showUpload && (
-				<Box sx={{ p: 2.5 }}>
-					<FileDropZone onUpload={handleUpload} />
-				</Box>
-			)}
+							)
+						})}
+						{showUpload && <FileDropZone onUpload={handleUpload} compact />}
+					</Box>
+				)}
+			</Stack>
 
 			<PreviewDialog file={previewFile} onClose={() => setPreviewFile(null)} />
 		</Box>
