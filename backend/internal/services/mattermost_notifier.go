@@ -11,6 +11,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	json "github.com/goccy/go-json"
+	"github.com/goodsign/monday"
 	"github.com/google/uuid"
 )
 
@@ -383,14 +384,26 @@ func ruPriority(v string) string {
 	return v
 }
 
-// ruTime форматирует «сырое» время изменения (строковое представление *time.Time)
-// в читаемый «02.01.2006 15:04». Неразобранное значение возвращается как есть.
+// ruTime форматирует время изменения из RFC3339 в русское читаемое представление.
+// Формат: "02 января 2006 15:04" (без дня недели, родительный падеж месяца).
 func ruTime(v string) string {
-	if v == "" || v == "none" {
+	if v == "" || v == "none" || v == "nil" {
 		return "—"
 	}
+	t, err := time.Parse(time.RFC3339, v)
+	if err == nil {
+		return monday.Format(t, "2 January 2006 15:04", monday.LocaleRuRU)
+	}
+	// Fallback: try to parse the raw Go time format if present
 	if t, err := time.Parse("2006-01-02 15:04:05 -0700 MST", v); err == nil {
-		return t.Format("02.01.2006 15:04")
+		return monday.Format(t, "2 January 2006 15:04", monday.LocaleRuRU)
+	}
+	// Another common fallback: numeric with monotonic clock
+	if t, err := time.Parse("2006-01-02 15:04:05.999999999 -0700 +05", v); err == nil {
+		return monday.Format(t, "2 January 2006 15:04", monday.LocaleRuRU)
+	}
+	if t, err := time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", v); err == nil {
+		return monday.Format(t, "2 January 2006 15:04", monday.LocaleRuRU)
 	}
 	return v
 }

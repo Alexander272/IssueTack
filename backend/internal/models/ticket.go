@@ -1,7 +1,6 @@
 package models
 
 import (
-	"fmt"
 	"time"
 
 	json "github.com/goccy/go-json"
@@ -212,10 +211,7 @@ func (dto *TicketDTO) GetChanges(old *Ticket) []*FieldChange {
 	var changes []*FieldChange
 
 	toStr := func(v any) string {
-		if v == nil {
-			return "none"
-		}
-		return fmt.Sprintf("%v", v)
+		return formatFieldValue(v)
 	}
 
 	if dto.HasField("title") && dto.Title != old.Title {

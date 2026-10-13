@@ -1,3 +1,4 @@
+import dayjs from 'dayjs'
 import { Box, Typography } from '@mui/material'
 import { getAvatarColor, getInitials as getInitialsBase, getDisplayName as getDisplayNameBase } from '@/utils/avatar'
 import { useAppSelector } from '@/hooks/redux'
@@ -73,8 +74,29 @@ const DiffLine = ({
 	newValue?: string
 }) => {
 	const isStatus = fieldKey === 'status_changed'
-	const oldValueEl = oldValue === 'none' ? '—' : isStatus ? <StatusValue value={oldValue} /> : oldValue
-	const newValueEl = newValue === 'none' ? '—' : isStatus && newValue ? <StatusValue value={newValue} /> : newValue
+	const isDateField = fieldKey === 'due_date_changed' || fieldKey === 'closed'
+
+	const formatDateField = (val: string | undefined) => {
+		if (val === 'none' || val === '' || val === '<nil>' || val === undefined) return '—'
+		const d = dayjs(val)
+		if (!d.isValid()) return val
+		return d.format('D MMMM YYYY, HH:mm')
+	}
+
+	const oldValueEl = isDateField
+		? formatDateField(oldValue)
+		: oldValue === 'none'
+			? '—'
+			: isStatus
+				? <StatusValue value={oldValue} />
+				: oldValue
+	const newValueEl = isDateField
+		? formatDateField(newValue)
+		: newValue === 'none' || newValue === undefined
+			? '—'
+			: isStatus && newValue
+				? <StatusValue value={newValue} />
+				: newValue
 
 	return (
 		<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.375 }}>

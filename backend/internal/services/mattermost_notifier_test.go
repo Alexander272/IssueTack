@@ -604,7 +604,7 @@ func TestMattermostNotifier_SendsUpdatedDM_NoRawIDs(t *testing.T) {
 	assert.Contains(t, sent, "Группа: изменена")
 	assert.Contains(t, sent, "Площадка: изменена")
 	assert.Contains(t, sent, "Категория: изменена")
-	assert.Contains(t, sent, "• Срок: 02.09.2026 12:00 → —")
+	assert.Contains(t, sent, "• Срок: 2 сентября 2026 12:00 → —")
 	assert.NotContains(t, sent, "uuid")
 	mockSender.AssertExpectations(t)
 }
