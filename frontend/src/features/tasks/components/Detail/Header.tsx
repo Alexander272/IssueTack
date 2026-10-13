@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Box, IconButton, Tooltip, Typography, Menu, MenuItem, ListItemIcon } from '@mui/material'
 import { Star, MoreVertical, ArrowLeftIcon, Pin, Pencil, UserRound } from 'lucide-mui'
-import { useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 
 import type { ITask, TicketStatus } from '../../types/task'
 import { AppRoutes } from '@/pages/router/routes'
@@ -23,6 +23,8 @@ interface Props {
 
 export const Header = ({ task, onEdit, onTransfer }: Props) => {
 	const navigate = useNavigate()
+	const location = useLocation()
+
 	const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
 	const currentUserId = useAppSelector(getUserId)
 	const hasNoGroups = useAppSelector(getHasNoGroups)
@@ -40,19 +42,12 @@ export const Header = ({ task, onEdit, onTransfer }: Props) => {
 	const handleMenuClose = () => setAnchorEl(null)
 
 	const handleBack = () => {
-		const ref = document.referrer
-		if (ref) {
-			try {
-				const url = new URL(ref)
-				if (url.origin === window.location.origin) {
-					navigate(-1)
-					return
-				}
-			} catch {
-				// ignore
-			}
+		if (location.key !== 'default') {
+			navigate(-1)
+		} else {
+			if (!hasNoGroups) navigate(AppRoutes.Home, { replace: true })
+			else navigate(AppRoutes.Tasks, { replace: true })
 		}
-		navigate(AppRoutes.Tasks, { replace: true })
 	}
 
 	const togglePin = () => {
@@ -71,6 +66,8 @@ export const Header = ({ task, onEdit, onTransfer }: Props) => {
 			addFavorite({ id: task.id, type: 'permanent' })
 		}
 	}
+
+	const hasAnyAction = Boolean(onEdit) || (Boolean(onTransfer) && canTransfer) || !hasNoGroups
 
 	return (
 		<Box
@@ -136,48 +133,54 @@ export const Header = ({ task, onEdit, onTransfer }: Props) => {
 						</IconButton>
 					</Tooltip>
 				)}
-				<Tooltip title='Ещё'>
-					<IconButton
-						onClick={e => setAnchorEl(e.currentTarget)}
-						sx={{ color: '#9ca3af', '&:hover': { color: 'error.main' }, fontSize: 20 }}
-					>
-						<MoreVertical sx={{ fontSize: 20 }} />
-					</IconButton>
-				</Tooltip>
-				<Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
-					{onEdit && (
-						<MenuItem
-							onClick={() => {
-								handleMenuClose()
-								onEdit()
-							}}
-						>
-							<ListItemIcon>
-								<Pencil sx={{ fontSize: 18, color: '#9ca3af' }} />
-							</ListItemIcon>
-							Редактировать
-						</MenuItem>
-					)}
-					{onTransfer && canTransfer && (
-						<MenuItem
-							onClick={() => {
-								handleMenuClose()
-								onTransfer()
-							}}
-						>
-							<ListItemIcon>
-								<UserRound sx={{ fontSize: 18, color: '#9ca3af' }} />
-							</ListItemIcon>
-							Передать
-						</MenuItem>
-					)}
-					<MenuItem onClick={toggleStar} sx={{ display: hasNoGroups ? 'none' : 'flex' }}>
-						<ListItemIcon>
-							<Star sx={{ fontSize: 18, color: starred ? '#f59e0b' : '#9ca3af' }} />
-						</ListItemIcon>
-						{starred ? 'Убрать из избранного' : 'В избранное'}
-					</MenuItem>
-				</Menu>
+				{hasAnyAction && (
+					<>
+						<Tooltip title='Ещё'>
+							<IconButton
+								onClick={e => setAnchorEl(e.currentTarget)}
+								sx={{ color: '#9ca3af', '&:hover': { color: 'error.main' }, fontSize: 20 }}
+							>
+								<MoreVertical sx={{ fontSize: 20 }} />
+							</IconButton>
+						</Tooltip>
+						<Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
+							{onEdit && (
+								<MenuItem
+									onClick={() => {
+										handleMenuClose()
+										onEdit()
+									}}
+								>
+									<ListItemIcon>
+										<Pencil sx={{ fontSize: 18, color: '#9ca3af' }} />
+									</ListItemIcon>
+									Редактировать
+								</MenuItem>
+							)}
+							{onTransfer && canTransfer && (
+								<MenuItem
+									onClick={() => {
+										handleMenuClose()
+										onTransfer()
+									}}
+								>
+									<ListItemIcon>
+										<UserRound sx={{ fontSize: 18, color: '#9ca3af' }} />
+									</ListItemIcon>
+									Передать
+								</MenuItem>
+							)}
+							{!hasNoGroups && (
+								<MenuItem onClick={toggleStar}>
+									<ListItemIcon>
+										<Star sx={{ fontSize: 18, color: starred ? '#f59e0b' : '#9ca3af' }} />
+									</ListItemIcon>
+									{starred ? 'Убрать из избранного' : 'В избранное'}
+								</MenuItem>
+							)}
+						</Menu>
+					</>
+				)}
 			</Box>
 		</Box>
 	)

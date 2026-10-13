@@ -1253,12 +1253,13 @@ func cardChannel(realmID uuid.UUID) *mmChannel {
 	}
 }
 
-// expectNumberLookup готовит мок поиска заявки по номеру: Tickets.Get без
-// групп актора вернул бы заявку любого реалма с таким номером, поэтому дальше
-// обязателен GetByID с проверкой прав.
+// expectNumberLookup готовит мок поиска заявки по номеру: бот ищет в режиме
+// readable (автор/заказчик/исполнитель/группа тикета), а найденный ID дальше
+// досматривается GetByID с проверкой прав по атрибутной модели.
 func expectNumberLookup(tickets *MockTicketsService, number int, ticketID uuid.UUID) {
 	tickets.On("Get", mock.Anything, mock.MatchedBy(func(f *models.TicketFilter) bool {
-		return f.Number != nil && *f.Number == number
+		return f.Number != nil && *f.Number == number &&
+			f.Mode != nil && *f.Mode == readableMode
 	})).Return([]*models.Ticket{{ID: ticketID}}, 1, nil)
 }
 
@@ -1380,8 +1381,9 @@ func TestHandleTicketCard_NonOwner_NoButtons(t *testing.T) {
 	assert.Empty(t, cardActionsByName(t, card), "не-владелец не получает действий")
 }
 
-// Чужая заявка не должна ни показываться, ни подтверждать своё существование:
-// Get по номеру без групп актора находит её, но GetByID режет доступ.
+// Чужая заявка не должна ни показываться, ни подтверждать своё существование.
+// В реальности режим readable её и не вернёт, но защита обязана держать отказ и
+// на случай, если поиск по номеру её всё-таки отдал: GetByID режет доступ.
 func TestHandleTicketCard_ForeignTicket_Denied(t *testing.T) {
 	realmID, userID, ticketID := uuid.New(), uuid.New(), uuid.New()
 
@@ -1434,6 +1436,78 @@ func TestHandleTicketCard_LongDescriptionTruncated(t *testing.T) {
 	text, _ := postCards(t, posts[0].props)[0]["text"].(string)
 	assert.Len(t, []rune(text), cardDetailLimit+1, "описание обрезается с многоточием")
 	assert.True(t, strings.HasSuffix(text, "…"))
+}
+
+// «№N текст» создаёт комментарий: заявка ищется по номеру в режиме readable, а
+// найденное уходит в CommentService.Create без изменений. Это путь, который ломался
+// у заявителя вне группы тикета — мок намеренно принимает заявку только при
+// Mode=readable, иначе тест упал бы на «Заявка №42 не найдена».
+func TestHandleComment_AddsComment(t *testing.T) {
+	realmID, userID, ticketID := uuid.New(), uuid.New(), uuid.New()
+
+	capture := &mmCapture{posts: &[]capturedPost{}}
+	comments := new(MockCommentsService)
+	svc, _, users, userRealms, tickets := dmFixtureService(t, capture, comments)
+	expectExistingUser(users, userRealms, userID, realmID)
+
+	num := 42
+	tickets.On("Get", mock.Anything, mock.MatchedBy(func(f *models.TicketFilter) bool {
+		return f.Number != nil && *f.Number == num &&
+			f.RealmID != nil && *f.RealmID == realmID &&
+			f.Actor != nil && f.Actor.ID == userID &&
+			f.Mode != nil && *f.Mode == readableMode
+	})).Return([]*models.Ticket{{ID: ticketID}}, 1, nil)
+	comments.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(func(dto *models.CreateCommentDTO) bool {
+		return dto.TicketID == ticketID &&
+			dto.UserID == userID &&
+			dto.Realm == realmID.String() &&
+			!dto.IsInternal &&
+			dto.Text == "почините"
+	})).Return(&models.Comment{}, nil)
+
+	require.NoError(t, svc.handleComment(context.Background(), cardChannel(realmID), "№42 почините"))
+
+	tickets.AssertExpectations(t)
+	comments.AssertExpectations(t)
+	require.Len(t, *capture.posts, 1)
+	assert.Equal(t, "dm1", (*capture.posts)[0].channelID, "ответ приходит в личку, не в канал")
+	assert.Equal(t, "Комментарий добавлен к заявке №42", (*capture.posts)[0].message)
+}
+
+// Заявки нет в доступном пользователю scope (или он вообще не в реалме) — бот
+// отвечает «не найдена» и НЕ трогает CommentService: чужие номера не подтверждаем.
+func TestHandleComment_NotFound(t *testing.T) {
+	realmID, userID := uuid.New(), uuid.New()
+
+	capture := &mmCapture{posts: &[]capturedPost{}}
+	comments := new(MockCommentsService)
+	svc, _, users, userRealms, tickets := dmFixtureService(t, capture, comments)
+	expectExistingUser(users, userRealms, userID, realmID)
+	tickets.On("Get", mock.Anything, mock.Anything).Return([]*models.Ticket{}, 0, nil)
+
+	require.NoError(t, svc.handleComment(context.Background(), cardChannel(realmID), "№404 текст"))
+
+	comments.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
+	require.Len(t, *capture.posts, 1)
+	assert.Equal(t, "Заявка №404 не найдена", (*capture.posts)[0].message)
+}
+
+// Отказ доступа на уровне сервиса комментариев (заявка найдена, но work-доступа
+// нет) отдаётся отдельной фразой, а не «не найдена».
+func TestHandleComment_PermissionDenied(t *testing.T) {
+	realmID, userID, ticketID := uuid.New(), uuid.New(), uuid.New()
+
+	capture := &mmCapture{posts: &[]capturedPost{}}
+	comments := new(MockCommentsService)
+	svc, _, users, userRealms, tickets := dmFixtureService(t, capture, comments)
+	expectExistingUser(users, userRealms, userID, realmID)
+	tickets.On("Get", mock.Anything, mock.Anything).Return([]*models.Ticket{{ID: ticketID}}, 1, nil)
+	comments.On("Create", mock.Anything, mock.Anything, mock.Anything).Return(nil, models.ErrPermissionDenied)
+
+	require.NoError(t, svc.handleComment(context.Background(), cardChannel(realmID), "№7 текст"))
+
+	require.Len(t, *capture.posts, 1)
+	assert.Equal(t, "Нет прав комментировать заявку №7", (*capture.posts)[0].message)
 }
 
 func TestDetailText(t *testing.T) {

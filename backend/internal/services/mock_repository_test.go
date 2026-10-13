@@ -538,6 +538,37 @@ func (m *MockCategoriesRepo) Delete(ctx context.Context, dto *models.DelCategory
 	return args.Error(0)
 }
 
+type MockSitesRepo struct {
+	mock.Mock
+}
+
+func (m *MockSitesRepo) Get(ctx context.Context, req *models.GetSitesDTO) ([]*models.Site, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.Site), args.Error(1)
+}
+func (m *MockSitesRepo) GetByID(ctx context.Context, req *models.GetSiteByIdDTO) (*models.Site, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Site), args.Error(1)
+}
+func (m *MockSitesRepo) Create(ctx context.Context, dto *models.SiteDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+func (m *MockSitesRepo) Update(ctx context.Context, dto *models.SiteDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+func (m *MockSitesRepo) Delete(ctx context.Context, dto *models.DelSiteDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+
 type MockCategoryGroupsRepo struct {
 	mock.Mock
 }
@@ -1146,6 +1177,10 @@ func (m *MockActivityLogRepo) Get(ctx context.Context, req *models.GetLogsDTO) (
 func (m *MockActivityLogRepo) Create(ctx context.Context, tx postgres.Tx, dto []*models.ActivityLogDTO) error {
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
+}
+func (m *MockActivityLogRepo) GetRealmByEntity(ctx context.Context, tx postgres.Tx, entityType string, entityID uuid.UUID) (uuid.UUID, string, bool, error) {
+	args := m.Called(ctx, tx, entityType, entityID)
+	return args.Get(0).(uuid.UUID), args.Get(1).(string), args.Bool(2), args.Error(3)
 }
 
 type MockSubtasksRepo struct {

@@ -113,7 +113,7 @@ func NewServices(deps *Deps) *Services {
 	categoryGroups := NewCategoryGroupService(deps.Repo.CategoryGroups)
 	sites := NewSiteService(deps.Repo.Sites)
 	logs := NewActivityLogService(deps.Repo.ActivityLog, transaction)
-	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs, access)
+	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs, users, access)
 	statistics := NewStatisticsService(deps.Repo.Statistics, groups, access)
 	subscriptionOps := NewTicketSubscriptionOpsService(deps.Repo.TicketSubscriptions)
 
@@ -147,6 +147,8 @@ func NewServices(deps *Deps) *Services {
 		Groups:        groups,
 		Categories:    categories,
 		Access:        access,
+		Users:         users,
+		Sites:         sites,
 	})
 
 	// Цикл tickets → attachments разорван: уведомление о вложении рассылает сам

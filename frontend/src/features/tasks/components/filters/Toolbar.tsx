@@ -26,6 +26,7 @@ export const Toolbar: FC<Props> = ({
 	groupBy,
 	activeCount,
 	hideGrouping = false,
+	hideFilters = false,
 	onSearchChange,
 	onGroupChange,
 	onOpenFilter,
@@ -49,19 +50,17 @@ export const Toolbar: FC<Props> = ({
 				flexWrap: 'wrap',
 			}}
 		>
-			{!hideFilters && (
-				<TextField
-					value={search}
-					onChange={e => onSearchChange(e.target.value)}
-					placeholder='Поиск...'
-					sx={{ flex: { xs: '1 1 100%', sm: 1 }, order: { xs: 0, sm: 0 }, minWidth: { xs: 150, sm: 250 } }}
-					slotProps={{
-						input: {
-							startAdornment: <SearchIcon sx={{ fontSize: 16, mr: 1, color: '#9ca3af' }} />,
-						},
-					}}
-				/>
-			)}
+			<TextField
+				value={search}
+				onChange={e => onSearchChange(e.target.value)}
+				placeholder='Поиск...'
+				sx={{ flex: { xs: '1 1 100%', sm: 1 }, order: { xs: 0, sm: 0 }, minWidth: { xs: 150, sm: 250 } }}
+				slotProps={{
+					input: {
+						startAdornment: <SearchIcon sx={{ fontSize: 16, mr: 1, color: '#9ca3af' }} />,
+					},
+				}}
+			/>
 
 			{!hideGrouping && (
 				<Box sx={{ width: { xs: '100%', sm: 'auto' } }}>

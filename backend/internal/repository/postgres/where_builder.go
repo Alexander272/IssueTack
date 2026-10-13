@@ -153,6 +153,30 @@ func (w *whereBuilder) creatorOrOwner(userID *uuid.UUID) {
 	w.idx++
 }
 
+// readableBy добавляет "(t.creator_id = $n OR t.owner_id = $n OR t.assignee_id = $n
+// OR t.group_id IN (...))": заявки, доступные пользователю на чтение по атрибутам.
+// Используется для поиска заявки по номеру, где обычный списочный scope отсекал бы
+// создателя, не состоящего в группе тикета. Внегрупповые заявки, назначенные
+// пользователю, покрываются сравнением по assignee_id.
+func (w *whereBuilder) readableBy(f *models.MyWorkFilter) {
+	if f == nil {
+		return
+	}
+	w.idx++
+	user := fmt.Sprintf("$%d", w.idx)
+	w.args = append(w.args, f.UserID)
+	disj := []string{
+		"t.creator_id = " + user,
+		"t.owner_id = " + user,
+		"t.assignee_id = " + user,
+	}
+	if len(f.GroupIDs) > 0 {
+		disj = append(disj, "t.group_id IN ("+w.place(len(f.GroupIDs))+")")
+		w.args = append(w.args, toAny(f.GroupIDs)...)
+	}
+	w.add("(" + strings.Join(disj, " OR ") + ")")
+}
+
 // myWork добавляет "(t.assignee_id = $n OR t.group_id IN (...))" для страницы
 // «Мои задачи»: личные назначения пользователя ИЛИ задачи его групп.
 func (w *whereBuilder) myWork(f *models.MyWorkFilter) {

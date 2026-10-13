@@ -80,7 +80,13 @@ type TicketFilter struct {
 	// CreatedOrOwnedBy — внутренний фильтр «автор ИЛИ заказчик» (для Mattermost-плагина):
 	// тикеты, где пользователь является creator_id ИЛИ owner_id.
 	CreatedOrOwnedBy *uuid.UUID `json:"-"`
-	Archived         *bool      `form:"archived" json:"archived"`
+	// ReadableBy — внутренний фильтр поиска заявки по номеру (Mattermost-бот):
+	// тикеты, доступные пользователю на чтение по атрибутам — автор, заказчик,
+	// исполнитель ИЛИ группа тикета входит в GroupIDs. Обычный списочный scope
+	// «группы актора + внегрупповые назначенные ему» отсекал создателя, который
+	// сам в группу тикета не входит (заявка группы, автор — рядовой заявитель).
+	ReadableBy *MyWorkFilter `json:"-"`
+	Archived   *bool         `form:"archived" json:"archived"`
 	// ArchiveWithResolved — страница «Мои задачи» (mode=assigned): resolved считается
 	// архивным статусом. Активная вкладка его не показывает, архивная — включает.
 	// Ставится сервисом (зависит от режима страницы, из запроса не приходит).

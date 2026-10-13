@@ -27,6 +27,8 @@ type TicketService struct {
 	groups        Groups
 	categories    Categories
 	access        TicketAccessChecker
+	users         Users
+	sites         Sites
 }
 
 // NewTicketService создаёт новый сервис тикетов на основе переданных зависимостей.
@@ -41,6 +43,8 @@ func NewTicketService(deps *TicketDeps) *TicketService {
 		groups:        deps.Groups,
 		categories:    deps.Categories,
 		access:        deps.Access,
+		users:         deps.Users,
+		sites:         deps.Sites,
 	}
 }
 
@@ -55,6 +59,8 @@ type TicketDeps struct {
 	Groups        Groups
 	Categories    Categories
 	Access        TicketAccessChecker
+	Users         Users
+	Sites         Sites
 }
 
 // Tickets — интерфейс сервиса тикетов: описывает чтение, создание,
@@ -158,6 +164,15 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 			// «Автор ИЛИ заказчик» (mode=created_or_owned, Mattermost-плагин):
 			// тикеты, где пользователь автор ИЛИ заказчик (owner), без ограничения группой.
 			req.CreatedOrOwnedBy = &req.Actor.ID
+		} else if req.Mode != nil && *req.Mode == "readable" {
+			// Поиск заявки по номеру (mode=readable, Mattermost-бот): заявки, доступные
+			// на чтение по атрибутам — автор, заказчик, исполнитель ИЛИ группа тикета.
+			// Обычный списочный scope ниже отсекал бы создателя вне группы тикета,
+			// и бот отвечал «заявка не найдена» на собственную заявку автора.
+			req.ReadableBy = &models.MyWorkFilter{
+				UserID:   req.Actor.ID,
+				GroupIDs: unionGroupIDs(managed, member),
+			}
 		} else {
 			// Обзор без mode: все заявки групп пользователя + внегрупповые, назначенные ему.
 			if groups := unionGroupIDs(managed, member); len(groups) > 0 {
@@ -812,12 +827,7 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 		}
 
 		if len(changes) > 0 {
-			oldMap := make(map[string]string, len(changes))
-			newMap := make(map[string]string, len(changes))
-			for _, c := range changes {
-				oldMap[string(c.Tag)] = c.OldVal
-				newMap[string(c.Tag)] = c.NewVal
-			}
+			oldMap, newMap := s.logValues(ctx, oldTicket, changes)
 
 			log := &models.ActivityLogDTO{
 				Action:        "updated",
@@ -934,12 +944,7 @@ func (s *TicketService) Take(ctx context.Context, dto *models.TakeTicketDTO) err
 		}
 
 		if len(changes) > 0 {
-			oldMap := make(map[string]string, len(changes))
-			newMap := make(map[string]string, len(changes))
-			for _, c := range changes {
-				oldMap[string(c.Tag)] = c.OldVal
-				newMap[string(c.Tag)] = c.NewVal
-			}
+			oldMap, newMap := s.logValues(ctx, oldTicket, changes)
 
 			log := &models.ActivityLogDTO{
 				Action:        "updated",
@@ -1030,12 +1035,7 @@ func (s *TicketService) Transfer(ctx context.Context, dto *models.TransferTicket
 		}
 
 		if len(changes) > 0 {
-			oldMap := make(map[string]string, len(changes))
-			newMap := make(map[string]string, len(changes))
-			for _, c := range changes {
-				oldMap[string(c.Tag)] = c.OldVal
-				newMap[string(c.Tag)] = c.NewVal
-			}
+			oldMap, newMap := s.logValues(ctx, oldTicket, changes)
 
 			log := &models.ActivityLogDTO{
 				Action:        "updated",
@@ -1097,7 +1097,7 @@ func (s *TicketService) Delete(ctx context.Context, dto *models.DeleteTicketDTO)
 			"priority": ticket.Priority,
 		}
 		if ticket.Assignee != nil {
-			snapshot["assignee"] = ticket.Assignee.ID.String()
+			snapshot["assignee"] = s.logUserLabel(ctx, ticket.Assignee.ID)
 		}
 		log := &models.ActivityLogDTO{
 			Action:        "deleted",

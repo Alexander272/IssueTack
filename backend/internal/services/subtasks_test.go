@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/access"
@@ -276,4 +277,55 @@ func TestSubtaskService_CreateManyOnCreate_Empty(t *testing.T) {
 	assert.NoError(t, err)
 	mockRepo.AssertNotCalled(t, "CreateSeveral", mock.Anything, mock.Anything, mock.Anything)
 	mockLogs.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
+}
+
+// TestSubtaskService_Update_LogValues_AssigneeName — снапшот журнала подзадачи
+// пишет ФИО исполнителя (старого и нового) вместо id.
+func TestSubtaskService_Update_LogValues_AssigneeName(t *testing.T) {
+	mockRepo, mockLogs, mockAccess, svc := subtaskServiceFixtures()
+	mockUsers := new(MockUserService)
+	svc.users = mockUsers
+
+	subtaskID := uuid.New()
+	ticketID := uuid.New()
+	actorID := uuid.New()
+	oldAssigneeID := uuid.New()
+	newAssigneeID := uuid.New()
+	dto := &models.SubtaskDTO{
+		ID:         subtaskID,
+		TicketID:   ticketID,
+		Title:      "Subtask",
+		AssigneeID: &newAssigneeID,
+		Actor:      &models.Actor{ID: actorID, Name: "test"},
+		Provided:   map[string]bool{"assigneeId": true},
+	}
+	old := &models.Subtask{
+		ID:       subtaskID,
+		TicketID: ticketID,
+		Title:    "Subtask",
+		Assignee: &models.UserShort{ID: oldAssigneeID, FirstName: "Иван", LastName: "Иванов", Username: "iivanov"},
+	}
+
+	mockRepo.On("GetByID", mock.Anything, &models.GetSubtaskDTO{ID: subtaskID}).Return(old, nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, &models.AccessCheckDTO{TicketID: ticketID, UserID: actorID}).Return(nil)
+	mockAccess.On("CanEditSubtask", mock.Anything, actorID, old).Return(true, nil)
+	mockUsers.On("GetByID", mock.Anything, newAssigneeID).
+		Return(&models.UserData{ID: newAssigneeID, FirstName: "Пётр", LastName: "Петров", Username: "ppetrov"}, nil)
+	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		logs := args.Get(2).([]*models.ActivityLogDTO)
+		if assert.Len(t, logs, 1) {
+			var oldVals, newVals map[string]string
+			if assert.NoError(t, json.Unmarshal(*logs[0].OldValues, &oldVals)) &&
+				assert.NoError(t, json.Unmarshal(*logs[0].NewValues, &newVals)) {
+				assert.Equal(t, "Иванов Иван (iivanov)", oldVals["assigned"], "старый исполнитель подзадачи — ФИО")
+				assert.Equal(t, "Петров Пётр (ppetrov)", newVals["assigned"], "новый исполнитель подзадачи — ФИО")
+			}
+		}
+	})
+
+	err := svc.Update(context.Background(), nil, dto)
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockLogs.AssertExpectations(t)
 }

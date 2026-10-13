@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
@@ -25,6 +26,11 @@ func NewActivityRepo(db *pgxpool.Pool, tr Transaction) *activityRepository {
 type ActivityLog interface {
 	Get(ctx context.Context, req *models.GetLogsDTO) ([]*models.ActivityLog, error)
 	Create(ctx context.Context, tx Tx, dto []*models.ActivityLogDTO) error
+	// GetRealmByEntity возвращает реалм сущности журнала по entity_type/entity_id:
+	// заявки — из tickets, подзадачи — через subtasks.ticket_id. ok=false — тип не
+	// резолвится или сущности нет. Запрос идёт через ту же транзакцию: строки
+	// незакоммиченной заявки видит только tx-запрос, а не пул.
+	GetRealmByEntity(ctx context.Context, tx Tx, entityType string, entityID uuid.UUID) (uuid.UUID, string, bool, error)
 }
 
 type nullableActivityActor struct {
@@ -111,6 +117,44 @@ func (r *activityRepository) Get(ctx context.Context, req *models.GetLogsDTO) ([
 	}
 
 	return data, nil
+}
+
+// GetRealmByEntity резолвит реалм сущности журнала для записей, у которых
+// RealmID не заполнен (старые/обходные пути). Без него выборки GET /activity-log
+// с фильтром по авторизованному реалму никогда не вернут запись — «История»
+// пустая. Запрос через getExec(tx): внутри транзакции создания заявки строка
+// tickets ещё не закоммичена и видна только tx-запросу.
+func (r *activityRepository) GetRealmByEntity(ctx context.Context, tx Tx, entityType string, entityID uuid.UUID) (uuid.UUID, string, bool, error) {
+	var query string
+	switch entityType {
+	case models.EntityTypeTicket:
+		query = fmt.Sprintf(`SELECT t.realm_id, COALESCE(r.name, '')
+			FROM %s t
+			LEFT JOIN %s r ON r.id = t.realm_id
+			WHERE t.id = $1`, Tables.Tickets, Tables.Realms)
+	case models.EntityTypeSubtask:
+		query = fmt.Sprintf(`SELECT t.realm_id, COALESCE(r.name, '')
+			FROM %s s
+			JOIN %s t ON t.id = s.ticket_id
+			LEFT JOIN %s r ON r.id = t.realm_id
+			WHERE s.id = $1`, Tables.Subtasks, Tables.Tickets, Tables.Realms)
+	default:
+		return uuid.Nil, "", false, nil
+	}
+
+	var realmID *uuid.UUID
+	var realmName string
+	err := r.getExec(tx).QueryRow(ctx, query, entityID).Scan(&realmID, &realmName)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, "", false, nil
+	}
+	if err != nil {
+		return uuid.Nil, "", false, MapError(fmt.Errorf("get realm by entity: %w", err))
+	}
+	if realmID == nil {
+		return uuid.Nil, "", false, nil
+	}
+	return *realmID, realmName, true, nil
 }
 
 func (r *activityRepository) Create(ctx context.Context, tx Tx, dto []*models.ActivityLogDTO) error {
