@@ -41,10 +41,10 @@ const visibleChanges = (log: IActivityLog, hasNoGroups: boolean): VisibleChange[
 		.map(([tag, newValue]) => ({ tag, oldValue: olds[tag] ?? '', newValue }))
 }
 
-// Значение отсутствия приходит как "none"; в старых записях журнала встречаются
-// "<nil>"/"nil" (артефакт прежнего форматирования) и пустая строка — всё показываем «—».
-const isNone = (value: string | undefined): boolean =>
-	value === undefined || value === '' || value === 'none' || value === '<nil>' || value === 'nil'
+// Значение отсутствия: undefined — ключа нет, '' — фронтовый дефолт пустой старой
+// стороны (и пустое описание), 'none' — каноничное «не задано». Легаси-артефакты
+// "<nil>"/"nil" нормализованы в БД миграцией-бэкфиллом, здесь не нужны.
+const isNone = (value: string | undefined): boolean => value === undefined || value === '' || value === 'none'
 
 const formatDate = (value: string): string => {
 	if (isNone(value)) return '—'

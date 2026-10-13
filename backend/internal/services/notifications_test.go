@@ -473,7 +473,7 @@ func TestNotificationService_TicketUpdated_PriorityDueDateChange_OwnerNotNotifie
 
 	changes := []*models.FieldChange{
 		{Tag: models.ActionPriorityChanged, OldVal: "low", NewVal: "urgent"},
-		{Tag: models.ActionDueDateChanged, OldVal: "none", NewVal: "2026-09-02 12:00:00 +0000 UTC"},
+		{Tag: models.ActionDueDateChanged, OldVal: "none", NewVal: "2026-09-02T12:00:00Z"},
 	}
 
 	err := svc.TicketUpdated(context.Background(), ticket, uuid.New(), changes)

@@ -386,26 +386,17 @@ func ruPriority(v string) string {
 
 // ruTime форматирует время изменения из RFC3339 в русское читаемое представление.
 // Формат: "02 января 2006 15:04" (без дня недели, родительный падеж месяца).
+// Сырой Go-формат (time.Time.String()) сюда не приходит: новые значения пишет
+// formatFieldValue (RFC3339), а старые приведены к нему миграцией-бэкфиллом.
 func ruTime(v string) string {
-	if v == "" || v == "none" || v == "nil" {
+	if v == "" || v == "none" {
 		return "—"
 	}
 	t, err := time.Parse(time.RFC3339, v)
-	if err == nil {
-		return monday.Format(t, "2 January 2006 15:04", monday.LocaleRuRU)
+	if err != nil {
+		return v
 	}
-	// Fallback: try to parse the raw Go time format if present
-	if t, err := time.Parse("2006-01-02 15:04:05 -0700 MST", v); err == nil {
-		return monday.Format(t, "2 January 2006 15:04", monday.LocaleRuRU)
-	}
-	// Another common fallback: numeric with monotonic clock
-	if t, err := time.Parse("2006-01-02 15:04:05.999999999 -0700 +05", v); err == nil {
-		return monday.Format(t, "2 January 2006 15:04", monday.LocaleRuRU)
-	}
-	if t, err := time.Parse("2006-01-02 15:04:05.999999999 -0700 MST", v); err == nil {
-		return monday.Format(t, "2 January 2006 15:04", monday.LocaleRuRU)
-	}
-	return v
+	return monday.Format(t, "2 January 2006 15:04", monday.LocaleRuRU)
 }
 
 func prettyVal(v string) string {

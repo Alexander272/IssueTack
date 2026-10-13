@@ -560,7 +560,8 @@ func TestMattermostNotifier_SendsUpdatedDM_AssignedOtherRecipient(t *testing.T) 
 }
 
 // Прочие id-поля (заказчик/начальник/группа/категория/площадка) и срок выводятся
-// без сырых uuid: подпись по-русски, срок — в формате «02.01.2006 15:04».
+// без сырых uuid: подпись по-русски, срок — в формате «2 сентября 2026 12:00»
+// (значение в журнале — RFC3339, сырой Go-формат приведён к нему бэкфиллом).
 func TestMattermostNotifier_SendsUpdatedDM_NoRawIDs(t *testing.T) {
 	mockMMRepo, mockUsers, mockSender, svc := mattermostNotifierServiceFixtures()
 
@@ -574,7 +575,7 @@ func TestMattermostNotifier_SendsUpdatedDM_NoRawIDs(t *testing.T) {
 		{Tag: models.ActionGroupChanged, OldVal: uuid.New().String(), NewVal: "none"},
 		{Tag: models.ActionSiteChanged, OldVal: uuid.New().String(), NewVal: uuid.New().String()},
 		{Tag: models.ActionCategoryChanged, OldVal: "none", NewVal: uuid.New().String()},
-		{Tag: models.ActionDueDateChanged, OldVal: "2026-09-02 12:00:00 +0000 UTC", NewVal: "none"},
+		{Tag: models.ActionDueDateChanged, OldVal: "2026-09-02T12:00:00Z", NewVal: "none"},
 	})
 	assert.NoError(t, err)
 	data, err := json.Marshal(map[string]any{
