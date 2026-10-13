@@ -8,7 +8,7 @@ import type { IFetchError } from '@/app/types/error'
 import type { IComment } from '../../types/comment'
 import type { IAttachment } from '../../types/task'
 import { useGetActivityLogsQuery } from '../../modules/activity/activityApiSlice'
-import { ActivityEntry } from '../../modules/activity/ActivityEntry'
+import { ActivityTimeline } from '../../modules/activity/ActivityTimeline'
 import {
 	useGetCommentsQuery,
 	useCreateCommentMutation,
@@ -420,21 +420,13 @@ export const Comments = ({ taskId, isInactive = false, canWork = true }: Props) 
 					)}
 				</Box>
 			) : (
-				<Box sx={{ p: 2.5, maxHeight: 400, overflow: 'auto' }}>
+				<Box sx={{ maxHeight: 400, overflow: 'auto' }}>
 					{logsLoading ? (
 						<Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
 							<CircularProgress size={24} />
 						</Box>
-					) : logs.length === 0 ? (
-						<Typography sx={{ color: '#9ca3af', fontSize: '0.875rem', textAlign: 'center', py: 3 }}>
-							История пуста
-						</Typography>
 					) : (
-						<Stack spacing={2.5}>
-							{logs.map(log => (
-								<ActivityEntry key={log.id} log={log} />
-							))}
-						</Stack>
+						<ActivityTimeline logs={logs} />
 					)}
 				</Box>
 			)}
