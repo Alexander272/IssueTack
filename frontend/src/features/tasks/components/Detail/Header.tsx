@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Box, IconButton, Tooltip, Typography, Menu, MenuItem, ListItemIcon } from '@mui/material'
 import { Star, MoreVertical, ArrowLeftIcon, Pin, Pencil, UserRound } from 'lucide-mui'
-import { useNavigate } from 'react-router'
+import { AppRoutes } from '@/pages/router/routes'
 
 import type { ITask, TicketStatus } from '../../types/task'
 import {
@@ -51,7 +51,7 @@ export const Header = ({ task, onEdit, onTransfer }: Props) => {
 				// ignore
 			}
 		}
-		navigate('/tasks', { replace: true })
+		navigate(AppRoutes.Tasks, { replace: true })
 	}
 
 	const togglePin = () => {
