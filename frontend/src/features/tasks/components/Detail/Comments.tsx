@@ -431,8 +431,15 @@ export const Comments = ({ taskId, isInactive = false, canWork = true }: Props) 
 				</Box>
 			)}
 
-			{(canWork || !isInactive) && (
-				<Box sx={{ borderTop: '1px solid #e5e7eb', p: 2.5, bgcolor: '#f9fafb' }}>
+			{activeTab === 'comments' && (canWork || !isInactive) && (
+				<Box
+					sx={{
+						borderTop: `1px solid ${isInternal || isInactive ? '#fde68a' : '#e5e7eb'}`,
+						p: 2.5,
+						bgcolor: isInternal || isInactive ? '#fffbeb' : '#f9fafb',
+						transition: 'background-color 0.15s, border-color 0.15s',
+					}}
+				>
 					<Box sx={{ display: 'flex', gap: 1.5 }}>
 						<Box sx={{ flex: 1 }}>
 							<TextField
@@ -451,6 +458,10 @@ export const Comments = ({ taskId, isInactive = false, canWork = true }: Props) 
 										borderRadius: '8px',
 										fontSize: '0.8125rem',
 										bgcolor: 'white',
+										...((isInternal || isInactive) && {
+											'& fieldset': { borderColor: '#fde68a' },
+											'&:hover fieldset': { borderColor: '#fcd34d' },
+										}),
 									},
 								}}
 							/>
@@ -526,12 +537,19 @@ export const Comments = ({ taskId, isInactive = false, canWork = true }: Props) 
 									</Tooltip>
 									{canWork && (
 										<>
-											<EyeOff
-												sx={{
-													fontSize: 16,
-													color: isInactive || isInternal ? '#92400e' : '#9ca3af',
-												}}
-											/>
+											{/* разделитель между «прикрепить» и «внутренний» */}
+											<Box sx={{ width: '1px', height: 20, bgcolor: '#e5e7eb', mx: 0.5 }} />
+
+											<Tooltip title='Внутренний комментарий — виден исполнителю и менеджерам заявки'>
+												<span style={{ display: 'inline-flex' }}>
+													<EyeOff
+														sx={{
+															fontSize: 16,
+															color: isInactive || isInternal ? '#92400e' : '#9ca3af',
+														}}
+													/>
+												</span>
+											</Tooltip>
 											{isInactive ? (
 												<Typography sx={{ fontSize: '0.75rem', color: '#92400e' }}>
 													Внутренний (заявка закрыта)
