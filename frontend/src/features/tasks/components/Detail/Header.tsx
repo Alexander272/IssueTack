@@ -10,7 +10,7 @@ import {
 	useRemoveFavoriteMutation,
 } from '@/features/favorites/favoritesApiSlice'
 import { useAppSelector } from '@/hooks/redux'
-import { getUserId } from '@/features/user/userSlice'
+import { getUserId, getHasNoGroups } from '@/features/user/userSlice'
 
 const INACTIVE_STATUSES: TicketStatus[] = ['resolved', 'closed', 'cancelled']
 
@@ -24,6 +24,7 @@ export const Header = ({ task, onEdit, onTransfer }: Props) => {
 	const navigate = useNavigate()
 	const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
 	const currentUserId = useAppSelector(getUserId)
+	const hasNoGroups = useAppSelector(getHasNoGroups)
 
 	const { data: favState } = useGetFavoriteStateQuery(task.id)
 	const [addFavorite] = useAddFavoriteMutation()
@@ -36,6 +37,22 @@ export const Header = ({ task, onEdit, onTransfer }: Props) => {
 	const canTransfer = !isInactive && isAssignee
 
 	const handleMenuClose = () => setAnchorEl(null)
+
+	const handleBack = () => {
+		const ref = document.referrer
+		if (ref) {
+			try {
+				const url = new URL(ref)
+				if (url.origin === window.location.origin) {
+					navigate(-1)
+					return
+				}
+			} catch {
+				// ignore
+			}
+		}
+		navigate('/tasks', { replace: true })
+	}
 
 	const togglePin = () => {
 		if (pinned) {
@@ -67,7 +84,7 @@ export const Header = ({ task, onEdit, onTransfer }: Props) => {
 			<Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1, minWidth: 0 }}>
 				<Tooltip title='К списку заявок'>
 					<IconButton
-						onClick={() => navigate(-1)}
+						onClick={handleBack}
 						sx={{ color: '#6b7280', '&:hover': { svg: { color: 'primary.main' } } }}
 					>
 						<ArrowLeftIcon sx={{ fontSize: 20 }} />
@@ -104,7 +121,7 @@ export const Header = ({ task, onEdit, onTransfer }: Props) => {
 			</Box>
 
 			<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
-				{!isInactive && (
+				{!isInactive && !hasNoGroups && (
 					<Tooltip title={pinned ? 'Открепить' : 'Закрепить'}>
 						<IconButton
 							onClick={togglePin}
@@ -153,7 +170,7 @@ export const Header = ({ task, onEdit, onTransfer }: Props) => {
 							Передать
 						</MenuItem>
 					)}
-					<MenuItem onClick={toggleStar}>
+					<MenuItem onClick={toggleStar} sx={{ display: hasNoGroups ? 'none' : 'flex' }}>
 						<ListItemIcon>
 							<Star sx={{ fontSize: 18, color: starred ? '#f59e0b' : '#9ca3af' }} />
 						</ListItemIcon>
