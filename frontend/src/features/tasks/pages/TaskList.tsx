@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router'
 import { ArchiveIcon, InboxIcon, PlusIcon } from 'lucide-mui'
 
 import type { GroupByField } from '../constants/taskMaps'
-import { statusOptionsFor, groupByFieldHidden } from '../constants/taskMaps'
+import { statusOptionsFor } from '../constants/taskMaps'
 import type { FilterValues } from '../components/filters'
 import type { ITask, ITaskFilter } from '../types/task'
 import { AppRoutes } from '@/pages/router/routes'
@@ -78,25 +78,15 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 		return { ...f, statuses }
 	}
 
-	// clampHiddenFields — у «обычного пользователя» без групп скрыты срок и приоритет,
-	// поэтому сохранённые в localStorage значения этих фильтров и группировки надо
-	// вычищать: невидимый чип/поле иначе продолжит фильтровать список (пусто) и
-	// останется в запросе. Группировку по скрытому полю откатываем на площадку.
+	// clampHiddenFields — для обычного пользователя без групп скрываем группировку и фильтры целиком.
 	const clampHiddenFields = useCallback(
 		(f: FilterValues): FilterValues => {
 			if (!hasNoGroups) return f
-			const hasHidden =
-				f.dueDateFrom !== undefined ||
-				f.dueDateTo !== undefined ||
-				f.priorities !== undefined ||
-				groupByFieldHidden(f.groupBy, hasNoGroups)
+			const hasHidden = f.groupEnabled || Object.values(f).some(v => v !== undefined && v !== false && v !== DEFAULT_FILTERS.sort)
 			if (!hasHidden) return f
 			return {
-				...f,
-				dueDateFrom: undefined,
-				dueDateTo: undefined,
-				priorities: undefined,
-				groupBy: groupByFieldHidden(f.groupBy, hasNoGroups) ? DEFAULT_FILTERS.groupBy : f.groupBy,
+				...DEFAULT_FILTERS,
+				groupEnabled: false,
 			}
 		},
 		[hasNoGroups],
@@ -252,7 +242,8 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 				filters={effectiveFilters}
 				onChange={handleFilterChange}
 				onReset={handleReset}
-				hideGrouping={isArchive}
+				hideGrouping={isArchive || hasNoGroups}
+				hideFilters={hasNoGroups}
 				statusOptions={statusOptions}
 			/>
 

@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Box, IconButton, Tooltip, Typography, Menu, MenuItem, ListItemIcon } from '@mui/material'
 import { Star, MoreVertical, ArrowLeftIcon, Pin, Pencil, UserRound } from 'lucide-mui'
-import { AppRoutes } from '@/pages/router/routes'
+import { useNavigate } from 'react-router'
 
 import type { ITask, TicketStatus } from '../../types/task'
+import { AppRoutes } from '@/pages/router/routes'
 import {
 	useGetFavoriteStateQuery,
 	useAddFavoriteMutation,

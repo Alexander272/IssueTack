@@ -13,7 +13,19 @@ interface Props {
 	task: ITask
 }
 
-const UserRow = ({ label, icon, name, sub, userId }: { label: string; icon: ReactNode; name: string; sub?: string; userId?: string }) => (
+const UserRow = ({
+	label,
+	icon,
+	name,
+	sub,
+	userId,
+}: {
+	label: string
+	icon: ReactNode
+	name: string
+	sub?: string
+	userId?: string
+}) => (
 	<Box>
 		<Typography
 			sx={{ fontSize: '0.75rem', color: '#9ca3af', mb: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}
@@ -148,7 +160,7 @@ export const Participants = ({ task }: Props) => {
 						userId={task.assignee.id}
 					/>
 				)}
-				{task.manager && (
+				{task.manager && !hasNoGroups && (
 					<UserRow
 						label='Руководитель'
 						icon={<Briefcase sx={{ fontSize: 14 }} />}

@@ -13,6 +13,7 @@ interface Props {
 	groupBy: string
 	activeCount: number
 	hideGrouping?: boolean
+	hideFilters?: boolean
 	onSearchChange: (value: string) => void
 	onGroupChange: (option?: GroupByField) => void
 	onOpenFilter: (e: React.MouseEvent<HTMLElement>) => void
@@ -48,17 +49,19 @@ export const Toolbar: FC<Props> = ({
 				flexWrap: 'wrap',
 			}}
 		>
-			<TextField
-				value={search}
-				onChange={e => onSearchChange(e.target.value)}
-				placeholder='Поиск...'
-				sx={{ flex: { xs: '1 1 100%', sm: 1 }, order: { xs: 0, sm: 0 }, minWidth: { xs: 150, sm: 250 } }}
-				slotProps={{
-					input: {
-						startAdornment: <SearchIcon sx={{ fontSize: 16, mr: 1, color: '#9ca3af' }} />,
-					},
-				}}
-			/>
+			{!hideFilters && (
+				<TextField
+					value={search}
+					onChange={e => onSearchChange(e.target.value)}
+					placeholder='Поиск...'
+					sx={{ flex: { xs: '1 1 100%', sm: 1 }, order: { xs: 0, sm: 0 }, minWidth: { xs: 150, sm: 250 } }}
+					slotProps={{
+						input: {
+							startAdornment: <SearchIcon sx={{ fontSize: 16, mr: 1, color: '#9ca3af' }} />,
+						},
+					}}
+				/>
+			)}
 
 			{!hideGrouping && (
 				<Box sx={{ width: { xs: '100%', sm: 'auto' } }}>
@@ -108,62 +111,66 @@ export const Toolbar: FC<Props> = ({
 				</Box>
 			)}
 
-			<Button
-				variant='outlined'
-				color='inherit'
-				onClick={onOpenFilter}
-				sx={{
-					flexShrink: 0,
-					height: 40,
-					borderColor: '#c4c4c4',
-					textTransform: 'none',
-					// color: 'text.secondary',
-					whiteSpace: 'nowrap',
-					color: activeCount > 0 ? 'primary.main' : '#9ca3af',
-					width: { xs: '100%', sm: 'auto' },
-				}}
-			>
-				<FilterIcon sx={{ fontSize: 18, mr: 1 }} />
-				Фильтры
-				{activeCount > 0 && (
-					<Box
-						component='span'
-						sx={{
-							ml: 0.75,
-							bgcolor: '#2f81f7',
-							color: '#fff',
-							borderRadius: '10px',
-							px: 0.75,
-							py: 0.125,
-							fontSize: '0.75rem',
-							fontWeight: 600,
-							lineHeight: 1.4,
-						}}
-					>
-						{activeCount}
-					</Box>
-				)}
-			</Button>
+			{!hideFilters && (
+				<Button
+					variant='outlined'
+					color='inherit'
+					onClick={onOpenFilter}
+					sx={{
+						flexShrink: 0,
+						height: 40,
+						borderColor: '#c4c4c4',
+						textTransform: 'none',
+						// color: 'text.secondary',
+						whiteSpace: 'nowrap',
+						color: activeCount > 0 ? 'primary.main' : '#9ca3af',
+						width: { xs: '100%', sm: 'auto' },
+					}}
+				>
+					<FilterIcon sx={{ fontSize: 18, mr: 1 }} />
+					Фильтры
+					{activeCount > 0 && (
+						<Box
+							component='span'
+							sx={{
+								ml: 0.75,
+								bgcolor: '#2f81f7',
+								color: '#fff',
+								borderRadius: '10px',
+								px: 0.75,
+								py: 0.125,
+								fontSize: '0.75rem',
+								fontWeight: 600,
+								lineHeight: 1.4,
+							}}
+						>
+							{activeCount}
+						</Box>
+					)}
+				</Button>
+			)}
 
-			<Button
-				onClick={onReset}
-				variant='outlined'
-				color='inherit'
-				sx={{
-					flexShrink: 0,
-					height: 40,
-					order: { xs: 1, sm: 3 },
-					textTransform: 'none',
-					minWidth: 'auto',
-					whiteSpace: 'nowrap',
-					borderColor: '#c4c4c4',
-					color: '#9ca3af',
-					width: { xs: '100%', sm: 'auto' },
-				}}
-			>
-				<RefreshCwIcon sx={{ fontSize: 14, mr: 1 }} />
-				Сбросить
-			</Button>
+			{!hideFilters && (
+				<Button
+					onClick={onReset}
+					variant='outlined'
+					color='inherit'
+					sx={{
+						flexShrink: 0,
+						height: 40,
+						order: { xs: 1, sm: 3 },
+						textTransform: 'none',
+						minWidth: 'auto',
+						whiteSpace: 'nowrap',
+						borderColor: '#c4c4c4',
+						color: '#9ca3af',
+						width: { xs: '100%', sm: 'auto' },
+					}}
+				>
+					<RefreshCwIcon sx={{ fontSize: 14, mr: 1 }} />
+					Сбросить
+				</Button>
+			)}
 		</Box>
 	)
 }

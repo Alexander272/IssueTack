@@ -77,14 +77,12 @@ export const CategoryAndSiteSection = ({ number = 1, categories, sites }: Props)
 											>
 												<ListTreeIcon sx={{ fontSize: 16 }} />
 											</Box>
-											<Typography
-												sx={{ fontSize: '0.75rem', fontWeight: 600, color: 'text.secondary' }}
-											>
+											<Typography sx={{ fontSize: '0.8125rem', fontWeight: 700 }}>
 												{params.group}
 											</Typography>
 										</Stack>
 
-										<Box component='ul' sx={{ p: 0 }}>
+										<Box component='ul' sx={{ p: 0, pl: 1.5 }}>
 											{params.children}
 										</Box>
 									</Box>
@@ -95,8 +93,8 @@ export const CategoryAndSiteSection = ({ number = 1, categories, sites }: Props)
 										<Box component='li' key={key} {...rest}>
 											<Box
 												sx={{
-													width: 32,
-													height: 32,
+													width: 26,
+													height: 26,
 													borderRadius: '8px',
 													bgcolor: '#dbeafe',
 													color: 'primary.main',
@@ -107,7 +105,7 @@ export const CategoryAndSiteSection = ({ number = 1, categories, sites }: Props)
 													flexShrink: 0,
 												}}
 											>
-												<Layers sx={{ fontSize: 16 }} />
+												<Layers sx={{ fontSize: 14 }} />
 											</Box>
 											<Box sx={{ minWidth: 0 }}>
 												<Typography sx={{ fontSize: '0.8125rem', fontWeight: 500 }}>
