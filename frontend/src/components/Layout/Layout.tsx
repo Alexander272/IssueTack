@@ -23,6 +23,7 @@ export const Layout = () => {
 	const isMember = memberGroupIds.length > 0
 	const isAdminAccess = useCheckPermissions({ anyOf: adminPermissions })
 	const canViewEquipment = useCheckPermissions({ anyOf: ['equipment:read'] })
+	const canSettingsEquipment = useCheckPermissions({ allOf: ['equipment:read', 'equipment:write'] })
 	const sidebarConfig = sidebarRules.find(r => r.match(location.pathname))?.config
 	const [mobileOpen, setMobileOpen] = useState(false)
 
@@ -33,6 +34,7 @@ export const Layout = () => {
 					if (!isManager && managerOnlyRoutes.has(item.path as '/groups')) return false
 					if (item.path === AppRoutes.NotificationSettings && !isManager && !isMember) return false
 					if (item.path === AppRoutes.Equipment && !canViewEquipment) return false
+					if (item.path === AppRoutes.EquipmentSettings && !canSettingsEquipment) return false
 					if (location.pathname.startsWith(AppRoutes.Accesses) && !isAdminAccess) return false
 					return true
 				}),

@@ -19,6 +19,7 @@ import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
 import type { IEquipmentType, IEquipmentTypeDTO } from '../types/equipment'
+import { EQUIPMENT_TYPE_KIND_OPTIONS } from '../types/equipment'
 import {
 	useCreateEquipmentTypeMutation,
 	useUpdateEquipmentTypeMutation,
@@ -33,33 +34,24 @@ type Props = {
 	setType?: Dispatch<SetStateAction<IEquipmentTypeDTO | null>>
 }
 
-const CATEGORIES = [
-	{ value: 'device', label: 'Устройство' },
-	{ value: 'component', label: 'Комплектующее' },
-	{ value: 'periphery', label: 'Периферия' },
-]
+const CATEGORIES = EQUIPMENT_TYPE_KIND_OPTIONS
 
-export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType }) => {
-	const isEdit = Boolean(type?.id)
+export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType }) => {	const isEdit = Boolean(type?.id)
 	const [deleteOpen, setDeleteOpen] = useState(false)
 
 	const [create, { isLoading: isCreating }] = useCreateEquipmentTypeMutation()
 	const [update, { isLoading: isUpdating }] = useUpdateEquipmentTypeMutation()
 	const [remove, { isLoading: isDeleting }] = useDeleteEquipmentTypeMutation()
 
-	const defaultIsComponent = type?.isComponent ?? false
-	const defaultCategory = defaultIsComponent ? 'component' : 'device'
-
-	const { control, handleSubmit, formState } = useForm<IEquipmentTypeDTO & { category: string }>({
+	const { control, handleSubmit, formState } = useForm<IEquipmentTypeDTO>({
 		values: type
 			? {
 				id: type.id,
 				name: type.name,
-				isComponent: type.isComponent,
+				kind: type.kind,
 				sortOrder: type.sortOrder,
-				category: defaultCategory,
 			}
-			: { id: undefined, name: '', isComponent: false, sortOrder: 0, category: 'device' },
+			: { id: undefined, name: '', kind: 'device', sortOrder: 0 },
 		mode: 'onTouched',
 	})
 
@@ -69,7 +61,7 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 		const dto: IEquipmentTypeDTO = {
 			id: form.id,
 			name: form.name,
-			isComponent: form.category === 'component',
+			kind: form.kind,
 			sortOrder: form.sortOrder ?? 0,
 		}
 		try {
@@ -151,7 +143,7 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 								</Typography>
 								<Controller
 									control={control}
-									name='category'
+									name='kind'
 									rules={{ required: 'Обязательное поле' }}
 									render={({ field, fieldState }) => (
 										<TextField
@@ -171,7 +163,9 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 										</TextField>
 									)}
 								/>
-								<FormHelperText sx={{ mt: 0.5 }}>Комплектующие — запчасти и периферия, их нельзя выдать отдельно</FormHelperText>
+								<FormHelperText sx={{ mt: 0.5 }}>
+									Комплектующие и расходники можно включить в физический состав; устройства и периферию — нет
+								</FormHelperText>
 							</Box>
 						</Box>
 					</DialogContent>

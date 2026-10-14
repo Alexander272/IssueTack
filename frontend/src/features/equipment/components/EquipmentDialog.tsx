@@ -1,4 +1,4 @@
-import { type FC } from 'react'
+import { type FC, useEffect } from 'react'
 import {
 	Autocomplete,
 	Box,
@@ -14,13 +14,13 @@ import {
 	TextField,
 	Typography,
 } from '@mui/material'
-import { Controller, useForm } from 'react-hook-form'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import { XIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
 import type { IEquipment, IEquipmentDTO } from '../types/equipment'
-import { EQUIPMENT_STATUS_OPTIONS } from '../types/equipment'
+import { EQUIPMENT_STATUS_OPTIONS, canBePart } from '../types/equipment'
 import {
 	useCreateEquipmentMutation,
 	useGetAllEquipmentQuery,
@@ -81,10 +81,20 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit }) => {
 	const users = usersData?.data ?? []
 	const parentCandidates = (unitsData?.data ?? []).filter(u => u.id !== unit?.id)
 
-	const { control, handleSubmit, formState } = useForm<IEquipmentDTO>({
+	const { control, handleSubmit, formState, setValue } = useForm<IEquipmentDTO>({
 		defaultValues: toDefault(unit),
 		mode: 'onTouched',
 	})
+
+	const typeId = useWatch({ control, name: 'typeId' })
+	const selectedType = types.find(t => t.id === typeId)
+	const canBePartType = canBePart(selectedType?.kind)
+
+	// В физический состав (parent_id) можно положить только комплектующее или
+	// расходник: у остальных родитель недопустим — сбрасываем и блокируем поле.
+	useEffect(() => {
+		if (selectedType && !canBePart(selectedType.kind)) setValue('parentId', null)
+	}, [selectedType, setValue])
 
 	const isLoading = isCreating || isUpdating
 
@@ -98,7 +108,7 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit }) => {
 			purchaseDate: form.purchaseDate || null,
 			warrantyUntil: form.warrantyUntil || null,
 			cost: Number.isFinite(Number(form.cost)) ? Number(form.cost) : null,
-			parentId: form.parentId || null,
+			parentId: selectedType && !canBePart(selectedType.kind) ? null : form.parentId || null,
 			siteId: form.siteId || null,
 			holderUserId: form.holderUserId || null,
 		}
@@ -392,6 +402,7 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit }) => {
 									render={({ field }) => (
 										<Autocomplete
 											options={parentCandidates}
+											disabled={!canBePartType}
 											getOptionLabel={u => u.name}
 											value={parentCandidates.find(u => u.id === field.value) ?? null}
 											onChange={(_e, value) => field.onChange(value?.id ?? null)}
@@ -400,6 +411,11 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit }) => {
 													{...params}
 													size='small'
 													placeholder='Родитель (необязательно)'
+													helperText={
+														selectedType && !canBePartType
+															? 'В физический состав можно включить только комплектующее или расходник'
+															: undefined
+													}
 												/>
 											)}
 										/>

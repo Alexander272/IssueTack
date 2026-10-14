@@ -75,7 +75,7 @@ type Equipment interface {
 // ФИО держателя) и COUNT(*) OVER() для тотала страницы.
 func equipmentSelectBase() string {
 	return fmt.Sprintf(`SELECT 
-			e.id, e.realm_id, e.type_id, et.name, et.is_component, e.name, e.vendor, e.model,
+			e.id, e.realm_id, e.type_id, et.name, et.kind, e.name, e.vendor, e.model,
 			e.serial_number, e.inventory_number, e.specs, e.status, e.parent_id, e.site_id, s.name,
 			e.holder_user_id, e.holder_name,
 			COALESCE(NULLIF(TRIM(u.last_name || ' ' || u.first_name), ''), u.username),
@@ -97,7 +97,7 @@ func scanEquipmentRow(row rowScanner) (*models.Equipment, int, error) {
 	var total int
 
 	if err := row.Scan(
-		&item.ID, &item.RealmID, &item.TypeID, &item.TypeName, &item.IsComponent,
+		&item.ID, &item.RealmID, &item.TypeID, &item.TypeName, &item.TypeKind,
 		&item.Name, &item.Vendor, &item.Model,
 		&item.SerialNumber, &item.InventoryNumber, &item.Specs, &item.Status,
 		&item.ParentID, &item.SiteID, &siteName,
@@ -120,7 +120,7 @@ func scanEquipmentRow(row rowScanner) (*models.Equipment, int, error) {
 }
 
 func (r *EquipmentRepo) GetTypes(ctx context.Context, req *models.GetEquipmentTypesDTO) ([]*models.EquipmentType, error) {
-	query := fmt.Sprintf(`SELECT id, realm_id, name, is_component, sort_order, created_at, updated_at
+	query := fmt.Sprintf(`SELECT id, realm_id, name, kind, sort_order, created_at, updated_at
 		FROM %s WHERE realm_id = $1 ORDER BY sort_order, name`, Tables.EquipmentTypes)
 
 	rows, err := r.db.Query(ctx, query, req.RealmID)
@@ -132,7 +132,7 @@ func (r *EquipmentRepo) GetTypes(ctx context.Context, req *models.GetEquipmentTy
 	data := []*models.EquipmentType{}
 	for rows.Next() {
 		item := &models.EquipmentType{}
-		if err := rows.Scan(&item.ID, &item.RealmID, &item.Name, &item.IsComponent,
+		if err := rows.Scan(&item.ID, &item.RealmID, &item.Name, &item.Kind,
 			&item.SortOrder, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, MapError(fmt.Errorf("scan row error: %w", err))
 		}
@@ -145,12 +145,12 @@ func (r *EquipmentRepo) GetTypes(ctx context.Context, req *models.GetEquipmentTy
 }
 
 func (r *EquipmentRepo) GetTypeByID(ctx context.Context, req *models.GetEquipmentTypeByIdDTO) (*models.EquipmentType, error) {
-	query := fmt.Sprintf(`SELECT id, realm_id, name, is_component, sort_order, created_at, updated_at
+	query := fmt.Sprintf(`SELECT id, realm_id, name, kind, sort_order, created_at, updated_at
 		FROM %s WHERE id = $1 AND realm_id = $2`, Tables.EquipmentTypes)
 
 	item := &models.EquipmentType{}
 	if err := r.db.QueryRow(ctx, query, req.ID, req.RealmID).Scan(
-		&item.ID, &item.RealmID, &item.Name, &item.IsComponent, &item.SortOrder, &item.CreatedAt, &item.UpdatedAt,
+		&item.ID, &item.RealmID, &item.Name, &item.Kind, &item.SortOrder, &item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -161,10 +161,10 @@ func (r *EquipmentRepo) CreateType(ctx context.Context, dto *models.EquipmentTyp
 	id := uuid.New()
 	dto.ID = &id
 
-	query := fmt.Sprintf(`INSERT INTO %s (id, realm_id, name, is_component, sort_order)
+	query := fmt.Sprintf(`INSERT INTO %s (id, realm_id, name, kind, sort_order)
 		VALUES ($1, $2, $3, $4, $5)`, Tables.EquipmentTypes)
 
-	_, err := r.db.Exec(ctx, query, id, dto.RealmID, dto.Name, dto.IsComponent, dto.SortOrder)
+	_, err := r.db.Exec(ctx, query, id, dto.RealmID, dto.Name, dto.Kind, dto.SortOrder)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -172,10 +172,10 @@ func (r *EquipmentRepo) CreateType(ctx context.Context, dto *models.EquipmentTyp
 }
 
 func (r *EquipmentRepo) UpdateType(ctx context.Context, dto *models.EquipmentTypeDTO) error {
-	query := fmt.Sprintf(`UPDATE %s SET name=$2, is_component=$3, sort_order=$4, updated_at=NOW()
+	query := fmt.Sprintf(`UPDATE %s SET name=$2, kind=$3, sort_order=$4, updated_at=NOW()
 		WHERE id=$1 AND realm_id=$5`, Tables.EquipmentTypes)
 
-	res, err := r.db.Exec(ctx, query, dto.ID, dto.Name, dto.IsComponent, dto.SortOrder, dto.RealmID)
+	res, err := r.db.Exec(ctx, query, dto.ID, dto.Name, dto.Kind, dto.SortOrder, dto.RealmID)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}

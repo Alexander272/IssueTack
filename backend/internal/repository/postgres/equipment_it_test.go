@@ -33,10 +33,10 @@ func newEqFixture(t *testing.T, pool *pgxpool.Pool) *eqFixture {
 		f.userID, "eqtestuser", "Тест", "Тестов")
 	require.NoError(t, err)
 
-	_, err = pool.Exec(ctx, `INSERT INTO equipment_types (id, realm_id, name, is_component) VALUES ($1, $2, 'Ноутбук', false)`,
+	_, err = pool.Exec(ctx, `INSERT INTO equipment_types (id, realm_id, name, kind) VALUES ($1, $2, 'Ноутбук', 'device')`,
 		f.typeID, f.realmID)
 	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `INSERT INTO equipment_types (id, realm_id, name, is_component) VALUES ($1, $2, 'RAM', true)`,
+	_, err = pool.Exec(ctx, `INSERT INTO equipment_types (id, realm_id, name, kind) VALUES ($1, $2, 'RAM', 'component')`,
 		f.kitType, f.realmID)
 	require.NoError(t, err)
 

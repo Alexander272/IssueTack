@@ -159,6 +159,10 @@ func (s *EquipmentService) GetChildren(ctx context.Context, realmID, parentID uu
 func (s *EquipmentService) Create(ctx context.Context, dto *models.EquipmentDTO) (*models.Equipment, error) {
 	normalizeEquipmentDTO(dto)
 
+	if err := s.ensureParentCanBePart(ctx, dto); err != nil {
+		return nil, err
+	}
+
 	data, err := s.repo.Create(ctx, dto)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create equipment. error: %w", err)
@@ -173,6 +177,10 @@ func (s *EquipmentService) Update(ctx context.Context, dto *models.EquipmentDTO)
 		return nil, models.ErrInvalidInput
 	}
 	normalizeEquipmentDTO(dto)
+
+	if err := s.ensureParentCanBePart(ctx, dto); err != nil {
+		return nil, err
+	}
 
 	if dto.ParentID != nil {
 		if *dto.ParentID == *dto.ID {
@@ -205,8 +213,26 @@ func (s *EquipmentService) Delete(ctx context.Context, dto *models.DelEquipmentD
 	return nil
 }
 
+// ensureParentCanBePart проверяет, что единица, у которой задан родитель
+// (физический состав, parent_id), относится к типу, допустимому в составе:
+// комплектующему или расходнику. Логические комплекты (is_kit) не
+// ограничиваются — там состав ведётся через kit_compositions.
+func (s *EquipmentService) ensureParentCanBePart(ctx context.Context, dto *models.EquipmentDTO) error {
+	if dto.ParentID == nil {
+		return nil
+	}
+	eqType, err := s.repo.GetTypeByID(ctx, &models.GetEquipmentTypeByIdDTO{ID: dto.TypeID, RealmID: dto.RealmID})
+	if err != nil {
+		return fmt.Errorf("failed to get equipment type. error: %w", err)
+	}
+	if !eqType.Kind.CanBePart() {
+		return models.ErrEquipmentParentNotPart
+	}
+	return nil
+}
+
 // normalizeEquipmentDTO подчищает опциональные строки: пустые -> NULL (иначе
-// partial unique-индексы и CHECK работали бы с '') и specs без значения -> {}.
+// partial unique-индексы и CHECK работали бы с ”) и specs без значения -> {}.
 func normalizeEquipmentDTO(dto *models.EquipmentDTO) {
 	emptyToNil := func(v *string) *string {
 		if v != nil && *v == "" {
@@ -398,7 +424,7 @@ func (s *EquipmentService) Unassign(ctx context.Context, dto *models.UnassignEqu
 			if err := s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
 				EquipmentID: eq.ID, EventType: models.EquipmentEventUnassigned, OperationID: opID,
 				NewValue: assignmentJSON(&models.AssignEquipmentDTO{SiteID: dto.SiteID, Location: dto.Location}),
-				UserID: actorID, Comment: dto.Comment,
+				UserID:   actorID, Comment: dto.Comment,
 			}); err != nil {
 				return fmt.Errorf("failed to create event. error: %w", err)
 			}

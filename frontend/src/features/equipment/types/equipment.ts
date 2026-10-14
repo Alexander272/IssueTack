@@ -1,8 +1,26 @@
+export type EquipmentTypeKind = 'device' | 'component' | 'periphery' | 'consumable'
+
+export const EQUIPMENT_TYPE_KIND_LABELS: Record<EquipmentTypeKind, string> = {
+	device: 'Устройство',
+	component: 'Комплектующее',
+	periphery: 'Периферия',
+	consumable: 'Расходник',
+}
+
+export const EQUIPMENT_TYPE_KIND_OPTIONS = (Object.keys(EQUIPMENT_TYPE_KIND_LABELS) as EquipmentTypeKind[]).map(value => ({
+	value,
+	label: EQUIPMENT_TYPE_KIND_LABELS[value],
+}))
+
+// canBePart сообщает, можно ли единицу такого типа включить в физический состав
+// (parent_id): комплектующее или расходник.
+export const canBePart = (kind?: EquipmentTypeKind) => kind === 'component' || kind === 'consumable'
+
 export interface IEquipmentType {
 	id: string
 	realmId: string
 	name: string
-	isComponent: boolean
+	kind: EquipmentTypeKind
 	sortOrder: number
 	createdAt: string
 	updatedAt: string
@@ -12,7 +30,7 @@ export interface IEquipmentTypeDTO {
 	id?: string
 	realmId?: string
 	name: string
-	isComponent: boolean
+	kind: EquipmentTypeKind
 	sortOrder: number
 }
 
@@ -44,7 +62,7 @@ export interface IEquipment {
 	realmId: string
 	typeId: string
 	typeName: string
-	isComponent: boolean
+	typeKind: EquipmentTypeKind
 	name: string
 	vendor: string
 	model: string

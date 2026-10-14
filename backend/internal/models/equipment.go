@@ -28,6 +28,32 @@ func (s EquipmentStatus) IsValid() bool {
 	return false
 }
 
+// EquipmentTypeKind — категория типа оборудования: задаёт группу в справочнике
+// и допустимость быть частью физического состава (parent_id).
+type EquipmentTypeKind string
+
+const (
+	EquipmentTypeDevice     EquipmentTypeKind = "device"
+	EquipmentTypeComponent  EquipmentTypeKind = "component"
+	EquipmentTypePeriphery  EquipmentTypeKind = "periphery"
+	EquipmentTypeConsumable EquipmentTypeKind = "consumable"
+)
+
+// IsValid проверяет, что категория принадлежит перечислению (для enum-валидатора).
+func (k EquipmentTypeKind) IsValid() bool {
+	switch k {
+	case EquipmentTypeDevice, EquipmentTypeComponent, EquipmentTypePeriphery, EquipmentTypeConsumable:
+		return true
+	}
+	return false
+}
+
+// CanBePart сообщает, может ли единица такого типа быть частью физического
+// состава (parent_id): комплектующее или расходник.
+func (k EquipmentTypeKind) CanBePart() bool {
+	return k == EquipmentTypeComponent || k == EquipmentTypeConsumable
+}
+
 // EquipmentEventType — тип события журнала оборудования.
 type EquipmentEventType string
 
@@ -59,13 +85,13 @@ func (e EquipmentEventType) IsValid() bool {
 
 // EquipmentType — тип оборудования (справочник реалма): ноутбук, RAM, монитор и т.д.
 type EquipmentType struct {
-	ID          uuid.UUID `json:"id" db:"id"`
-	RealmID     uuid.UUID `json:"realmId" db:"realm_id"`
-	Name        string    `json:"name" db:"name"`
-	IsComponent bool      `json:"isComponent" db:"is_component"`
-	SortOrder   int       `json:"sortOrder" db:"sort_order"`
-	CreatedAt   time.Time `json:"createdAt" db:"created_at"`
-	UpdatedAt   time.Time `json:"updatedAt" db:"updated_at"`
+	ID        uuid.UUID         `json:"id" db:"id"`
+	RealmID   uuid.UUID         `json:"realmId" db:"realm_id"`
+	Name      string            `json:"name" db:"name"`
+	Kind      EquipmentTypeKind `json:"kind" db:"kind"`
+	SortOrder int               `json:"sortOrder" db:"sort_order"`
+	CreatedAt time.Time         `json:"createdAt" db:"created_at"`
+	UpdatedAt time.Time         `json:"updatedAt" db:"updated_at"`
 }
 
 type GetEquipmentTypesDTO struct {
@@ -78,11 +104,11 @@ type GetEquipmentTypeByIdDTO struct {
 }
 
 type EquipmentTypeDTO struct {
-	ID          *uuid.UUID `json:"id" db:"id"`
-	RealmID     uuid.UUID  `json:"realmId" db:"realm_id"`
-	Name        string     `json:"name" validate:"required" db:"name"`
-	IsComponent bool       `json:"isComponent" db:"is_component"`
-	SortOrder   int        `json:"sortOrder" db:"sort_order"`
+	ID        *uuid.UUID        `json:"id" db:"id"`
+	RealmID   uuid.UUID         `json:"realmId" db:"realm_id"`
+	Name      string            `json:"name" validate:"required" db:"name"`
+	Kind      EquipmentTypeKind `json:"kind" db:"kind" binding:"required,enum"`
+	SortOrder int               `json:"sortOrder" db:"sort_order"`
 }
 
 type DelEquipmentTypeDTO struct {
@@ -92,34 +118,34 @@ type DelEquipmentTypeDTO struct {
 
 // Equipment — единица оборудования (или компонент комплекта).
 type Equipment struct {
-	ID              uuid.UUID        `json:"id" db:"id"`
-	RealmID         uuid.UUID        `json:"realmId" db:"realm_id"`
-	TypeID          uuid.UUID        `json:"typeId" db:"type_id"`
-	TypeName        string           `json:"typeName" db:"type_name"`
-	IsComponent     bool             `json:"isComponent" db:"is_component"`
-	Name            string           `json:"name" db:"name"`
-	Vendor          string           `json:"vendor" db:"vendor"`
-	Model           string           `json:"model" db:"model"`
-	SerialNumber    *string          `json:"serialNumber" db:"serial_number"`
-	InventoryNumber *string          `json:"inventoryNumber" db:"inventory_number"`
-	Specs           json.RawMessage  `json:"specs" db:"specs"`
-	Status          EquipmentStatus  `json:"status" db:"status"`
-	ParentID        *uuid.UUID       `json:"parentId" db:"parent_id"`
-	SiteID          *uuid.UUID       `json:"siteId" db:"site_id"`
-	SiteName        string           `json:"siteName" db:"site_name"`
-	HolderUserID    *uuid.UUID       `json:"holderUserId" db:"holder_user_id"`
-	HolderName      *string          `json:"holderName" db:"holder_name"`
-	HolderFullName  string           `json:"holderFullName" db:"holder_user_full_name"`
-	Location        *string          `json:"location" db:"location"`
-	PurchaseDate    *string          `json:"purchaseDate" db:"purchase_date"`
-	WarrantyUntil   *string          `json:"warrantyUntil" db:"warranty_until"`
-	Cost            *float64         `json:"cost" db:"cost"`
-	Notes           string           `json:"notes" db:"notes"`
-	CreatedBy       *uuid.UUID       `json:"createdBy" db:"created_by"`
-	IsKit           bool             `json:"isKit" db:"is_kit"`
-	KitID           *uuid.UUID       `json:"kitId" db:"kit_id"`
-	CreatedAt       time.Time        `json:"createdAt" db:"created_at"`
-	UpdatedAt       time.Time        `json:"updatedAt" db:"updated_at"`
+	ID              uuid.UUID         `json:"id" db:"id"`
+	RealmID         uuid.UUID         `json:"realmId" db:"realm_id"`
+	TypeID          uuid.UUID         `json:"typeId" db:"type_id"`
+	TypeName        string            `json:"typeName" db:"type_name"`
+	TypeKind        EquipmentTypeKind `json:"typeKind" db:"type_kind"`
+	Name            string            `json:"name" db:"name"`
+	Vendor          string            `json:"vendor" db:"vendor"`
+	Model           string            `json:"model" db:"model"`
+	SerialNumber    *string           `json:"serialNumber" db:"serial_number"`
+	InventoryNumber *string           `json:"inventoryNumber" db:"inventory_number"`
+	Specs           json.RawMessage   `json:"specs" db:"specs"`
+	Status          EquipmentStatus   `json:"status" db:"status"`
+	ParentID        *uuid.UUID        `json:"parentId" db:"parent_id"`
+	SiteID          *uuid.UUID        `json:"siteId" db:"site_id"`
+	SiteName        string            `json:"siteName" db:"site_name"`
+	HolderUserID    *uuid.UUID        `json:"holderUserId" db:"holder_user_id"`
+	HolderName      *string           `json:"holderName" db:"holder_name"`
+	HolderFullName  string            `json:"holderFullName" db:"holder_user_full_name"`
+	Location        *string           `json:"location" db:"location"`
+	PurchaseDate    *string           `json:"purchaseDate" db:"purchase_date"`
+	WarrantyUntil   *string           `json:"warrantyUntil" db:"warranty_until"`
+	Cost            *float64          `json:"cost" db:"cost"`
+	Notes           string            `json:"notes" db:"notes"`
+	CreatedBy       *uuid.UUID        `json:"createdBy" db:"created_by"`
+	IsKit           bool              `json:"isKit" db:"is_kit"`
+	KitID           *uuid.UUID        `json:"kitId" db:"kit_id"`
+	CreatedAt       time.Time         `json:"createdAt" db:"created_at"`
+	UpdatedAt       time.Time         `json:"updatedAt" db:"updated_at"`
 }
 
 // EquipmentFilter — фильтры и пагинация списка единиц.
@@ -202,57 +228,57 @@ type EquipmentAssignment struct {
 
 // EquipmentEvent — событие жизненного цикла оборудования.
 type EquipmentEvent struct {
-	ID           uuid.UUID          `json:"id" db:"id"`
-	EquipmentID  uuid.UUID          `json:"equipmentId" db:"equipment_id"`
-	EventType    EquipmentEventType `json:"eventType" db:"event_type"`
-	OperationID  uuid.UUID          `json:"operationId" db:"operation_id"`
-	ComponentID  *uuid.UUID         `json:"componentId" db:"component_id"`
-	OldValue     json.RawMessage    `json:"oldValue" db:"old_value"`
-	NewValue     json.RawMessage    `json:"newValue" db:"new_value"`
-	UserID       *uuid.UUID         `json:"userId" db:"user_id"`
-	Comment      string             `json:"comment" db:"comment"`
-	CreatedAt    time.Time          `json:"createdAt" db:"created_at"`
+	ID          uuid.UUID          `json:"id" db:"id"`
+	EquipmentID uuid.UUID          `json:"equipmentId" db:"equipment_id"`
+	EventType   EquipmentEventType `json:"eventType" db:"event_type"`
+	OperationID uuid.UUID          `json:"operationId" db:"operation_id"`
+	ComponentID *uuid.UUID         `json:"componentId" db:"component_id"`
+	OldValue    json.RawMessage    `json:"oldValue" db:"old_value"`
+	NewValue    json.RawMessage    `json:"newValue" db:"new_value"`
+	UserID      *uuid.UUID         `json:"userId" db:"user_id"`
+	Comment     string             `json:"comment" db:"comment"`
+	CreatedAt   time.Time          `json:"createdAt" db:"created_at"`
 }
 
 // EquipmentAct — акт выдачи/приёма.
 type EquipmentAct struct {
-	ID               uuid.UUID       `json:"id" db:"id"`
-	RealmID          uuid.UUID       `json:"realmId" db:"realm_id"`
-	Number           string          `json:"number" db:"number"`
-	KitEquipmentID   *uuid.UUID      `json:"kitEquipmentId" db:"kit_equipment_id"`
-	RecipientUserID  *uuid.UUID      `json:"recipientUserId" db:"recipient_user_id"`
-	RecipientName    *string         `json:"recipientName" db:"recipient_name"`
-	SiteID           *uuid.UUID      `json:"siteId" db:"site_id"`
-	Location         *string         `json:"location" db:"location"`
-	IssuedBy         *uuid.UUID      `json:"issuedBy" db:"issued_by"`
-	IssuedAt         time.Time       `json:"issuedAt" db:"issued_at"`
-	Content          json.RawMessage `json:"content" db:"content"`
-	Comment          string          `json:"comment" db:"comment"`
-	CreatedAt        time.Time       `json:"createdAt" db:"created_at"`
+	ID              uuid.UUID       `json:"id" db:"id"`
+	RealmID         uuid.UUID       `json:"realmId" db:"realm_id"`
+	Number          string          `json:"number" db:"number"`
+	KitEquipmentID  *uuid.UUID      `json:"kitEquipmentId" db:"kit_equipment_id"`
+	RecipientUserID *uuid.UUID      `json:"recipientUserId" db:"recipient_user_id"`
+	RecipientName   *string         `json:"recipientName" db:"recipient_name"`
+	SiteID          *uuid.UUID      `json:"siteId" db:"site_id"`
+	Location        *string         `json:"location" db:"location"`
+	IssuedBy        *uuid.UUID      `json:"issuedBy" db:"issued_by"`
+	IssuedAt        time.Time       `json:"issuedAt" db:"issued_at"`
+	Content         json.RawMessage `json:"content" db:"content"`
+	Comment         string          `json:"comment" db:"comment"`
+	CreatedAt       time.Time       `json:"createdAt" db:"created_at"`
 }
 
 // AssignEquipmentDTO — выдача оборудования.
 type AssignEquipmentDTO struct {
-	ID               uuid.UUID  `json:"id"`
-	RealmID          uuid.UUID  `json:"realmId"`
-	UserID           *uuid.UUID `json:"userId"`
-	HolderName       *string    `json:"holderName"`
-	SiteID           *uuid.UUID `json:"siteId"`
-	Location         *string    `json:"location"`
-	Comment          string     `json:"comment"`
-	Force            bool       `json:"force"`
-	SkipAct          bool       `json:"skipAct"`
-	Actor            *Actor     `json:"-"`
+	ID         uuid.UUID  `json:"id"`
+	RealmID    uuid.UUID  `json:"realmId"`
+	UserID     *uuid.UUID `json:"userId"`
+	HolderName *string    `json:"holderName"`
+	SiteID     *uuid.UUID `json:"siteId"`
+	Location   *string    `json:"location"`
+	Comment    string     `json:"comment"`
+	Force      bool       `json:"force"`
+	SkipAct    bool       `json:"skipAct"`
+	Actor      *Actor     `json:"-"`
 }
 
 // UnassignEquipmentDTO — возврат оборудования на склад/вместо хранения.
 type UnassignEquipmentDTO struct {
-	ID         uuid.UUID  `json:"id"`
-	RealmID    uuid.UUID  `json:"realmId"`
-	SiteID     *uuid.UUID `json:"siteId"`
-	Location   *string    `json:"location"`
-	Comment    string     `json:"comment"`
-	Actor      *Actor     `json:"-"`
+	ID       uuid.UUID  `json:"id"`
+	RealmID  uuid.UUID  `json:"realmId"`
+	SiteID   *uuid.UUID `json:"siteId"`
+	Location *string    `json:"location"`
+	Comment  string     `json:"comment"`
+	Actor    *Actor     `json:"-"`
 }
 
 // ChangeStatusDTO — смена статуса единицы.
@@ -271,24 +297,24 @@ type ComponentOpItem struct {
 
 // KitCompositionOpDTO — добавление/удаление/замена состава логического комплекта.
 type KitCompositionOpDTO struct {
-	ID          uuid.UUID         `json:"id"`
-	RealmID     uuid.UUID         `json:"realmId"`
-	Components  []ComponentOpItem `json:"components"`
-	Reason      string            `json:"reason"`
-	Actor       *Actor            `json:"-"`
+	ID         uuid.UUID         `json:"id"`
+	RealmID    uuid.UUID         `json:"realmId"`
+	Components []ComponentOpItem `json:"components"`
+	Reason     string            `json:"reason"`
+	Actor      *Actor            `json:"-"`
 }
 
 // EquipmentActDTO — создание акта вручную.
 type EquipmentActDTO struct {
-	ID               uuid.UUID  `json:"id"`
-	RealmID          uuid.UUID  `json:"realmId"`
-	KitEquipmentID   *uuid.UUID `json:"kitEquipmentId"`
-	RecipientUserID  *uuid.UUID `json:"recipientUserId"`
-	RecipientName    *string    `json:"recipientName"`
-	SiteID           *uuid.UUID `json:"siteId"`
-	Location         *string    `json:"location"`
-	Comment          string     `json:"comment"`
-	Actor            *Actor     `json:"-"`
+	ID              uuid.UUID  `json:"id"`
+	RealmID         uuid.UUID  `json:"realmId"`
+	KitEquipmentID  *uuid.UUID `json:"kitEquipmentId"`
+	RecipientUserID *uuid.UUID `json:"recipientUserId"`
+	RecipientName   *string    `json:"recipientName"`
+	SiteID          *uuid.UUID `json:"siteId"`
+	Location        *string    `json:"location"`
+	Comment         string     `json:"comment"`
+	Actor           *Actor     `json:"-"`
 }
 
 // GetEquipmentActByIDDTO — запрос акта по ID.
