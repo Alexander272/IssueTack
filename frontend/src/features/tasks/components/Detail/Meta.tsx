@@ -1,5 +1,5 @@
 import { Box, Typography } from '@mui/material'
-import { Info, Layers, Building2, Flag, Calendar, Clock, Hash } from 'lucide-mui'
+import { Info, Layers, Building2, Flag, Calendar, Clock, Hash, CheckCircle } from 'lucide-mui'
 
 import type { ITask } from '../../types/task'
 import {
@@ -119,6 +119,13 @@ export const Meta = ({ task }: Props) => {
 								{getSmartDate(task.dueDate || '')}
 							</Typography>
 						}
+					/>
+				)}
+				{task.resolvedAt && (
+					<MetaRow
+						label='Решена'
+						icon={<CheckCircle sx={{ fontSize: 14 }} />}
+						value={getSmartDate(task.resolvedAt)}
 					/>
 				)}
 				<MetaRow
