@@ -81,6 +81,7 @@ export const TaskDetailPage = () => {
 								taskId={task.id}
 								canWork={task.access?.canWork}
 								canCreate={canCreate}
+								inactive={isInactive}
 								canDelete={
 									Boolean(task.access?.canDelete) && Boolean(task.access?.canWork) && !isInactive
 								}
