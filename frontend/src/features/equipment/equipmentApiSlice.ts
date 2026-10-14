@@ -15,6 +15,9 @@ import type {
 	IEquipmentEvent,
 	IEquipmentFilter,
 	IEquipmentList,
+	IEquipmentStats,
+	IEquipmentTreeArgs,
+	IEquipmentTreeList,
 	IEquipmentType,
 	IEquipmentTypeDTO,
 	IKitComposition,
@@ -43,7 +46,7 @@ const equipmentApiSlice = apiSlice.injectEndpoints({
 			},
 		}),
 
-		getEquipment: builder.query<IEquipment, string>({
+		getEquipment: builder.query<{ data: IEquipment }, string>({
 			query: id => ({
 				url: API.equipment.byId(id),
 				method: 'GET',
@@ -59,12 +62,51 @@ const equipmentApiSlice = apiSlice.injectEndpoints({
 			},
 		}),
 
+		getEquipmentStats: builder.query<{ data: IEquipmentStats }, void>({
+			query: () => ({
+				url: API.equipment.stats,
+				method: 'GET',
+			}),
+			providesTags: [{ type: 'Equipment', id: 'ALL' }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		getEquipmentTree: builder.query<IEquipmentTreeList, IEquipmentTreeArgs | void>({
+			query: args => ({
+				url: API.equipment.tree,
+				method: 'GET',
+				params: args ?? undefined,
+			}),
+			providesTags: [{ type: 'Equipment', id: 'ALL' }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
 		getEquipmentChildren: builder.query<{ data: IEquipment[] }, string>({
 			query: id => ({
 				url: API.equipment.children(id),
 				method: 'GET',
 			}),
-			providesTags: (_result, _err, id) => [{ type: 'Equipment', id: `children-${id}` }],
+			// Список детей слушает и общий тег ALL: состав меняется не только самой
+			// единицей, а апдейтом ребёнка (прикрепили/открепили составную часть),
+			// поэтому без ALL раздел «Физический состав» оставался бы протухшим.
+			providesTags: (_result, _err, id) => [
+				{ type: 'Equipment', id: 'ALL' },
+				{ type: 'Equipment', id: `children-${id}` },
+			],
 			onQueryStarted: async (_arg, api) => {
 				try {
 					await api.queryFulfilled
@@ -433,7 +475,9 @@ const equipmentApiSlice = apiSlice.injectEndpoints({
 export const {
 	useGetAllEquipmentQuery,
 	useGetEquipmentQuery,
+	useGetEquipmentStatsQuery,
 	useGetEquipmentChildrenQuery,
+	useGetEquipmentTreeQuery,
 	useCreateEquipmentMutation,
 	useUpdateEquipmentMutation,
 	useDeleteEquipmentMutation,

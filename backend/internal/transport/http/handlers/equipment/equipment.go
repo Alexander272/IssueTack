@@ -34,6 +34,8 @@ func Register(api *gin.RouterGroup, service services.Equipment, middleware *midd
 		equipment.GET("/:id/events", handlers.getEvents)
 		equipment.GET("/:id/composition", handlers.getComposition)
 		equipment.GET("/:id/composition/history", handlers.getCompositionHistory)
+		equipment.GET("/tree", handlers.getTree)
+		equipment.GET("/stats", handlers.getStats)
 		equipment.GET("/types", handlers.getTypes)
 		equipment.GET("/types/:id", handlers.getTypeByID)
 		equipment.GET("/acts", handlers.getActs)
@@ -116,6 +118,41 @@ func (h *Handler) getChildren(c *gin.Context) {
 		return
 	}
 	response.SendData(c, data, len(data))
+}
+
+func (h *Handler) getTree(c *gin.Context) {
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	dto := &models.GetEquipmentTreeDTO{}
+	if err := c.ShouldBindQuery(dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	dto.RealmID = realmID
+
+	data, total, err := h.service.GetTree(c, dto)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	response.SendData(c, data, total)
+}
+
+func (h *Handler) getStats(c *gin.Context) {
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	data, err := h.service.GetStats(c, realmID)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	response.SendData(c, data)
 }
 
 func (h *Handler) create(c *gin.Context) {

@@ -1,7 +1,6 @@
 package response
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,6 +9,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
+	"github.com/goccy/go-json"
 )
 
 // validatorMessages сопоставляет теги валидатора с русскоязычными сообщениями

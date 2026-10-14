@@ -18,13 +18,13 @@ import { XIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
-import type { IEquipmentType, IEquipmentTypeDTO } from '../types/equipment'
-import { EQUIPMENT_TYPE_KIND_OPTIONS } from '../types/equipment'
+import type { IEquipmentType, IEquipmentTypeDTO } from '../../types/equipment'
+import { EQUIPMENT_TYPE_KIND_OPTIONS } from '../../types/equipment'
 import {
 	useCreateEquipmentTypeMutation,
 	useUpdateEquipmentTypeMutation,
 	useDeleteEquipmentTypeMutation,
-} from '../equipmentApiSlice'
+} from '../../equipmentApiSlice'
 import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
 
 type Props = {

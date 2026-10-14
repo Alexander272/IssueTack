@@ -1,10 +1,10 @@
 package models
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/goccy/go-json"
 	"github.com/google/uuid"
 )
 

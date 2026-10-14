@@ -1,6 +1,7 @@
 import { createBrowserRouter, type RouteObject } from 'react-router'
 
 import { AppRoutes } from './routes'
+import { AdminPermissions, PermRules } from '@/features/access/constants/permissions'
 import { Layout } from '@/components/Layout/Layout'
 import ErrorPage from '@/pages/error/ErrorPage'
 import { Auth } from '@/pages/auth/AuthLazy'
@@ -12,7 +13,7 @@ import { Statistics } from '@/pages/statistics/StatisticsLazy'
 import { Sites } from '@/pages/sites/SitesLazy'
 import { Groups } from '@/pages/groups/GroupsLazy'
 import { Categories } from '@/pages/categories/CategoriesLazy'
-import { Equipment, EquipmentDetail, EquipmentSettings } from '@/pages/equipment/EquipmentLazy'
+import { Equipment, EquipmentSettings } from '@/pages/equipment/EquipmentLazy'
 import { NotificationSettings } from '@/pages/settings/NotificationSettingsLazy'
 // import { Accesses } from '@/pages/accesses/AccessesLazy'
 import { Dashboard } from '@/pages/accesses/dashboard/DashboardLazy'
@@ -68,20 +69,16 @@ const config: RouteObject[] = [
 					},
 					{
 						path: AppRoutes.Equipment,
-						element: <RoleRoute permission='equipment:read' />,
+						element: <RoleRoute permission={PermRules.Equipment.Read} />,
 						children: [
 							{
-								index: true,
 								element: <Equipment />,
+								children: [{ index: true }, { path: ':id' }],
 							},
 							{
 								path: AppRoutes.EquipmentSettings,
-								element: <RoleRoute permission='equipment:write' />,
+								element: <RoleRoute permission={PermRules.Equipment.Write} />,
 								children: [{ index: true, element: <EquipmentSettings /> }],
-							},
-							{
-								path: AppRoutes.EquipmentDetail,
-								element: <EquipmentDetail />,
 							},
 						],
 					},
@@ -120,11 +117,7 @@ const config: RouteObject[] = [
 						path: AppRoutes.Accesses,
 						children: [
 							{
-								element: (
-									<RoleRoute
-										anyOfPermissions={['user:write', 'role:write', 'realm:write', 'permission:write']}
-									/>
-								),
+								element: <RoleRoute anyOfPermissions={AdminPermissions} />,
 								children: [
 									{
 										index: true,
@@ -132,22 +125,22 @@ const config: RouteObject[] = [
 									},
 									{
 										path: AppRoutes.Realms,
-										element: <RoleRoute permission='realm:write' />,
+										element: <RoleRoute permission={PermRules.Realms.Write} />,
 										children: [{ index: true, element: <Realms /> }],
 									},
 									{
 										path: AppRoutes.UserAccess,
-										element: <RoleRoute permission='user:write' />,
+										element: <RoleRoute permission={PermRules.Users.Write} />,
 										children: [{ index: true, element: <Users /> }],
 									},
 									{
 										path: AppRoutes.RoleAccess,
-										element: <RoleRoute permission='role:write' />,
+										element: <RoleRoute permission={PermRules.Roles.Write} />,
 										children: [{ index: true, element: <Role /> }],
 									},
 									{
 										path: AppRoutes.Permissions,
-										element: <RoleRoute permission='permission:write' />,
+										element: <RoleRoute permission={PermRules.Permissions.Write} />,
 										children: [{ index: true, element: <Permissions /> }],
 									},
 								],

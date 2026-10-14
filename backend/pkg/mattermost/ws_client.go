@@ -2,7 +2,6 @@ package mattermost
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
+	"github.com/goccy/go-json"
 	"github.com/gorilla/websocket"
 	"github.com/mattermost/mattermost/server/public/model"
 )

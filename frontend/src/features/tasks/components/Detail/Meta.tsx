@@ -12,6 +12,7 @@ import {
 } from '../../constants/taskMaps'
 import { getDueDateTone, getSmartDate } from '@/utils/date'
 import { useIsRoot } from '@/features/access/utils/can'
+import { equipmentDetailPath } from '@/features/equipment/utils/paths'
 
 interface Props {
 	task: ITask
@@ -80,7 +81,7 @@ export const Meta = ({ task }: Props) => {
 						value={
 							<Link
 								component={RouterLink}
-								to={`/equipment/${task.equipment.id}`}
+								to={equipmentDetailPath(task.equipment.id)}
 								sx={{
 									fontSize: '0.8125rem',
 									color: 'primary.main',

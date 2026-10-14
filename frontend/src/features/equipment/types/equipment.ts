@@ -81,6 +81,9 @@ export interface IEquipment {
 	warrantyUntil: string | null
 	cost: number | null
 	notes: string
+	// containerName — имя контейнера для подписи «внутри …» в плоском списке
+	// (физический родитель или логический комплект).
+	containerName: string | null
 	isKit: boolean
 	kitId: string | null
 	createdBy: string | null
@@ -114,6 +117,7 @@ export interface IEquipmentDTO {
 export interface IEquipmentFilter {
 	typeId?: string
 	status?: EquipmentStatus
+	isKit?: boolean
 	siteId?: string
 	holderId?: string
 	serial?: string
@@ -126,6 +130,38 @@ export interface IEquipmentFilter {
 export interface IEquipmentList {
 	data: IEquipment[]
 	total: number
+}
+
+// IEquipmentStats — счётчики шапки страницы: единицы, комплекты и
+// комплектующие/расходники на складе.
+export interface IEquipmentStats {
+	units: number
+	kits: number
+	stockParts: number
+}
+
+// IEquipmentTreeNode — узел дерева оборудования: единица с текущими детьми
+// (члены логического комплекта и/или физический состав). Дерево грузится лениво,
+// поэтому children заполнены только у раскрытого уровня, а hasChildren/childCount
+// приходят с сервера — по ним рисуется шеврон и счётчик «(N)» без загрузки детей.
+export interface IEquipmentTreeNode extends IEquipment {
+	children: IEquipmentTreeNode[]
+	hasChildren: boolean
+	childCount: number
+}
+
+export interface IEquipmentTreeList {
+	data: IEquipmentTreeNode[]
+	total: number
+}
+
+// IEquipmentTreeArgs — параметры одного уровня дерева: parentId = undefined — корни,
+// иначе дети узла. status применяется только к корням (как было раньше на клиенте).
+export interface IEquipmentTreeArgs {
+	parentId?: string
+	status?: EquipmentStatus
+	limit?: number
+	offset?: number
 }
 
 export interface IEquipmentAssignment {

@@ -2,7 +2,6 @@ package mattermost
 
 import (
 	"crypto/subtle"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +15,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/gin-gonic/gin"
+	"github.com/goccy/go-json"
 	"github.com/mattermost/mattermost/server/public/model"
 )
 

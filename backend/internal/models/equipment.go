@@ -1,9 +1,9 @@
 package models
 
 import (
-	"encoding/json"
 	"time"
 
+	"github.com/goccy/go-json"
 	"github.com/google/uuid"
 )
 
@@ -141,11 +141,28 @@ type Equipment struct {
 	WarrantyUntil   *string           `json:"warrantyUntil" db:"warranty_until"`
 	Cost            *float64          `json:"cost" db:"cost"`
 	Notes           string            `json:"notes" db:"notes"`
-	CreatedBy       *uuid.UUID        `json:"createdBy" db:"created_by"`
-	IsKit           bool              `json:"isKit" db:"is_kit"`
-	KitID           *uuid.UUID        `json:"kitId" db:"kit_id"`
-	CreatedAt       time.Time         `json:"createdAt" db:"created_at"`
-	UpdatedAt       time.Time         `json:"updatedAt" db:"updated_at"`
+	// ContainerName — имя контейнера для подписи «внутри …» в плоском списке:
+	// физический родитель (parent_id) или логический комплект (kit_id).
+	ContainerName *string    `json:"containerName" db:"container_name"`
+	CreatedBy     *uuid.UUID `json:"createdBy" db:"created_by"`
+	IsKit         bool       `json:"isKit" db:"is_kit"`
+	KitID         *uuid.UUID `json:"kitId" db:"kit_id"`
+	CreatedAt     time.Time  `json:"createdAt" db:"created_at"`
+	UpdatedAt     time.Time  `json:"updatedAt" db:"updated_at"`
+}
+
+// EquipmentTreeNode — узел дерева оборудования для страницы-дерева: единица со
+// своими детьми — текущими членами логического комплекта и/или физического состава
+// (parent_id). Поля самой единицы разворачиваются в JSON рядом с children.
+//
+// Дерево грузится уровнями (лениво), поэтому children заполняются только у того
+// уровня, который запрошен, а HasChildren/ChildCount приходят с сервера заранее:
+// по ним рисуется шеврон раскрытия и счётчик «(N)» без загрузки всего поддерева.
+type EquipmentTreeNode struct {
+	*Equipment
+	Children    []*EquipmentTreeNode `json:"children"`
+	HasChildren bool                 `json:"hasChildren"`
+	ChildCount  int                  `json:"childCount"`
 }
 
 // EquipmentFilter — фильтры и пагинация списка единиц.
@@ -153,6 +170,7 @@ type EquipmentFilter struct {
 	RealmID   uuid.UUID        `json:"realmId" db:"realm_id"`
 	TypeID    *uuid.UUID       `form:"typeId,parser=encoding.TextUnmarshaler" json:"typeId" db:"type_id"`
 	Status    *EquipmentStatus `form:"status" json:"status" db:"status" binding:"omitempty,enum"`
+	IsKit     *bool            `form:"isKit" json:"isKit" db:"is_kit"`
 	SiteID    *uuid.UUID       `form:"siteId,parser=encoding.TextUnmarshaler" json:"siteId" db:"site_id"`
 	HolderID  *uuid.UUID       `form:"holderId,parser=encoding.TextUnmarshaler" json:"holderId" db:"holder_user_id"`
 	Serial    *string          `form:"serial" json:"serial"`
@@ -160,6 +178,30 @@ type EquipmentFilter struct {
 	Search    *string          `form:"search" json:"search"`
 	Limit     int              `form:"limit" json:"limit"`
 	Offset    int              `form:"offset" json:"offset"`
+}
+
+// GetEquipmentTreeDTO — параметры ленивого дерева: ParentID == nil — корни реалма,
+// иначе — непосредственные дети узла (физсостав + члены комплекта). Limit/Offset
+// пагинируют уровни, чтобы даже сотни корней не приезжали одним ответом. Status
+// сужает только корни: дети раскрытого узла показываются целиком (как раньше на
+// клиенте — фильтр по статусу применялся к верхнему уровню).
+type GetEquipmentTreeDTO struct {
+	RealmID  uuid.UUID        `json:"realmId" db:"realm_id" form:"-"`
+	ParentID *uuid.UUID       `form:"parentId,parser=encoding.TextUnmarshaler" json:"parentId" db:"parent_id"`
+	Status   *EquipmentStatus `form:"status" json:"status" binding:"omitempty,enum"`
+	Limit    int              `form:"limit" json:"limit"`
+	Offset   int              `form:"offset" json:"offset"`
+}
+
+// EquipmentStats — счётчики единиц реалма для подписи в шапке страницы.
+type EquipmentStats struct {
+	// Units — число неустановленных единиц (не комплектов): устройства, периферия,
+	// комплектующие и расходники вместе.
+	Units int `json:"units"`
+	// Kits — число логических комплектов (is_kit).
+	Kits int `json:"kits"`
+	// StockParts — комплектующие/расходники на складе (status = in_stock).
+	StockParts int `json:"stockParts"`
 }
 
 type GetEquipmentByIdDTO struct {

@@ -2,13 +2,13 @@ package redis_repo
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/go-redis/redis/v8"
+	"github.com/goccy/go-json"
 )
 
 type SessionCacheRepo struct {

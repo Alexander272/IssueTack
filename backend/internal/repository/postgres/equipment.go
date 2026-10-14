@@ -35,6 +35,13 @@ type Equipment interface {
 	GetByID(ctx context.Context, req *models.GetEquipmentByIdDTO) (*models.Equipment, error)
 	// GetChildren возвращает непосредственных потомков узла (состав комплекта).
 	GetChildren(ctx context.Context, realmID, parentID uuid.UUID) ([]*models.Equipment, error)
+	// GetTree возвращает один уровень дерева оборудования: корни реалма
+	// (ParentID == nil) либо непосредственных детей узла (физсостав + члены
+	// комплекта). Узлы несут HasChildren/ChildCount, чтобы клиент рисовал шеврон
+	// и счётчик без загрузки поддерева. Возвращает (узлы, всего на уровне).
+	GetTree(ctx context.Context, dto *models.GetEquipmentTreeDTO) ([]*models.EquipmentTreeNode, int, error)
+	// GetStats возвращает счётчики оборудования реалма для шапки страницы.
+	GetStats(ctx context.Context, realmID uuid.UUID) (*models.EquipmentStats, error)
 	// GetAncestors возвращает цепочку предков узла (без самого узла) — для проверки циклов.
 	GetAncestors(ctx context.Context, realmID, id uuid.UUID) ([]uuid.UUID, error)
 	Create(ctx context.Context, dto *models.EquipmentDTO) (*models.Equipment, error)
@@ -72,7 +79,8 @@ type Equipment interface {
 }
 
 // equipmentSelectBase — выборка единицы со справочными полями (тип, площадка,
-// ФИО держателя) и COUNT(*) OVER() для тотала страницы.
+// ФИО держателя), именем контейнера (физический родитель или логический комплект)
+// и COUNT(*) OVER() для тотала страницы.
 func equipmentSelectBase() string {
 	return fmt.Sprintf(`SELECT 
 			e.id, e.realm_id, e.type_id, et.name, et.kind, e.name, e.vendor, e.model,
@@ -81,12 +89,16 @@ func equipmentSelectBase() string {
 			COALESCE(NULLIF(TRIM(u.last_name || ' ' || u.first_name), ''), u.username),
 			e.location, e.purchase_date::text, e.warranty_until::text, e.cost::float8, e.notes,
 			e.is_kit, e.kit_id, e.created_by, e.created_at, e.updated_at,
+			COALESCE(
+				(SELECT p.name FROM %s p WHERE p.id = e.parent_id),
+				(SELECT k.name FROM %s k WHERE k.id = e.kit_id)
+			) AS container_name,
 			COUNT(*) OVER() AS total_count
 		FROM %s e
 		JOIN %s et ON et.id = e.type_id
 		LEFT JOIN %s s ON s.id = e.site_id
 		LEFT JOIN %s u ON u.id = e.holder_user_id`,
-		Tables.Equipment, Tables.EquipmentTypes, Tables.Sites, Tables.Users)
+		Tables.Equipment, Tables.Equipment, Tables.Equipment, Tables.EquipmentTypes, Tables.Sites, Tables.Users)
 }
 
 // scanEquipmentRow читает одну строку выдачи equipmentSelectBase.
@@ -103,7 +115,7 @@ func scanEquipmentRow(row rowScanner) (*models.Equipment, int, error) {
 		&item.ParentID, &item.SiteID, &siteName,
 		&item.HolderUserID, &item.HolderName, &holderFullName,
 		&item.Location, &item.PurchaseDate, &item.WarrantyUntil, &item.Cost, &item.Notes,
-		&item.IsKit, &item.KitID, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &total,
+		&item.IsKit, &item.KitID, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &item.ContainerName, &total,
 	); err != nil {
 		return nil, 0, err
 	}
@@ -211,6 +223,7 @@ func (r *EquipmentRepo) Get(ctx context.Context, filter *models.EquipmentFilter)
 	eq(w, "e.realm_id", &filter.RealmID)
 	eq(w, "e.type_id", filter.TypeID)
 	eq(w, "e.status", filter.Status)
+	eq(w, "e.is_kit", filter.IsKit)
 	eq(w, "e.site_id", filter.SiteID)
 	eq(w, "e.holder_user_id", filter.HolderID)
 
@@ -305,6 +318,148 @@ func (r *EquipmentRepo) GetChildren(ctx context.Context, realmID, parentID uuid.
 		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
 	}
 	return data, nil
+}
+
+// GetTree возвращает один уровень дерева оборудования реалма. Дерево грузится
+// лениво: при ParentID == nil это корни (нет физического родителя в реалме и нет
+// открытого членства в комплекте), иначе — непосредственные дети узла: физический
+// состав (parent_id) плюс текущие члены логического комплекта (kit_compositions).
+// У члена комплекта с физическим родителем приоритет у родителя — как в прежней
+// сборке дерева. Узлы несут HasChildren/ChildCount, а не только своё имя.
+func (r *EquipmentRepo) GetTree(ctx context.Context, dto *models.GetEquipmentTreeDTO) ([]*models.EquipmentTreeNode, int, error) {
+	w := &whereBuilder{}
+	eq(w, "e.realm_id", &dto.RealmID)
+
+	if dto.ParentID == nil {
+		// $1 — realmID (первый аргумент eq). Статус сужает только корни: дети
+		// раскрытого узла показываются целиком (как было на клиенте).
+		eq(w, "e.status", dto.Status)
+		w.add(`NOT EXISTS (SELECT 1 FROM ` + Tables.Equipment + ` p WHERE p.id = e.parent_id AND p.realm_id = $1)`)
+		w.add(`NOT EXISTS (SELECT 1 FROM ` + Tables.KitCompositions + ` kc WHERE kc.component_id = e.id AND kc.ended_at IS NULL)`)
+	} else {
+		w.idx++
+		parent := w.idx
+		w.args = append(w.args, *dto.ParentID)
+		w.add(fmt.Sprintf(`(e.parent_id = $%d OR (EXISTS (SELECT 1 FROM %s kc WHERE kc.component_id = e.id AND kc.kit_id = $%d AND kc.ended_at IS NULL)
+			AND NOT EXISTS (SELECT 1 FROM %s p WHERE p.id = e.parent_id AND p.realm_id = $1)))`,
+			parent, Tables.KitCompositions, parent, Tables.Equipment))
+	}
+
+	query := equipmentSelectBase() + " WHERE " + strings.Join(w.clauses, " AND ")
+	query += " ORDER BY e.name"
+
+	if dto.Limit > 0 {
+		w.idx++
+		query += fmt.Sprintf(" LIMIT $%d", w.idx)
+		w.args = append(w.args, dto.Limit)
+	}
+	if dto.Offset > 0 {
+		w.idx++
+		query += fmt.Sprintf(" OFFSET $%d", w.idx)
+		w.args = append(w.args, dto.Offset)
+	}
+
+	rows, err := r.db.Query(ctx, query, w.args...)
+	if err != nil {
+		return nil, 0, MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	defer rows.Close()
+
+	data := []*models.Equipment{}
+	total := 0
+	for rows.Next() {
+		item, rowTotal, err := scanEquipmentRow(rows)
+		if err != nil {
+			return nil, 0, MapError(fmt.Errorf("scan row error: %w", err))
+		}
+		total = rowTotal
+		data = append(data, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
+	if len(data) == 0 {
+		return []*models.EquipmentTreeNode{}, 0, nil
+	}
+
+	ids := make([]uuid.UUID, len(data))
+	for i, item := range data {
+		ids[i] = item.ID
+	}
+	childCounts, err := r.getChildCounts(ctx, dto.RealmID, ids)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	nodes := make([]*models.EquipmentTreeNode, 0, len(data))
+	for _, item := range data {
+		count := childCounts[item.ID]
+		nodes = append(nodes, &models.EquipmentTreeNode{
+			Equipment:   item,
+			Children:    []*models.EquipmentTreeNode{},
+			HasChildren: count > 0,
+			ChildCount:  count,
+		})
+	}
+	return nodes, total, nil
+}
+
+// getChildCounts считает детей узлов одного уровня: физический состав (parent_id)
+// и текущих членов комплекта (kit_compositions). Член комплекта, у которого есть
+// физический родитель в реалме, не считается — он показывается внутри родителя.
+func (r *EquipmentRepo) getChildCounts(ctx context.Context, realmID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]int, error) {
+	counts := make(map[uuid.UUID]int, len(ids))
+	if len(ids) == 0 {
+		return counts, nil
+	}
+
+	physical := fmt.Sprintf(`SELECT c.parent_id, COUNT(*)::int FROM %s c
+		WHERE c.realm_id = $2 AND c.parent_id = ANY($1) GROUP BY c.parent_id`, Tables.Equipment)
+	members := fmt.Sprintf(`SELECT kc.kit_id, COUNT(*)::int FROM %s kc
+		JOIN %s c ON c.id = kc.component_id AND c.realm_id = $2
+		WHERE kc.kit_id = ANY($1) AND kc.ended_at IS NULL
+			AND NOT EXISTS (SELECT 1 FROM %s p WHERE p.id = c.parent_id AND p.realm_id = $2)
+		GROUP BY kc.kit_id`, Tables.KitCompositions, Tables.Equipment, Tables.Equipment)
+
+	for _, query := range []string{physical, members} {
+		rows, err := r.db.Query(ctx, query, ids, realmID)
+		if err != nil {
+			return nil, MapError(fmt.Errorf("failed to count equipment children: %w", err))
+		}
+		for rows.Next() {
+			var id uuid.UUID
+			var count int
+			if err := rows.Scan(&id, &count); err != nil {
+				rows.Close()
+				return nil, MapError(fmt.Errorf("scan row error: %w", err))
+			}
+			counts[id] += count
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+		}
+		rows.Close()
+	}
+	return counts, nil
+}
+
+// GetStats возвращает счётчики единиц реалма (всего не-комплектов, комплектов и
+// комплектующих/расходников на складе) для подписи в шапке страницы.
+func (r *EquipmentRepo) GetStats(ctx context.Context, realmID uuid.UUID) (*models.EquipmentStats, error) {
+	query := fmt.Sprintf(`SELECT
+			COUNT(*) FILTER (WHERE NOT e.is_kit)::int,
+			COUNT(*) FILTER (WHERE e.is_kit)::int,
+			COUNT(*) FILTER (WHERE NOT e.is_kit AND e.status = 'in_stock' AND et.kind IN ('component', 'consumable'))::int
+		FROM %s e
+		JOIN %s et ON et.id = e.type_id
+		WHERE e.realm_id = $1`, Tables.Equipment, Tables.EquipmentTypes)
+
+	stats := &models.EquipmentStats{}
+	if err := r.db.QueryRow(ctx, query, realmID).Scan(&stats.Units, &stats.Kits, &stats.StockParts); err != nil {
+		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	return stats, nil
 }
 
 // GetAncestors возвращает цепочку предков узла (родитель, родитель родителя, …).

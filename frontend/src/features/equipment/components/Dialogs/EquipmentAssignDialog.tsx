@@ -19,8 +19,8 @@ import { XIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
-import type { IAssignEquipmentDTO, IEquipment } from '../types/equipment'
-import { useAssignEquipmentMutation } from '../equipmentApiSlice'
+import type { IAssignEquipmentDTO, IEquipment } from '../../types/equipment'
+import { useAssignEquipmentMutation } from '../../equipmentApiSlice'
 import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
 import { useGetRealmUsersQuery } from '@/features/user/usersApiSlice'
 

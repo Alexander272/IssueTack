@@ -3,7 +3,6 @@ package mattermost
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +14,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/gin-gonic/gin"
+	"github.com/goccy/go-json"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

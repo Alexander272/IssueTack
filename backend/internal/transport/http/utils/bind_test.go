@@ -1,10 +1,10 @@
 package utils
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
+	"github.com/goccy/go-json"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

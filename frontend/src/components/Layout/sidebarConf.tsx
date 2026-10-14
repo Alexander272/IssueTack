@@ -41,6 +41,12 @@ const homeItems: SidebarItem[] = [
 	{ path: AppRoutes.Tasks, label: 'Задачи', icon: <InboxIcon sx={{ fontSize: 18 }} /> },
 	{ path: AppRoutes.Favorites, label: 'Избранное', icon: <StarIcon sx={{ fontSize: 18 }} /> },
 	{ path: AppRoutes.Statistics, label: 'Статистика', icon: <ChartColumnIcon sx={{ fontSize: 18 }} /> },
+	{ path: AppRoutes.Equipment, label: 'Оборудование', icon: <PackageIcon sx={{ fontSize: 18 }} />, divider: true },
+	{
+		path: AppRoutes.EquipmentSettings,
+		label: 'Настройки оборудования',
+		icon: <SettingsIcon sx={{ fontSize: 18 }} />,
+	},
 	{
 		path: AppRoutes.Groups,
 		label: 'Группы',
@@ -49,12 +55,6 @@ const homeItems: SidebarItem[] = [
 	},
 	{ path: AppRoutes.Categories, label: 'Категории', icon: <LayersIcon sx={{ fontSize: 18 }} /> },
 	{ path: AppRoutes.Sites, label: 'Площадки', icon: <BuildingIcon sx={{ fontSize: 18 }} /> },
-	{ path: AppRoutes.Equipment, label: 'Оборудование', icon: <PackageIcon sx={{ fontSize: 18 }} /> },
-	{
-		path: AppRoutes.EquipmentSettings,
-		label: 'Настройки оборудования',
-		icon: <SettingsIcon sx={{ fontSize: 18 }} />,
-	},
 	{
 		path: AppRoutes.NotificationSettings,
 		label: 'Уведомления',

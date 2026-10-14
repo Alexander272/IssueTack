@@ -4,6 +4,7 @@ import { Box, Stack } from '@mui/material'
 
 import { useAppSelector } from '@/hooks/redux'
 import { getCurrentCapabilities, getIsManager } from '@/features/user/userSlice'
+import { AdminPermissions, PermRules } from '@/features/access/constants/permissions'
 import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
 import { Fallback } from '@/components/Fallback/Fallback'
 import { MobileHeader } from './MobileHeader'
@@ -13,17 +14,16 @@ import { AppRoutes } from '@/pages/router/routes'
 
 const managerOnlyRoutes = new Set([AppRoutes.Groups, AppRoutes.Categories, AppRoutes.Sites])
 
-// Право на доступ к админскому разделу: наличие любого из write-пермишенов администрирования.
-const adminPermissions = ['user:write', 'role:write', 'realm:write', 'permission:write']
-
 export const Layout = () => {
 	const location = useLocation()
 	const isManager = useAppSelector(getIsManager)
 	const { memberGroupIds } = useAppSelector(getCurrentCapabilities)
 	const isMember = memberGroupIds.length > 0
-	const isAdminAccess = useCheckPermissions({ anyOf: adminPermissions })
-	const canViewEquipment = useCheckPermissions({ anyOf: ['equipment:read'] })
-	const canSettingsEquipment = useCheckPermissions({ allOf: ['equipment:read', 'equipment:write'] })
+	const isAdminAccess = useCheckPermissions({ anyOf: AdminPermissions })
+	const canViewEquipment = useCheckPermissions({ anyOf: [PermRules.Equipment.Read] })
+	const canSettingsEquipment = useCheckPermissions({
+		allOf: [PermRules.Equipment.Read, PermRules.Equipment.Write],
+	})
 	const sidebarConfig = sidebarRules.find(r => r.match(location.pathname))?.config
 	const [mobileOpen, setMobileOpen] = useState(false)
 

@@ -18,13 +18,13 @@ import { PlusIcon, Trash2Icon, XIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
-import type { IEquipment } from '../types/equipment'
+import type { IEquipment } from '../../types/equipment'
 import {
 	useAddEquipmentComponentsMutation,
 	useGetAllEquipmentQuery,
 	useGetEquipmentCompositionQuery,
 	useRemoveEquipmentComponentsMutation,
-} from '../equipmentApiSlice'
+} from '../../equipmentApiSlice'
 
 type Props = {
 	open: boolean

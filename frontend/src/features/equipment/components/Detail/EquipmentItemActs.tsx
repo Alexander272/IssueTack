@@ -1,4 +1,4 @@
-import { useState, type FC } from 'react'
+import { type FC, useMemo, useState } from 'react'
 import {
 	Autocomplete,
 	Box,
@@ -11,7 +11,6 @@ import {
 	Table,
 	TableBody,
 	TableCell,
-	TableContainer,
 	TableHead,
 	TableRow,
 	TextField,
@@ -21,12 +20,12 @@ import { FileTextIcon, PlusIcon, XIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
-import type { IEquipment, IEquipmentAct } from '../types/equipment'
+import type { IEquipment, IEquipmentAct } from '../../types/equipment'
 import {
 	useCreateEquipmentActMutation,
 	useGetAllEquipmentActsQuery,
 	useGetAllEquipmentQuery,
-} from '../equipmentApiSlice'
+} from '../../equipmentApiSlice'
 import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
 import { useGetRealmUsersQuery } from '@/features/user/usersApiSlice'
 
@@ -37,68 +36,79 @@ const userLabel = (u: { lastName: string; firstName: string; username: string })
 	return full ? `${full} (${u.username})` : u.username
 }
 
-export const EquipmentActsView: FC = () => {
-	const { data } = useGetAllEquipmentActsQuery({ limit: 100 })
-	const acts = data?.data ?? []
+type Props = {
+	unit: IEquipment
+}
 
-	const [open, setOpen] = useState(false)
+export const EquipmentItemActs: FC<Props> = ({ unit }) => {
+	const { data } = useGetAllEquipmentActsQuery({ limit: 100 })
+	const acts = useMemo(
+		() =>
+			(data?.data ?? []).filter(
+				a => a.kitEquipmentId === unit.id || (a.content ?? []).some(p => p.equipmentId === unit.id),
+			),
+		[data, unit.id],
+	)
+
 	const [detail, setDetail] = useState<IEquipmentAct | null>(null)
+	const [createOpen, setCreateOpen] = useState(false)
 
 	return (
-		<Box sx={{ p: 3 }}>
+		<Box>
 			<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-				<Typography variant='h6' sx={{ fontWeight: 'bold', color: '#1f2937' }}>
-					Акты выдачи
+				<Typography variant='subtitle1' sx={{ fontWeight: 600, color: '#1f2937' }}>
+					Акты {unit.isKit ? 'комплекта' : 'по единице'}
 				</Typography>
-				<Button
-					variant='contained'
-					startIcon={<PlusIcon sx={{ fontSize: 16 }} />}
-					onClick={() => setOpen(true)}
-					sx={{ textTransform: 'none', borderRadius: '8px' }}
-				>
-					Сформировать акт
-				</Button>
+				{unit.isKit && (
+					<Button
+						variant='outlined'
+						size='small'
+						startIcon={<PlusIcon sx={{ fontSize: 16 }} />}
+						onClick={() => setCreateOpen(true)}
+						sx={{ textTransform: 'none', borderRadius: '8px' }}
+					>
+						Сформировать акт
+					</Button>
+				)}
 			</Box>
 
-			<Box sx={{ border: '1px solid #eef2f6', borderRadius: '16px', overflow: 'hidden', bgcolor: '#fff' }}>
-				<TableContainer>
-					<Table size='small'>
-						<TableHead>
-							<TableRow sx={{ bgcolor: '#fafbfc' }}>
-								<TableCell sx={{ fontWeight: 600, color: '#6b7280' }}>Номер</TableCell>
-								<TableCell sx={{ fontWeight: 600, color: '#6b7280' }}>Дата</TableCell>
-								<TableCell sx={{ fontWeight: 600, color: '#6b7280' }}>Получатель</TableCell>
-								<TableCell sx={{ fontWeight: 600, color: '#6b7280' }}>Позиций</TableCell>
+			<Box sx={{ border: '1px solid #eef2f6', borderRadius: '12px', overflow: 'hidden', bgcolor: '#fff' }}>
+				<Table size='small'>
+					<TableHead>
+						<TableRow sx={{ bgcolor: '#fafbfc' }}>
+							<TableCell sx={{ fontWeight: 600, color: '#6b7280' }}>Номер</TableCell>
+							<TableCell sx={{ fontWeight: 600, color: '#6b7280' }}>Дата</TableCell>
+							<TableCell sx={{ fontWeight: 600, color: '#6b7280' }}>Получатель</TableCell>
+							<TableCell sx={{ fontWeight: 600, color: '#6b7280' }}>Позиций</TableCell>
+						</TableRow>
+					</TableHead>
+					<TableBody>
+						{acts.length === 0 ? (
+							<TableRow>
+								<TableCell colSpan={4} align='center' sx={{ py: 4, color: '#6b7280' }}>
+									Связанных актов нет
+								</TableCell>
 							</TableRow>
-						</TableHead>
-						<TableBody>
-							{acts.length === 0 ? (
-								<TableRow>
-									<TableCell colSpan={4} align='center' sx={{ py: 4, color: '#6b7280' }}>
-										Актов пока нет
-									</TableCell>
+						) : (
+							acts.map(act => (
+								<TableRow key={act.id} hover sx={{ cursor: 'pointer' }} onClick={() => setDetail(act)}>
+									<TableCell sx={{ fontWeight: 500 }}>{act.number}</TableCell>
+									<TableCell sx={{ whiteSpace: 'nowrap' }}>{fmtDateTime(act.issuedAt)}</TableCell>
+									<TableCell>{act.recipientName || '—'}</TableCell>
+									<TableCell>{act.content?.length ?? 0}</TableCell>
 								</TableRow>
-							) : (
-								acts.map(act => (
-									<TableRow key={act.id} hover sx={{ cursor: 'pointer' }} onClick={() => setDetail(act)}>
-										<TableCell sx={{ fontWeight: 500 }}>{act.number}</TableCell>
-										<TableCell sx={{ whiteSpace: 'nowrap' }}>{fmtDateTime(act.issuedAt)}</TableCell>
-										<TableCell>{act.recipientName || '—'}</TableCell>
-										<TableCell>{act.content?.length ?? 0}</TableCell>
-									</TableRow>
-								))
-							)}
-						</TableBody>
-					</Table>
-				</TableContainer>
+							))
+						)}
+					</TableBody>
+				</Table>
 			</Box>
 
-			<CreateActDialog open={open} onClose={() => setOpen(false)} />
+			{unit.isKit && createOpen && (
+				<CreateActDialog open onClose={() => setCreateOpen(false)} defaultKit={unit} />
+			)}
 
 			<Dialog open={Boolean(detail)} onClose={() => setDetail(null)} fullWidth maxWidth='sm'>
-				<DialogTitle
-					sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}
-				>
+				<DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
 					<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
 						<FileTextIcon sx={{ fontSize: 20, color: '#2563eb' }} />
 						<Typography variant='h6' sx={{ fontWeight: 'bold' }}>
@@ -138,31 +148,26 @@ export const EquipmentActsView: FC = () => {
 	)
 }
 
-const CreateActDialog: FC<{ open: boolean; onClose: () => void }> = ({ open, onClose }) => {
+const CreateActDialog: FC<{ open: boolean; onClose: () => void; defaultKit?: IEquipment }> = ({
+	open,
+	onClose,
+	defaultKit,
+}) => {
 	const { data: unitsData } = useGetAllEquipmentQuery({ limit: 500 }, { skip: !open })
 	const { data: usersData } = useGetRealmUsersQuery('executors', { skip: !open })
 	const { data: sitesData } = useGetAllSitesQuery(undefined, { skip: !open })
 	const [create, { isLoading }] = useCreateEquipmentActMutation()
 
-	const kits = (unitsData?.data ?? []).filter(u => u.isKit)
+	const kits = useMemo(() => (unitsData?.data ?? []).filter(u => u.isKit), [unitsData])
 	const users = usersData?.data ?? []
 	const sites = sitesData?.data ?? []
 
-	const [kit, setKit] = useState<IEquipment | null>(null)
+	const [kit, setKit] = useState<IEquipment | null>(defaultKit ?? null)
 	const [userId, setUserId] = useState<string | null>(null)
 	const [siteId, setSiteId] = useState<string | null>(null)
 	const [location, setLocation] = useState('')
 	const [comment, setComment] = useState('')
 	const [error, setError] = useState('')
-
-	const reset = () => {
-		setKit(null)
-		setUserId(null)
-		setSiteId(null)
-		setLocation('')
-		setComment('')
-		setError('')
-	}
 
 	const handleCreate = async () => {
 		if (!kit) {
@@ -178,7 +183,12 @@ const CreateActDialog: FC<{ open: boolean; onClose: () => void }> = ({ open, onC
 				comment,
 			}).unwrap()
 			toast.success('Акт сформирован')
-			reset()
+			setKit(defaultKit ?? null)
+			setUserId(null)
+			setSiteId(null)
+			setLocation('')
+			setComment('')
+			setError('')
 			onClose()
 		} catch (err) {
 			const fetchError = err as IFetchError
@@ -214,12 +224,7 @@ const CreateActDialog: FC<{ open: boolean; onClose: () => void }> = ({ open, onC
 						onChange={(_e, value) => setSiteId(value?.id ?? null)}
 						renderInput={params => <TextField {...params} size='small' label='Площадка' />}
 					/>
-					<TextField
-						size='small'
-						label='Локация'
-						value={location}
-						onChange={e => setLocation(e.target.value)}
-					/>
+					<TextField size='small' label='Локация' value={location} onChange={e => setLocation(e.target.value)} />
 					<TextField
 						size='small'
 						label='Комментарий'

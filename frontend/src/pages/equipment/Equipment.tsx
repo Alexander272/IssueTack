@@ -1,25 +1,5 @@
-import { Box, Tab, Tabs } from '@mui/material'
-import { useState } from 'react'
-
-import { EquipmentView } from '@/features/equipment/pages/EquipmentView'
-import { EquipmentActsView } from '@/features/equipment/components/EquipmentActsView'
+import { EquipmentPage } from '@/features/equipment/pages/EquipmentPage'
 
 export default function Equipment() {
-	const [tab, setTab] = useState(0)
-
-	return (
-		<Box sx={{ flexGrow: 1, overflow: 'auto' }}>
-			<Tabs
-				value={tab}
-				onChange={(_e, value) => setTab(value)}
-				textColor='primary'
-				indicatorColor='primary'
-				sx={{ px: 3, pt: 1 }}
-			>
-				<Tab label='Единицы' />
-				<Tab label='Акты' />
-			</Tabs>
-			{tab === 0 ? <EquipmentView /> : <EquipmentActsView />}
-		</Box>
-	)
+	return <EquipmentPage />
 }

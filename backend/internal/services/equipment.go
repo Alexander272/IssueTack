@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -10,6 +9,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
+	"github.com/goccy/go-json"
 	"github.com/google/uuid"
 )
 
@@ -43,6 +43,11 @@ type Equipment interface {
 	GetByID(ctx context.Context, req *models.GetEquipmentByIdDTO) (*models.Equipment, error)
 	// GetChildren возвращает состав комплекта (непосредственных потомков).
 	GetChildren(ctx context.Context, realmID, parentID uuid.UUID) ([]*models.Equipment, error)
+	// GetTree возвращает один уровень дерева оборудования реалма: корни (ParentID
+	// == nil) либо детей узла. Второе значение — всего на уровне (для пагинации).
+	GetTree(ctx context.Context, dto *models.GetEquipmentTreeDTO) ([]*models.EquipmentTreeNode, int, error)
+	// GetStats возвращает счётчики единиц реалма для шапки страницы.
+	GetStats(ctx context.Context, realmID uuid.UUID) (*models.EquipmentStats, error)
 	// Create создаёт единицу оборудования.
 	Create(ctx context.Context, dto *models.EquipmentDTO) (*models.Equipment, error)
 	// Update обновляет единицу оборудования (с проверкой циклов в дереве комплектов).
@@ -155,11 +160,32 @@ func (s *EquipmentService) GetChildren(ctx context.Context, realmID, parentID uu
 	return data, nil
 }
 
+// GetTree возвращает один уровень дерева оборудования реалма.
+func (s *EquipmentService) GetTree(ctx context.Context, dto *models.GetEquipmentTreeDTO) ([]*models.EquipmentTreeNode, int, error) {
+	data, total, err := s.repo.GetTree(ctx, dto)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get equipment tree. error: %w", err)
+	}
+	return data, total, nil
+}
+
+// GetStats возвращает счётчики единиц реалма для шапки страницы.
+func (s *EquipmentService) GetStats(ctx context.Context, realmID uuid.UUID) (*models.EquipmentStats, error) {
+	data, err := s.repo.GetStats(ctx, realmID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get equipment stats. error: %w", err)
+	}
+	return data, nil
+}
+
 // Create создаёт единицу оборудования.
 func (s *EquipmentService) Create(ctx context.Context, dto *models.EquipmentDTO) (*models.Equipment, error) {
 	normalizeEquipmentDTO(dto)
 
 	if err := s.ensureParentCanBePart(ctx, dto); err != nil {
+		return nil, err
+	}
+	if err := s.ensureParentCanHost(ctx, dto); err != nil {
 		return nil, err
 	}
 
@@ -179,6 +205,9 @@ func (s *EquipmentService) Update(ctx context.Context, dto *models.EquipmentDTO)
 	normalizeEquipmentDTO(dto)
 
 	if err := s.ensureParentCanBePart(ctx, dto); err != nil {
+		return nil, err
+	}
+	if err := s.ensureParentCanHost(ctx, dto); err != nil {
 		return nil, err
 	}
 
@@ -227,6 +256,24 @@ func (s *EquipmentService) ensureParentCanBePart(ctx context.Context, dto *model
 	}
 	if !eqType.Kind.CanBePart() {
 		return models.ErrEquipmentParentNotPart
+	}
+	return nil
+}
+
+// ensureParentCanHost проверяет, что единица, которой назначают родителя
+// (физический состав, parent_id), способна содержать состав: только устройство
+// или периферия. В комплектующее или расходник физически ничего вложить нельзя,
+// а комплект ведёт состав логически — через kit_compositions, не через parent_id.
+func (s *EquipmentService) ensureParentCanHost(ctx context.Context, dto *models.EquipmentDTO) error {
+	if dto.ParentID == nil {
+		return nil
+	}
+	parent, err := s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: *dto.ParentID, RealmID: dto.RealmID})
+	if err != nil {
+		return fmt.Errorf("failed to get parent equipment. error: %w", err)
+	}
+	if parent.TypeKind.CanBePart() || parent.IsKit {
+		return models.ErrEquipmentParentCannotHost
 	}
 	return nil
 }
@@ -620,7 +667,7 @@ func (s *EquipmentService) GetActs(ctx context.Context, filter *models.Equipment
 	return data, total, nil
 }
 
-// GetActByID返回 акт по идентификатору.
+// GetActByID возвращает акт по идентификатору.
 func (s *EquipmentService) GetActByID(ctx context.Context, req *models.GetEquipmentActByIDDTO) (*models.EquipmentAct, error) {
 	data, err := s.repo.GetActByID(ctx, req)
 	if err != nil {

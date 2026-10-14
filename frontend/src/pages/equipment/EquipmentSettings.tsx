@@ -1,9 +1,11 @@
 import { Box, Tab, Tabs } from '@mui/material'
 import { useState } from 'react'
 
-import { EquipmentTypesSection } from '@/features/equipment/components/EquipmentTypesSection'
-import { EquipmentTemplatesSection } from '@/features/equipment/components/EquipmentTemplatesSection'
-import { EquipmentImportSection } from '@/features/equipment/components/EquipmentImportSection'
+import {
+	EquipmentImportSection,
+	EquipmentTemplatesSection,
+	EquipmentTypesSection,
+} from '@/features/equipment/components/Settings'
 
 export default function EquipmentSettings() {
 	const [tab, setTab] = useState(0)

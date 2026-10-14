@@ -3,7 +3,6 @@ package services
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -13,6 +12,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/Alexander272/IssueTrack/backend/pkg/mattermost"
+	"github.com/goccy/go-json"
 	"github.com/google/uuid"
 	"github.com/mattermost/mattermost/server/public/model"
 )

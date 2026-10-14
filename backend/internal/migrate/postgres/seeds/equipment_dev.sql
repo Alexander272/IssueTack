@@ -4,10 +4,25 @@
 --   psql "postgresql://postgres:postgres@127.0.0.1:5436/issue_track?sslmode=disable" \
 --        -f internal/migrate/postgres/seeds/equipment_dev.sql
 --
--- Идемпотентно: типы — ON CONFLICT, единицы — по инвентарному номеру.
+-- Идемпотентно: типы — upsert по имени, единицы — insert-if-absent по инвентарному
+-- номеру. Кроме вставки отсутствующих строк сид **приводит форму демо-данных к
+-- текущей модели** (блок «приведение к текущей модели»): на БД, где лежат данные
+-- прежних версий сида, он их починит, а не молча пропустит. Это важно, потому что
+-- до появления `kind` комплект хранился в физсоставе — мышь и сумка были вложены
+-- в ноутбук через `parent_id`, а `is_kit` не выставлялся.
+--
 -- Демонстрирует все категории типов (device/component/periphery/consumable),
--- физический состав (parent_id: комплектующие и расходники) и логический
--- комплект (is_kit + kit_compositions: ноутбук + мышь + сумка).
+-- физический состав (parent_id: комплектующие в системном блоке, расходник в
+-- принтере), логический комплект (is_kit + kit_compositions: ноутбук + мышь +
+-- сумка) и выдачу единицы с пропагацией на её состав.
+--
+-- Журнал (`equipment_events`) и акты (`equipment_acts`) не эмулируются: это
+-- append-only история, которую пишут сервисы. Сид заполняет то, что читается
+-- напрямую (дерево, состав, держатель, статус), и повторяет денормализацию
+-- сервисов — `holder_*`/`status` на поддереве (как `Assign`) и `kit_id` у члена
+-- комплекта (как `OpenComposition`). Без неё список и карточка показывают не то,
+-- что записано в БД («На складе» при открытой выдаче, «Держатель» у члена
+-- комплекта).
 DO $$
 DECLARE
     r_id        UUID;
@@ -25,12 +40,39 @@ DECLARE
     e_bag       UUID;
     e_printer   UUID;
     u_id        UUID;
+    v_eq        UUID;
 BEGIN
     SELECT id INTO r_id FROM realms WHERE code = 'it';
     IF r_id IS NULL THEN
         RAISE NOTICE 'realm "it" not found — equipment seed skipped';
         RETURN;
     END IF;
+
+    -- Действующее лицо демо-операций: тот, кто уже записан держателем в открытой
+    -- выдаче (повторный прогон — держим связь выдачи и денормализации), иначе
+    -- первый активный пользователь реалма. Тай-брейк по username — у сид-пользователей
+    -- одинаковый created_at, без него выбор недетерминирован.
+    SELECT COALESCE(
+        (
+            SELECT a.user_id
+            FROM equipment_assignments a
+            JOIN equipment e ON e.id = a.equipment_id
+            WHERE e.realm_id = r_id
+              AND e.inventory_number = 'INV-1001'
+              AND a.unassigned_at IS NULL
+              AND a.user_id IS NOT NULL
+            ORDER BY a.assigned_at DESC
+            LIMIT 1
+        ),
+        (
+            SELECT u.id
+            FROM users u
+            JOIN user_realms ur ON ur.user_id = u.id
+            WHERE ur.realm_id = r_id AND ur.is_active = true
+            ORDER BY u.created_at, u.username
+            LIMIT 1
+        )
+    ) INTO u_id;
 
     INSERT INTO equipment_types (realm_id, name, kind, sort_order) VALUES
         (r_id, 'Ноутбук', 'device', 10),
@@ -101,18 +143,6 @@ BEGIN
         SELECT id INTO e_bag FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1002-02';
     END IF;
 
-    INSERT INTO kit_compositions (kit_id, component_id, reason)
-    SELECT e_laptop, e_mouse, 'сборка комплекта'
-    WHERE NOT EXISTS (
-        SELECT 1 FROM kit_compositions WHERE kit_id = e_laptop AND component_id = e_mouse AND ended_at IS NULL
-    );
-
-    INSERT INTO kit_compositions (kit_id, component_id, reason)
-    SELECT e_laptop, e_bag, 'сборка комплекта'
-    WHERE NOT EXISTS (
-        SELECT 1 FROM kit_compositions WHERE kit_id = e_laptop AND component_id = e_bag AND ended_at IS NULL
-    );
-
     -- Принтер с расходником (картридж) в физическом составе.
     IF NOT EXISTS (SELECT 1 FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1003') THEN
         INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, status, location)
@@ -133,19 +163,65 @@ BEGIN
         VALUES (r_id, t_ram, 'Память Crucial 16GB (резерв)', 'Crucial', 'CT16G4SFRA32A', 'RAM-C-0004', 'INV-1004', 'in_stock', 'Склад, полка A');
     END IF;
 
-    -- Пример истории выдачи: системный блок на активного пользователя реалма.
-    SELECT u.id INTO u_id
-    FROM users u
-    JOIN user_realms ur ON ur.user_id = u.id
-    WHERE ur.realm_id = r_id AND ur.is_active = true
-    ORDER BY u.created_at
-    LIMIT 1;
+    -- ─── Приведение к текущей модели ───────────────────────────────────────────
+    -- Физически внутри может лежать только комплектующее/расходник (EQ014), а
+    -- родителем быть только устройство/периферия (EQ015) — восстанавливаем это
+    -- для демо-единиц, если прежняя версия сида или ручные правки увели их в сторону.
+    UPDATE equipment SET parent_id = e_desktop, kit_id = NULL
+    WHERE realm_id = r_id AND inventory_number IN ('INV-1001-01', 'INV-1001-02');
 
-    IF u_id IS NOT NULL AND NOT EXISTS (
-        SELECT 1 FROM equipment_assignments a
-        WHERE a.equipment_id = e_desktop AND a.unassigned_at IS NULL
-    ) THEN
-        INSERT INTO equipment_assignments (equipment_id, user_id, site_id, location, assigned_by, comment)
-        VALUES (e_desktop, u_id, NULL, 'Кабинет 305', u_id, 'Плановое закрепление');
+    UPDATE equipment SET parent_id = e_printer, kit_id = NULL
+    WHERE realm_id = r_id AND inventory_number = 'INV-1003-01';
+
+    -- Комплект: это признак is_kit, а члены — логические (своих parent_id у них
+    -- нет, иначе физсостав в дереве перебивает членство в комплекте).
+    UPDATE equipment SET is_kit = true WHERE id = e_laptop;
+    UPDATE equipment SET parent_id = NULL WHERE id IN (e_mouse, e_bag);
+
+    -- ─── Состав комплекта (kit_compositions + денормализованный kit_id) ────────
+    -- Единица входит только в один комплект, поэтому чужое открытое членство
+    -- мыши/сумки закрываем (как CloseOpenByComponent).
+    UPDATE kit_compositions SET ended_at = NOW()
+    WHERE component_id IN (e_mouse, e_bag) AND ended_at IS NULL AND kit_id <> e_laptop;
+
+    INSERT INTO kit_compositions (kit_id, component_id, started_by, reason)
+    SELECT e_laptop, e_mouse, u_id, 'сборка комплекта'
+    WHERE NOT EXISTS (
+        SELECT 1 FROM kit_compositions WHERE kit_id = e_laptop AND component_id = e_mouse AND ended_at IS NULL
+    );
+
+    INSERT INTO kit_compositions (kit_id, component_id, started_by, reason)
+    SELECT e_laptop, e_bag, u_id, 'сборка комплекта'
+    WHERE NOT EXISTS (
+        SELECT 1 FROM kit_compositions WHERE kit_id = e_laptop AND component_id = e_bag AND ended_at IS NULL
+    );
+
+    -- kit_id — денормализация текущего комплекта у члена (её ставит OpenComposition);
+    -- по ней карточка показывает «В составе комплекта».
+    UPDATE equipment SET kit_id = e_laptop WHERE id IN (e_mouse, e_bag);
+
+    -- ─── Пример истории выдачи: системный блок на активного пользователя ───────
+    -- Assign пропагирует выдачу на весь состав, поэтому держателя и статус
+    -- выставляем на всё поддерево, а не только на сам системный блок.
+    IF u_id IS NOT NULL THEN
+        FOR v_eq IN
+            WITH RECURSIVE subtree AS (
+                SELECT id FROM equipment WHERE id = e_desktop
+                UNION ALL
+                SELECT e.id FROM equipment e JOIN subtree s ON e.parent_id = s.id
+            )
+            SELECT id FROM subtree
+        LOOP
+            UPDATE equipment
+            SET holder_user_id = u_id, holder_name = NULL, location = 'Кабинет 305', status = 'in_use'
+            WHERE id = v_eq;
+
+            INSERT INTO equipment_assignments (equipment_id, user_id, site_id, location, assigned_by, comment)
+            SELECT v_eq, u_id, NULL, 'Кабинет 305', u_id, 'Плановое закрепление'
+            WHERE NOT EXISTS (
+                SELECT 1 FROM equipment_assignments a
+                WHERE a.equipment_id = v_eq AND a.unassigned_at IS NULL
+            );
+        END LOOP;
     END IF;
 END $$;

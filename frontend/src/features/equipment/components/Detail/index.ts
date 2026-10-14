@@ -1,0 +1,1 @@
+export { EquipmentDetailModal } from './EquipmentDetailModal'

@@ -99,6 +99,8 @@ export const API = {
 		events: (id: string) => `/equipment/${id}/events` as const,
 		composition: (id: string) => `/equipment/${id}/composition` as const,
 		compositionHistory: (id: string) => `/equipment/${id}/composition/history` as const,
+		tree: '/equipment/tree' as const,
+		stats: '/equipment/stats' as const,
 		types: '/equipment/types' as const,
 		typeById: (id: string) => `/equipment/types/${id}` as const,
 		acts: '/equipment/acts' as const,
