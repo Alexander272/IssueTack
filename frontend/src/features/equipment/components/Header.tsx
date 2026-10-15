@@ -11,12 +11,13 @@ import {
 	useTheme,
 	ListItemIcon,
 } from '@mui/material'
-import { ChevronDownIcon, FileUpIcon, PackageOpenIcon, PlusIcon, PrinterIcon } from 'lucide-mui'
+import { ChevronDownIcon, FileUpIcon, MonitorIcon, PackageOpenIcon, PlusIcon } from 'lucide-mui'
 
 import { PermRules } from '@/features/access/constants/permissions'
 import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
 import { pluralize } from '@/utils/plural'
 import { useGetEquipmentStatsQuery } from '../equipmentApiSlice'
+import { SettingIcon } from '@/components/Icons/SettingIcon'
 
 type Props = {
 	onCreate: (kit: boolean) => void
@@ -58,6 +59,20 @@ export const Header: FC<Props> = ({ onCreate }) => {
 
 			{canWrite && (
 				<Stack direction='row' spacing={1} sx={{ flexWrap: 'wrap', gap: 1, width: { xs: '100%', sm: 'auto' } }}>
+					<Button variant='text'>
+						<SettingIcon sx={{ fontSize: 22 }} />
+					</Button>
+
+					<Button
+						variant='outlined'
+						color='inherit'
+						onClick={() => onCreate(false)}
+						sx={{ textTransform: 'none', background: '#fff', borderColor: '#6c6c6c' }}
+					>
+						<PackageOpenIcon sx={{ fontSize: 16, mr: 1 }} />
+						Новый комплект
+					</Button>
+
 					<ButtonGroup variant='outlined' sx={{ borderRadius: '8px', width: { xs: '100%', sm: 'auto' } }}>
 						<Button
 							variant='outlined'
@@ -99,21 +114,21 @@ export const Header: FC<Props> = ({ onCreate }) => {
 				<MenuList>
 					<MenuItem onClick={() => onCreate(false)}>
 						<ListItemIcon>
-							<PrinterIcon sx={{ fontSize: 16, color: '#0e0e0e' }} />
+							<MonitorIcon sx={{ fontSize: 16, color: '#0e0e0e' }} />
 						</ListItemIcon>
-						Оборудование
+						Вручную
 					</MenuItem>
-					<MenuItem onClick={() => onCreate(true)}>
+					{/* <MenuItem onClick={() => onCreate(true)}>
 						<ListItemIcon>
 							<PackageOpenIcon sx={{ fontSize: 16, color: '#0e0e0e' }} />
 						</ListItemIcon>
 						Комплект
-					</MenuItem>
+					</MenuItem> */}
 					<MenuItem disabled>
 						<ListItemIcon>
 							<FileUpIcon sx={{ fontSize: 16, color: '#0e0e0e' }} />
 						</ListItemIcon>
-						Импорт
+						Импортировать
 					</MenuItem>
 				</MenuList>
 			</Popover>

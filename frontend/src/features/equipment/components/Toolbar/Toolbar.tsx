@@ -2,16 +2,15 @@ import type { ChangeEvent, FC, MouseEvent } from 'react'
 import { Box, Button, MenuItem, TextField, ToggleButton, ToggleButtonGroup } from '@mui/material'
 import { ChevronsDownIcon, ChevronsUpIcon, SearchIcon } from 'lucide-mui'
 
-import type { EquipmentFilters, TypeFilter } from './types'
+import { isTreeMode, type EquipmentFilters, type TypeFilter } from './types'
 import { EQUIPMENT_STATUS_OPTIONS } from '../../types/equipment'
 
 type Props = {
 	filters: EquipmentFilters
 	// Передаем partial-объект для обновления только нужных полей
 	onFiltersChange: (filters: Partial<EquipmentFilters>) => void
-	treeMode: boolean
-	onExpandAll: () => void
-	onCollapseAll: () => void
+	// Развернуть/свернуть всё: true — раскрыть, false — свернуть.
+	onToggleAll: (expand: boolean) => void
 }
 
 // Выносим статичные стили за пределы компонента, чтобы они не пересоздавались при каждом рендере
@@ -39,8 +38,11 @@ const buttonStyles = (treeMode: boolean) =>
 	}) as const
 
 // Тулбар фильтров — в стиле страницы заявок (белая карточка).
-export const EquipmentToolbar: FC<Props> = ({ filters, onFiltersChange, treeMode, onExpandAll, onCollapseAll }) => {
+export const EquipmentToolbar: FC<Props> = ({ filters, onFiltersChange, onToggleAll }) => {
 	const { search, typeFilter, status } = filters
+
+	// Режим-дерево вычисляется из поиска: в плоском списке кнопки раскрытия гаснут.
+	const treeMode = isTreeMode(search)
 
 	// Изолированные обработчики для избежания инлайн-функций в рендере
 	const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -73,16 +75,17 @@ export const EquipmentToolbar: FC<Props> = ({ filters, onFiltersChange, treeMode
 			<ToggleButtonGroup
 				exclusive
 				value={typeFilter}
+				color='primary'
 				onChange={handleTypeChange}
 				sx={{ flexShrink: 0, height: 40 }}
 			>
-				<ToggleButton value='all' sx={{ textTransform: 'none', px: 2 }}>
+				<ToggleButton value='all' sx={{ textTransform: 'none', px: 2, borderRadius: 2 }}>
 					Все
 				</ToggleButton>
 				<ToggleButton value='unit' sx={{ textTransform: 'none', px: 2 }}>
 					Единицы
 				</ToggleButton>
-				<ToggleButton value='kit' sx={{ textTransform: 'none', px: 2 }}>
+				<ToggleButton value='kit' sx={{ textTransform: 'none', px: 2, borderRadius: 2 }}>
 					Комплекты
 				</ToggleButton>
 			</ToggleButtonGroup>
@@ -91,7 +94,7 @@ export const EquipmentToolbar: FC<Props> = ({ filters, onFiltersChange, treeMode
 				variant='outlined'
 				color='inherit'
 				disabled={!treeMode}
-				onClick={onExpandAll}
+				onClick={() => onToggleAll(true)}
 				sx={buttonStyles(treeMode)}
 			>
 				<ChevronsDownIcon sx={{ fontSize: 16, mr: 1 }} />
@@ -102,7 +105,7 @@ export const EquipmentToolbar: FC<Props> = ({ filters, onFiltersChange, treeMode
 				variant='outlined'
 				color='inherit'
 				disabled={!treeMode}
-				onClick={onCollapseAll}
+				onClick={() => onToggleAll(false)}
 				sx={buttonStyles(treeMode)}
 			>
 				<ChevronsUpIcon sx={{ fontSize: 16, mr: 1 }} />

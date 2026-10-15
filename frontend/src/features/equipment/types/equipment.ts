@@ -38,6 +38,7 @@ export type EquipmentStatus =
 	| 'in_stock'
 	| 'in_use'
 	| 'repair'
+	| 'defective'
 	| 'reserved'
 	| 'written_off'
 
@@ -45,6 +46,7 @@ const EQUIPMENT_STATUS_MAP: Record<EquipmentStatus, { label: string; color: stri
 	in_stock: { label: 'На складе', color: '#6b7280' },
 	in_use: { label: 'В эксплуатации', color: '#16a34a' },
 	repair: { label: 'В ремонте', color: '#ea580c' },
+	defective: { label: 'Дефектная', color: '#ca8a04' },
 	reserved: { label: 'Зарезервировано', color: '#2563eb' },
 	written_off: { label: 'Списано', color: '#dc2626' },
 }
@@ -156,10 +158,11 @@ export interface IEquipmentTreeList {
 }
 
 // IEquipmentTreeArgs — параметры одного уровня дерева: parentId = undefined — корни,
-// иначе дети узла. status применяется только к корням (как было раньше на клиенте).
+// иначе дети узла. status/isKit применяются только к корням (как было раньше на клиенте).
 export interface IEquipmentTreeArgs {
 	parentId?: string
 	status?: EquipmentStatus
+	isKit?: boolean
 	limit?: number
 	offset?: number
 }

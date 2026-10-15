@@ -1,4 +1,4 @@
-import { type FC, useEffect } from 'react'
+import { type FC } from 'react'
 import {
 	Box,
 	Button,
@@ -12,21 +12,13 @@ import {
 	TextField,
 	Typography,
 } from '@mui/material'
-import { Controller, useForm, useWatch } from 'react-hook-form'
+import { Controller, FormProvider, useForm } from 'react-hook-form'
 import { XIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
 import type { IEquipment, IEquipmentDTO } from '../../types/equipment'
-import { canBePart } from '../../types/equipment'
-import {
-	useCreateEquipmentMutation,
-	useGetAllEquipmentQuery,
-	useGetAllEquipmentTypesQuery,
-	useUpdateEquipmentMutation,
-} from '../../equipmentApiSlice'
-import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
-import { useGetRealmUsersQuery } from '@/features/user/usersApiSlice'
+import { useCreateEquipmentMutation, useUpdateEquipmentMutation } from '../../equipmentApiSlice'
 import { Field } from './UnitForm/Field'
 import { inputProps } from './UnitForm/consts'
 import { IdentityFields } from './UnitForm/IdentityFields'
@@ -63,42 +55,19 @@ const toDefault = (unit?: IEquipment | null, isKitDefault = false): IEquipmentDT
 })
 
 // Диалог создания/редактирования единицы оборудования: держит форму и её
-// сохранение, а поля раскладывает по секциям UnitForm.
+// сохранение, а поля раскладывает по секциям UnitForm. Секции берут справочники
+// и права из формы и своих запросов — контейнеру их протаскивать не нужно.
 export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, isKitDefault }) => {
 	const isEdit = Boolean(unit?.id)
 
 	const [create, { isLoading: isCreating }] = useCreateEquipmentMutation()
 	const [update, { isLoading: isUpdating }] = useUpdateEquipmentMutation()
 
-	const { data: typesData } = useGetAllEquipmentTypesQuery()
-	const { data: sitesData } = useGetAllSitesQuery()
-	const { data: usersData } = useGetRealmUsersQuery('executors')
-	const { data: unitsData } = useGetAllEquipmentQuery({ limit: 500 })
-
-	const types = typesData?.data ?? []
-	const sites = sitesData?.data ?? []
-	const users = usersData?.data ?? []
-	// Родителем в физическом составе может быть только устройство или периферия:
-	// комплектующее/расходник не содержит состав, а комплект ведёт состав логически
-	// (kit_compositions), не через parent_id.
-	const parentCandidates = (unitsData?.data ?? []).filter(
-		u => u.id !== unit?.id && !u.isKit && !canBePart(u.typeKind),
-	)
-
-	const { control, handleSubmit, formState, setValue } = useForm<IEquipmentDTO>({
+	const methods = useForm<IEquipmentDTO>({
 		defaultValues: toDefault(unit, isKitDefault),
 		mode: 'onTouched',
 	})
-
-	const typeId = useWatch({ control, name: 'typeId' })
-	const selectedType = types.find(t => t.id === typeId)
-	const canBePartType = canBePart(selectedType?.kind)
-
-	// В физический состав (parent_id) можно положить только комплектующее или
-	// расходник: у остальных родитель недопустим — сбрасываем и блокируем поле.
-	useEffect(() => {
-		if (selectedType && !canBePart(selectedType.kind)) setValue('parentId', null)
-	}, [selectedType, setValue])
+	const { control, handleSubmit, formState } = methods
 
 	const isLoading = isCreating || isUpdating
 
@@ -112,7 +81,7 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, isKitDefault }
 			purchaseDate: form.purchaseDate || null,
 			warrantyUntil: form.warrantyUntil || null,
 			cost: Number.isFinite(Number(form.cost)) ? Number(form.cost) : null,
-			parentId: selectedType && !canBePart(selectedType.kind) ? null : form.parentId || null,
+			parentId: form.parentId || null,
 			siteId: form.siteId || null,
 			holderUserId: form.holderUserId || null,
 		}
@@ -150,72 +119,63 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, isKitDefault }
 				</IconButton>
 			</DialogTitle>
 
-			<form onSubmit={saveHandler}>
-				<DialogContent
-					dividers
-					sx={{ borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', py: 3 }}
-				>
-					<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-						<IdentityFields control={control} types={types} />
+			<FormProvider {...methods}>
+				<form onSubmit={saveHandler}>
+					<DialogContent
+						dividers
+						sx={{ borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', py: 3 }}
+					>
+						<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+							<IdentityFields />
 
-						<OwnershipFields
-							control={control}
-							sites={sites}
-							users={users}
-							parentCandidates={parentCandidates}
-							parentDisabled={!canBePartType}
-							parentHint={
-								selectedType && !canBePartType
-									? 'В физический состав можно включить только комплектующее или расходник'
-									: undefined
-							}
-						/>
+							<OwnershipFields />
 
-						<Field label='Примечание'>
+							<Field label='Примечание'>
+								<Controller
+									control={control}
+									name='notes'
+									render={({ field }) => <TextField {...field} multiline minRows={2} {...inputProps} />}
+								/>
+							</Field>
+
 							<Controller
 								control={control}
-								name='notes'
-								render={({ field }) => <TextField {...field} multiline minRows={2} {...inputProps} />}
+								name='isKit'
+								render={({ field }) => (
+									<FormControlLabel
+										control={
+											<Checkbox
+												checked={Boolean(field.value)}
+												onChange={e => field.onChange(e.target.checked)}
+											/>
+										}
+										label='Это комплект (можно вести логический состав и выдавать вместе)'
+									/>
+								)}
 							/>
-						</Field>
+						</Box>
+					</DialogContent>
 
-						<Controller
-							control={control}
-							name='isKit'
-							render={({ field }) => (
-								<FormControlLabel
-									control={
-										<Checkbox
-											checked={Boolean(field.value)}
-											onChange={e => field.onChange(e.target.checked)}
-										/>
-									}
-									label='Это комплект (можно вести логический состав и выдавать вместе)'
-								/>
-							)}
-						/>
-					</Box>
-				</DialogContent>
-
-				<DialogActions sx={{ p: 2, gap: 1, justifyContent: 'flex-end' }}>
-					<Button
-						type='button'
-						onClick={onClose}
-						variant='outlined'
-						sx={{ textTransform: 'none', color: 'text.primary', borderColor: '#ddd' }}
-					>
-						Отмена
-					</Button>
-					<Button
-						type='submit'
-						variant='contained'
-						disabled={isLoading || !formState.isValid}
-						sx={{ textTransform: 'none', px: 3 }}
-					>
-						{isEdit ? 'Сохранить' : 'Создать'}
-					</Button>
-				</DialogActions>
-			</form>
+					<DialogActions sx={{ p: 2, gap: 1, justifyContent: 'flex-end' }}>
+						<Button
+							type='button'
+							onClick={onClose}
+							variant='outlined'
+							sx={{ textTransform: 'none', color: 'text.primary', borderColor: '#ddd' }}
+						>
+							Отмена
+						</Button>
+						<Button
+							type='submit'
+							variant='contained'
+							disabled={isLoading || !formState.isValid}
+							sx={{ textTransform: 'none', px: 3 }}
+						>
+							{isEdit ? 'Сохранить' : 'Создать'}
+						</Button>
+					</DialogActions>
+				</form>
+			</FormProvider>
 		</Dialog>
 	)
 }

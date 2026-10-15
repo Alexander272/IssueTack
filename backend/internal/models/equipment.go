@@ -14,6 +14,7 @@ const (
 	EquipmentStatusInStock    EquipmentStatus = "in_stock"
 	EquipmentStatusInUse      EquipmentStatus = "in_use"
 	EquipmentStatusRepair     EquipmentStatus = "repair"
+	EquipmentStatusDefective  EquipmentStatus = "defective"
 	EquipmentStatusReserved   EquipmentStatus = "reserved"
 	EquipmentStatusWrittenOff EquipmentStatus = "written_off"
 )
@@ -22,7 +23,7 @@ const (
 func (s EquipmentStatus) IsValid() bool {
 	switch s {
 	case EquipmentStatusInStock, EquipmentStatusInUse, EquipmentStatusRepair,
-		EquipmentStatusReserved, EquipmentStatusWrittenOff:
+		EquipmentStatusDefective, EquipmentStatusReserved, EquipmentStatusWrittenOff:
 		return true
 	}
 	return false
@@ -182,15 +183,17 @@ type EquipmentFilter struct {
 
 // GetEquipmentTreeDTO — параметры ленивого дерева: ParentID == nil — корни реалма,
 // иначе — непосредственные дети узла (физсостав + члены комплекта). Limit/Offset
-// пагинируют уровни, чтобы даже сотни корней не приезжали одним ответом. Status
-// сужает только корни: дети раскрытого узла показываются целиком (как раньше на
-// клиенте — фильтр по статусу применялся к верхнему уровню).
+// пагинируют уровни, чтобы даже сотни корней не приезжали одним ответом. Status и
+// IsKit сужают только корни: дети раскрытого узла показываются целиком (как раньше
+// на клиенте — фильтр по статусу применялся к верхнему уровню).
 type GetEquipmentTreeDTO struct {
 	RealmID  uuid.UUID        `json:"realmId" db:"realm_id" form:"-"`
 	ParentID *uuid.UUID       `form:"parentId,parser=encoding.TextUnmarshaler" json:"parentId" db:"parent_id"`
 	Status   *EquipmentStatus `form:"status" json:"status" binding:"omitempty,enum"`
-	Limit    int              `form:"limit" json:"limit"`
-	Offset   int              `form:"offset" json:"offset"`
+	// IsKit: nil — все корни, true — комплекты, false — единицы.
+	IsKit  *bool `form:"isKit" json:"isKit" db:"is_kit"`
+	Limit  int   `form:"limit" json:"limit"`
+	Offset int   `form:"offset" json:"offset"`
 }
 
 // EquipmentStats — счётчики единиц реалма для подписи в шапке страницы.

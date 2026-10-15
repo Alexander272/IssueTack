@@ -1,5 +1,4 @@
 import type { EquipmentTypeKind, IEquipmentTreeNode } from '../../types/equipment'
-import type { TypeFilter } from '../Toolbar/types'
 
 // ——— построение строк списка ———
 // Чистые функции живут рядом с единственным потребителем (EquipmentList), а не в
@@ -51,9 +50,6 @@ export const bundleRoots = (roots: IEquipmentTreeNode[]): RootBundle[] => {
 
 	return bundles.map(b => (b.type === 'group' && b.items.length === 1 ? { type: 'single', node: b.items[0] } : b))
 }
-
-// Режим-дерево доступен без поиска и фильтра по типу.
-export const isTreeMode = (query: string, typeFilter: TypeFilter) => query.length === 0 && typeFilter === 'all'
 
 // Иммутабельный тумблер элемента множества (раскрытие узлов и «партий»).
 export const toggleInSet = <T>(set: Set<T>, value: T): Set<T> => {

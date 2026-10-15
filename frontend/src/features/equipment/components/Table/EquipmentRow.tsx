@@ -4,6 +4,7 @@ import { BoxesIcon, ChevronDownIcon, ChevronRightIcon, MicrochipIcon } from 'luc
 
 import type { IEquipment } from '../../types/equipment'
 import { equipmentAccent } from '../../utils/typeKind'
+import { useEquipmentTree } from '../treeState'
 import { EquipmentKindIcon } from '../EquipmentKindIcon'
 import { EquipmentStatusBadge } from '../EquipmentStatusBadge'
 import { pluralize } from '@/utils/plural'
@@ -14,45 +15,35 @@ type RowNode = IEquipment & { hasChildren?: boolean; childCount?: number }
 
 type Props = {
 	node: RowNode
-	depth: number
-	expanded?: boolean
-	showToggle?: boolean
-	parentName?: string
-	onToggle?: () => void
-	onOpen: (id: string) => void
+	depth?: number
 }
 
 // Строка дерева оборудования: иконка типа (с бейджем вложенности), название с
-// подписью и колонки типа/держателя/серийника/статуса.
-export const EquipmentRow: FC<Props> = ({
-	node,
-	depth,
-	expanded = false,
-	showToggle = true,
-	parentName,
-	onToggle,
-	onOpen,
-}) => {
+// подписью и колонки типа/держателя/серийника/статуса. Раскрытие и открытие берёт
+// из контекста, поэтому снаружи приходят только узел и глубина.
+export const EquipmentRow: FC<Props> = ({ node, depth = 0 }) => {
+	const { tree, expanded, toggle, open } = useEquipmentTree()
 	const accent = equipmentAccent(node)
 	const childCount = node.childCount ?? 0
 	const holder = node.holderFullName || node.holderName
 	const location = node.location || node.siteName
 	const isInstalled = Boolean(node.parentId)
-	const hasToggle = showToggle && (node.hasChildren || childCount > 0)
+	const hasToggle = tree && (Boolean(node.hasChildren) || childCount > 0)
+	const isExpanded = hasToggle && expanded.has(node.id)
 	const nesting = childCount > 0 && !node.isKit
 
 	const rowBg = node.isKit ? '#7c3aed08' : isInstalled ? '#ea580c08' : depth > 0 ? '#fafafa' : undefined
 	const hoverBg = node.isKit ? '#f5f3ff' : isInstalled ? '#fff7ed' : '#f5f5f5'
 
 	const second = [`Инв. №${node.inventoryNumber ?? '—'}`]
-	if (isInstalled) second.push(`внутри ${parentName ?? node.containerName ?? 'родителя'}`)
+	if (isInstalled) second.push(`внутри ${node.containerName ?? 'родителя'}`)
 	else if (childCount) second.push(`${childCount} ${pluralize(childCount, ['компонент', 'компонента', 'компонентов'])}`)
 	else if (node.status === 'in_stock' && location) second.push(location)
 
 	return (
 		<TableRow
 			hover
-			onClick={() => onOpen(node.id)}
+			onClick={() => open(node.id)}
 			sx={{
 				cursor: 'pointer',
 				bgcolor: rowBg,
@@ -80,17 +71,17 @@ export const EquipmentRow: FC<Props> = ({
 					{hasToggle ? (
 						<IconButton
 							size='small'
-							aria-label={expanded ? 'Свернуть' : 'Развернуть'}
+							aria-label={isExpanded ? 'Свернуть' : 'Развернуть'}
 							onClick={e => {
 								e.stopPropagation()
-								onToggle?.()
+								toggle(node.id)
 							}}
 							sx={{ color: '#9ca3af', p: 0.25, flexShrink: 0 }}
 						>
 							<ChevronDownIcon
 								sx={{
 									fontSize: 16,
-									transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)',
+									transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)',
 									transition: 'transform 0.15s ease',
 								}}
 							/>
@@ -151,7 +142,7 @@ export const EquipmentRow: FC<Props> = ({
 									{node.name}
 								</Typography>
 							</Tooltip>
-							{hasToggle && !expanded && (
+							{hasToggle && !isExpanded && (
 								<Typography
 									component='span'
 									sx={{ fontSize: '0.75rem', color: '#9ca3af', fontWeight: 500, flexShrink: 0 }}

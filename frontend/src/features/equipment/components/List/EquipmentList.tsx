@@ -7,10 +7,11 @@ import type { EquipmentStatus } from '../../types/equipment'
 import { useGetAllEquipmentQuery, useGetEquipmentTreeQuery } from '../../equipmentApiSlice'
 import { EquipmentTable } from '../Table'
 import { EquipmentToolbar } from '../Toolbar'
-import type { EquipmentFilters } from '../Toolbar/types'
+import { isTreeMode, type EquipmentFilters } from '../Toolbar/types'
+import { EquipmentTreeContext } from '../treeState'
 import { EquipmentFlatRows } from './EquipmentFlatRows'
 import { EquipmentRootRows } from './EquipmentTreeRows'
-import { bundleRoots, isTreeMode, sortNodes, toggleInSet } from './rows'
+import { bundleRoots, sortNodes, toggleInSet } from './rows'
 
 const PAGE_SIZE = 50
 
@@ -21,8 +22,9 @@ type Props = {
 }
 
 // Контейнер списка оборудования. Дерево грузится лениво (корни — страницей, дети —
-// при раскрытии), поиск и фильтр по типу — плоский серверный список. Так браузер не
-// тянет весь справочник: на страницу приходит ровно то, что показано.
+// при раскрытии), тип сужает набор корней (единицы/комплекты), а поиск отдаёт плоский
+// серверный список. Так браузер не тянет весь справочник: на страницу приходит ровно
+// то, что показано.
 export const EquipmentList: FC<Props> = ({ onOpen }) => {
 	const [filters, setFilters] = useState<EquipmentFilters>(DEFAULT_FILTERS)
 	const [page, setPage] = useState(0)
@@ -31,18 +33,20 @@ export const EquipmentList: FC<Props> = ({ onOpen }) => {
 	const { search, typeFilter, status } = filters
 	const debouncedSearch = useDebounce(search, 300) as string
 	const query = debouncedSearch.trim()
-	const treeMode = isTreeMode(query, typeFilter)
+	const treeMode = isTreeMode(query)
 	const statusFilter = status === 'all' ? undefined : (status as EquipmentStatus)
+	// Тип сужает корни дерева; в плоском списке (поиск) — обычный фильтр по is_kit.
+	const isKit = typeFilter === 'kit' ? true : typeFilter === 'unit' ? false : undefined
 
 	const rootsQuery = useGetEquipmentTreeQuery(
-		{ status: statusFilter, limit: PAGE_SIZE, offset: page * PAGE_SIZE },
+		{ status: statusFilter, isKit, limit: PAGE_SIZE, offset: page * PAGE_SIZE },
 		{ skip: !treeMode },
 	)
 	const flatQuery = useGetAllEquipmentQuery(
 		{
 			search: query || undefined,
 			status: statusFilter,
-			isKit: typeFilter === 'kit' ? true : typeFilter === 'unit' ? false : undefined,
+			isKit,
 			limit: PAGE_SIZE,
 			offset: page * PAGE_SIZE,
 		},
@@ -73,31 +77,35 @@ export const EquipmentList: FC<Props> = ({ onOpen }) => {
 
 	// «Развернуть всё» раскрывает корни текущей страницы (глубже — по клику):
 	// развернуть ленивое дерево целиком нельзя, не загрузив весь справочник.
-	const expandAll = useCallback(() => {
-		const ids = roots.filter(n => n.hasChildren).map(n => n.id)
-		const keys = bundles.filter(b => b.type === 'group').map(b => b.key)
-		setExpanded(prev => new Set([...prev, ...ids, ...keys]))
-	}, [roots, bundles])
+	const toggleAll = useCallback(
+		(expand: boolean) => {
+			if (!expand) {
+				setExpanded(new Set())
+				return
+			}
+			const ids = roots.filter(n => n.hasChildren).map(n => n.id)
+			const keys = bundles.filter(b => b.type === 'group').map(b => b.key)
+			setExpanded(prev => new Set([...prev, ...ids, ...keys]))
+		},
+		[roots, bundles],
+	)
 
-	const collapseAll = useCallback(() => setExpanded(new Set()), [])
+	// Строки дерева читают раскрытие/открытие из контекста: протаскивать их через
+	// рекурсию TreeNode/NodeChildren не нужно.
+	const treeState = useMemo(
+		() => ({ tree: treeMode, expanded, toggle, open: onOpen }),
+		[treeMode, expanded, toggle, onOpen],
+	)
 
 	return (
 		<Box>
-			<EquipmentToolbar
-				filters={filters}
-				onFiltersChange={handleFiltersChange}
-				treeMode={treeMode}
-				onExpandAll={expandAll}
-				onCollapseAll={collapseAll}
-			/>
+			<EquipmentToolbar filters={filters} onFiltersChange={handleFiltersChange} onToggleAll={toggleAll} />
 
-			<EquipmentTable isLoading={isLoading} total={total} empty={empty}>
-				{treeMode ? (
-					<EquipmentRootRows bundles={bundles} expanded={expanded} onToggle={toggle} onOpen={onOpen} />
-				) : (
-					<EquipmentFlatRows items={flatItems} onOpen={onOpen} />
-				)}
-			</EquipmentTable>
+			<EquipmentTreeContext.Provider value={treeState}>
+				<EquipmentTable isLoading={isLoading} total={total} empty={empty}>
+					{treeMode ? <EquipmentRootRows bundles={bundles} /> : <EquipmentFlatRows items={flatItems} />}
+				</EquipmentTable>
+			</EquipmentTreeContext.Provider>
 
 			{totalPages > 1 && (
 				<Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>

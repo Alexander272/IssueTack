@@ -3,16 +3,16 @@ import { Box, TableCell, TableRow, Typography } from '@mui/material'
 import { ChevronDownIcon } from 'lucide-mui'
 
 import type { IEquipmentTreeNode } from '../../types/equipment'
+import { EQUIPMENT_TABLE_COLUMNS } from './EquipmentTable'
 
 type Props = {
 	items: IEquipmentTreeNode[]
 	expanded: boolean
-	columnCount: number
 	onToggle: () => void
 }
 
 // Строка «партии» складских единиц — в стиле групповых строк таблицы заявок.
-export const EquipmentGroupRow: FC<Props> = ({ items, expanded, columnCount, onToggle }) => {
+export const EquipmentGroupRow: FC<Props> = ({ items, expanded, onToggle }) => {
 	const sample = items[0]
 	const count = items.length
 	const invs = items.map(i => i.inventoryNumber).filter((v): v is string => Boolean(v)).sort()
@@ -29,7 +29,7 @@ export const EquipmentGroupRow: FC<Props> = ({ items, expanded, columnCount, onT
 			}}
 			onClick={onToggle}
 		>
-			<TableCell colSpan={columnCount} sx={{ px: 3, py: 2 }}>
+			<TableCell colSpan={EQUIPMENT_TABLE_COLUMNS} sx={{ px: 3, py: 2 }}>
 				<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
 					<ChevronDownIcon
 						sx={{

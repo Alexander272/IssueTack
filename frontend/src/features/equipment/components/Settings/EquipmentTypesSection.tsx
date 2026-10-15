@@ -77,13 +77,11 @@ export const EquipmentTypesSection: FC = () => {
 						boxShadow: '0 1px 2px 0 rgba(0,0,0,0.05)',
 					}}
 				>
-					{list.map((type, idx) => (
+					{list.map(type => (
 						<EquipmentTypeRow
 							key={type.id}
 							type={type}
 							count={unitCounts[type.id] ?? 0}
-							canWrite={canWrite}
-							last={idx === list.length - 1}
 							onEdit={openEdit}
 						/>
 					))}
