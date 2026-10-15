@@ -1,6 +1,6 @@
 import { useState, type FC } from 'react'
 import { Box, Button, Stack, Typography } from '@mui/material'
-import { PackageCheckIcon, PackageMinusIcon, WarehouseIcon } from 'lucide-mui'
+import { PackageCheckIcon, PackageMinusIcon, UserRoundXIcon, WarehouseIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
@@ -29,6 +29,14 @@ export const HolderCard: FC<Props> = ({ unit }) => {
 	const accent = equipmentAccent(unit)
 	const holder = unit.holderFullName || unit.holderName || ''
 	const hasHolder = Boolean(unit.holderUserId || unit.holderName)
+	// «На складе» и зелёное «Доступно» — это про статус in_stock, а не про
+	// отсутствие держателя: в ремонте, дефектная и списанная единицы держателя
+	// тоже не имеют, но на складе не лежат и выдаче не подлежат. Пустой держатель
+	// вне склада — дыра в данных (в «эксплуатации» без держателя), и честнее
+	// показать её, чем прятать за «На складе». Сохранить такую запись форма
+	// теперь не может: бэкенд выводит пару in_stock/in_use из держателя.
+	const inStock = unit.status === 'in_stock'
+	const vacant = !hasHolder
 	const installed = Boolean(unit.parentId || unit.kitId)
 	const initials = holder
 		.split(' ')
@@ -58,10 +66,21 @@ export const HolderCard: FC<Props> = ({ unit }) => {
 						alignItems: 'center',
 						justifyContent: 'space-between',
 						gap: 2,
-						py: 0.5,
+						// На телефоне «Доступно» и «Выдать»/«Возврат» забирали ширину у имени
+						// держателя и обрезали его. Разводим по строкам: сначала кто держит
+						// (во всю ширину), затем бейдж и кнопка. На широком экране — как было.
+						flexWrap: { xs: 'wrap', sm: 'nowrap' },
 					}}
 				>
-					<Box sx={{ display: 'flex', alignItems: 'center', gap: 1.75, minWidth: 0 }}>
+					<Box
+						sx={{
+							display: 'flex',
+							alignItems: 'center',
+							gap: 1.75,
+							minWidth: 0,
+							flexBasis: { xs: '100%', sm: 'auto' },
+						}}
+					>
 						<Box
 							sx={{
 								width: 40,
@@ -78,20 +97,24 @@ export const HolderCard: FC<Props> = ({ unit }) => {
 									: { bgcolor: '#f1f5f9', color: '#64748b' }),
 							}}
 						>
-							{hasHolder ? initials : <WarehouseIcon sx={{ fontSize: 20 }} />}
+							{hasHolder ? initials : inStock ? <WarehouseIcon sx={{ fontSize: 20 }} /> : <UserRoundXIcon sx={{ fontSize: 20 }} />}
 						</Box>
 						<Box sx={{ minWidth: 0 }}>
 							<Typography sx={sectionLabelSx}>Держатель</Typography>
 							<Typography sx={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }} noWrap>
-								{hasHolder ? holder : 'На складе'}
+								{hasHolder ? holder : inStock ? 'На складе' : 'Не указан'}
 							</Typography>
 							<Typography sx={{ fontSize: 12, color: '#64748b' }} noWrap>
 								{unit.siteName || unit.location || '—'}
 							</Typography>
 						</Box>
 					</Box>
-					<Stack direction='row' spacing={1} sx={{ alignItems: 'center', flexShrink: 0 }}>
-						{!hasHolder && (
+					<Stack
+						direction='row'
+						spacing={1}
+						sx={{ alignItems: 'center', flexShrink: 0, ml: 'auto', flexWrap: 'wrap' }}
+					>
+						{vacant && inStock && (
 							<Box
 								component='span'
 								sx={{

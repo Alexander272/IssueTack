@@ -12,7 +12,9 @@ import {
 	ListItemIcon,
 } from '@mui/material'
 import { ChevronDownIcon, FileUpIcon, MonitorIcon, PackageOpenIcon, PlusIcon } from 'lucide-mui'
+import { useNavigate } from 'react-router'
 
+import { AppRoutes } from '@/pages/router/routes'
 import { PermRules } from '@/features/access/constants/permissions'
 import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
 import { pluralize } from '@/utils/plural'
@@ -24,11 +26,14 @@ type Props = {
 }
 
 export const Header: FC<Props> = ({ onCreate }) => {
+	const navigate = useNavigate()
 	const canWrite = useCheckPermissions({ anyOf: [PermRules.Equipment.Write] })
 	const { palette } = useTheme()
 
 	const { data } = useGetEquipmentStatsQuery()
 	const stats = data?.data
+
+	const openSetting = () => navigate(AppRoutes.EquipmentSettings)
 
 	const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
 	const open = Boolean(anchor)
@@ -59,7 +64,7 @@ export const Header: FC<Props> = ({ onCreate }) => {
 
 			{canWrite && (
 				<Stack direction='row' spacing={1} sx={{ flexWrap: 'wrap', gap: 1, width: { xs: '100%', sm: 'auto' } }}>
-					<Button variant='text'>
+					<Button variant='text' onClick={openSetting}>
 						<SettingIcon sx={{ fontSize: 22 }} />
 					</Button>
 

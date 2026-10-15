@@ -3,7 +3,7 @@ import { Box, MenuItem, TextField } from '@mui/material'
 import { Controller, useFormContext } from 'react-hook-form'
 
 import type { IEquipmentDTO } from '../../../types/equipment'
-import { EQUIPMENT_STATUS_OPTIONS } from '../../../types/equipment'
+import { EQUIPMENT_STATUS_OPTIONS, HOLDER_DERIVED_STATUSES } from '../../../types/equipment'
 import { useGetAllEquipmentTypesQuery } from '../../../equipmentApiSlice'
 import { Field } from './Field'
 import { inputProps } from './consts'
@@ -65,9 +65,18 @@ export const IdentityFields: FC = () => {
 					control={control}
 					name='status'
 					render={({ field }) => (
-						<TextField {...field} select {...inputProps}>
+						<TextField
+							{...field}
+							select
+							{...inputProps}
+							// «На складе»/«В эксплуатации» — следствие выдачи, их выводит
+							// бэкенд из держателя. Текущее значение показываем, но выбрать
+							// вручную не даём: иначе форма сохранит «В эксплуатации» без
+							// держателя — и карточка скажет на неё «На складе».
+							helperText='«На складе» и «В эксплуатации» ставит выдача и возврат'
+						>
 							{EQUIPMENT_STATUS_OPTIONS.map(s => (
-								<MenuItem key={s.value} value={s.value}>
+								<MenuItem key={s.value} value={s.value} disabled={HOLDER_DERIVED_STATUSES.includes(s.value)}>
 									{s.label}
 								</MenuItem>
 							))}

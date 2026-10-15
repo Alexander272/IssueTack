@@ -140,6 +140,7 @@ func (s *EquipmentService) GetStats(ctx context.Context, realmID uuid.UUID) (*mo
 // одной транзакцией: журнал — часть операции, а не пост-обработка.
 func (s *EquipmentService) Create(ctx context.Context, dto *models.EquipmentDTO) (*models.Equipment, error) {
 	normalizeEquipmentDTO(dto)
+	deriveHolderStatus(dto)
 
 	if err := s.ensureParentCanBePart(ctx, dto); err != nil {
 		return nil, err
@@ -175,6 +176,7 @@ func (s *EquipmentService) Update(ctx context.Context, dto *models.EquipmentDTO)
 		return nil, models.ErrInvalidInput
 	}
 	normalizeEquipmentDTO(dto)
+	deriveHolderStatus(dto)
 
 	if err := s.ensureParentCanBePart(ctx, dto); err != nil {
 		return nil, err
@@ -286,6 +288,29 @@ func normalizeEquipmentDTO(dto *models.EquipmentDTO) {
 	dto.InventoryNumber = emptyToNil(dto.InventoryNumber)
 	dto.HolderName = emptyToNil(dto.HolderName)
 	dto.Location = emptyToNil(dto.Location)
+}
+
+// deriveHolderStatus выводит пару «на складе»/«в эксплуатации» из держателя и
+// вызывается после normalizeEquipmentDTO (пустой holderName должен стать nil).
+//
+// Эти два статуса — не самостоятельное состояние единицы, а следствие выдачи:
+// Assign/Unassign проставляют их вместе с держателем (SetHolderAndStatus). Форма
+// же присылает статус и держателя независимо, и без вывода получалась единица
+// «в эксплуатации» без держателя — блок «Держатель» показывал на неё «На складе»,
+// хотя единица никому не выдана. Обратный случай (склад при заполненном
+// держателе) так же невозможен: выданная единица уже не лежит на складе.
+//
+// Остальные статусы (ремонт, дефект, резерв, списание) задаются вручную и от
+// держателя не зависят: дефектная единица может быть на руках.
+func deriveHolderStatus(dto *models.EquipmentDTO) {
+	if dto.Status != models.EquipmentStatusInStock && dto.Status != models.EquipmentStatusInUse {
+		return
+	}
+	if dto.HolderUserID != nil || (dto.HolderName != nil && *dto.HolderName != "") {
+		dto.Status = models.EquipmentStatusInUse
+		return
+	}
+	dto.Status = models.EquipmentStatusInStock
 }
 
 // collectSubtree собирает единицу и весь её состав: физических потомков

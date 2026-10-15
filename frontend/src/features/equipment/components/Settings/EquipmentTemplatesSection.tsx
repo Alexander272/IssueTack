@@ -3,10 +3,7 @@ import type { FC } from 'react'
 
 export const EquipmentTemplatesSection: FC = () => {
 	return (
-		<Box sx={{ p: 3 }}>
-			<Typography variant='body1' sx={{ fontWeight: 600, mb: 1 }}>
-				Шаблоны комплектов
-			</Typography>
+		<Box>
 			<Typography variant='body2' sx={{ color: '#6b7280' }}>
 				Раздел в разработке
 			</Typography>

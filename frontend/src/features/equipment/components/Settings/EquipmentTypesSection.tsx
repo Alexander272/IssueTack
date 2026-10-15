@@ -91,19 +91,14 @@ export const EquipmentTypesSection: FC = () => {
 	}
 
 	return (
-		<Box sx={{ p: 3, maxWidth: 1200, mx: 'auto' }}>
-			<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-				<Box>
-					<Typography variant='h6' sx={{ fontWeight: 700, color: '#111827' }}>
-						Типы оборудования
-					</Typography>
-				</Box>
+		<Box>
+			<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', mb: -3 }}>
 				{canWrite && (
 					<Button
 						variant='outlined'
 						onClick={openCreate}
 						startIcon={<PlusIcon sx={{ fontSize: 16 }} />}
-						sx={{ textTransform: 'none', fontWeight: 500, borderRadius: '8px', gap: 1 }}
+						sx={{ textTransform: 'none', fontWeight: 500, borderRadius: '8px', gap: 1, bgcolor: '#fff' }}
 					>
 						Добавить тип
 					</Button>

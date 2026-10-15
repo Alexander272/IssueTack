@@ -31,6 +31,10 @@ export const DetailCard: FC<Props> = ({ title, action, divided, children }) => (
 					alignItems: 'center',
 					justifyContent: 'space-between',
 					gap: 2,
+					// Длинный заголовок с кнопкой действия на телефоне не помещается в
+					// строку — кнопка переносится под заголовок (на широком экране
+					// переносить нечего, вид прежний).
+					flexWrap: 'wrap',
 					mb: 1.5,
 					pb: divided ? 1.5 : 0,
 					borderBottom: divided ? '1px solid #f1f5f9' : 'none',

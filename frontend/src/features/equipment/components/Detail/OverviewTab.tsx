@@ -126,7 +126,7 @@ export const OverviewTab: FC<Props> = ({ unit, onOpenUnit }) => {
 
 				{(isKit || isUnit) && (
 					<DetailCard
-						title={isKit ? 'Состав комплекта' : 'Физический состав (комплектующие)'}
+						title={isKit ? 'Состав комплекта' : 'Комплектующие'}
 						action={
 							canWrite && (
 								<Button

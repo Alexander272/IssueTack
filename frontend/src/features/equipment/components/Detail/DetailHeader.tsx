@@ -3,7 +3,7 @@ import { Box, Button, IconButton, Stack, Typography } from '@mui/material'
 import { PencilIcon, XIcon } from 'lucide-mui'
 
 import type { IEquipment } from '../../types/equipment'
-import { getEquipmentStatus } from '../../types/equipment'
+import { HOLDER_DERIVED_STATUSES, getEquipmentStatus } from '../../types/equipment'
 import { equipmentAccent } from '../../utils/typeKind'
 import { EquipmentDialog } from '../Dialogs'
 import { EquipmentKindIcon } from '../EquipmentKindIcon'
@@ -27,19 +27,35 @@ export const DetailHeader: FC<Props> = ({ unit, onClose }) => {
 	const [editOpen, setEditOpen] = useState(false)
 
 	const accent = equipmentAccent(unit)
-	const status = getEquipmentStatus(unit.status)
+	// Чипы в шапке — про исключение, а не пересказ карточки: «на складе»/«в
+	// эксплуатации» видно в блоке «Держатель» ниже, а ремонт, дефект, резерв и
+	// списание больше нигде в карточке не видны — их оставляем.
+	const status = HOLDER_DERIVED_STATUSES.includes(unit.status) ? null : getEquipmentStatus(unit.status)
 
 	return (
 		<>
-			<Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+			<Box
+				sx={{
+					display: 'flex',
+					alignItems: 'center',
+					gap: { xs: 1.5, sm: 2 },
+					// На телефоне шапка переносится: название и крестик остаются в первой
+					// строке, а «Редактировать» уходит отдельной строкой во всю ширину
+					// (иначе кнопка сжимала бы название до пары букв). На широком экране
+					// порядок и вид прежние: `order`/`flexBasis` сбрасываются.
+					flexWrap: { xs: 'wrap', sm: 'nowrap' },
+				}}
+			>
 				<Box
 					sx={{
+						// На телефоне иконку типа прячем целиком: место в первой строке
+						// нужнее названию и статусам, а сам тип виден в характеристиках.
+						display: { xs: 'none', sm: 'flex' },
 						width: 48,
 						height: 48,
 						borderRadius: '12px',
 						bgcolor: `${accent}1a`,
 						color: accent,
-						display: 'flex',
 						alignItems: 'center',
 						justifyContent: 'center',
 						flexShrink: 0,
@@ -47,7 +63,7 @@ export const DetailHeader: FC<Props> = ({ unit, onClose }) => {
 				>
 					<EquipmentKindIcon isKit={unit.isKit} kind={unit.typeKind} sx={{ fontSize: 24 }} />
 				</Box>
-				<Box sx={{ flexGrow: 1, minWidth: 0 }}>
+				<Box sx={{ flexGrow: 1, minWidth: 0, flexBasis: { xs: 0, sm: 'auto' } }}>
 					<Stack direction='row' spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
 						<Typography variant='h6' sx={{ fontWeight: 'bold', color: '#1f2937' }}>
 							{unit.name}
@@ -55,14 +71,26 @@ export const DetailHeader: FC<Props> = ({ unit, onClose }) => {
 						{status && <StatusChip label={status.label} color={status.color} />}
 						{unit.isKit && <StatusChip label='Комплект' color={accent} />}
 					</Stack>
-					<Typography variant='body2' sx={{ color: '#6b7280', mt: 0.25 }}>
+					{/* Тип, инвентарный и серийный номера на телефоне скрыты: строка
+					    отжимала название, а те же номера есть в характеристиках. */}
+					<Typography variant='body2' sx={{ color: '#6b7280', mt: 0.25, display: { xs: 'none', sm: 'block' } }}>
 						{unit.typeName}
 						{unit.inventoryNumber ? ` · Инв. №${unit.inventoryNumber}` : ''}
 						{unit.serialNumber ? ` · S/N: ${unit.serialNumber}` : ''}
 					</Typography>
 				</Box>
 				{canWrite && (
-					<Stack direction='row' spacing={1} sx={{ flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
+					<Stack
+						direction='row'
+						spacing={1}
+						sx={{
+							flexWrap: 'wrap',
+							gap: 1,
+							alignItems: 'center',
+							order: { xs: 3, sm: 0 },
+							flexBasis: { xs: '100%', sm: 'auto' },
+						}}
+					>
 						<Button
 							variant='outlined'
 							size='small'
@@ -74,7 +102,11 @@ export const DetailHeader: FC<Props> = ({ unit, onClose }) => {
 						</Button>
 					</Stack>
 				)}
-				<IconButton size='large' onClick={onClose} sx={{ color: '#9ca3af' }}>
+				<IconButton
+					size='large'
+					onClick={onClose}
+					sx={{ color: '#9ca3af', order: { xs: 2, sm: 0 }, flexShrink: 0 }}
+				>
 					<XIcon sx={{ fontSize: 18 }} />
 				</IconButton>
 			</Box>

@@ -15,6 +15,9 @@ export interface FilterValues {
 	priorities?: Priority[]
 	assigneeId?: string
 	statuses?: TicketStatus[]
+	// equipmentId приходит ссылкой (?equipmentId=…), а не выбором в фильтре —
+	// в списке только показывается снимаемый чип.
+	equipmentId?: string
 }
 
 export interface TaskFiltersProps {
@@ -25,4 +28,6 @@ export interface TaskFiltersProps {
 	// statusOptions — допустимые статусы текущей вкладки (см. statusOptionsFor);
 	// без него Popover предлагает все статусы, в том числе дающие пустой список.
 	statusOptions: TicketStatus[]
+	// equipmentLabel — название единицы для чипа фильтра по оборудованию.
+	equipmentLabel?: string
 }

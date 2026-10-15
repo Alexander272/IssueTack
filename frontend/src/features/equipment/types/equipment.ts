@@ -59,6 +59,13 @@ export const EQUIPMENT_STATUS_OPTIONS = Object.entries(EQUIPMENT_STATUS_MAP).map
 	label,
 }))
 
+// Статусы, которые выводятся из держателя, а не выбираются вручную: «в
+// эксплуатации» ставит выдача, «на складе» — возврат (бэкенд делает это в
+// Assign/Unassign и повторно в Create/Update). Поэтому их нет в селекте статуса
+// формы, а в шапке карточки они не дублируются чипом — про «на складе»/«в
+// эксплуатации» и так говорит блок «Держатель» ниже.
+export const HOLDER_DERIVED_STATUSES: EquipmentStatus[] = ['in_stock', 'in_use']
+
 export interface IEquipment {
 	id: string
 	realmId: string

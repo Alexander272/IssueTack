@@ -16,6 +16,7 @@ export const TaskFilters: FC<TaskFiltersProps> = ({
 	onReset,
 	hideGrouping = false,
 	statusOptions,
+	equipmentLabel,
 }) => {
 	const [filterAnchorEl, setFilterAnchorEl] = useState<HTMLElement | null>(null)
 
@@ -50,6 +51,7 @@ export const TaskFilters: FC<TaskFiltersProps> = ({
 		if (filters.priorities?.length) count++
 		if (filters.assigneeId) count++
 		if (filters.statuses?.length) count++
+		if (filters.equipmentId) count++
 		return count
 	}, [filters])
 
@@ -88,6 +90,7 @@ export const TaskFilters: FC<TaskFiltersProps> = ({
 				siteOptions={siteOptions}
 				ownerOptions={ownerOptions}
 				assigneeOptions={assigneeOptions}
+				equipmentLabel={equipmentLabel}
 			/>
 		</>
 	)

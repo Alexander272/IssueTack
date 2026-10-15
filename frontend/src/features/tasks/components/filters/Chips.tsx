@@ -16,6 +16,7 @@ interface Props {
 	siteOptions: Option[]
 	ownerOptions: Option[]
 	assigneeOptions: Option[]
+	equipmentLabel?: string
 }
 
 const PRIORITY_OPTIONS = Object.entries(PRIORITY_MAP).map(([value, info]) => ({
@@ -23,7 +24,7 @@ const PRIORITY_OPTIONS = Object.entries(PRIORITY_MAP).map(([value, info]) => ({
 	label: info.label,
 }))
 
-export const Chips: FC<Props> = ({ filters, onChange, siteOptions, ownerOptions, assigneeOptions }) => {
+export const Chips: FC<Props> = ({ filters, onChange, siteOptions, ownerOptions, assigneeOptions, equipmentLabel }) => {
 	const activeChips = useMemo(() => {
 		const chips: { key: string; prefix: string; values: string[]; onClear: () => void }[] = []
 
@@ -33,6 +34,14 @@ export const Chips: FC<Props> = ({ filters, onChange, siteOptions, ownerOptions,
 				prefix: '№',
 				values: [filters.ticketNumber],
 				onClear: () => onChange({ ticketNumber: undefined }),
+			})
+		}
+		if (filters.equipmentId) {
+			chips.push({
+				key: 'equipmentId',
+				prefix: 'Оборудование',
+				values: [equipmentLabel ?? filters.equipmentId],
+				onClear: () => onChange({ equipmentId: undefined }),
 			})
 		}
 		if (filters.ownerId) {
@@ -90,7 +99,7 @@ export const Chips: FC<Props> = ({ filters, onChange, siteOptions, ownerOptions,
 		}
 
 		return chips
-	}, [filters, onChange, ownerOptions, assigneeOptions, siteOptions])
+	}, [filters, onChange, ownerOptions, assigneeOptions, siteOptions, equipmentLabel])
 
 	if (activeChips.length === 0) return null
 

@@ -114,6 +114,10 @@ const ActRow: FC<RowProps> = ({ act, canWrite, onOpen, onDownload, onUpload }) =
 			cursor: 'pointer',
 			transition: 'background-color 120ms ease',
 			'&:hover': { bgcolor: '#eff6ff' },
+			// На телефоне две кнопки не помещаются в строку с номером акта и статусом —
+			// переносим действия на отдельную строку во всю ширину (на широком экране
+			// порядок и вид прежние).
+			flexWrap: { xs: 'wrap', sm: 'nowrap' },
 		}}
 	>
 		<Box
@@ -148,7 +152,13 @@ const ActRow: FC<RowProps> = ({ act, canWrite, onOpen, onDownload, onUpload }) =
 			direction='row'
 			spacing={0.75}
 			onClick={e => e.stopPropagation()}
-			sx={{ alignItems: 'center', flexShrink: 0 }}
+			sx={{
+				alignItems: 'center',
+				flexShrink: 0,
+				flexWrap: 'wrap',
+				order: { xs: 3, sm: 0 },
+				flexBasis: { xs: '100%', sm: 'auto' },
+			}}
 		>
 			{act.status === 'signed' ? (
 				<>
