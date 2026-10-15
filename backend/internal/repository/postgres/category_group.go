@@ -29,8 +29,12 @@ type CategoryGroups interface {
 }
 
 func (r *CategoryGroupRepo) Get(ctx context.Context, req *models.GetCategoryGroupsDTO) ([]*models.CategoryGroup, error) {
-	query := fmt.Sprintf(`SELECT id, realm_id, name, description, sort_order, created_at, updated_at FROM %s WHERE realm_id = $1 ORDER BY sort_order, name`,
-		Tables.CategoryGroups,
+	where := `realm_id = $1`
+	if !req.IncludeHidden {
+		where += ` AND is_hidden = FALSE`
+	}
+	query := fmt.Sprintf(`SELECT id, realm_id, name, description, sort_order, is_hidden, created_at, updated_at FROM %s WHERE %s ORDER BY sort_order, name`,
+		Tables.CategoryGroups, where,
 	)
 
 	rows, err := r.db.Query(ctx, query, req.RealmID)
@@ -42,7 +46,7 @@ func (r *CategoryGroupRepo) Get(ctx context.Context, req *models.GetCategoryGrou
 	data := []*models.CategoryGroup{}
 	for rows.Next() {
 		item := &models.CategoryGroup{}
-		if err := rows.Scan(&item.ID, &item.RealmID, &item.Name, &item.Description, &item.SortOrder, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.RealmID, &item.Name, &item.Description, &item.SortOrder, &item.IsHidden, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, MapError(fmt.Errorf("scan row error: %w", err))
 		}
 		data = append(data, item)
@@ -55,13 +59,13 @@ func (r *CategoryGroupRepo) Get(ctx context.Context, req *models.GetCategoryGrou
 }
 
 func (r *CategoryGroupRepo) GetByID(ctx context.Context, req *models.GetCategoryGroupByIdDTO) (*models.CategoryGroup, error) {
-	query := fmt.Sprintf(`SELECT id, realm_id, name, description, sort_order, created_at, updated_at FROM %s WHERE id = $1 AND realm_id = $2`,
+	query := fmt.Sprintf(`SELECT id, realm_id, name, description, sort_order, is_hidden, created_at, updated_at FROM %s WHERE id = $1 AND realm_id = $2`,
 		Tables.CategoryGroups,
 	)
 
 	item := &models.CategoryGroup{}
 	if err := r.db.QueryRow(ctx, query, req.ID, req.RealmID).Scan(
-		&item.ID, &item.RealmID, &item.Name, &item.Description, &item.SortOrder, &item.CreatedAt, &item.UpdatedAt,
+		&item.ID, &item.RealmID, &item.Name, &item.Description, &item.SortOrder, &item.IsHidden, &item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -69,13 +73,13 @@ func (r *CategoryGroupRepo) GetByID(ctx context.Context, req *models.GetCategory
 }
 
 func (r *CategoryGroupRepo) Create(ctx context.Context, dto *models.CategoryGroupDTO) error {
-	query := fmt.Sprintf(`INSERT INTO %s (id, realm_id, name, description, sort_order) VALUES ($1, $2, $3, $4, $5)`,
+	query := fmt.Sprintf(`INSERT INTO %s (id, realm_id, name, description, sort_order, is_hidden) VALUES ($1, $2, $3, $4, $5, $6)`,
 		Tables.CategoryGroups,
 	)
 	id := uuid.New()
 	dto.ID = &id
 
-	_, err := r.db.Exec(ctx, query, id, dto.RealmID, dto.Name, dto.Description, dto.SortOrder)
+	_, err := r.db.Exec(ctx, query, id, dto.RealmID, dto.Name, dto.Description, dto.SortOrder, dto.IsHidden)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -84,11 +88,11 @@ func (r *CategoryGroupRepo) Create(ctx context.Context, dto *models.CategoryGrou
 
 func (r *CategoryGroupRepo) Update(ctx context.Context, dto *models.CategoryGroupDTO) error {
 	// realm_id не в SET — см. CategoryRepo.Update.
-	query := fmt.Sprintf(`UPDATE %s SET name=$2, description=$3, sort_order=$4 WHERE id=$1 AND realm_id=$5`,
+	query := fmt.Sprintf(`UPDATE %s SET name=$2, description=$3, sort_order=$4, is_hidden=$5 WHERE id=$1 AND realm_id=$6`,
 		Tables.CategoryGroups,
 	)
 
-	res, err := r.db.Exec(ctx, query, dto.ID, dto.Name, dto.Description, dto.SortOrder, dto.RealmID)
+	res, err := r.db.Exec(ctx, query, dto.ID, dto.Name, dto.Description, dto.SortOrder, dto.IsHidden, dto.RealmID)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}

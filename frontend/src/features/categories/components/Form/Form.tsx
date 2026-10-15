@@ -146,6 +146,23 @@ export const Form: FC<Props> = ({ control, groups, categoryGroups }) => {
 					)}
 				/>
 			</Stack>
+
+			<Stack>
+				<Typography variant='caption' sx={{ fontWeight: 600, mb: 0.5, display: 'block' }}>
+					Видимость
+				</Typography>
+				<Controller
+					control={control}
+					name='isHidden'
+					render={({ field }) => (
+						<Switch value={field.value} onChange={field.onChange} labels={['Обычная', 'Скрытая']} />
+					)}
+				/>
+				<Typography variant='caption' sx={{ color: 'text.secondary', mt: 0.5 }}>
+					Скрытую категорию не видят заказчики — только менеджеры и исполнители. Категории в скрытом разделе
+					скрыты автоматически.
+				</Typography>
+			</Stack>
 		</Stack>
 	)
 }

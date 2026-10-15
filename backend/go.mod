@@ -10,6 +10,7 @@ require (
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/goccy/go-json v0.10.6
+	github.com/goodsign/monday v1.0.2
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/ilyakaznacheev/cleanenv v1.5.0
@@ -46,7 +47,6 @@ require (
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/goodsign/monday v1.0.2 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-hclog v1.6.3 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect

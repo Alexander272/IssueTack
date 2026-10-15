@@ -538,6 +538,13 @@ func (m *MockCategoriesRepo) Delete(ctx context.Context, dto *models.DelCategory
 	return args.Error(0)
 }
 
+// CanSeeHidden добавлен, чтобы MockCategoriesRepo удовлетворял сервисному
+// интерфейсу Categories (TicketService в тестах принимает его как сервис).
+// Сама проверка видимости скрытых категорий ядру тикетов не нужна.
+func (m *MockCategoriesRepo) CanSeeHidden(ctx context.Context, userID, realmID uuid.UUID) bool {
+	return false
+}
+
 type MockSitesRepo struct {
 	mock.Mock
 }

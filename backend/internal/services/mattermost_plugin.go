@@ -428,6 +428,13 @@ func (s *MattermostService) PluginContext(ctx context.Context, scope models.Plug
 		isManager = true
 	}
 
+	// Список категорий в контексте кэшируется на реалм целиком (вместе со
+	// скрытыми). Безгрупповому заказчику сужаем его здесь: скрытые категории и
+	// категории скрытых разделов ему не показываем.
+	if !isManager && len(memberGroups) == 0 {
+		categories = filterVisibleCategories(categories)
+	}
+
 	executors := s.pluginMembers(ctx, settings.RealmID, models.MembershipExecutors)
 	customers := s.pluginMembers(ctx, settings.RealmID, models.MembershipCustomers)
 
@@ -486,7 +493,7 @@ func (s *MattermostService) pluginRealmData(ctx context.Context, realmID uuid.UU
 		return "", nil, nil, nil, fmt.Errorf("failed to get realm: %w", err)
 	}
 
-	categories, err := s.categories.Get(ctx, &models.GetCategoriesDTO{RealmID: realmID})
+	categories, err := s.categories.Get(ctx, &models.GetCategoriesDTO{RealmID: realmID, IncludeHidden: true})
 	if err != nil {
 		return "", nil, nil, nil, fmt.Errorf("failed to get categories: %w", err)
 	}

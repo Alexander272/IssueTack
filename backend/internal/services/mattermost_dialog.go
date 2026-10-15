@@ -85,6 +85,26 @@ func (s *MattermostService) canPickOwner(ctx context.Context, userID, realmID uu
 	return isManager || isExecutor
 }
 
+// canSeeHiddenCategories — видимость скрытых категорий/разделов в диалоге
+// создания заявки: правило то же, что у выбора заказчика (canPickOwner) —
+// менеджеры (админ реалма, управляющие группами) и исполнители (участники групп)
+// видят скрытое, безгрупповой заказчик — нет.
+func (s *MattermostService) canSeeHiddenCategories(ctx context.Context, mmUserID string, realmID uuid.UUID) bool {
+	if mmUserID == "" {
+		return false
+	}
+	user, err := s.resolveOrCreateUser(ctx, realmID, mmUserID, nil)
+	if err != nil {
+		logger.Warn("failed to resolve user for category visibility",
+			logger.StringAttr("realm_id", realmID.String()),
+			logger.StringAttr("mm_user_id", mmUserID),
+			logger.ErrAttr(err),
+		)
+		return false
+	}
+	return s.canPickOwner(ctx, user.ID, realmID)
+}
+
 // ownerSelectElement строит select «Заказчик» для диалога создания заявки. Поле
 // доступно только тем, кто в веб-форме видит выбор заказчика (см. canPickOwner),
 // и только если в realm есть хотя бы один активный заказчик: иначе возвращает
@@ -217,7 +237,10 @@ func (s *MattermostService) HandleDialogOpen(ctx context.Context, input *models.
 		return fmt.Errorf("failed to get mattermost settings: %w", err)
 	}
 
-	categories, err := s.categories.Get(ctx, &models.GetCategoriesDTO{RealmID: realmID})
+	categories, err := s.categories.Get(ctx, &models.GetCategoriesDTO{
+		RealmID:       realmID,
+		IncludeHidden: s.canSeeHiddenCategories(ctx, input.UserID, realmID),
+	})
 	if err != nil {
 		logger.Warn("failed to load categories for dialog", logger.ErrAttr(err))
 	}

@@ -1,6 +1,6 @@
 import { useState, type FC } from 'react'
 import { Box, Button, Chip, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material'
-import { EditIcon, LayersIcon, PlusIcon } from 'lucide-mui'
+import { EditIcon, EyeOffIcon, LayersIcon, PlusIcon } from 'lucide-mui'
 
 import type { ICategory } from '@/features/categories/types/category'
 import type { ICategoryGroup, ICategoryGroupDTO } from '../types/categoryGroup'
@@ -42,7 +42,7 @@ export const CategoryGroupsSection: FC<Props> = ({ categories }) => {
 
 	const openCreate = () => {
 		const nextOrder = (categoryGroups?.data?.length ?? 0) + 1
-		setEditing({ id: null, name: '', description: '', sortOrder: nextOrder })
+		setEditing({ id: null, name: '', description: '', sortOrder: nextOrder, isHidden: false })
 		setOpen(true)
 	}
 
@@ -54,6 +54,7 @@ export const CategoryGroupsSection: FC<Props> = ({ categories }) => {
 			name: cg.name,
 			description: cg.description,
 			sortOrder: cg.sortOrder,
+			isHidden: cg.isHidden,
 		})
 		setOpen(true)
 	}
@@ -99,6 +100,11 @@ export const CategoryGroupsSection: FC<Props> = ({ categories }) => {
 						>
 							<LayersIcon sx={{ fontSize: 16, color: '#6b7280' }} />
 							<Typography sx={{ fontWeight: 600, minWidth: 160 }}>{cg.name}</Typography>
+							{cg.isHidden && (
+								<Tooltip title='Скрытый раздел — не виден заказчикам, его категории скрыты'>
+									<EyeOffIcon sx={{ fontSize: 16, color: '#b45309' }} />
+								</Tooltip>
+							)}
 							{cats.length ? (
 								cats.map(cat => (
 									<Chip

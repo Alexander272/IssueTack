@@ -12,12 +12,13 @@ import {
 	Tooltip,
 	Typography,
 } from '@mui/material'
-import { EditIcon, EyeIcon, FolderIcon, UsersIcon } from 'lucide-mui'
+import { EditIcon, EyeIcon, EyeOffIcon, FolderIcon, UsersIcon } from 'lucide-mui'
 
 import type { ICategory } from '../types/category'
 import { getSmartDate } from '@/utils/date'
 import { TaskPriorityBadge } from '@/features/tasks/components/TaskPriorityBadge'
 import { StatusBadge } from '@/features/access/components/StatusBadge'
+import { categoryHiddenLabel, isCategoryHidden } from '../utils/visibility'
 
 const statusLabel = (active: boolean) => (active ? 'Активна' : 'Неактивна')
 
@@ -64,7 +65,14 @@ export const CategoryTable: FC<Props> = ({ categories, groupsMap, onView, onEdit
 								}}
 							>
 								<TableCell>
-									<Typography sx={{ fontWeight: 600, color: '#111827' }}>{cat.name}</Typography>
+									<Stack direction='row' sx={{ alignItems: 'center', gap: 0.75 }}>
+										<Typography sx={{ fontWeight: 600, color: '#111827' }}>{cat.name}</Typography>
+										{isCategoryHidden(cat) && (
+											<Tooltip title={categoryHiddenLabel(cat)}>
+												<EyeOffIcon sx={{ fontSize: 16, color: '#b45309' }} />
+											</Tooltip>
+										)}
+									</Stack>
 								</TableCell>
 
 								<TableCell>

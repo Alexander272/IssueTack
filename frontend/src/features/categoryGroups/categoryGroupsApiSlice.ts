@@ -45,7 +45,11 @@ const categoryGroupsApiSlice = apiSlice.injectEndpoints({
 				method: 'POST',
 				body,
 			}),
-			invalidatesTags: [{ type: 'CategoryGroups', id: 'ALL' }],
+			// Раздел влияет на видимость своих категорий, поэтому обновляем и их список.
+			invalidatesTags: [
+				{ type: 'CategoryGroups', id: 'ALL' },
+				{ type: 'Categories', id: 'ALL' },
+			],
 		}),
 
 		updateCategoryGroup: builder.mutation<ICategoryGroup, ICategoryGroupDTO>({
@@ -54,7 +58,10 @@ const categoryGroupsApiSlice = apiSlice.injectEndpoints({
 				method: 'PUT',
 				body,
 			}),
-			invalidatesTags: [{ type: 'CategoryGroups', id: 'ALL' }],
+			invalidatesTags: [
+				{ type: 'CategoryGroups', id: 'ALL' },
+				{ type: 'Categories', id: 'ALL' },
+			],
 		}),
 
 		deleteCategoryGroup: builder.mutation<void, string>({
@@ -62,7 +69,10 @@ const categoryGroupsApiSlice = apiSlice.injectEndpoints({
 				url: API.categoryGroups.byId(id),
 				method: 'DELETE',
 			}),
-			invalidatesTags: [{ type: 'CategoryGroups', id: 'ALL' }],
+			invalidatesTags: [
+				{ type: 'CategoryGroups', id: 'ALL' },
+				{ type: 'Categories', id: 'ALL' },
+			],
 		}),
 	}),
 })

@@ -15,9 +15,12 @@ type Category struct {
 	CategoryGroup   *CategoryGroupShort `json:"categoryGroup,omitempty" db:"-"`
 	Priority        Priority            `json:"priority" db:"def_priority"`
 	IsActive        bool                `json:"isActive" db:"is_active"`
-	RealmID         uuid.UUID           `json:"realmId" db:"realm_id"`
-	CreatedAt       time.Time           `json:"createdAt" db:"created_at"`
-	UpdatedAt       time.Time           `json:"updatedAt" db:"updated_at"`
+	// IsHidden — собственная скрытость категории (не эффективная): категория
+	// в скрытом разделе тоже невидима заказчику, но её флаг остаётся false.
+	IsHidden  bool      `json:"isHidden" db:"is_hidden"`
+	RealmID   uuid.UUID `json:"realmId" db:"realm_id"`
+	CreatedAt time.Time `json:"createdAt" db:"created_at"`
+	UpdatedAt time.Time `json:"updatedAt" db:"updated_at"`
 }
 
 type CategoryShort struct {
@@ -28,6 +31,10 @@ type CategoryShort struct {
 
 type GetCategoriesDTO struct {
 	RealmID uuid.UUID `json:"realmId" db:"realm_id"`
+	// IncludeHidden — вернуть и скрытые категории (в т.ч. из скрытых разделов).
+	// Явный флаг, а не роль: решение о роли принимает вызывающий (менеджеры и
+	// исполнители видят скрытые, безгрупповой заказчик — нет).
+	IncludeHidden bool `json:"-" db:"-"`
 }
 
 type GetCategoryByIdDTO struct {
@@ -44,6 +51,7 @@ type CategoryDTO struct {
 	CategoryGroupID *uuid.UUID `json:"categoryGroupId" db:"category_group_id"`
 	Priority        Priority   `json:"priority" db:"def_priority"`
 	IsActive        bool       `json:"isActive" db:"is_active"`
+	IsHidden        bool       `json:"isHidden" db:"is_hidden"`
 }
 
 type DelCategoryDTO struct {

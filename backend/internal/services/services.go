@@ -109,8 +109,9 @@ func NewServices(deps *Deps) *Services {
 
 	session := NewSessionService(deps.Keycloak, policies, userRealms, users, groups, access, cacheSvc)
 
-	categories := NewCategoryService(deps.Repo.Categories, deps.Repo.Tickets)
-	categoryGroups := NewCategoryGroupService(deps.Repo.CategoryGroups)
+	categoryVisibility := NewCategoryVisibility(access, groups)
+	categories := NewCategoryService(deps.Repo.Categories, deps.Repo.Tickets, categoryVisibility)
+	categoryGroups := NewCategoryGroupService(deps.Repo.CategoryGroups, categoryVisibility)
 	sites := NewSiteService(deps.Repo.Sites)
 	logs := NewActivityLogService(deps.Repo.ActivityLog, transaction)
 	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs, users, access)

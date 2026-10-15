@@ -65,6 +65,7 @@ export const CategoriesView: FC = () => {
 			categoryGroupId: cat.categoryGroupId ?? null,
 			priority: cat.priority,
 			isActive: cat.isActive,
+			isHidden: cat.isHidden,
 		})
 		setOpen(true)
 	}

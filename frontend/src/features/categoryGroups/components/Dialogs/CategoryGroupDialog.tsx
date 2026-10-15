@@ -22,6 +22,7 @@ import {
 	useDeleteCategoryGroupMutation,
 } from '../../categoryGroupsApiSlice'
 import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
+import { Switch } from '@/components/TextSwitch/Switch'
 
 type Props = {
 	categoryGroup?: ICategoryGroupDTO
@@ -37,7 +38,7 @@ export const CategoryGroupDialog: FC<Props> = ({ categoryGroup, open, onClose })
 	const [remove, { isLoading: isDeleting }] = useDeleteCategoryGroupMutation()
 
 	const { control, handleSubmit, formState } = useForm<ICategoryGroupDTO>({
-		values: categoryGroup ?? { id: null, name: '', description: '', sortOrder: 0 },
+		values: categoryGroup ?? { id: null, name: '', description: '', sortOrder: 0, isHidden: false },
 		mode: 'onTouched',
 	})
 
@@ -147,6 +148,22 @@ export const CategoryGroupDialog: FC<Props> = ({ categoryGroup, open, onClose })
 								/>
 							)}
 						/>
+					</Box>
+					<Box>
+						<Typography variant='caption' sx={{ fontWeight: 600, mb: 0.5, display: 'block' }}>
+							Видимость
+						</Typography>
+						<Controller
+							control={control}
+							name='isHidden'
+							render={({ field }) => (
+								<Switch value={field.value} onChange={field.onChange} labels={['Обычный', 'Скрытый']} />
+							)}
+						/>
+						<Typography variant='caption' sx={{ color: 'text.secondary', mt: 0.5, display: 'block' }}>
+							Скрытый раздел не видят заказчики — только менеджеры и исполнители. Все категории раздела скрываются
+							автоматически.
+						</Typography>
 					</Box>
 				</Box>
 			</DialogContent>

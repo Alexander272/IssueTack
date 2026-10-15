@@ -47,7 +47,15 @@ func (h *Handler) getAll(c *gin.Context) {
 		return
 	}
 
-	data, err := h.service.Get(c, &models.GetCategoriesDTO{RealmID: realmID})
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+
+	data, err := h.service.Get(c, &models.GetCategoriesDTO{
+		RealmID:       realmID,
+		IncludeHidden: h.service.CanSeeHidden(c, actor.ID, realmID),
+	})
 	if err != nil {
 		response.SendError(c, err)
 		return

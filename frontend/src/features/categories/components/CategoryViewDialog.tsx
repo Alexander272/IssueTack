@@ -10,7 +10,7 @@ import {
 	Stack,
 	Typography,
 } from '@mui/material'
-import { FolderIcon, XIcon, UsersIcon } from 'lucide-mui'
+import { EyeOffIcon, FolderIcon, XIcon, UsersIcon } from 'lucide-mui'
 
 import type { ICategory, ICategoryDTO } from '../types/category'
 import { getSmartDate } from '@/utils/date'
@@ -18,6 +18,7 @@ import { TaskPriorityBadge } from '@/features/tasks/components/TaskPriorityBadge
 import { StatusBadge } from '@/features/access/components/StatusBadge'
 import { useIsRoot } from '@/features/access/utils/can'
 import { getInitials } from '@/utils/avatar'
+import { categoryHiddenLabel, isCategoryHidden } from '../utils/visibility'
 
 type Props = {
 	category: ICategory | null
@@ -84,11 +85,31 @@ export const CategoryViewDialog: FC<Props> = ({ category, groupsMap, onClose, on
 								<Typography variant='h5' sx={{ fontWeight: 'bold' }}>
 									{category.name}
 								</Typography>
-								<Box sx={{ mt: 1, ml: { xs: 0, sm: '30%' } }}>
+								<Box sx={{ mt: 1, ml: { xs: 0, sm: '30%' }, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
 									<StatusBadge
 										active={category.isActive}
 										label={category.isActive ? 'Активна' : 'Неактивна'}
 									/>
+									{isCategoryHidden(category) && (
+										<Typography
+											sx={{
+												display: 'inline-flex',
+												alignItems: 'center',
+												gap: 0.5,
+												px: 1.25,
+												py: 0.5,
+												borderRadius: '999px',
+												fontSize: '0.75rem',
+												fontWeight: 500,
+												bgcolor: '#fef3c7',
+												color: '#92400e',
+												border: '1px solid #fde68a',
+											}}
+										>
+											<EyeOffIcon sx={{ fontSize: 14 }} />
+											{categoryHiddenLabel(category)}
+										</Typography>
+									)}
 								</Box>
 							</Box>
 
@@ -234,6 +255,7 @@ export const CategoryViewDialog: FC<Props> = ({ category, groupsMap, onClose, on
 									categoryGroupId: category.categoryGroupId ?? null,
 									priority: category.priority,
 									isActive: category.isActive,
+									isHidden: category.isHidden,
 								})
 							}}
 							variant='contained'

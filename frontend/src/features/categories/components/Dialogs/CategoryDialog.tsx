@@ -40,6 +40,7 @@ export const CategoryDialog: FC<Props> = ({ category, groups, categoryGroups, op
 			categoryGroupId: null,
 			priority: 'medium',
 			isActive: true,
+			isHidden: false,
 		},
 		mode: 'onTouched',
 	})

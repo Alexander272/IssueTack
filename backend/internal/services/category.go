@@ -6,19 +6,21 @@ import (
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
+	"github.com/google/uuid"
 )
 
 // CategoryService — сервис работы с категориями тикетов.
 // Для подсчёта незакрытых заявок использует узкий TicketCounter (см. groups.go),
 // т.к. CategoryService — зависимость TicketService, и внедрить сервис тикетов нельзя.
 type CategoryService struct {
-	repo    repository.Categories
-	tickets TicketCounter
+	repo       repository.Categories
+	tickets    TicketCounter
+	visibility *CategoryVisibility
 }
 
 // NewCategoryService создаёт CategoryService.
-func NewCategoryService(repo repository.Categories, tickets TicketCounter) *CategoryService {
-	return &CategoryService{repo: repo, tickets: tickets}
+func NewCategoryService(repo repository.Categories, tickets TicketCounter, visibility *CategoryVisibility) *CategoryService {
+	return &CategoryService{repo: repo, tickets: tickets, visibility: visibility}
 }
 
 // Categories — интерфейс работы с категориями.
@@ -33,6 +35,15 @@ type Categories interface {
 	Update(ctx context.Context, dto *models.CategoryDTO) error
 	// Delete удаляет категорию.
 	Delete(ctx context.Context, dto *models.DelCategoryDTO) error
+	// CanSeeHidden сообщает, видит ли пользователь скрытые категории/разделы
+	// (менеджеры и исполнители — да, безгрупповой заказчик — нет). Списочные
+	// обработчики кладут результат в GetCategoriesDTO.IncludeHidden.
+	CanSeeHidden(ctx context.Context, userID, realmID uuid.UUID) bool
+}
+
+// CanSeeHidden делегирует единому правилу видимости скрытых категорий.
+func (s *CategoryService) CanSeeHidden(ctx context.Context, userID, realmID uuid.UUID) bool {
+	return s.visibility.CanSeeHidden(ctx, userID, realmID)
 }
 
 // Get возвращает список категорий.
@@ -42,6 +53,24 @@ func (s *CategoryService) Get(ctx context.Context, req *models.GetCategoriesDTO)
 		return nil, fmt.Errorf("failed to get categories. error: %w", err)
 	}
 	return data, nil
+}
+
+// filterVisibleCategories убирает эффективно скрытые категории (собственная
+// скрытость или скрытый раздел). Используется там, где список категорий берётся
+// из кэша целиком (plugin context) и его нужно сузить под безгруппового
+// заказчика: менеджеры и исполнители получают полный список.
+func filterVisibleCategories(categories []*models.Category) []*models.Category {
+	visible := make([]*models.Category, 0, len(categories))
+	for _, c := range categories {
+		if c == nil || c.IsHidden {
+			continue
+		}
+		if c.CategoryGroup != nil && c.CategoryGroup.IsHidden {
+			continue
+		}
+		visible = append(visible, c)
+	}
+	return visible
 }
 
 // GetByID возвращает категорию по идентификатору.

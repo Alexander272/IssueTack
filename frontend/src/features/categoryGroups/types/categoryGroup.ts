@@ -4,6 +4,7 @@ export interface ICategoryGroup {
 	name: string
 	description: string
 	sortOrder: number
+	isHidden: boolean
 	createdAt: string
 	updatedAt: string
 }
@@ -13,4 +14,5 @@ export interface ICategoryGroupDTO {
 	name: string
 	description: string
 	sortOrder: number
+	isHidden: boolean
 }

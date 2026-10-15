@@ -9,6 +9,7 @@ export interface ICategory {
 	categoryGroup?: ICategoryGroupShort
 	priority: Priority
 	isActive: boolean
+	isHidden: boolean
 	createdAt: string
 	updatedAt: string
 }
@@ -16,6 +17,7 @@ export interface ICategory {
 export interface ICategoryGroupShort {
 	id: string
 	name: string
+	isHidden?: boolean
 }
 
 export interface ICategoryDTO {
@@ -26,4 +28,5 @@ export interface ICategoryDTO {
 	categoryGroupId: string | null
 	priority: Priority
 	isActive: boolean
+	isHidden: boolean
 }

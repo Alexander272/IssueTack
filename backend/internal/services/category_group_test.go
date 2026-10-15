@@ -56,7 +56,7 @@ func TestCategoryGroupService_Delete_CountError(t *testing.T) {
 
 func TestCategoryGroupService_Get_And_Create(t *testing.T) {
 	mockRepo := new(MockCategoryGroupsRepo)
-	svc := NewCategoryGroupService(mockRepo)
+	svc := NewCategoryGroupService(mockRepo, nil)
 
 	realmID := uuid.New()
 	req := &models.GetCategoryGroupsDTO{RealmID: realmID}
