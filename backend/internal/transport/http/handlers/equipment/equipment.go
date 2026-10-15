@@ -3,6 +3,8 @@ package equipment
 import (
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
@@ -14,16 +16,22 @@ import (
 	"github.com/google/uuid"
 )
 
+// actDocxMimeType — тип docx по RFC 6838: тот же, что у файлов Word.
+const actDocxMimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
 type Handler struct {
 	service services.Equipment
+	// maxSize — предел размера подписанного акта: multipart отбрасывается еще на
+	// парсинге тела, иначе большой файл успел бы лечь в память/на диск.
+	maxSize int64
 }
 
-func NewHandler(service services.Equipment) *Handler {
-	return &Handler{service: service}
+func NewHandler(service services.Equipment, maxSize int64) *Handler {
+	return &Handler{service: service, maxSize: maxSize}
 }
 
-func Register(api *gin.RouterGroup, service services.Equipment, middleware *middleware.Middleware) {
-	handlers := NewHandler(service)
+func Register(api *gin.RouterGroup, service services.Equipment, maxSize int64, middleware *middleware.Middleware) {
+	handlers := NewHandler(service, maxSize)
 
 	equipment := api.Group("/equipment", middleware.CheckPermissions(access.Reg.R(access.ResourceEquipment).Read()))
 	{
@@ -40,6 +48,8 @@ func Register(api *gin.RouterGroup, service services.Equipment, middleware *midd
 		equipment.GET("/types/:id", handlers.getTypeByID)
 		equipment.GET("/acts", handlers.getActs)
 		equipment.GET("/acts/:id", handlers.getActByID)
+		equipment.GET("/acts/:id/document", handlers.getActDocument)
+		equipment.GET("/acts/:id/signed", handlers.getActSignedFile)
 
 		equipment.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceEquipment).Write()))
 		equipment.POST("", handlers.create)
@@ -52,6 +62,7 @@ func Register(api *gin.RouterGroup, service services.Equipment, middleware *midd
 		equipment.POST("/types", handlers.createType)
 		equipment.PUT("/types/:id", handlers.updateType)
 		equipment.POST("/acts", handlers.createAct)
+		equipment.POST("/acts/:id/signed", handlers.uploadActSigned)
 
 		equipment.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceEquipment).Delete()))
 		equipment.DELETE("/:id", handlers.delete)
@@ -172,6 +183,7 @@ func (h *Handler) create(c *gin.Context) {
 	}
 	dto.RealmID = realmID
 	dto.CreatedBy = &actor.ID
+	dto.Actor = actor
 
 	data, err := h.service.Create(c, dto)
 	if err != nil {
@@ -202,8 +214,13 @@ func (h *Handler) update(c *gin.Context) {
 		response.SendError(c, fmt.Errorf("%w: %s", models.ErrInvalidInput, "id is not equal to dto.ID"))
 		return
 	}
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
 	dto.ID = &id
 	dto.RealmID = realmID
+	dto.Actor = actor
 
 	if _, err := h.service.Update(c, dto); err != nil {
 		response.SendError(c, err, dto)
@@ -640,4 +657,124 @@ func (h *Handler) createAct(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, response.IdResponse{Id: data.ID, Message: "Акт сформирован"})
+}
+
+// getActDocument отдаёт docx акта, собранный по снимку состава. Заголовок
+// выгрузки — attachment: документ выгружают, чтобы распечатать и подписать.
+func (h *Handler) getActDocument(c *gin.Context) {
+	id, realmID, ok := actRequestParams(c)
+	if !ok {
+		return
+	}
+
+	doc, err := h.service.GetActDocument(c, &models.GetEquipmentActByIDDTO{ID: id, RealmID: realmID})
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+
+	c.Header("Content-Disposition", actDisposition("attachment", doc.FileName))
+	c.Data(http.StatusOK, actDocxMimeType, doc.Content)
+}
+
+// getActSignedFile отдаёт загруженный подписанный акт. Заголовок — inline:
+// файл открывают в браузере (просмотр), а скачивание инициирует клиент.
+func (h *Handler) getActSignedFile(c *gin.Context) {
+	id, realmID, ok := actRequestParams(c)
+	if !ok {
+		return
+	}
+
+	act, file, err := h.service.GetActSignedFile(c, &models.GetEquipmentActByIDDTO{ID: id, RealmID: realmID})
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	defer file.Close()
+
+	mimeType := "application/octet-stream"
+	if act.SignedMimeType != nil && *act.SignedMimeType != "" {
+		mimeType = *act.SignedMimeType
+	}
+	var size int64 = -1
+	if act.SignedFileSize != nil {
+		size = *act.SignedFileSize
+	}
+	name := act.Number
+	if act.SignedFileName != nil && *act.SignedFileName != "" {
+		name = *act.SignedFileName
+	}
+
+	c.Header("Content-Disposition", actDisposition("inline", name))
+	c.DataFromReader(http.StatusOK, size, mimeType, file, nil)
+}
+
+// uploadActSigned принимает скан или фото подписанного акта.
+func (h *Handler) uploadActSigned(c *gin.Context) {
+	id, realmID, ok := actRequestParams(c)
+	if !ok {
+		return
+	}
+
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+
+	// К пределу сервиса добавляем запас на multipart-служебные поля (~64 КБ),
+	// чтобы тело с файлом допустимого размера не отбрасывалось на парсинге.
+	if h.maxSize > 0 {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, h.maxSize+(64<<10))
+	}
+
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+	defer file.Close()
+
+	dto := &models.SignEquipmentActDTO{
+		ID:       id,
+		RealmID:  realmID,
+		FileName: header.Filename,
+		FileSize: header.Size,
+		MimeType: header.Header.Get("Content-Type"),
+		File:     file,
+		Actor:    actor,
+	}
+	if err := h.service.SignAct(c, dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, response.IdResponse{Id: id, Message: "Акт подписан"})
+}
+
+// actRequestParams разбирает id акта из пути и реалм из заголовка. Акты ищутся
+// парой (id, realm): без домена акт другого реалма открывался бы по прямому id.
+func actRequestParams(c *gin.Context) (uuid.UUID, uuid.UUID, bool) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return uuid.Nil, uuid.Nil, false
+	}
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return uuid.Nil, uuid.Nil, false
+	}
+	return id, realmID, true
+}
+
+// actDisposition собирает Content-Disposition для файла акта. Номер акта
+// кириллический, поэтому рядом с ASCII-фолбэком идёт filename* по RFC 5987:
+// без него браузер сохранит файл под именем из URL.
+func actDisposition(kind, fileName string) string {
+	fallback := strings.Map(func(r rune) rune {
+		if r < 128 && r != '"' && r != '\\' {
+			return r
+		}
+		return '_'
+	}, fileName)
+
+	return fmt.Sprintf(`%s; filename="%s"; filename*=UTF-8''%s`, kind, fallback, url.PathEscape(fileName))
 }

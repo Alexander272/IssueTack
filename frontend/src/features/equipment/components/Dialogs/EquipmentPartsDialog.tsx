@@ -52,7 +52,6 @@ const toPayload = (child: IEquipment, parentId: string | null): IEquipmentDTO =>
 	location: child.location,
 	purchaseDate: child.purchaseDate,
 	warrantyUntil: child.warrantyUntil,
-	cost: child.cost,
 	notes: child.notes,
 	isKit: child.isKit,
 })

@@ -105,6 +105,8 @@ export const API = {
 		typeById: (id: string) => `/equipment/types/${id}` as const,
 		acts: '/equipment/acts' as const,
 		actById: (id: string) => `/equipment/acts/${id}` as const,
+		actDocument: (id: string) => `/equipment/acts/${id}/document` as const,
+		actSigned: (id: string) => `/equipment/acts/${id}/signed` as const,
 	},
 	notifications: {
 		settings: '/notifications/settings',

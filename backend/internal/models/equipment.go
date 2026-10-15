@@ -1,6 +1,7 @@
 package models
 
 import (
+	"io"
 	"time"
 
 	"github.com/goccy/go-json"
@@ -140,7 +141,6 @@ type Equipment struct {
 	Location        *string           `json:"location" db:"location"`
 	PurchaseDate    *string           `json:"purchaseDate" db:"purchase_date"`
 	WarrantyUntil   *string           `json:"warrantyUntil" db:"warranty_until"`
-	Cost            *float64          `json:"cost" db:"cost"`
 	Notes           string            `json:"notes" db:"notes"`
 	// ContainerName — имя контейнера для подписи «внутри …» в плоском списке:
 	// физический родитель (parent_id) или логический комплект (kit_id).
@@ -232,11 +232,13 @@ type EquipmentDTO struct {
 	Location        *string         `json:"location" db:"location"`
 	PurchaseDate    *string         `json:"purchaseDate" db:"purchase_date"`
 	WarrantyUntil   *string         `json:"warrantyUntil" db:"warranty_until"`
-	Cost            *float64        `json:"cost" db:"cost"`
 	Notes           string          `json:"notes" db:"notes"`
 	IsKit           bool            `json:"isKit" db:"is_kit"`
 	KitID           *uuid.UUID      `json:"kitId" db:"kit_id"`
 	CreatedBy       *uuid.UUID      `json:"-" db:"created_by"`
+	// Actor — пользователь, выполняющий операцию. Нужен журналу: автор события
+	// «создано»/«перемещено». Из запроса не приходит — его проставляет обработчик.
+	Actor *Actor `json:"-"`
 }
 
 type DelEquipmentDTO struct {
@@ -255,6 +257,12 @@ type KitComposition struct {
 	EndedBy     *uuid.UUID `json:"endedBy" db:"ended_by"`
 	Reason      string     `json:"reason" db:"reason"`
 	ActID       *uuid.UUID `json:"actId" db:"act_id"`
+
+	// Подписи ссылок резолвит SQL (см. compositionSelectBase), чтобы клиенту не
+	// приходилось тянуть справочники реалма ради одной строки истории.
+	ComponentName string `json:"componentName" db:"component_name"`
+	StartedByName string `json:"startedByName" db:"started_by_name"`
+	EndedByName   string `json:"endedByName" db:"ended_by_name"`
 }
 
 // EquipmentAssignment — текущая/историческая выдача единицы.
@@ -269,6 +277,12 @@ type EquipmentAssignment struct {
 	UnassignedAt *time.Time `json:"unassignedAt" db:"unassigned_at"`
 	AssignedBy   *uuid.UUID `json:"assignedBy" db:"assigned_by"`
 	Comment      string     `json:"comment" db:"comment"`
+
+	// Подписи ссылок резолвит SQL (см. assignmentSelectBase): ФИО держателя и того,
+	// кто выдал (fallback — свободный текст holder_name), название площадки.
+	HolderFullName string `json:"holderFullName" db:"holder_full_name"`
+	SiteName       string `json:"siteName" db:"site_name"`
+	AssignedByName string `json:"assignedByName" db:"assigned_by_name"`
 }
 
 // EquipmentEvent — событие жизненного цикла оборудования.
@@ -281,25 +295,48 @@ type EquipmentEvent struct {
 	OldValue    json.RawMessage    `json:"oldValue" db:"old_value"`
 	NewValue    json.RawMessage    `json:"newValue" db:"new_value"`
 	UserID      *uuid.UUID         `json:"userId" db:"user_id"`
-	Comment     string             `json:"comment" db:"comment"`
-	CreatedAt   time.Time          `json:"createdAt" db:"created_at"`
+	// UserName — ФИО актора, резолвит SQL по user_id (см. GetEvents). Журнал
+	// иммутабелен, но актор — это ссылка на живого пользователя: подпись читается
+	// на момент чтения, а не пишется снимком.
+	UserName  string    `json:"userName" db:"user_name"`
+	Comment   string    `json:"comment" db:"comment"`
+	CreatedAt time.Time `json:"createdAt" db:"created_at"`
 }
+
+// EquipmentActStatus — состояние акта. Акт рождается «сформированным» (docx
+// собран и отдан пользователю) и становится «подписанным», когда подгружен скан
+// или фото подписанного документа.
+type EquipmentActStatus string
+
+const (
+	ActStatusFormed EquipmentActStatus = "formed"
+	ActStatusSigned EquipmentActStatus = "signed"
+)
 
 // EquipmentAct — акт выдачи/приёма.
 type EquipmentAct struct {
-	ID              uuid.UUID       `json:"id" db:"id"`
-	RealmID         uuid.UUID       `json:"realmId" db:"realm_id"`
-	Number          string          `json:"number" db:"number"`
-	KitEquipmentID  *uuid.UUID      `json:"kitEquipmentId" db:"kit_equipment_id"`
-	RecipientUserID *uuid.UUID      `json:"recipientUserId" db:"recipient_user_id"`
-	RecipientName   *string         `json:"recipientName" db:"recipient_name"`
-	SiteID          *uuid.UUID      `json:"siteId" db:"site_id"`
-	Location        *string         `json:"location" db:"location"`
-	IssuedBy        *uuid.UUID      `json:"issuedBy" db:"issued_by"`
-	IssuedAt        time.Time       `json:"issuedAt" db:"issued_at"`
-	Content         json.RawMessage `json:"content" db:"content"`
-	Comment         string          `json:"comment" db:"comment"`
-	CreatedAt       time.Time       `json:"createdAt" db:"created_at"`
+	ID              uuid.UUID          `json:"id" db:"id"`
+	RealmID         uuid.UUID          `json:"realmId" db:"realm_id"`
+	Number          string             `json:"number" db:"number"`
+	Status          EquipmentActStatus `json:"status" db:"status"`
+	KitEquipmentID  *uuid.UUID         `json:"kitEquipmentId" db:"kit_equipment_id"`
+	RecipientUserID *uuid.UUID         `json:"recipientUserId" db:"recipient_user_id"`
+	RecipientName   *string            `json:"recipientName" db:"recipient_name"`
+	SiteID          *uuid.UUID         `json:"siteId" db:"site_id"`
+	Location        *string            `json:"location" db:"location"`
+	IssuedBy        *uuid.UUID         `json:"issuedBy" db:"issued_by"`
+	IssuedAt        time.Time          `json:"issuedAt" db:"issued_at"`
+	Content         json.RawMessage    `json:"content" db:"content"`
+	Comment         string             `json:"comment" db:"comment"`
+	SignedFileName  *string            `json:"signedFileName" db:"signed_file_name"`
+	SignedMimeType  *string            `json:"signedMimeType" db:"signed_mime_type"`
+	SignedFileSize  *int64             `json:"signedFileSize" db:"signed_file_size"`
+	SignedAt        *time.Time         `json:"signedAt" db:"signed_at"`
+	SignedBy        *uuid.UUID         `json:"signedBy" db:"signed_by"`
+	// SignedFilePath — путь файла на диске. Наружу не уходит: клиенту нужны имя,
+	// тип и размер, а раскладку хранилища не показываем.
+	SignedFilePath *string   `json:"-" db:"signed_file_path"`
+	CreatedAt      time.Time `json:"createdAt" db:"created_at"`
 }
 
 // AssignEquipmentDTO — выдача оборудования.
@@ -308,18 +345,23 @@ type AssignEquipmentDTO struct {
 	RealmID    uuid.UUID  `json:"realmId"`
 	UserID     *uuid.UUID `json:"userId"`
 	HolderName *string    `json:"holderName"`
-	SiteID     *uuid.UUID `json:"siteId"`
-	Location   *string    `json:"location"`
-	Comment    string     `json:"comment"`
-	Force      bool       `json:"force"`
-	SkipAct    bool       `json:"skipAct"`
-	Actor      *Actor     `json:"-"`
+	// SiteID и Location — место единицы. Пусто в обоих полях = «единица не
+	// переезжает»: место берётся у самой единицы. Указанное место важнее и
+	// записывается как есть (выдача сразу на другой объект).
+	SiteID   *uuid.UUID `json:"siteId"`
+	Location *string    `json:"location"`
+	Comment  string     `json:"comment"`
+	Force    bool       `json:"force"`
+	SkipAct  bool       `json:"skipAct"`
+	Actor    *Actor     `json:"-"`
 }
 
 // UnassignEquipmentDTO — возврат оборудования на склад/вместо хранения.
 type UnassignEquipmentDTO struct {
-	ID       uuid.UUID  `json:"id"`
-	RealmID  uuid.UUID  `json:"realmId"`
+	ID      uuid.UUID `json:"id"`
+	RealmID uuid.UUID `json:"realmId"`
+	// SiteID и Location — куда вернуть. Пусто в обоих полях = «дом»: место
+	// последнего складского периода, а если его не было — текущее место единицы.
 	SiteID   *uuid.UUID `json:"siteId"`
 	Location *string    `json:"location"`
 	Comment  string     `json:"comment"`
@@ -368,12 +410,38 @@ type GetEquipmentActByIDDTO struct {
 	RealmID uuid.UUID `json:"realmId"`
 }
 
+// SignEquipmentActDTO — загрузка подписанного акта (скан/фото с телефона).
+type SignEquipmentActDTO struct {
+	ID       uuid.UUID
+	RealmID  uuid.UUID
+	FileName string
+	FileSize int64
+	MimeType string
+	// FilePath заполняет сервис после сохранения файла на диск.
+	FilePath string
+	File     io.Reader
+	Actor    *Actor
+}
+
+// EquipmentActDocument — сформированный docx акта: имя файла для
+// Content-Disposition и готовое содержимое. Собирается по запросу из снимка
+// состава, поэтому на диске не хранится.
+type EquipmentActDocument struct {
+	FileName string
+	Content  []byte
+}
+
 // EquipmentActsFilter — фильтр списка актов.
 type EquipmentActsFilter struct {
-	RealmID uuid.UUID  `json:"realmId"`
-	KitID   *uuid.UUID `form:"kitId,parser=encoding.TextUnmarshaler" json:"kitId"`
-	Limit   int        `form:"limit" json:"limit"`
-	Offset  int        `form:"offset" json:"offset"`
+	RealmID uuid.UUID `json:"realmId"`
+	// KitID — акты конкретного комплекта.
+	KitID *uuid.UUID `form:"kitId,parser=encoding.TextUnmarshaler" json:"kitId"`
+	// EquipmentID — акты единицы: и те, где она комплект, и те, где она позиция
+	// состава. Фильтр серверный: тянуть весь список реалма ради одной карточки
+	// нельзя — за пагинацией его не видно.
+	EquipmentID *uuid.UUID `form:"equipmentId,parser=encoding.TextUnmarshaler" json:"equipmentId"`
+	Limit       int        `form:"limit" json:"limit"`
+	Offset      int        `form:"offset" json:"offset"`
 }
 
 // EquipmentEventsFilter — пагинация журнала событий единицы.

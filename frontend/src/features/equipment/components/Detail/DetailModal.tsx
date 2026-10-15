@@ -3,10 +3,10 @@ import { Box, Dialog, DialogContent, Tab, Tabs } from '@mui/material'
 
 import { Loader } from '@/components/Fallback/Loader'
 import { useGetEquipmentQuery } from '../../equipmentApiSlice'
-import { EquipmentHistoryTimeline } from './EquipmentHistoryTimeline'
-import { EquipmentItemActs } from './EquipmentItemActs'
-import { EquipmentDetailHeader } from './EquipmentDetailHeader'
-import { EquipmentOverviewTab } from './EquipmentOverviewTab'
+import { HistoryTimeline } from './HistoryTimeline'
+import { ItemActs } from './ItemActs'
+import { DetailHeader } from './DetailHeader'
+import { OverviewTab } from './OverviewTab'
 
 type Props = {
 	open: boolean
@@ -18,7 +18,7 @@ type Props = {
 
 // Модалка единицы оборудования. Контейнер держит данные единицы и вкладки; кнопки
 // и диалоги действий живут в шапке, сами вкладки — презентационные компоненты.
-export const EquipmentDetailModal: FC<Props> = ({ open, unitId, onClose, onOpenUnit }) => {
+export const DetailModal: FC<Props> = ({ open, unitId, onClose, onOpenUnit }) => {
 	const [tab, setTab] = useState(0)
 
 	const { data, isLoading } = useGetEquipmentQuery(unitId ?? '', { skip: !unitId })
@@ -39,7 +39,7 @@ export const EquipmentDetailModal: FC<Props> = ({ open, unitId, onClose, onOpenU
 			) : (
 				<>
 					<Box sx={{ px: 3, pt: 2.5 }}>
-						<EquipmentDetailHeader unit={unit} onClose={onClose} />
+						<DetailHeader unit={unit} onClose={onClose} />
 
 						<Tabs
 							value={tab}
@@ -55,9 +55,9 @@ export const EquipmentDetailModal: FC<Props> = ({ open, unitId, onClose, onOpenU
 					</Box>
 
 					<DialogContent dividers sx={{ minHeight: 360, bgcolor: '#fff' }}>
-						{tab === 0 && <EquipmentOverviewTab unit={unit} onOpenUnit={onOpenUnit} />}
-						{tab === 1 && <EquipmentHistoryTimeline unit={unit} />}
-						{tab === 2 && <EquipmentItemActs unit={unit} />}
+						{tab === 0 && <OverviewTab unit={unit} onOpenUnit={onOpenUnit} />}
+						{tab === 1 && <HistoryTimeline unit={unit} />}
+						{tab === 2 && <ItemActs unit={unit} />}
 					</DialogContent>
 				</>
 			)}

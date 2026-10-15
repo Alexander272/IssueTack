@@ -41,7 +41,7 @@ const EMPTY_FORM: FormValues = {
 export type TaskCreateFormHandle = { requestReset: () => void }
 
 export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
-	({ onSuccess, onCancel, embedded, onSavingChange, onDirtyChange }, ref) => {
+	({ onSuccess, onCancel, embedded, onSavingChange, onDirtyChange, defaultEquipmentId }, ref) => {
 	const currentUserId = useAppSelector(getUserId)
 	const realm = useAppSelector(getRealm)
 	const isManager = useAppSelector(getIsManager)
@@ -123,6 +123,15 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 			setValue('siteId', userSiteId, { shouldValidate: true })
 		}
 	}, [userSiteId, setValue, getValues])
+
+	// Оборудование из карточки единицы подставляем так же, как площадку: только в
+	// пустое поле. Иначе восстановленный черновик (в нём пользователь мог выбрать
+	// другое оборудование) был бы затёрт на открытии.
+	useEffect(() => {
+		if (defaultEquipmentId && !getValues('equipmentId')) {
+			setValue('equipmentId', defaultEquipmentId, { shouldValidate: true })
+		}
+	}, [defaultEquipmentId, setValue, getValues])
 
 	const category = categories.find(c => c.id === selectedCategoryId)
 

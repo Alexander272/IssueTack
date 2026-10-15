@@ -34,17 +34,44 @@ func (r *EquipmentRepo) GetOpenComposition(ctx context.Context, kitID uuid.UUID)
 	return data, nil
 }
 
+// compositionSelectBase — запись состава со справочными подписями: имя компонента
+// и ФИО того, кто добавил/исключил. Подписи резолвит SQL — как в equipmentSelectBase.
+func compositionSelectBase() string {
+	return fmt.Sprintf(`SELECT kc.id, kc.kit_id, kc.component_id, kc.started_at, kc.ended_at,
+			kc.started_by, kc.ended_by, kc.reason, kc.act_id,
+			c.name AS component_name,
+			%s AS started_by_name,
+			%s AS ended_by_name
+		FROM %s kc
+		LEFT JOIN %s c ON c.id = kc.component_id
+		LEFT JOIN %s sb ON sb.id = kc.started_by
+		LEFT JOIN %s eb ON eb.id = kc.ended_by`,
+		fullNameSQL("sb"), fullNameSQL("eb"),
+		Tables.KitCompositions, Tables.Equipment, Tables.Users, Tables.Users)
+}
+
 func scanComposition(row rowScanner) (*models.KitComposition, error) {
 	c := &models.KitComposition{}
-	if err := row.Scan(&c.ID, &c.KitID, &c.ComponentID, &c.StartedAt, &c.EndedAt, &c.StartedBy, &c.EndedBy, &c.Reason, &c.ActID); err != nil {
+	var componentName, startedByName, endedByName *string
+
+	if err := row.Scan(&c.ID, &c.KitID, &c.ComponentID, &c.StartedAt, &c.EndedAt, &c.StartedBy, &c.EndedBy,
+		&c.Reason, &c.ActID, &componentName, &startedByName, &endedByName); err != nil {
 		return nil, err
+	}
+	if componentName != nil {
+		c.ComponentName = *componentName
+	}
+	if startedByName != nil {
+		c.StartedByName = *startedByName
+	}
+	if endedByName != nil {
+		c.EndedByName = *endedByName
 	}
 	return c, nil
 }
 
 func (r *EquipmentRepo) GetCompositionHistory(ctx context.Context, kitID uuid.UUID) ([]*models.KitComposition, error) {
-	query := fmt.Sprintf(`SELECT id, kit_id, component_id, started_at, ended_at, started_by, ended_by, reason, act_id
-		FROM %s WHERE kit_id = $1 ORDER BY started_at DESC`, Tables.KitCompositions)
+	query := compositionSelectBase() + ` WHERE kc.kit_id = $1 ORDER BY kc.started_at DESC`
 
 	rows, err := r.db.Query(ctx, query, kitID)
 	if err != nil {
@@ -67,8 +94,8 @@ func (r *EquipmentRepo) GetCompositionHistory(ctx context.Context, kitID uuid.UU
 }
 
 func (r *EquipmentRepo) GetOpenByComponent(ctx context.Context, componentID uuid.UUID) (*models.KitComposition, error) {
-	query := fmt.Sprintf(`SELECT id, kit_id, component_id, started_at, ended_at, started_by, ended_by, reason, act_id
-		FROM %s WHERE component_id = $1 AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1`, Tables.KitCompositions)
+	query := compositionSelectBase() +
+		` WHERE kc.component_id = $1 AND kc.ended_at IS NULL ORDER BY kc.started_at DESC LIMIT 1`
 
 	c, err := scanComposition(r.db.QueryRow(ctx, query, componentID))
 	if err != nil {

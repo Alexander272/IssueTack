@@ -130,7 +130,8 @@ func (s *EquipmentService) RemoveComponents(ctx context.Context, dto *models.Kit
 			}
 			if err := s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
 				EquipmentID: dto.ID, EventType: models.EquipmentEventComponentRemoved, OperationID: opID,
-				ComponentID: &comp.ComponentID, UserID: actorID, Comment: dto.Reason,
+				ComponentID: &comp.ComponentID, OldValue: componentRefJSON(comp.ComponentID, open.ComponentName),
+				UserID: actorID, Comment: dto.Reason,
 			}); err != nil {
 				return fmt.Errorf("failed to create event. error: %w", err)
 			}
@@ -145,6 +146,17 @@ func componentJSON(eq *models.Equipment) []byte {
 		EquipmentID: eq.ID, TypeName: eq.TypeName, Name: eq.Name,
 		SerialNumber: eq.SerialNumber, InventoryNumber: eq.InventoryNumber,
 	})
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
+// componentRefJSON — снимок исключаемого компонента. Полного набора полей под рукой
+// нет (открытая запись состава знает только имя из compositionSelectBase), но ленте
+// истории для подписи этого достаточно — и она не тянет справочник оборудования.
+func componentRefJSON(id uuid.UUID, name string) []byte {
+	data, err := json.Marshal(map[string]any{"equipmentId": id, "name": name})
 	if err != nil {
 		return nil
 	}

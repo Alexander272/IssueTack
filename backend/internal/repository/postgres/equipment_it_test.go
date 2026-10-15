@@ -72,14 +72,14 @@ func TestEquipmentRepo_Stage3Flow(t *testing.T) {
 
 	repo := NewEquipmentRepo(pool, NewTransactionRepo(pool))
 
-	kit, err := repo.Create(ctx, newEquipmentDTO(f, f.typeID, "Комплект A"))
+	kit, err := repo.Create(ctx, nil, newEquipmentDTO(f, f.typeID, "Комплект A"))
 	require.NoError(t, err)
 
 	// Помечаем как комплект напрямую (Create не выставляет is_kit).
 	_, err = pool.Exec(ctx, `UPDATE equipment SET is_kit = true WHERE id = $1`, kit.ID)
 	require.NoError(t, err)
 
-	comp, err := repo.Create(ctx, newEquipmentDTO(f, f.kitType, "Модуль памяти"))
+	comp, err := repo.Create(ctx, nil, newEquipmentDTO(f, f.kitType, "Модуль памяти"))
 	require.NoError(t, err)
 
 	// addComposition + setHolderAndStatus + event в одной транзакции.
@@ -113,14 +113,50 @@ func TestEquipmentRepo_Stage3Flow(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, f.userID, *open.UserID)
 
+	// Складского периода ещё не было: возврату нечего восстанавливать, и «дом»
+	// возвращает ErrNotFound (сервис тогда берёт текущее место единицы).
+	_, _, err = repo.GetLastStoredPlace(ctx, kit.ID)
+	assert.ErrorIs(t, err, models.ErrNotFound)
+
+	// Возврат: выдача закрывается, открывается строка без держателя — это «дом»
+	// единицы, куда её поставит следующий возврат.
+	siteID := uuid.New()
+	_, err = pool.Exec(ctx, `INSERT INTO sites (id, name) VALUES ($1, $2)`, siteID, "ППРЗ")
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM sites WHERE id = $1`, siteID) })
+
+	tx, err = repo.BeginTx(ctx)
+	require.NoError(t, err)
+	require.NoError(t, repo.CloseAssignment(ctx, tx, open.ID, now, ""))
+	require.NoError(t, repo.CreateAssignment(ctx, tx, &models.EquipmentAssignment{
+		EquipmentID: kit.ID, SiteID: &siteID, Location: eqString("Склад, полка A"),
+		AssignedAt: now.Add(time.Second), AssignedBy: &f.userID,
+	}))
+	require.NoError(t, tx.Commit(ctx))
+
+	storedSite, storedLocation, err := repo.GetLastStoredPlace(ctx, kit.ID)
+	require.NoError(t, err)
+	require.NotNil(t, storedSite)
+	assert.Equal(t, siteID, *storedSite)
+	require.NotNil(t, storedLocation)
+	assert.Equal(t, "Склад, полка A", *storedLocation)
+
 	history, err := repo.GetAssignmentHistory(ctx, f.realmID, kit.ID)
 	require.NoError(t, err)
-	require.Len(t, history, 1)
+	require.Len(t, history, 2)
+	// Свежий период — складской, держателя в нём нет; подписи ссылок в прошлой
+	// выдаче резолвит SQL: клиент не тянет справочник пользователей ради строки
+	// истории.
+	assert.Empty(t, history[0].HolderFullName)
+	assert.Equal(t, "ППРЗ", history[0].SiteName)
+	assert.Equal(t, "Тестов Тест", history[1].HolderFullName)
+	assert.Equal(t, "Тестов Тест", history[1].AssignedByName)
 
 	events, err := repo.GetEvents(ctx, f.realmID, kit.ID, 100, 0)
 	require.NoError(t, err)
 	require.Len(t, events, 1)
 	assert.Equal(t, models.EquipmentEventComponentAdded, events[0].EventType)
+	assert.Equal(t, "Тестов Тест", events[0].UserName)
 
 	// Акт.
 	tx, err = repo.BeginTx(ctx)
@@ -157,4 +193,7 @@ func TestEquipmentRepo_Stage3Flow(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, compHistory, 1)
 	require.NotNil(t, compHistory[0].EndedAt)
+	assert.Equal(t, "Модуль памяти", compHistory[0].ComponentName)
+	assert.Equal(t, "Тестов Тест", compHistory[0].StartedByName)
+	assert.Equal(t, "Тестов Тест", compHistory[0].EndedByName)
 }

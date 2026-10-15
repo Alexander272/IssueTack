@@ -99,8 +99,8 @@ BEGIN
 
     -- Физический состав: системный блок из комплектующих (parent_id).
     IF NOT EXISTS (SELECT 1 FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1001') THEN
-        INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, status, location, purchase_date, cost)
-        VALUES (r_id, t_desktop, 'Системный блок бухгалтерии', 'Dell', 'OptiPlex 3080', 'DL-3080-0001', 'INV-1001', 'in_use', 'Кабинет 305', '2024-02-01', 52000.00)
+        INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, status, location, purchase_date)
+        VALUES (r_id, t_desktop, 'Системный блок бухгалтерии', 'Dell', 'OptiPlex 3080', 'DL-3080-0001', 'INV-1001', 'in_use', 'Кабинет 305', '2024-02-01')
         RETURNING id INTO e_desktop;
     ELSE
         SELECT id INTO e_desktop FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1001';
@@ -120,8 +120,8 @@ BEGIN
 
     -- Логический комплект: ноутбук + мышь + сумка (is_kit + kit_compositions).
     IF NOT EXISTS (SELECT 1 FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1002') THEN
-        INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, status, location, purchase_date, cost, is_kit)
-        VALUES (r_id, t_laptop, 'Ноутбук менеджера', 'Lenovo', 'ThinkPad T14', 'LN-T14-0002', 'INV-1002', 'in_use', 'Кабинет 401', '2024-06-15', 89000.00, true)
+        INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, status, location, purchase_date, is_kit)
+        VALUES (r_id, t_laptop, 'Ноутбук менеджера', 'Lenovo', 'ThinkPad T14', 'LN-T14-0002', 'INV-1002', 'in_use', 'Кабинет 401', '2024-06-15', true)
         RETURNING id INTO e_laptop;
     ELSE
         SELECT id INTO e_laptop FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1002';

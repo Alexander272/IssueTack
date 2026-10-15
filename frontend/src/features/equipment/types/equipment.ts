@@ -81,7 +81,6 @@ export interface IEquipment {
 	location: string | null
 	purchaseDate: string | null
 	warrantyUntil: string | null
-	cost: number | null
 	notes: string
 	// containerName — имя контейнера для подписи «внутри …» в плоском списке
 	// (физический родитель или логический комплект).
@@ -110,7 +109,6 @@ export interface IEquipmentDTO {
 	location?: string | null
 	purchaseDate?: string | null
 	warrantyUntil?: string | null
-	cost?: number | null
 	notes?: string
 	isKit?: boolean
 	kitId?: string | null
@@ -178,6 +176,11 @@ export interface IEquipmentAssignment {
 	unassignedAt: string | null
 	assignedBy: string | null
 	comment: string
+	// Подписи ссылок резолвит бэкенд (SQL-джойн): клиенту не нужен справочник
+	// пользователей и площадок ради строки истории.
+	holderFullName: string
+	siteName: string
+	assignedByName: string
 }
 
 export type EquipmentEventType =
@@ -218,6 +221,8 @@ export interface IEquipmentEvent {
 	oldValue: Record<string, unknown> | null
 	newValue: Record<string, unknown> | null
 	userId: string | null
+	// ФИО актора резолвит бэкенд (SQL-джойн по user_id).
+	userName: string
 	comment: string
 	createdAt: string
 }
@@ -232,6 +237,10 @@ export interface IKitComposition {
 	endedBy: string | null
 	reason: string
 	actId: string | null
+	// Подписи ссылок резолвит бэкенд (SQL-джойн).
+	componentName: string
+	startedByName: string
+	endedByName: string
 }
 
 export interface IAssignEquipmentDTO {
@@ -272,6 +281,9 @@ export interface IEquipmentAct {
 	id: string
 	realmId: string
 	number: string
+	// status: 'formed' — docx сформирован и выдан пользователю, 'signed' —
+	// подгружен скан/фото подписанного акта.
+	status: EquipmentActStatus
 	kitEquipmentId: string | null
 	recipientUserId: string | null
 	recipientName: string | null
@@ -281,8 +293,15 @@ export interface IEquipmentAct {
 	issuedAt: string
 	content: IActPosition[]
 	comment: string
+	signedFileName: string | null
+	signedMimeType: string | null
+	signedFileSize: number | null
+	signedAt: string | null
+	signedBy: string | null
 	createdAt: string
 }
+
+export type EquipmentActStatus = 'formed' | 'signed'
 
 export interface IEquipmentActDTO {
 	kitEquipmentId?: string | null
@@ -295,6 +314,8 @@ export interface IEquipmentActDTO {
 
 export interface IEquipmentActFilter {
 	kitId?: string
+	// equipmentId — акты единицы: где она комплект и где позиция состава.
+	equipmentId?: string
 	limit?: number
 	offset?: number
 }

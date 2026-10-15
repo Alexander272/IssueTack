@@ -16,9 +16,9 @@ const userLabel = (u: { lastName: string; firstName: string; username: string })
 	return full ? `${full} (${u.username})` : u.username
 }
 
-// Владение и размещение: площадка, локация, держатель, даты, стоимость и
-// физический родитель (только для комплектующего/расходника). Справочники и
-// вычисления секция держит сама — из формы ей нужен только контекст.
+// Владение и размещение: площадка, локация, держатель, даты и физический
+// родитель (только для комплектующего/расходника). Справочники и вычисления
+// секция держит сама — из формы ей нужен только контекст.
 export const OwnershipFields: FC = () => {
 	const { control, setValue } = useFormContext<IEquipmentDTO>()
 	const selfId = useWatch({ control, name: 'id' })
@@ -116,21 +116,6 @@ export const OwnershipFields: FC = () => {
 					name='warrantyUntil'
 					render={({ field }) => (
 						<TextField {...field} type='date' {...inputProps} slotProps={{ inputLabel: { shrink: true } }} />
-					)}
-				/>
-			</Field>
-
-			<Field label='Стоимость, ₽'>
-				<Controller
-					control={control}
-					name='cost'
-					render={({ field }) => (
-						<TextField
-							{...field}
-							type='number'
-							{...inputProps}
-							onChange={e => field.onChange(e.target.value === '' ? null : e.target.value)}
-						/>
 					)}
 				/>
 			</Field>

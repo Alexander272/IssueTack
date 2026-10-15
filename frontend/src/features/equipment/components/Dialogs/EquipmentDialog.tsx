@@ -1,4 +1,4 @@
-import { type FC } from 'react'
+import { useState, type FC } from 'react'
 import {
 	Box,
 	Button,
@@ -13,16 +13,23 @@ import {
 	Typography,
 } from '@mui/material'
 import { Controller, FormProvider, useForm } from 'react-hook-form'
-import { XIcon } from 'lucide-mui'
+import { Trash2Icon, XIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
+import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
 import type { IEquipment, IEquipmentDTO } from '../../types/equipment'
-import { useCreateEquipmentMutation, useUpdateEquipmentMutation } from '../../equipmentApiSlice'
+import {
+	useCreateEquipmentMutation,
+	useDeleteEquipmentMutation,
+	useUpdateEquipmentMutation,
+} from '../../equipmentApiSlice'
 import { Field } from './UnitForm/Field'
 import { inputProps } from './UnitForm/consts'
 import { IdentityFields } from './UnitForm/IdentityFields'
 import { OwnershipFields } from './UnitForm/OwnershipFields'
+import { PermRules } from '@/features/access/constants/permissions'
+import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
 
 type Props = {
 	open: boolean
@@ -30,6 +37,9 @@ type Props = {
 	unit?: IEquipment | null
 	// isKitDefault — при создании (без unit) сразу отметить «Комплект».
 	isKitDefault?: boolean
+	// onDeleted — единицу удалили: вызывающему мало закрыть форму, карточку
+	// единицы тоже нужно убрать (иначе она осталась бы пустой).
+	onDeleted?: () => void
 }
 
 // Значения формы: при редактировании — из единицы, при создании — пустые.
@@ -49,19 +59,22 @@ const toDefault = (unit?: IEquipment | null, isKitDefault = false): IEquipmentDT
 	location: unit?.location ?? '',
 	purchaseDate: unit?.purchaseDate ?? '',
 	warrantyUntil: unit?.warrantyUntil ?? '',
-	cost: unit?.cost ?? null,
 	notes: unit?.notes ?? '',
 	isKit: unit?.isKit ?? isKitDefault,
 })
 
-// Диалог создания/редактирования единицы оборудования: держит форму и её
-// сохранение, а поля раскладывает по секциям UnitForm. Секции берут справочники
-// и права из формы и своих запросов — контейнеру их протаскивать не нужно.
-export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, isKitDefault }) => {
+// Диалог создания/редактирования единицы оборудования: держит форму, её
+// сохранение и удаление единицы (в режиме правки, через подтверждение), а поля
+// раскладывает по секциям UnitForm. Секции берут справочники и права из формы и
+// своих запросов — контейнеру их протаскивать не нужно.
+export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, isKitDefault, onDeleted }) => {
 	const isEdit = Boolean(unit?.id)
 
+	const canDelete = useCheckPermissions({ anyOf: [PermRules.Equipment.Delete] })
+	const [deleteOpen, setDeleteOpen] = useState(false)
 	const [create, { isLoading: isCreating }] = useCreateEquipmentMutation()
 	const [update, { isLoading: isUpdating }] = useUpdateEquipmentMutation()
+	const [remove, { isLoading: isDeleting }] = useDeleteEquipmentMutation()
 
 	const methods = useForm<IEquipmentDTO>({
 		defaultValues: toDefault(unit, isKitDefault),
@@ -69,7 +82,7 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, isKitDefault }
 	})
 	const { control, handleSubmit, formState } = methods
 
-	const isLoading = isCreating || isUpdating
+	const isLoading = isCreating || isUpdating || isDeleting
 
 	const saveHandler = handleSubmit(async (form: IEquipmentDTO) => {
 		const payload: IEquipmentDTO = {
@@ -80,7 +93,6 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, isKitDefault }
 			location: form.location || null,
 			purchaseDate: form.purchaseDate || null,
 			warrantyUntil: form.warrantyUntil || null,
-			cost: Number.isFinite(Number(form.cost)) ? Number(form.cost) : null,
 			parentId: form.parentId || null,
 			siteId: form.siteId || null,
 			holderUserId: form.holderUserId || null,
@@ -99,6 +111,20 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, isKitDefault }
 			toast.error(fetchError.data?.message || 'Ошибка при сохранении', { autoClose: false })
 		}
 	})
+
+	const handleDelete = async () => {
+		if (!unit?.id) return
+		try {
+			await remove(unit.id).unwrap()
+			toast.success('Оборудование удалено')
+			setDeleteOpen(false)
+			onClose()
+			onDeleted?.()
+		} catch (error) {
+			const fetchError = error as IFetchError
+			toast.error(fetchError.data?.message || 'Ошибка при удалении', { autoClose: false })
+		}
+	}
 
 	return (
 		<Dialog
@@ -134,7 +160,9 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, isKitDefault }
 								<Controller
 									control={control}
 									name='notes'
-									render={({ field }) => <TextField {...field} multiline minRows={2} {...inputProps} />}
+									render={({ field }) => (
+										<TextField {...field} multiline minRows={2} {...inputProps} />
+									)}
 								/>
 							</Field>
 
@@ -157,6 +185,22 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, isKitDefault }
 					</DialogContent>
 
 					<DialogActions sx={{ p: 2, gap: 1, justifyContent: 'flex-end' }}>
+						{/* Удаление живёт здесь, рядом с сохранением: `mr: 'auto'`
+						    отжимает кнопку влево, а `type='button'` не даёт ей
+						    отправить форму. */}
+						{isEdit && canDelete && (
+							<Button
+								type='button'
+								variant='outlined'
+								color='error'
+								onClick={() => setDeleteOpen(true)}
+								disabled={isDeleting}
+								startIcon={<Trash2Icon sx={{ fontSize: 18 }} />}
+								sx={{ textTransform: 'none', mr: 'auto' }}
+							>
+								Удалить
+							</Button>
+						)}
 						<Button
 							type='button'
 							onClick={onClose}
@@ -176,6 +220,19 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, isKitDefault }
 					</DialogActions>
 				</form>
 			</FormProvider>
+
+			{/* Подтверждение удаления — отдельным диалогом поверх формы, чтобы
+			    промах по кнопке не удалял единицу сразу. */}
+			<ConfirmDialog
+				open={deleteOpen}
+				title='Удаление оборудования'
+				message={`Вы уверены, что хотите удалить «${unit?.name ?? ''}»? Действие необратимо.`}
+				confirmLabel='Удалить'
+				confirmColor='error'
+				onConfirm={handleDelete}
+				onCancel={() => setDeleteOpen(false)}
+				loading={isDeleting}
+			/>
 		</Dialog>
 	)
 }

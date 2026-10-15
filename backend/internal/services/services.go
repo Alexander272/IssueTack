@@ -113,7 +113,7 @@ func NewServices(deps *Deps) *Services {
 	categories := NewCategoryService(deps.Repo.Categories, deps.Repo.Tickets)
 	categoryGroups := NewCategoryGroupService(deps.Repo.CategoryGroups)
 	sites := NewSiteService(deps.Repo.Sites)
-	equipment := NewEquipmentService(deps.Repo.Equipment, transaction)
+	equipment := NewEquipmentService(deps.Repo.Equipment, transaction, &deps.Conf.FileServer)
 	logs := NewActivityLogService(deps.Repo.ActivityLog, transaction)
 	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs, access)
 	statistics := NewStatisticsService(deps.Repo.Statistics, groups, access)

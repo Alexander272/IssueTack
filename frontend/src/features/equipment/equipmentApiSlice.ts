@@ -23,11 +23,15 @@ import type {
 	IKitComposition,
 	IUnassignEquipmentDTO,
 } from './types/equipment'
-import { apiSlice } from '@/app/apiSlice'
+import { apiSlice, baseQueryWithReAuth } from '@/app/apiSlice'
 import { API } from '@/app/api'
 
-const equipmentApiSlice = apiSlice.injectEndpoints({
-	overrideExisting: false,
+// signedFileUrls — blob-URL подписанных актов по id акта. Держим их здесь (а не в
+// состоянии компонента), чтобы карточка и кнопка скачивания делили один URL, а
+// отзыв шёл по удалению записи из кэша RTK Query.
+const signedFileUrls = new Map<string, string>()
+
+const equipmentApiSlice = apiSlice.injectEndpoints({	overrideExisting: false,
 	endpoints: builder => ({
 		getAllEquipment: builder.query<IEquipmentList, IEquipmentFilter | void>({
 			query: filter => ({
@@ -356,7 +360,7 @@ const equipmentApiSlice = apiSlice.injectEndpoints({
 			},
 		}),
 
-		getEquipmentAct: builder.query<IEquipmentAct, string>({
+		getEquipmentAct: builder.query<{ data: IEquipmentAct }, string>({
 			query: id => ({
 				url: API.equipment.actById(id),
 				method: 'GET',
@@ -378,6 +382,74 @@ const equipmentApiSlice = apiSlice.injectEndpoints({
 				method: 'POST',
 				body,
 			}),
+			invalidatesTags: [{ type: 'EquipmentActs', id: 'ALL' }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		// Документ акта и подписанный файл — бинарные ответы, поэтому их читает
+		// queryFn с blob-обработчиком (как вложения заявок): так срабатывает
+		// обновление токена, а наружу уходит готовый Blob.
+		getEquipmentActDocument: builder.query<Blob, string>({
+			queryFn: async (id, api, extraOptions) => {
+				const res = await baseQueryWithReAuth(
+					{
+						url: API.equipment.actDocument(id),
+						responseHandler: (response: Response) => response.blob(),
+					},
+					api,
+					extraOptions,
+				)
+				if (res.error) return { error: res.error }
+				return { data: res.data as Blob }
+			},
+		}),
+
+		getEquipmentActSignedFile: builder.query<{ url: string; size: number }, string>({
+			queryFn: async (id, api, extraOptions) => {
+				const res = await baseQueryWithReAuth(
+					{
+						url: API.equipment.actSigned(id),
+						responseHandler: (response: Response) => response.blob(),
+					},
+					api,
+					extraOptions,
+				)
+				if (res.error) return { error: res.error }
+
+				const blob = res.data as Blob
+				const url = URL.createObjectURL(blob)
+				const prev = signedFileUrls.get(id)
+				signedFileUrls.set(id, url)
+				// Старый URL отзываем на следующем тике: живой рендер (превью скана)
+				// должен успеть переключиться на новый blob-URL.
+				if (prev) setTimeout(() => URL.revokeObjectURL(prev), 0)
+				return { data: { url, size: blob.size } }
+			},
+			onCacheEntryAdded: async (id, { cacheEntryRemoved }) => {
+				await cacheEntryRemoved
+				const url = signedFileUrls.get(id)
+				if (url) URL.revokeObjectURL(url)
+				signedFileUrls.delete(id)
+			},
+		}),
+
+		uploadEquipmentActSigned: builder.mutation<{ id: string; message: string }, { id: string; file: File }>({
+			query: ({ id, file }) => {
+				const formData = new FormData()
+				formData.append('file', file)
+				return {
+					url: API.equipment.actSigned(id),
+					method: 'POST',
+					body: formData,
+				}
+			},
 			invalidatesTags: [{ type: 'EquipmentActs', id: 'ALL' }],
 			onQueryStarted: async (_arg, api) => {
 				try {
@@ -492,7 +564,12 @@ export const {
 	useRemoveEquipmentComponentsMutation,
 	useGetAllEquipmentActsQuery,
 	useGetEquipmentActQuery,
+	useLazyGetEquipmentActQuery,
+	useGetEquipmentActSignedFileQuery,
 	useCreateEquipmentActMutation,
+	useLazyGetEquipmentActDocumentQuery,
+	useLazyGetEquipmentActSignedFileQuery,
+	useUploadEquipmentActSignedMutation,
 	useGetAllEquipmentTypesQuery,
 	useGetEquipmentTypeQuery,
 	useCreateEquipmentTypeMutation,

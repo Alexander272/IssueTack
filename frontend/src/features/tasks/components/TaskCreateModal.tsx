@@ -7,9 +7,13 @@ import { EraserIcon, XIcon } from 'lucide-mui'
 type Props = {
 	open: boolean
 	onClose: () => void
+	// defaultEquipmentId — оборудование, к которому создаётся заявка: модалку
+	// открывают из карточки единицы, и поле «Оборудование» должно быть уже
+	// заполнено (см. TaskCreateForm).
+	defaultEquipmentId?: string | null
 }
 
-export const TaskCreateModal: FC<Props> = ({ open, onClose }) => {
+export const TaskCreateModal: FC<Props> = ({ open, onClose, defaultEquipmentId }) => {
 	const theme = useTheme()
 	const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
 	const [saving, setSaving] = useState(false)
@@ -70,6 +74,7 @@ export const TaskCreateModal: FC<Props> = ({ open, onClose }) => {
 				<TaskCreateForm
 					ref={formRef}
 					embedded
+					defaultEquipmentId={defaultEquipmentId}
 					onSuccess={onClose}
 					onCancel={onClose}
 					onSavingChange={setSaving}

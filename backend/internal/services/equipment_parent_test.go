@@ -6,6 +6,7 @@ import (
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
+	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,6 +21,7 @@ type fakeEquipmentRepo struct {
 	parent  *models.Equipment
 	created *models.EquipmentDTO
 	updated *models.EquipmentDTO
+	events  []*models.EquipmentEvent
 }
 
 func (f *fakeEquipmentRepo) GetTypeByID(_ context.Context, _ *models.GetEquipmentTypeByIdDTO) (*models.EquipmentType, error) {
@@ -39,14 +41,32 @@ func (f *fakeEquipmentRepo) GetAncestors(_ context.Context, _, _ uuid.UUID) ([]u
 	return nil, nil
 }
 
-func (f *fakeEquipmentRepo) Create(_ context.Context, dto *models.EquipmentDTO) (*models.Equipment, error) {
+func (f *fakeEquipmentRepo) Create(_ context.Context, _ postgres.Tx, dto *models.EquipmentDTO) (*models.Equipment, error) {
 	f.created = dto
-	return &models.Equipment{ID: uuid.New(), TypeID: dto.TypeID, ParentID: dto.ParentID}, nil
+	id := uuid.New()
+	dto.ID = &id
+	return &models.Equipment{
+		ID: id, TypeID: dto.TypeID, ParentID: dto.ParentID, Name: dto.Name,
+		SerialNumber: dto.SerialNumber, InventoryNumber: dto.InventoryNumber,
+	}, nil
 }
 
-func (f *fakeEquipmentRepo) Update(_ context.Context, dto *models.EquipmentDTO) (*models.Equipment, error) {
+func (f *fakeEquipmentRepo) Update(_ context.Context, _ postgres.Tx, dto *models.EquipmentDTO) (*models.Equipment, error) {
 	f.updated = dto
-	return &models.Equipment{TypeID: dto.TypeID, ParentID: dto.ParentID}, nil
+	id := uuid.Nil
+	if dto.ID != nil {
+		id = *dto.ID
+	}
+	return &models.Equipment{
+		ID: id, TypeID: dto.TypeID, ParentID: dto.ParentID,
+		SiteID: dto.SiteID, Location: dto.Location,
+	}, nil
+}
+
+// CreateEvent копит события: по ним проверяется, что сервис пишет журнал.
+func (f *fakeEquipmentRepo) CreateEvent(_ context.Context, _ postgres.Tx, e *models.EquipmentEvent) error {
+	f.events = append(f.events, e)
+	return nil
 }
 
 // TestEquipmentService_ParentRequiresPart закрепляет правило: родитель
@@ -76,7 +96,7 @@ func TestEquipmentService_ParentRequiresPart(t *testing.T) {
 			repo := &fakeEquipmentRepo{
 				eqType: &models.EquipmentType{ID: typeID, RealmID: realmID, Kind: tt.kind},
 			}
-			svc := NewEquipmentService(repo, nil)
+			svc := NewEquipmentService(repo, &mockTransactionManager{}, testEquipmentConf(t))
 
 			dto := &models.EquipmentDTO{
 				RealmID: realmID,
@@ -104,7 +124,7 @@ func TestEquipmentService_ParentRequiresPart(t *testing.T) {
 			repo := &fakeEquipmentRepo{
 				eqType: &models.EquipmentType{ID: typeID, RealmID: realmID, Kind: tt.kind},
 			}
-			svc := NewEquipmentService(repo, nil)
+			svc := NewEquipmentService(repo, &mockTransactionManager{}, testEquipmentConf(t))
 
 			id := uuid.New()
 			dto := &models.EquipmentDTO{
@@ -160,7 +180,7 @@ func TestEquipmentService_ParentMustHost(t *testing.T) {
 				eqType: &models.EquipmentType{ID: typeID, RealmID: realmID, Kind: models.EquipmentTypeComponent},
 				parent: &models.Equipment{ID: parentID, RealmID: realmID, TypeKind: tt.parentKind, IsKit: tt.parentIsKit},
 			}
-			svc := NewEquipmentService(repo, nil)
+			svc := NewEquipmentService(repo, &mockTransactionManager{}, testEquipmentConf(t))
 
 			dto := &models.EquipmentDTO{
 				RealmID:  realmID,
@@ -187,7 +207,7 @@ func TestEquipmentService_ParentMustHost(t *testing.T) {
 				eqType: &models.EquipmentType{ID: typeID, RealmID: realmID, Kind: models.EquipmentTypeComponent},
 				parent: &models.Equipment{ID: parentID, RealmID: realmID, TypeKind: tt.parentKind, IsKit: tt.parentIsKit},
 			}
-			svc := NewEquipmentService(repo, nil)
+			svc := NewEquipmentService(repo, &mockTransactionManager{}, testEquipmentConf(t))
 
 			id := uuid.New()
 			dto := &models.EquipmentDTO{

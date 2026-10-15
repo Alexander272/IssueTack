@@ -3,9 +3,12 @@ package services
 import (
 	"context"
 	"fmt"
+	"io"
 
+	"github.com/Alexander272/IssueTrack/backend/internal/config"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
+	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
 	"github.com/google/uuid"
 )
 
@@ -13,11 +16,14 @@ import (
 type EquipmentService struct {
 	repo repository.Equipment
 	tm   TransactionManager
+	// conf — каталог и лимит загрузок: подписанные акты лежат рядом с вложениями
+	// заявок, поэтому берут те же настройки файлового хранилища.
+	conf *config.FileServerConfig
 }
 
 // NewEquipmentService создаёт EquipmentService.
-func NewEquipmentService(repo repository.Equipment, tm TransactionManager) *EquipmentService {
-	return &EquipmentService{repo: repo, tm: tm}
+func NewEquipmentService(repo repository.Equipment, tm TransactionManager, conf *config.FileServerConfig) *EquipmentService {
+	return &EquipmentService{repo: repo, tm: tm, conf: conf}
 }
 
 // Equipment — интерфейс работы с оборудованием.
@@ -77,6 +83,12 @@ type Equipment interface {
 	GetActByID(ctx context.Context, req *models.GetEquipmentActByIDDTO) (*models.EquipmentAct, error)
 	// CreateAct формирует акт вручную.
 	CreateAct(ctx context.Context, dto *models.EquipmentActDTO) (*models.EquipmentAct, error)
+	// GetActDocument собирает docx акта по снимку состава.
+	GetActDocument(ctx context.Context, req *models.GetEquipmentActByIDDTO) (*models.EquipmentActDocument, error)
+	// SignAct сохраняет подписанный акт и переводит его в статус «подписан».
+	SignAct(ctx context.Context, dto *models.SignEquipmentActDTO) error
+	// GetActSignedFile отдаёт подписанный файл акта.
+	GetActSignedFile(ctx context.Context, req *models.GetEquipmentActByIDDTO) (*models.EquipmentAct, io.ReadCloser, error)
 }
 
 // Get возвращает список единиц оборудования реалма с фильтрами и пагинацией.
@@ -124,7 +136,8 @@ func (s *EquipmentService) GetStats(ctx context.Context, realmID uuid.UUID) (*mo
 	return data, nil
 }
 
-// Create создаёт единицу оборудования.
+// Create создаёт единицу оборудования. Вставка и событие журнала «создано» идут
+// одной транзакцией: журнал — часть операции, а не пост-обработка.
 func (s *EquipmentService) Create(ctx context.Context, dto *models.EquipmentDTO) (*models.Equipment, error) {
 	normalizeEquipmentDTO(dto)
 
@@ -135,15 +148,28 @@ func (s *EquipmentService) Create(ctx context.Context, dto *models.EquipmentDTO)
 		return nil, err
 	}
 
-	data, err := s.repo.Create(ctx, dto)
+	var data *models.Equipment
+	err := s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+		created, err := s.repo.Create(ctx, tx, dto)
+		if err != nil {
+			return fmt.Errorf("failed to create equipment. error: %w", err)
+		}
+		data = created
+		return s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
+			EquipmentID: created.ID, EventType: models.EquipmentEventCreated, OperationID: uuid.New(),
+			NewValue: equipmentCreatedJSON(created), UserID: actorID(dto.Actor),
+		})
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create equipment. error: %w", err)
+		return nil, err
 	}
 	return data, nil
 }
 
 // Update обновляет единицу оборудования. Смена родителя проверяется на цикл:
 // новый родитель не может быть потомком (или самим) обновляемой единицы.
+// Изменение площадки или локации отдельной записью попадает в журнал как
+// «перемещено» — иначе перемещение было бы видно только в выдаче/возврате.
 func (s *EquipmentService) Update(ctx context.Context, dto *models.EquipmentDTO) (*models.Equipment, error) {
 	if dto.ID == nil {
 		return nil, models.ErrInvalidInput
@@ -172,9 +198,32 @@ func (s *EquipmentService) Update(ctx context.Context, dto *models.EquipmentDTO)
 		}
 	}
 
-	data, err := s.repo.Update(ctx, dto)
+	// Состояние до правки нужно, чтобы отличить перемещение от обычного
+	// сохранения формы: она присылает все поля целиком.
+	previous, err := s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: *dto.ID, RealmID: dto.RealmID})
 	if err != nil {
-		return nil, fmt.Errorf("failed to update equipment. error: %w", err)
+		return nil, fmt.Errorf("failed to get equipment. error: %w", err)
+	}
+
+	var data *models.Equipment
+	err = s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+		updated, err := s.repo.Update(ctx, tx, dto)
+		if err != nil {
+			return fmt.Errorf("failed to update equipment. error: %w", err)
+		}
+		data = updated
+		if !equipmentRelocated(previous, updated) {
+			return nil
+		}
+		return s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
+			EquipmentID: updated.ID, EventType: models.EquipmentEventMoved, OperationID: uuid.New(),
+			OldValue: relocationJSON(previous),
+			NewValue: relocationJSON(updated),
+			UserID:   actorID(dto.Actor),
+		})
+	})
+	if err != nil {
+		return nil, err
 	}
 	return data, nil
 }

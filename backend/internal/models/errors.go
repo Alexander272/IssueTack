@@ -83,6 +83,7 @@ var (
 	ErrEquipmentStatusTransition    = NewDomainError(errors.New("equipment status transition is not allowed"), http.StatusConflict, "EQ013", "Недопустимый переход статуса оборудования")
 	ErrEquipmentParentNotPart       = NewDomainError(errors.New("only a component or consumable can have a parent"), http.StatusBadRequest, "EQ014", "В физический состав можно включить только комплектующее или расходник")
 	ErrEquipmentParentCannotHost    = NewDomainError(errors.New("a component, consumable or kit cannot host equipment"), http.StatusBadRequest, "EQ015", "Родителем может быть только устройство или периферия")
+	ErrEquipmentActNotSigned        = NewDomainError(errors.New("equipment act is not signed"), http.StatusConflict, "EQ016", "Подписанный акт ещё не загружен")
 
 	// 400 Bad Request
 	ErrInvalidInput          = NewDomainError(errors.New("invalid input data"), http.StatusBadRequest, "BR001", "Переданы некорректные данные")

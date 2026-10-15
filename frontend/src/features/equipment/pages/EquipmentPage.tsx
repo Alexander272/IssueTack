@@ -4,7 +4,7 @@ import { Box } from '@mui/material'
 
 import { AppRoutes } from '@/pages/router/routes'
 import { EquipmentDialog } from '../components/Dialogs'
-import { EquipmentDetailModal } from '../components/Detail'
+import { DetailModal } from '../components/Detail'
 import { EquipmentList } from '../components/List'
 import { Header } from '../components/Header'
 
@@ -53,7 +53,7 @@ export const EquipmentPage: FC = () => {
 				isKitDefault={dialogKit}
 			/>
 
-			<EquipmentDetailModal
+			<DetailModal
 				key={openId ?? 'closed'}
 				open={Boolean(openId)}
 				unitId={openId}

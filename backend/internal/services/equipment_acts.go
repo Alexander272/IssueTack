@@ -3,10 +3,16 @@ package services
 import (
 	"context"
 	"fmt"
+	"io"
+	"mime"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
+	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/goccy/go-json"
 	"github.com/google/uuid"
 )
@@ -80,6 +86,7 @@ func (s *EquipmentService) buildAct(ctx context.Context, tx postgres.Tx, dto *mo
 	act := &models.EquipmentAct{
 		RealmID:         dto.RealmID,
 		Number:          number,
+		Status:          models.ActStatusFormed,
 		KitEquipmentID:  dto.KitEquipmentID,
 		RecipientUserID: dto.RecipientUserID,
 		RecipientName:   dto.RecipientName,
@@ -103,6 +110,182 @@ type actPosition struct {
 	Name            string    `json:"name"`
 	SerialNumber    *string   `json:"serialNumber"`
 	InventoryNumber *string   `json:"inventoryNumber"`
+}
+
+// actPositions разбирает снимок состава акта.
+func actPositions(content []byte) ([]actPosition, error) {
+	if len(content) == 0 {
+		return []actPosition{}, nil
+	}
+	positions := []actPosition{}
+	if err := json.Unmarshal(content, &positions); err != nil {
+		return nil, err
+	}
+	return positions, nil
+}
+
+// GetActDocument собирает docx акта по снимку состава: документ не хранится на
+// диске, а собирается по запросу, поэтому правка шаблона не требует пересборки
+// старых актов.
+func (s *EquipmentService) GetActDocument(ctx context.Context, req *models.GetEquipmentActByIDDTO) (*models.EquipmentActDocument, error) {
+	act, err := s.repo.GetActByID(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get act. error: %w", err)
+	}
+
+	positions, err := actPositions(act.Content)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse act content. error: %w", err)
+	}
+
+	content, err := buildActDocx(act, positions, s.actDocParties(ctx, act))
+	if err != nil {
+		return nil, fmt.Errorf("failed to build act document. error: %w", err)
+	}
+	return &models.EquipmentActDocument{FileName: act.Number + ".docx", Content: content}, nil
+}
+
+// SignAct сохраняет скан (или фото) подписанного акта и переводит акт в статус
+// «подписан». Файл пишется до записи в БД, а прежний удаляется после коммита —
+// файловая система в транзакции не участвует.
+func (s *EquipmentService) SignAct(ctx context.Context, dto *models.SignEquipmentActDTO) error {
+	act, err := s.repo.GetActByID(ctx, &models.GetEquipmentActByIDDTO{ID: dto.ID, RealmID: dto.RealmID})
+	if err != nil {
+		return fmt.Errorf("failed to get act. error: %w", err)
+	}
+
+	absPath, err := s.saveSignedActFile(dto)
+	if err != nil {
+		return err
+	}
+	dto.FilePath = absPath
+
+	if err := s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+		return s.repo.SetActSignedFile(ctx, tx, dto)
+	}); err != nil {
+		// Записи в БД нет — оставленный файл был бы сиротой.
+		os.Remove(absPath)
+		return err
+	}
+
+	if act.SignedFilePath != nil && *act.SignedFilePath != "" && *act.SignedFilePath != absPath {
+		if err := os.Remove(*act.SignedFilePath); err != nil && !os.IsNotExist(err) {
+			logger.Warn("failed to remove previous signed act file",
+				logger.StringAttr("act_id", dto.ID.String()),
+				logger.ErrAttr(err),
+			)
+		}
+	}
+	return nil
+}
+
+// GetActSignedFile отдаёт поток файла подписанного акта.
+func (s *EquipmentService) GetActSignedFile(ctx context.Context, req *models.GetEquipmentActByIDDTO) (*models.EquipmentAct, io.ReadCloser, error) {
+	act, err := s.repo.GetActByID(ctx, req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get act. error: %w", err)
+	}
+	if act.SignedFilePath == nil || *act.SignedFilePath == "" {
+		return nil, nil, models.ErrEquipmentActNotSigned
+	}
+
+	f, err := os.Open(*act.SignedFilePath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	return act, f, nil
+}
+
+// actDocParties — подписи сторон и площадки для документа. Резолвятся джойном по
+// ссылкам акта: снимка имён в акте нет, а FK объявлены ON DELETE SET NULL.
+// Ошибка резолва не срывает документ — акт остаётся выгружаемым, но без подписи,
+// о сбое сообщает Warn-лог.
+func (s *EquipmentService) actDocParties(ctx context.Context, act *models.EquipmentAct) actDocParties {
+	parties := actDocParties{}
+	if act.RecipientName != nil {
+		parties.Recipient = *act.RecipientName
+	}
+
+	if act.RecipientUserID != nil {
+		if name, err := s.repo.GetUserFullName(ctx, *act.RecipientUserID); err != nil {
+			logger.Warn("failed to resolve act recipient", logger.StringAttr("act_id", act.ID.String()), logger.ErrAttr(err))
+		} else if name != "" {
+			parties.Recipient = name
+		}
+	}
+	if act.IssuedBy != nil {
+		if name, err := s.repo.GetUserFullName(ctx, *act.IssuedBy); err != nil {
+			logger.Warn("failed to resolve act issuer", logger.StringAttr("act_id", act.ID.String()), logger.ErrAttr(err))
+		} else {
+			parties.Issuer = name
+		}
+	}
+	if act.SiteID != nil {
+		if name, err := s.repo.GetSiteName(ctx, *act.SiteID); err != nil {
+			logger.Warn("failed to resolve act site", logger.StringAttr("act_id", act.ID.String()), logger.ErrAttr(err))
+		} else {
+			parties.Site = name
+		}
+	}
+	return parties
+}
+
+// actUploadDir — подкаталог подписанных актов внутри каталога загрузок.
+const actUploadDir = "equipment_act"
+
+// saveSignedActFile кладёт подписанный акт в uploads/equipment_act/<act_id>/.
+// Раскладка и лимит — как у вложений заявок (см. AttachmentService.Upload).
+func (s *EquipmentService) saveSignedActFile(dto *models.SignEquipmentActDTO) (string, error) {
+	if dto.File == nil {
+		return "", fmt.Errorf("%w: файл не передан", models.ErrInvalidInput)
+	}
+	if dto.FileName == "" {
+		return "", fmt.Errorf("%w: не указано имя файла", models.ErrInvalidInput)
+	}
+
+	ext := filepath.Ext(dto.FileName)
+	mimeType := dto.MimeType
+	if mimeType == "" {
+		mimeType = mime.TypeByExtension(ext)
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+	}
+	dto.MimeType = mimeType
+
+	base := filepath.Base(strings.TrimSuffix(filepath.Base(dto.FileName), ext))
+	safeName := fmt.Sprintf("%s_%s%s", uuid.New().String(), base, ext)
+	absPath := filepath.Join(s.conf.UploadDir, actUploadDir, dto.ID.String(), safeName)
+
+	if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
+		return "", fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	dst, err := os.Create(absPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to create file: %w", err)
+	}
+
+	var written int64
+	if s.conf.MaxSize > 0 {
+		written, err = io.Copy(dst, io.LimitReader(dto.File, s.conf.MaxSize+1))
+	} else {
+		written, err = io.Copy(dst, dto.File)
+	}
+	if err != nil {
+		dst.Close()
+		os.Remove(absPath)
+		return "", fmt.Errorf("failed to write file: %w", err)
+	}
+	if s.conf.MaxSize > 0 && written > s.conf.MaxSize {
+		dst.Close()
+		os.Remove(absPath)
+		return "", fmt.Errorf("%w: максимум %d байт", models.ErrFileTooLarge, s.conf.MaxSize)
+	}
+	dst.Close()
+
+	dto.FileSize = written
+	return absPath, nil
 }
 
 // actContent формирует jsonb-снимок состава для акта.

@@ -44,16 +44,26 @@ type Equipment interface {
 	GetStats(ctx context.Context, realmID uuid.UUID) (*models.EquipmentStats, error)
 	// GetAncestors возвращает цепочку предков узла (без самого узла) — для проверки циклов.
 	GetAncestors(ctx context.Context, realmID, id uuid.UUID) ([]uuid.UUID, error)
-	Create(ctx context.Context, dto *models.EquipmentDTO) (*models.Equipment, error)
-	Update(ctx context.Context, dto *models.EquipmentDTO) (*models.Equipment, error)
+	// Create вставляет единицу и возвращает её. Событие журнала пишется в той же
+	// транзакции (см. сервис), поэтому tx приходит снаружи: nil — работа через пул.
+	Create(ctx context.Context, tx Tx, dto *models.EquipmentDTO) (*models.Equipment, error)
+	// Update перезаписывает единицу и возвращает её новое состояние.
+	Update(ctx context.Context, tx Tx, dto *models.EquipmentDTO) (*models.Equipment, error)
 	Delete(ctx context.Context, dto *models.DelEquipmentDTO) error
 	// SetHolderAndStatus обновляет денормализованного держателя/локацию и статус единицы.
 	SetHolderAndStatus(ctx context.Context, tx Tx, id uuid.UUID, userID *uuid.UUID, holderName *string, siteID *uuid.UUID, location *string, status models.EquipmentStatus) error
 	// SetStatus меняет только статус единицы.
 	SetStatus(ctx context.Context, tx Tx, realmID, id uuid.UUID, status models.EquipmentStatus) error
+	// GetUserFullName и GetSiteName резолвят подписи ссылок для снимка события
+	// (журнал иммутабелен, а FK объявлены ON DELETE SET NULL).
+	GetUserFullName(ctx context.Context, userID uuid.UUID) (string, error)
+	GetSiteName(ctx context.Context, siteID uuid.UUID) (string, error)
 
 	// Выдачи
 	GetOpenAssignment(ctx context.Context, equipmentID uuid.UUID) (*models.EquipmentAssignment, error)
+	// GetLastStoredPlace возвращает место последнего периода без держателя — «дом»
+	// единицы, куда её ставит возврат.
+	GetLastStoredPlace(ctx context.Context, equipmentID uuid.UUID) (*uuid.UUID, *string, error)
 	GetAssignmentHistory(ctx context.Context, realmID, equipmentID uuid.UUID) ([]*models.EquipmentAssignment, error)
 	CreateAssignment(ctx context.Context, tx Tx, a *models.EquipmentAssignment) error
 	CloseAssignment(ctx context.Context, tx Tx, id uuid.UUID, at time.Time, comment string) error
@@ -75,6 +85,8 @@ type Equipment interface {
 	GetActs(ctx context.Context, filter *models.EquipmentActsFilter) ([]*models.EquipmentAct, int, error)
 	GetActByID(ctx context.Context, req *models.GetEquipmentActByIDDTO) (*models.EquipmentAct, error)
 	CreateAct(ctx context.Context, tx Tx, a *models.EquipmentAct) error
+	// SetActSignedFile помечает акт подписанным и записывает реквизиты файла.
+	SetActSignedFile(ctx context.Context, tx Tx, dto *models.SignEquipmentActDTO) error
 	NextActSeq(ctx context.Context, tx Tx, realmID uuid.UUID) (int, error)
 }
 
@@ -86,8 +98,8 @@ func equipmentSelectBase() string {
 			e.id, e.realm_id, e.type_id, et.name, et.kind, e.name, e.vendor, e.model,
 			e.serial_number, e.inventory_number, e.specs, e.status, e.parent_id, e.site_id, s.name,
 			e.holder_user_id, e.holder_name,
-			COALESCE(NULLIF(TRIM(u.last_name || ' ' || u.first_name), ''), u.username),
-			e.location, e.purchase_date::text, e.warranty_until::text, e.cost::float8, e.notes,
+			%s,
+			e.location, e.purchase_date::text, e.warranty_until::text, e.notes,
 			e.is_kit, e.kit_id, e.created_by, e.created_at, e.updated_at,
 			COALESCE(
 				(SELECT p.name FROM %s p WHERE p.id = e.parent_id),
@@ -98,6 +110,7 @@ func equipmentSelectBase() string {
 		JOIN %s et ON et.id = e.type_id
 		LEFT JOIN %s s ON s.id = e.site_id
 		LEFT JOIN %s u ON u.id = e.holder_user_id`,
+		fullNameSQL("u"),
 		Tables.Equipment, Tables.Equipment, Tables.Equipment, Tables.EquipmentTypes, Tables.Sites, Tables.Users)
 }
 
@@ -114,7 +127,7 @@ func scanEquipmentRow(row rowScanner) (*models.Equipment, int, error) {
 		&item.SerialNumber, &item.InventoryNumber, &item.Specs, &item.Status,
 		&item.ParentID, &item.SiteID, &siteName,
 		&item.HolderUserID, &item.HolderName, &holderFullName,
-		&item.Location, &item.PurchaseDate, &item.WarrantyUntil, &item.Cost, &item.Notes,
+		&item.Location, &item.PurchaseDate, &item.WarrantyUntil, &item.Notes,
 		&item.IsKit, &item.KitID, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &item.ContainerName, &total,
 	); err != nil {
 		return nil, 0, err
@@ -200,9 +213,16 @@ func (r *EquipmentRepo) Get(ctx context.Context, filter *models.EquipmentFilter)
 }
 
 func (r *EquipmentRepo) GetByID(ctx context.Context, req *models.GetEquipmentByIdDTO) (*models.Equipment, error) {
+	return r.getByID(ctx, nil, req)
+}
+
+// getByID — общая реализация чтения единицы. Внутри транзакции читать нужно через
+// неё же (tx), иначе пул не увидит ещё не закоммиченную строку: так Create/Update
+// возвращают состояние, записанное в той же транзакции.
+func (r *EquipmentRepo) getByID(ctx context.Context, tx Tx, req *models.GetEquipmentByIdDTO) (*models.Equipment, error) {
 	query := equipmentSelectBase() + ` WHERE e.id = $1 AND e.realm_id = $2`
 
-	row := r.db.QueryRow(ctx, query, req.ID, req.RealmID)
+	row := r.getExec(tx).QueryRow(ctx, query, req.ID, req.RealmID)
 	item, _, err := scanEquipmentRow(row)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
@@ -228,7 +248,7 @@ func (r *EquipmentRepo) GetStats(ctx context.Context, realmID uuid.UUID) (*model
 	return stats, nil
 }
 
-func (r *EquipmentRepo) Create(ctx context.Context, dto *models.EquipmentDTO) (*models.Equipment, error) {
+func (r *EquipmentRepo) Create(ctx context.Context, tx Tx, dto *models.EquipmentDTO) (*models.Equipment, error) {
 	id := uuid.New()
 	dto.ID = &id
 
@@ -238,22 +258,22 @@ func (r *EquipmentRepo) Create(ctx context.Context, dto *models.EquipmentDTO) (*
 	}
 
 	query := fmt.Sprintf(`INSERT INTO %s (id, realm_id, type_id, name, vendor, model, serial_number, inventory_number,
-			specs, status, parent_id, site_id, holder_user_id, holder_name, location, purchase_date, warranty_until, cost, notes, created_by, is_kit)
-		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), $9::jsonb, $10, $11, $12, $13, NULLIF($14, ''), NULLIF($15, ''), $16::date, $17::date, $18::numeric, $19, $20, $21)`,
+			specs, status, parent_id, site_id, holder_user_id, holder_name, location, purchase_date, warranty_until, notes, created_by, is_kit)
+		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), $9::jsonb, $10, $11, $12, $13, NULLIF($14, ''), NULLIF($15, ''), $16::date, $17::date, $18, $19, $20)`,
 		Tables.Equipment)
 
-	_, err := r.db.Exec(ctx, query,
+	_, err := r.getExec(tx).Exec(ctx, query,
 		id, dto.RealmID, dto.TypeID, dto.Name, dto.Vendor, dto.Model,
 		dto.SerialNumber, dto.InventoryNumber, specs, dto.Status, dto.ParentID, dto.SiteID,
 		dto.HolderUserID, dto.HolderName, dto.Location, dto.PurchaseDate, dto.WarrantyUntil,
-		dto.Cost, dto.Notes, dto.CreatedBy, dto.IsKit)
+		dto.Notes, dto.CreatedBy, dto.IsKit)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
-	return r.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: id, RealmID: dto.RealmID})
+	return r.getByID(ctx, tx, &models.GetEquipmentByIdDTO{ID: id, RealmID: dto.RealmID})
 }
 
-func (r *EquipmentRepo) Update(ctx context.Context, dto *models.EquipmentDTO) (*models.Equipment, error) {
+func (r *EquipmentRepo) Update(ctx context.Context, tx Tx, dto *models.EquipmentDTO) (*models.Equipment, error) {
 	specs := dto.Specs
 	if len(specs) == 0 {
 		specs = []byte("{}")
@@ -261,21 +281,21 @@ func (r *EquipmentRepo) Update(ctx context.Context, dto *models.EquipmentDTO) (*
 
 	query := fmt.Sprintf(`UPDATE %s SET type_id=$2, name=$3, vendor=$4, model=$5, serial_number=$6, inventory_number=$7,
 			specs=$8::jsonb, status=$9, parent_id=$10, site_id=$11, holder_user_id=$12, holder_name=$13, location=$14,
-			purchase_date=$15::date, warranty_until=$16::date, cost=$17::numeric, notes=$18, updated_at=NOW()
-		WHERE id=$1 AND realm_id=$19`, Tables.Equipment)
+			purchase_date=$15::date, warranty_until=$16::date, notes=$17, updated_at=NOW()
+		WHERE id=$1 AND realm_id=$18`, Tables.Equipment)
 
-	res, err := r.db.Exec(ctx, query,
+	res, err := r.getExec(tx).Exec(ctx, query,
 		dto.ID, dto.TypeID, dto.Name, dto.Vendor, dto.Model,
 		dto.SerialNumber, dto.InventoryNumber, specs, dto.Status, dto.ParentID, dto.SiteID,
 		dto.HolderUserID, dto.HolderName, dto.Location, dto.PurchaseDate, dto.WarrantyUntil,
-		dto.Cost, dto.Notes, dto.RealmID)
+		dto.Notes, dto.RealmID)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
 	if tag := res.RowsAffected(); tag == 0 {
 		return nil, models.ErrNotFound
 	}
-	return r.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: *dto.ID, RealmID: dto.RealmID})
+	return r.getByID(ctx, tx, &models.GetEquipmentByIdDTO{ID: *dto.ID, RealmID: dto.RealmID})
 }
 
 func (r *EquipmentRepo) Delete(ctx context.Context, dto *models.DelEquipmentDTO) error {

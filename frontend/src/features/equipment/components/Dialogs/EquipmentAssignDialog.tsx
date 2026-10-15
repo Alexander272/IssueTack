@@ -65,6 +65,13 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 	const location = useWatch({ control, name: 'location' })
 	const canSubmit = Boolean(userId || holderName || siteId || location)
 
+	// Место — реквизит единицы: пустые поля в выдаче означают «единица не
+	// переезжает», поэтому оператору нужно видеть, какое место останется.
+	const currentPlace = [unit.siteName, unit.location].filter(Boolean).join(', ')
+	const placeHint = currentPlace
+		? `Пусто — место не меняется (сейчас: ${currentPlace}).`
+		: 'Пусто — место не задаётся: единица будет числиться за держателем.'
+
 	const saveHandler = handleSubmit(async form => {
 		const payload: IAssignEquipmentDTO = {
 			...form,
@@ -147,38 +154,45 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 							/>
 						</Box>
 
-						<Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
-							<Box>
-								<Typography variant='caption' sx={fieldLabelSx}>
-									Площадка
-								</Typography>
-								<Controller
-									control={control}
-									name='siteId'
-									render={({ field }) => (
-										<TextField {...field} select {...inputProps} value={field.value ?? ''}>
-											<MenuItem value=''>Не указана</MenuItem>
-											{sites.map(s => (
-												<MenuItem key={s.id} value={s.id}>
-													{s.name}
-												</MenuItem>
-											))}
-										</TextField>
-									)}
-								/>
+						<Box>
+							<Box
+								sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}
+							>
+								<Box>
+									<Typography variant='caption' sx={fieldLabelSx}>
+										Площадка
+									</Typography>
+									<Controller
+										control={control}
+										name='siteId'
+										render={({ field }) => (
+											<TextField {...field} select {...inputProps} value={field.value ?? ''}>
+												<MenuItem value=''>Не указана</MenuItem>
+												{sites.map(s => (
+													<MenuItem key={s.id} value={s.id}>
+														{s.name}
+													</MenuItem>
+												))}
+											</TextField>
+										)}
+									/>
+								</Box>
+								<Box>
+									<Typography variant='caption' sx={fieldLabelSx}>
+										Локация
+									</Typography>
+									<Controller
+										control={control}
+										name='location'
+										render={({ field }) => (
+											<TextField {...field} {...inputProps} placeholder='Склад, полка A' />
+										)}
+									/>
+								</Box>
 							</Box>
-							<Box>
-								<Typography variant='caption' sx={fieldLabelSx}>
-									Локация
-								</Typography>
-								<Controller
-									control={control}
-									name='location'
-									render={({ field }) => (
-										<TextField {...field} {...inputProps} placeholder='Склад, полка A' />
-									)}
-								/>
-							</Box>
+							<Typography variant='caption' sx={{ color: '#9ca3af', mt: 0.5, display: 'block' }}>
+								{placeHint}
+							</Typography>
 						</Box>
 
 						<Box>
