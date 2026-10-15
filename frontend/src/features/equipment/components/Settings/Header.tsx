@@ -13,9 +13,9 @@ export const Header: FC = () => {
 				alignItems: 'center',
 				justifyContent: 'space-between',
 				pb: 1,
-				pt: 2,
+				pt: { xs: 1.5, sm: 2 },
 				borderBottom: '1px solid #e5e7eb',
-				gap: 2,
+				gap: { xs: 1, sm: 2 },
 			}}
 		>
 			<Tooltip title='К списку оборудования'>
@@ -30,7 +30,16 @@ export const Header: FC = () => {
 			<Divider flexItem orientation='vertical' />
 
 			<Box sx={{ flexGrow: 1, minWidth: 0, flexBasis: { xs: 0, sm: 'auto' } }}>
-				<Typography variant='h5' sx={{ fontWeight: 700, color: '#1f2937' }}>
+				<Typography
+					variant='h5'
+					sx={{
+						fontWeight: 700,
+						color: '#1f2937',
+						// На узком экране заголовок иначе переносится на две строки.
+						fontSize: { xs: '1.05rem', sm: '1.5rem' },
+						lineHeight: 1.3,
+					}}
+				>
 					Настройки оборудования
 				</Typography>
 				<Typography variant='body2' sx={{ color: '#6b7280', display: { xs: 'none', sm: 'block' } }}>

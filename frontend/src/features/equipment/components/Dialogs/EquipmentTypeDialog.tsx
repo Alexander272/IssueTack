@@ -12,6 +12,8 @@ import {
 	MenuItem,
 	TextField,
 	Typography,
+	useMediaQuery,
+	useTheme,
 } from '@mui/material'
 import { Controller, useForm } from 'react-hook-form'
 import { XIcon } from 'lucide-mui'
@@ -36,7 +38,11 @@ type Props = {
 
 const CATEGORIES = EQUIPMENT_TYPE_KIND_OPTIONS
 
-export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType }) => {	const isEdit = Boolean(type?.id)
+export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType }) => {
+	const theme = useTheme()
+	// На телефоне диалог типа — во весь экран.
+	const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
+	const isEdit = Boolean(type?.id)
 	const [deleteOpen, setDeleteOpen] = useState(false)
 
 	const [create, { isLoading: isCreating }] = useCreateEquipmentTypeMutation()
@@ -99,9 +105,10 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 				open={open}
 				onClose={onClose}
 				fullWidth
+				fullScreen={isMobile}
 				maxWidth='sm'
 				slotProps={{
-					paper: { sx: { borderRadius: '12px' } },
+					paper: { sx: { borderRadius: { xs: 0, sm: '12px' } } },
 				}}
 			>
 				<DialogTitle sx={{ m: 0, px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

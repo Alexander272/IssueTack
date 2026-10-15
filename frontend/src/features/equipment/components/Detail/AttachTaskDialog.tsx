@@ -12,6 +12,8 @@ import {
 	Stack,
 	TextField,
 	Typography,
+	useMediaQuery,
+	useTheme,
 } from '@mui/material'
 import { LinkIcon, SearchIcon, XIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
@@ -35,6 +37,9 @@ type Props = {
 // Права проверяет бэкенд (правка полей заявки — создатель/менеджер группы/админ
 // области), поэтому недоступные заявки вернут отказ и он же уйдёт в тост.
 export const AttachTaskDialog: FC<Props> = ({ open, onClose, unit }) => {
+	const theme = useTheme()
+	const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
+
 	const [search, setSearch] = useState('')
 	const [attachingId, setAttachingId] = useState<string | null>(null)
 
@@ -63,7 +68,8 @@ export const AttachTaskDialog: FC<Props> = ({ open, onClose, unit }) => {
 			onClose={onClose}
 			fullWidth
 			maxWidth='sm'
-			slotProps={{ paper: { sx: { borderRadius: '16px', p: 1 } } }}
+			fullScreen={isMobile}
+			slotProps={{ paper: { sx: { borderRadius: { xs: 0, sm: '16px' }, p: { xs: 0, sm: 1 } } } }}
 		>
 			<DialogTitle sx={{ m: 0, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
 				<Typography variant='h6' component='div' sx={{ fontWeight: 'bold' }}>

@@ -2,43 +2,37 @@ import type { FC } from 'react'
 import { Box, IconButton, TableCell, TableRow, Tooltip, Typography } from '@mui/material'
 import { BoxesIcon, ChevronDownIcon, ChevronRightIcon, MicrochipIcon } from 'lucide-mui'
 
-import type { IEquipment } from '../../types/equipment'
 import { equipmentAccent } from '../../utils/typeKind'
 import { useEquipmentTree } from '../treeState'
 import { EquipmentKindIcon } from '../EquipmentKindIcon'
 import { EquipmentStatusBadge } from '../EquipmentStatusBadge'
-import { pluralize } from '@/utils/plural'
-
-// Узел дерева дополняет единицу серверными признаками раскрытия; плоский список
-// приходит обычной единицей, поэтому они опциональны.
-type RowNode = IEquipment & { hasChildren?: boolean; childCount?: number }
+import { EquipmentCard } from './EquipmentCard'
+import { equipmentRowMeta, type EquipmentRowNode } from './rowMeta'
 
 type Props = {
-	node: RowNode
+	node: EquipmentRowNode
 	depth?: number
 }
 
 // Строка дерева оборудования: иконка типа (с бейджем вложенности), название с
 // подписью и колонки типа/держателя/серийника/статуса. Раскрытие и открытие берёт
-// из контекста, поэтому снаружи приходят только узел и глубина.
+// из контекста, поэтому снаружи приходят только узел и глубина. На узком экране та же
+// строка рисуется карточкой (EquipmentCard) — как TaskCard против строки таблицы.
 export const EquipmentRow: FC<Props> = ({ node, depth = 0 }) => {
-	const { tree, expanded, toggle, open } = useEquipmentTree()
+	const { tree, mobile, expanded, toggle, open } = useEquipmentTree()
+
+	// Узкий экран — вся метрика и разметка строки ниже ветвятся на карточку, поэтому
+	// ранний выход идёт до любых вычислений.
+	if (mobile) return <EquipmentCard node={node} depth={depth} />
+
 	const accent = equipmentAccent(node)
-	const childCount = node.childCount ?? 0
-	const holder = node.holderFullName || node.holderName
-	const location = node.location || node.siteName
-	const isInstalled = Boolean(node.parentId)
+	const { holder, location, isInstalled, childCount, subtitle } = equipmentRowMeta(node)
 	const hasToggle = tree && (Boolean(node.hasChildren) || childCount > 0)
 	const isExpanded = hasToggle && expanded.has(node.id)
 	const nesting = childCount > 0 && !node.isKit
 
 	const rowBg = node.isKit ? '#7c3aed08' : isInstalled ? '#ea580c08' : depth > 0 ? '#fafafa' : undefined
 	const hoverBg = node.isKit ? '#f5f3ff' : isInstalled ? '#fff7ed' : '#f5f5f5'
-
-	const second = [`Инв. №${node.inventoryNumber ?? '—'}`]
-	if (isInstalled) second.push(`внутри ${node.containerName ?? 'родителя'}`)
-	else if (childCount) second.push(`${childCount} ${pluralize(childCount, ['компонент', 'компонента', 'компонентов'])}`)
-	else if (node.status === 'in_stock' && location) second.push(location)
 
 	return (
 		<TableRow
@@ -160,7 +154,7 @@ export const EquipmentRow: FC<Props> = ({ node, depth = 0 }) => {
 								whiteSpace: 'nowrap',
 							}}
 						>
-							{second.join(' · ')}
+							{subtitle}
 						</Typography>
 					</Box>
 				</Box>

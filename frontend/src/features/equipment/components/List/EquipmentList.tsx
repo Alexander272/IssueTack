@@ -1,5 +1,5 @@
 import { type FC, useCallback, useMemo, useState } from 'react'
-import { Box } from '@mui/material'
+import { Box, useMediaQuery, useTheme } from '@mui/material'
 
 import { Pagination } from '@/components/Pagination/Pagination'
 import { useDebounce } from '@/hooks/useDebounce'
@@ -26,6 +26,10 @@ type Props = {
 // серверный список. Так браузер не тянет весь справочник: на страницу приходит ровно
 // то, что показано.
 export const EquipmentList: FC<Props> = ({ onOpen }) => {
+	const theme = useTheme()
+	// Узкий экран — строки-таблицы заменяются карточками. Считаем один раз здесь и
+	// кладём в контекст: строки дерева получают раскладку без своих media query.
+	const mobile = useMediaQuery(theme.breakpoints.down('md'))
 	const [filters, setFilters] = useState<EquipmentFilters>(DEFAULT_FILTERS)
 	const [page, setPage] = useState(0)
 	const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -93,8 +97,8 @@ export const EquipmentList: FC<Props> = ({ onOpen }) => {
 	// Строки дерева читают раскрытие/открытие из контекста: протаскивать их через
 	// рекурсию TreeNode/NodeChildren не нужно.
 	const treeState = useMemo(
-		() => ({ tree: treeMode, expanded, toggle, open: onOpen }),
-		[treeMode, expanded, toggle, onOpen],
+		() => ({ tree: treeMode, mobile, expanded, toggle, open: onOpen }),
+		[treeMode, mobile, expanded, toggle, onOpen],
 	)
 
 	return (

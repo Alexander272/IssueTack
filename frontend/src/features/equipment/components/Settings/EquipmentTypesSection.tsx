@@ -1,5 +1,5 @@
 import { useMemo, useState, type FC } from 'react'
-import { Box, Button, Typography } from '@mui/material'
+import { Box, Button, Typography, useMediaQuery, useTheme } from '@mui/material'
 import { PlusIcon } from 'lucide-mui'
 
 import type { IEquipmentType } from '../../types/equipment'
@@ -14,6 +14,10 @@ import { GROUP_LABELS, GROUP_ORDER, type GroupKey } from './typeIcons'
 // Секция настроек «Типы оборудования»: справочник типов, разбитый по категориям,
 // с числом заведённых единиц и диалогом создания/правки.
 export const EquipmentTypesSection: FC = () => {
+	// Строка типа — 12-колоночная сетка: на телефоне она нечитаема, поэтому там
+	// строка рисуется карточкой. Режим считаем один раз и раздаём строкам пропсом.
+	const theme = useTheme()
+	const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
 	const canWrite = useCheckPermissions({ anyOf: [PermRules.Equipment.Write] })
 
 	const { data } = useGetAllEquipmentTypesQuery()
@@ -75,6 +79,8 @@ export const EquipmentTypesSection: FC = () => {
 						border: '1px solid #e5e7eb',
 						borderRadius: '12px',
 						boxShadow: '0 1px 2px 0 rgba(0,0,0,0.05)',
+						// Чтобы подсветка строки на ховере не вылезала за скруглённые углы.
+						overflow: 'hidden',
 					}}
 				>
 					{list.map(type => (
@@ -83,6 +89,7 @@ export const EquipmentTypesSection: FC = () => {
 							type={type}
 							count={unitCounts[type.id] ?? 0}
 							onEdit={openEdit}
+							mobile={isMobile}
 						/>
 					))}
 				</Box>
@@ -92,13 +99,29 @@ export const EquipmentTypesSection: FC = () => {
 
 	return (
 		<Box>
-			<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', mb: -3 }}>
+			<Box
+				sx={{
+					display: 'flex',
+					alignItems: 'center',
+					justifyContent: 'flex-end',
+					// На десктопе отрицательный отступ прижимает кнопку к заголовку первой
+					// группы; на телефоне кнопка на всю ширину и стоит над списком.
+					mb: { xs: 2, sm: -3 },
+				}}
+			>
 				{canWrite && (
 					<Button
 						variant='outlined'
 						onClick={openCreate}
 						startIcon={<PlusIcon sx={{ fontSize: 16 }} />}
-						sx={{ textTransform: 'none', fontWeight: 500, borderRadius: '8px', gap: 1, bgcolor: '#fff' }}
+						sx={{
+							textTransform: 'none',
+							fontWeight: 500,
+							borderRadius: '8px',
+							gap: 1,
+							bgcolor: '#fff',
+							width: { xs: '100%', sm: 'auto' },
+						}}
 					>
 						Добавить тип
 					</Button>

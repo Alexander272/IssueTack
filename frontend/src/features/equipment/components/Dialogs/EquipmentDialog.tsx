@@ -11,6 +11,8 @@ import {
 	IconButton,
 	TextField,
 	Typography,
+	useMediaQuery,
+	useTheme,
 } from '@mui/material'
 import { Controller, FormProvider, useForm } from 'react-hook-form'
 import { Trash2Icon, XIcon } from 'lucide-mui'
@@ -68,6 +70,9 @@ const toDefault = (unit?: IEquipment | null, isKitDefault = false): IEquipmentDT
 // раскладывает по секциям UnitForm. Секции берут справочники и права из формы и
 // своих запросов — контейнеру их протаскивать не нужно.
 export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, isKitDefault, onDeleted }) => {
+	const theme = useTheme()
+	// На телефоне форма на всю ширину — как TaskCreateModal и карточка DetailModal.
+	const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
 	const isEdit = Boolean(unit?.id)
 
 	const canDelete = useCheckPermissions({ anyOf: [PermRules.Equipment.Delete] })
@@ -131,9 +136,10 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, isKitDefault, 
 			open={open}
 			onClose={onClose}
 			fullWidth
+			fullScreen={isMobile}
 			maxWidth='sm'
 			slotProps={{
-				paper: { sx: { borderRadius: '16px', p: 1 } },
+				paper: { sx: { borderRadius: { xs: 0, sm: '16px' }, p: { xs: 0, sm: 1 } } },
 			}}
 		>
 			<DialogTitle sx={{ m: 0, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

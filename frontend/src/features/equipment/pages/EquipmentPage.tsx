@@ -40,7 +40,7 @@ export const EquipmentPage: FC = () => {
 	}
 
 	return (
-		<Box sx={{ p: 3 }}>
+		<Box sx={{ p: { xs: 2, sm: 3 } }}>
 			<Header onCreate={openCreate} />
 
 			<EquipmentList onOpen={setPickedId} />

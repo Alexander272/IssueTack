@@ -1,14 +1,18 @@
 import { useState } from 'react'
-import { Box, Tab, Tabs } from '@mui/material'
+import { Box, Tab, Tabs, useMediaQuery, useTheme } from '@mui/material'
 
 import { EquipmentTemplatesSection, EquipmentTypesSection, Header } from '../components/Settings'
 
 export const SettingsPage = () => {
+	const theme = useTheme()
+	// На телефоне две длинные вкладки не помещаются в строку и уезжают в скролл —
+	// как вкладки карточки единицы (`DetailModal`).
+	const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
 	const [tab, setTab] = useState(0)
 
 	return (
 		<Box sx={{ flexGrow: 1, overflow: 'auto', bgcolor: '#f9fafb' }}>
-			<Box sx={{ maxWidth: 'xl', mx: 'auto', p: 3 }}>
+			<Box sx={{ maxWidth: 'xl', mx: 'auto', p: { xs: 2, sm: 3 } }}>
 				<Box
 					sx={{
 						gap: 2,
@@ -26,7 +30,9 @@ export const SettingsPage = () => {
 						<Tabs
 							value={tab}
 							onChange={(_e, v) => setTab(v)}
-							variant='standard'
+							variant={isMobile ? 'scrollable' : 'standard'}
+							scrollButtons='auto'
+							allowScrollButtonsMobile
 							sx={{
 								'& .MuiTab-root': { minHeight: 48, textTransform: 'none', fontWeight: 500 },
 							}}

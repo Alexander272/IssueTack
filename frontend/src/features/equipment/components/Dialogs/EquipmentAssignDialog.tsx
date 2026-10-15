@@ -13,6 +13,8 @@ import {
 	MenuItem,
 	TextField,
 	Typography,
+	useMediaQuery,
+	useTheme,
 } from '@mui/material'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { XIcon } from 'lucide-mui'
@@ -39,6 +41,9 @@ const userLabel = (u: { lastName: string; firstName: string; username: string })
 }
 
 export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
+	const theme = useTheme()
+	// На телефоне диалог выдачи — во весь экран (как форма создания заявки).
+	const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
 	const [assign, { isLoading }] = useAssignEquipmentMutation()
 	const { data: sitesData } = useGetAllSitesQuery()
 	const { data: usersData } = useGetRealmUsersQuery('executors')
@@ -95,8 +100,9 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 			open={open}
 			onClose={onClose}
 			fullWidth
+			fullScreen={isMobile}
 			maxWidth='sm'
-			slotProps={{ paper: { sx: { borderRadius: '16px', p: 1 } } }}
+			slotProps={{ paper: { sx: { borderRadius: { xs: 0, sm: '16px' }, p: { xs: 0, sm: 1 } } } }}
 		>
 			<DialogTitle
 				sx={{ m: 0, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}

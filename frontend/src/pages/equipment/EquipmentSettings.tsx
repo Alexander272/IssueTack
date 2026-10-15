@@ -1,5 +1,11 @@
+import { Box } from '@mui/material'
+
 import { SettingsPage } from '@/features/equipment/pages/SettingPage'
 
 export default function EquipmentSettings() {
-	return <SettingsPage />
+	return (
+		<Box sx={{ flexGrow: 1, overflow: 'auto' }}>
+			<SettingsPage />
+		</Box>
+	)
 }

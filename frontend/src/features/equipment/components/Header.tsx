@@ -9,6 +9,7 @@ import {
 	Stack,
 	Typography,
 	useTheme,
+	useMediaQuery,
 	ListItemIcon,
 } from '@mui/material'
 import { ChevronDownIcon, FileUpIcon, MonitorIcon, PackageOpenIcon, PlusIcon } from 'lucide-mui'
@@ -29,6 +30,8 @@ export const Header: FC<Props> = ({ onCreate }) => {
 	const navigate = useNavigate()
 	const canWrite = useCheckPermissions({ anyOf: [PermRules.Equipment.Write] })
 	const { palette } = useTheme()
+	const theme = useTheme()
+	const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
 
 	const { data } = useGetEquipmentStatsQuery()
 	const stats = data?.data
@@ -38,45 +41,89 @@ export const Header: FC<Props> = ({ onCreate }) => {
 	const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
 	const open = Boolean(anchor)
 
+	// Одна и та же кнопка настроек в двух местах: на мобильном — в углу рядом с
+	// заголовком, на десктопе — в ряду действий с кнопками создания.
+	const settingsButton = (
+		<Button variant='text' onClick={openSetting} aria-label='Настройки оборудования'>
+			<SettingIcon sx={{ fontSize: 22 }} />
+		</Button>
+	)
+
 	return (
 		<Box
 			sx={{
 				display: 'flex',
 				flexDirection: { xs: 'column', sm: 'row' },
+				// Кнопки не переносятся «по одной»: если ряд «заголовок + действия»
+				// не влезает, вниз уезжает вся группа кнопок и прижимается вправо,
+				// а не отдельные кнопки влево. Раньше в диапазонах ~600–800 и
+				// ~900–1040 (сайдбар сужает контент) они вставали в два ряда.
+				flexWrap: 'wrap',
 				justifyContent: 'space-between',
 				alignItems: { xs: 'flex-start', sm: 'center' },
-				gap: { xs: 2, sm: 0 },
+				columnGap: { sm: 2 },
+				rowGap: { xs: 2, sm: 1 },
 				mb: 2,
 			}}
 		>
-			<Box>
-				<Typography variant='h5' sx={{ fontWeight: 700, color: '#1f2937' }}>
-					Оборудование
-				</Typography>
-				{stats && (
-					<Typography variant='body2' sx={{ color: '#6b7280' }}>
-						{stats.units} {pluralize(stats.units, ['единица', 'единицы', 'единиц'])} · {stats.kits}{' '}
-						{pluralize(stats.kits, ['комплект', 'комплекта', 'комплектов'])} · {stats.stockParts}{' '}
-						{pluralize(stats.stockParts, ['компонент', 'компонента', 'компонентов'])} на складе
+			<Box
+				sx={{
+					display: 'flex',
+					justifyContent: 'space-between',
+					alignItems: 'flex-start',
+					gap: 1,
+					width: { xs: '100%', sm: 'auto' },
+					minWidth: 0,
+					// Блок заголовка со статистикой не сжимаем: строка переносится
+					// в группе действий, а не здесь (иначе ломалась бы подпись).
+					flexShrink: 0,
+				}}
+			>
+				<Box sx={{ minWidth: 0 }}>
+					<Typography variant='h5' sx={{ fontWeight: 700, color: '#1f2937' }}>
+						Оборудование
 					</Typography>
-				)}
+					{stats && (
+						<Typography variant='body2' sx={{ color: '#6b7280' }}>
+							{stats.units} {pluralize(stats.units, ['единица', 'единицы', 'единиц'])} · {stats.kits}{' '}
+							{pluralize(stats.kits, ['комплект', 'комплекта', 'комплектов'])} · {stats.stockParts}{' '}
+							{pluralize(stats.stockParts, ['компонент', 'компонента', 'компонентов'])} на складе
+						</Typography>
+					)}
+				</Box>
+
+				{/* На мобильном шестерёнка стоит в углу рядом с заголовком. */}
+				{canWrite && isMobile && settingsButton}
 			</Box>
 
 			{canWrite && (
-				<Stack direction='row' spacing={1} sx={{ flexWrap: 'wrap', gap: 1, width: { xs: '100%', sm: 'auto' } }}>
-					<Button variant='text' onClick={openSetting}>
-						<SettingIcon sx={{ fontSize: 22 }} />
-					</Button>
+				<Stack
+					direction='row'
+					spacing={1}
+					sx={{
+						flexWrap: 'nowrap',
+						flexShrink: 0,
+						gap: 1,
+						width: { xs: '100%', sm: 'auto' },
+						// Когда группа действий уезжает на свою строку — прижимаем вправо.
+						ml: { sm: 'auto' },
+					}}
+				>
+					{!isMobile && settingsButton}
 
-					<Button
-						variant='outlined'
-						color='inherit'
-						onClick={() => onCreate(false)}
-						sx={{ textTransform: 'none', background: '#fff', borderColor: '#6c6c6c' }}
-					>
-						<PackageOpenIcon sx={{ fontSize: 16, mr: 1 }} />
-						Новый комплект
-					</Button>
+					{/* На десктопе отдельная кнопка «Новый комплект»; на мобильном её роль
+					    играет пункт меню у кнопки «Создать». */}
+					{!isMobile && (
+						<Button
+							variant='outlined'
+							color='inherit'
+							onClick={() => onCreate(true)}
+							sx={{ textTransform: 'none', background: '#fff', borderColor: '#6c6c6c' }}
+						>
+							<PackageOpenIcon sx={{ fontSize: 16, mr: 1 }} />
+							Новый комплект
+						</Button>
+					)}
 
 					<ButtonGroup variant='outlined' sx={{ borderRadius: '8px', width: { xs: '100%', sm: 'auto' } }}>
 						<Button
@@ -117,18 +164,28 @@ export const Header: FC<Props> = ({ onCreate }) => {
 				}}
 			>
 				<MenuList>
-					<MenuItem onClick={() => onCreate(false)}>
+					<MenuItem
+						onClick={() => {
+							setAnchor(null)
+							onCreate(false)
+						}}
+					>
 						<ListItemIcon>
 							<MonitorIcon sx={{ fontSize: 16, color: '#0e0e0e' }} />
 						</ListItemIcon>
-						Вручную
+						Оборудование
 					</MenuItem>
-					{/* <MenuItem onClick={() => onCreate(true)}>
+					<MenuItem
+						onClick={() => {
+							setAnchor(null)
+							onCreate(true)
+						}}
+					>
 						<ListItemIcon>
 							<PackageOpenIcon sx={{ fontSize: 16, color: '#0e0e0e' }} />
 						</ListItemIcon>
-						Комплект
-					</MenuItem> */}
+						Новый комплект
+					</MenuItem>
 					<MenuItem disabled>
 						<ListItemIcon>
 							<FileUpIcon sx={{ fontSize: 16, color: '#0e0e0e' }} />

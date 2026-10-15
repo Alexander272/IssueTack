@@ -10,15 +10,20 @@ import { createContext, useContext } from 'react'
 export type EquipmentTreeState = {
 	// tree — режим-дерево: у строк рисуются шевроны раскрытия. В плоском списке false.
 	tree: boolean
+	// mobile — узкий экран: строки таблицы подменяются карточками (как TaskCardList
+	// на странице заявок). Значение считается один раз в EquipmentList и живёт в
+	// контексте, чтобы строки глубоко в рекурсии не подписывались каждая на media query.
+	mobile: boolean
 	expanded: Set<string>
 	toggle: (id: string) => void
 	open: (id: string) => void
 }
 
 // Дефолт работает и вне провайдера (плоский список, отдельная строка): дерево
-// выключено, действия — no-op.
+// выключено, десктопная раскладка, действия — no-op.
 export const EquipmentTreeContext = createContext<EquipmentTreeState>({
 	tree: false,
+	mobile: false,
 	expanded: new Set(),
 	toggle: () => {},
 	open: () => {},

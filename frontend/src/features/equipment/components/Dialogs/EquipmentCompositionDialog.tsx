@@ -13,6 +13,8 @@ import {
 	ListItemText,
 	TextField,
 	Typography,
+	useMediaQuery,
+	useTheme,
 } from '@mui/material'
 import { PlusIcon, Trash2Icon, XIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
@@ -33,6 +35,9 @@ type Props = {
 }
 
 export const EquipmentCompositionDialog: FC<Props> = ({ open, onClose, unit }) => {
+	const theme = useTheme()
+	// На телефоне диалог состава комплекта — во весь экран.
+	const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
 	const { data } = useGetEquipmentCompositionQuery(unit.id, { skip: !open })
 	const { data: unitsData } = useGetAllEquipmentQuery({ limit: 500 })
 
@@ -74,8 +79,9 @@ export const EquipmentCompositionDialog: FC<Props> = ({ open, onClose, unit }) =
 			open={open}
 			onClose={onClose}
 			fullWidth
+			fullScreen={isMobile}
 			maxWidth='sm'
-			slotProps={{ paper: { sx: { borderRadius: '16px', p: 1 } } }}
+			slotProps={{ paper: { sx: { borderRadius: { xs: 0, sm: '16px' }, p: { xs: 0, sm: 1 } } } }}
 		>
 			<DialogTitle
 				sx={{ m: 0, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
