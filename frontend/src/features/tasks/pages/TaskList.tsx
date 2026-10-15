@@ -148,10 +148,7 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 
 	// Статусы, доступные на текущей вкладке: на «Активных» нет закрытых/отменённых,
 	// на «Мои задачи» (assigned) — и решённых (они ушли в архив).
-	const statusOptions = useMemo(
-		() => statusOptionsFor(isArchive, statusMode),
-		[isArchive, statusMode],
-	)
+	const statusOptions = useMemo(() => statusOptionsFor(isArchive, statusMode), [isArchive, statusMode])
 
 	// Сетевой запрос дебаунсится, чтобы не долбить бэкенд на каждое нажатие
 	// клавиши в поиске; сам инпут фильтров остаётся мгновенным.
@@ -227,7 +224,7 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 	const handlePageChange = useCallback((p: number) => setPage(p - 1), [])
 
 	return (
-		<Box sx={{ p: 3 }}>
+		<Box sx={{ p: { xs: 2, sm: 3 } }}>
 			<Box
 				sx={{
 					display: 'flex',

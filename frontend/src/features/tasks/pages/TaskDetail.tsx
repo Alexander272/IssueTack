@@ -47,7 +47,7 @@ export const TaskDetailPage = () => {
 	return (
 		<>
 			<Box sx={{ flexGrow: 1, overflow: 'auto', bgcolor: '#f9fafb' }}>
-				<Box sx={{ maxWidth: 'xl', mx: 'auto', p: 3 }}>
+				<Box sx={{ maxWidth: 'xl', mx: 'auto', p: { xs: 2, sm: 3 } }}>
 					<Box
 						sx={{
 							gap: 2,
