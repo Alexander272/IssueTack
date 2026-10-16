@@ -152,38 +152,6 @@ export function reloadTo(path: string): void {
     window.location.assign(path);
 }
 
-// window.basename и window.WebappUtils задаёт сам Mattermost (root.tsx,
-// plugins/export.ts). basename — субпат установки, WebappUtils.browserHistory —
-// тот же history, что у react-router, поэтому push переключает вид без
-// перезагрузки.
-declare global {
-    interface Window {
-        basename?: string;
-        WebappUtils?: {
-            browserHistory?: {push: (path: string) => void};
-        };
-    }
-}
-
-// navigateToChannel уводит Mattermost в канал кликом по иконке App Bar, когда
-// мы ещё не в диалоге с ботом. Путь отдаём browserHistory относительно basename
-// (history сам подставит субпат), а если WebappUtils недоступен — идём полной
-// перезагрузкой, сложив туда полный адрес.
-export function navigateToChannel(teamName: string, channelId: string): void {
-    if (!teamName || !channelId) {
-        return;
-    }
-    const relative = `/${encodeURIComponent(teamName)}/channels/${encodeURIComponent(channelId)}`;
-    const utils = typeof window !== 'undefined' ? window.WebappUtils : undefined;
-    const history = utils ? utils.browserHistory : undefined;
-    if (history && typeof history.push === 'function') {
-        history.push(relative);
-        return;
-    }
-    const base = typeof window !== 'undefined' && window.basename ? window.basename.replace(/\/+$/, '') : '';
-    reloadTo(`${base}${relative}`);
-}
-
 // Разбор ссылки на заявку из href. Берём атрибут, а не anchor.href: там путь
 // остаётся site-relative (/plug/issuetrack/ticket/<uuid>), и мы не зависим от
 // того, как Mattermost смонтирован. Установка под субпатом не мешает — маркер
@@ -234,10 +202,10 @@ export function requestOpen(ticketId: string): void {
 }
 
 // Открытие модалки без конкретной заявки — сигнал от иконки в App Bar. Иконка
-// живёт вне компонента шапки, поэтому «открой модалку» передаётся тем же
-// способом, что и заявка из ссылки: шиной подписчиков, когда модалка уже
-// смонтирована (мы в личном диалоге с ботом), и записью в sessionStorage —
-// когда сначала надо увести MM в этот диалог (см. setPendingOpen).
+// живёт вне компонента шапки, поэтому «открой модалку» передаётся шиной
+// подписчиков хосту модалки (ChannelHeaderIcon смонтирован в шапке каждого
+// канала, так что подписчик есть в любом из них). Никакой навигации: хост сам
+// резолвит DM-канал бота и открывает модалку на месте.
 type VoidListener = () => void;
 
 const pluginOpenListeners = new Set<VoidListener>();
@@ -251,28 +219,6 @@ export function subscribePluginOpen(listener: VoidListener): () => void {
 
 export function requestPluginOpen(): void {
     pluginOpenListeners.forEach(listener => listener());
-}
-
-// Ожидание открытия модалки после перехода в диалог с ботом. Отдельный ключ от
-// заявки: заявки нет, показываем форму создания. Модульные переменные сбросила бы
-// полная перезагрузка, поэтому сигнал и здесь идёт через sessionStorage.
-const OPEN_KEY = 'issuetrack.deeplink.open';
-
-export function setPendingOpen(): void {
-    writeItem(OPEN_KEY, String(Date.now()));
-}
-
-export function takePendingOpen(): boolean {
-    const raw = readItem(OPEN_KEY);
-    if (!raw) {
-        return false;
-    }
-    removeItem(OPEN_KEY);
-    const at = Number(raw);
-    if (!Number.isFinite(at)) {
-        return false;
-    }
-    return Date.now() - at <= TICKET_TTL_MS;
 }
 
 // installDeepLinkClickHandler перехватывает клик по ссылке на заявку, когда

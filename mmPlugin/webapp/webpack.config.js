@@ -38,7 +38,7 @@ module.exports = {
             // а не из каталога плагина. asset/inline отдаёт строку с base64 в
             // iconUrl — ровно то, что ждёт registerAppBarComponent.
             {
-                test: /\.png$/,
+                test: /\.(png|jpe?g|gif|svg)$/,
                 type: 'asset/inline',
             },
         ],

@@ -53,6 +53,15 @@ type PluginScope struct {
 	MmUserID  string
 }
 
+// PluginDMResult — личный диалог пользователя с ботом реалма. Возвращается по
+// запросу иконки в App Bar: её модалка открывается из любого канала, а работает
+// с DM-каналом бота, id которого клиенту неизвестен (реалм определяется по
+// боту, а не по пользователю — у свежего сотрудника системной учётки ещё нет).
+type PluginDMResult struct {
+	ChannelID string `json:"channelId"`
+	BotUserID string `json:"botUserId"`
+}
+
 // PluginUser — краткое представление системного пользователя для плагина.
 type PluginUser struct {
 	ID       uuid.UUID `json:"id"`

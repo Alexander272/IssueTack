@@ -1101,3 +1101,122 @@ func TestPluginListMine_DMNotADirectDialog(t *testing.T) {
 	_, err := svc.PluginListMine(context.Background(), dmScopeFixture())
 	assert.ErrorIs(t, err, models.ErrChannelNotBound)
 }
+
+// dmChannelServer отвечает на CreateDirectChannel: POST /channels/direct с
+// телом-парой id. Возвращает канал личного диалога с заданным id.
+func dmChannelServer(t *testing.T, channelID string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Contains(t, r.URL.Path, "/channels/direct")
+
+		var ids []string
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&ids))
+		assert.ElementsMatch(t, []string{"bot1", "mm1"}, ids)
+
+		w.Header().Set("Content-Type", "application/json")
+		assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"id": channelID}))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// TestPluginDM_KnownUser: у пользователя уже есть системная учётка — реалм
+// берётся по его членству, fallback на единственную интеграцию не нужен.
+func TestPluginDM_KnownUser(t *testing.T) {
+	realmID := uuid.New()
+	userID := uuid.New()
+	repo, users, _, _ := pluginMocks()
+	srv := dmChannelServer(t, "dm1")
+
+	users.On("GetByMattermostID", mock.Anything, "mm1").Return(&models.UserData{ID: userID}, nil)
+	repo.On("GetByUserID", mock.Anything, userID).Return(dmSettings(realmID), nil)
+
+	svc := NewMattermostService(&MattermostDeps{
+		Repo: repo, Users: users,
+		Most: &mattermost.Most{Client: mattermost.NewClient(srv.URL)},
+	})
+
+	dm, err := svc.PluginDM(context.Background(), "mm1")
+	require.NoError(t, err)
+	require.NotNil(t, dm)
+	assert.Equal(t, "dm1", dm.ChannelID)
+	assert.Equal(t, "bot1", dm.BotUserID)
+	repo.AssertNotCalled(t, "GetActive", mock.Anything)
+}
+
+// TestPluginDM_FreshUser_SingleActiveIntegration: учётки ещё нет (свежий
+// сотрудник), но активная интеграция одна — реалм определяется по боту, и
+// модалка сможет открыться с первого клика (пользователя создаст /plugin/context).
+func TestPluginDM_FreshUser_SingleActiveIntegration(t *testing.T) {
+	realmID := uuid.New()
+	repo, users, _, _ := pluginMocks()
+	srv := dmChannelServer(t, "dm1")
+
+	users.On("GetByMattermostID", mock.Anything, "mm1").Return(nil, errors.New("no rows"))
+	repo.On("GetActive", mock.Anything).Return([]*models.RealmMattermost{dmSettings(realmID)}, nil)
+
+	svc := NewMattermostService(&MattermostDeps{
+		Repo: repo, Users: users,
+		Most: &mattermost.Most{Client: mattermost.NewClient(srv.URL)},
+	})
+
+	dm, err := svc.PluginDM(context.Background(), "mm1")
+	require.NoError(t, err)
+	require.NotNil(t, dm)
+	assert.Equal(t, "dm1", dm.ChannelID)
+	assert.Equal(t, "bot1", dm.BotUserID)
+}
+
+// TestPluginDM_FreshUser_MultipleActiveIntegrations: без учётки и при нескольких
+// активных интеграциях выбрать реалм не по чему — считаем канал непривязанным.
+func TestPluginDM_FreshUser_MultipleActiveIntegrations(t *testing.T) {
+	repo, users, _, _ := pluginMocks()
+	users.On("GetByMattermostID", mock.Anything, "mm1").Return(nil, errors.New("no rows"))
+	repo.On("GetActive", mock.Anything).Return([]*models.RealmMattermost{dmSettings(uuid.New()), dmSettings(uuid.New())}, nil)
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users})
+
+	_, err := svc.PluginDM(context.Background(), "mm1")
+	assert.ErrorIs(t, err, models.ErrChannelNotBound)
+}
+
+// TestPluginDM_KnownUser_NoIntegration: пользователь есть, но реалм с активной
+// интеграцией у него не нашёлся — тоже уходим в fallback на единственную.
+func TestPluginDM_KnownUser_FallsBackToSingleIntegration(t *testing.T) {
+	realmID := uuid.New()
+	userID := uuid.New()
+	repo, users, _, _ := pluginMocks()
+	srv := dmChannelServer(t, "dm1")
+
+	users.On("GetByMattermostID", mock.Anything, "mm1").Return(&models.UserData{ID: userID}, nil)
+	repo.On("GetByUserID", mock.Anything, userID).Return(nil, errors.New("no rows"))
+	repo.On("GetActive", mock.Anything).Return([]*models.RealmMattermost{dmSettings(realmID)}, nil)
+
+	svc := NewMattermostService(&MattermostDeps{
+		Repo: repo, Users: users,
+		Most: &mattermost.Most{Client: mattermost.NewClient(srv.URL)},
+	})
+
+	dm, err := svc.PluginDM(context.Background(), "mm1")
+	require.NoError(t, err)
+	require.NotNil(t, dm)
+	assert.Equal(t, "dm1", dm.ChannelID)
+}
+
+func TestPluginDM_EmptyUser(t *testing.T) {
+	svc := NewMattermostService(&MattermostDeps{})
+	_, err := svc.PluginDM(context.Background(), "")
+	assert.ErrorIs(t, err, models.ErrInvalidInput)
+}
+
+func TestPluginDM_WithoutMostClient(t *testing.T) {
+	repo, users, _, _ := pluginMocks()
+	users.On("GetByMattermostID", mock.Anything, "mm1").Return(&models.UserData{ID: uuid.New()}, nil)
+	repo.On("GetByUserID", mock.Anything, mock.Anything).Return(dmSettings(uuid.New()), nil)
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users})
+
+	_, err := svc.PluginDM(context.Background(), "mm1")
+	assert.ErrorIs(t, err, models.ErrChannelNotBound)
+}

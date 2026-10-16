@@ -453,6 +453,57 @@ func (s *MattermostService) PluginContext(ctx context.Context, scope models.Plug
 	}, nil
 }
 
+// PluginDM возвращает личный диалог Mattermost-пользователя с ботом реалма.
+// Нужен иконке в App Bar: её модалка открывается из любого канала, а работает с
+// DM-каналом бота, id которого клиент не знает (в отличие от id пользователя).
+//
+// Реалм определяется по боту, а не по пользователю: у свежего сотрудника
+// системной учётки ещё нет, и она появится только при следующем обращении к
+// /plugin/context (там её создаёт resolveOrCreateUser). DM-канал создаётся
+// идемпотентно (CreateDirectChannel возвращает существующий).
+func (s *MattermostService) PluginDM(ctx context.Context, mmUserID string) (*models.PluginDMResult, error) {
+	if mmUserID == "" {
+		return nil, models.ErrInvalidInput
+	}
+	if s.most == nil || s.most.Client == nil {
+		return nil, models.ErrChannelNotBound
+	}
+
+	settings, err := s.resolveDMIntegration(ctx, mmUserID)
+	if err != nil {
+		return nil, err
+	}
+
+	channelID, err := s.most.Client.GetDMChannel(settings.BotToken, settings.BotUserID, mmUserID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dm channel: %w", err)
+	}
+
+	return &models.PluginDMResult{ChannelID: channelID, BotUserID: settings.BotUserID}, nil
+}
+
+// resolveDMIntegration выбирает интеграцию, к боту которой относится диалог.
+// Сначала — реалм известного пользователя (мультиреалм). Затем — единственная
+// активная интеграция: у свежего пользователя системной учётки нет, и реалм
+// берётся по боту. Несколько активных интеграций при неизвестном пользователе
+// неоднозначны — считаем канал непривязанным.
+func (s *MattermostService) resolveDMIntegration(ctx context.Context, mmUserID string) (*models.RealmMattermost, error) {
+	if user, err := s.users.GetByMattermostID(ctx, mmUserID); err == nil {
+		if settings, err := s.repo.GetByUserID(ctx, user.ID); err == nil && settings.IsActive {
+			return settings, nil
+		}
+	}
+
+	active, err := s.repo.GetActive(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get active integrations: %w", err)
+	}
+	if len(active) != 1 {
+		return nil, models.ErrChannelNotBound
+	}
+	return active[0], nil
+}
+
 // pluginMembers возвращает пользователей реалма по членству для селектов формы
 // плагина (исполнители/заказчики). Ошибка не роняет контекст — список пуст.
 func (s *MattermostService) pluginMembers(ctx context.Context, realmID uuid.UUID, membership models.MembershipFilter) []models.UserShort {

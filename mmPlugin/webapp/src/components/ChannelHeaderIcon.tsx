@@ -7,10 +7,11 @@ import {
     getCachedContext,
     getCurrentTeamName,
     getCurrentUserId,
+    getDmScope,
     requestGreeting,
     subscribeCurrentUser,
 } from '../api'
-import {rememberChannel, setModalHost, subscribeOpen, subscribePluginOpen, takePendingOpen, takePendingTicket} from '../deepLink'
+import {rememberChannel, setModalHost, subscribeOpen, subscribePluginOpen, takePendingTicket} from '../deepLink'
 import type {PluginContextResult, PluginScope} from '../types'
 import ModalController from './ModalController'
 import {ClipboardCheckIcon} from './icons'
@@ -33,13 +34,18 @@ function botUserIdForDM(channel: {type?: string; name?: string}, userId: string 
     return ids[0] === userId ? ids[1] : ids[0];
 }
 
+// ChannelHeaderIcon — иконка в шапке личного диалога с ботом и заодно хост
+// модалки плагина. Компонент смонтирован в шапке КАЖДОГО канала (MM рендерит
+// ChannelHeaderIcon всегда), поэтому портал модалки рисуется из любого канала:
+// иконку в шапке мы показываем только в DM с ботом, а модалку — по запросу
+// иконки App Bar, даже когда сам компонент «пустой».
 export default function ChannelHeaderIcon({channel}: ChannelHeaderIconProps) {
     const channelId = channel ? channel.id : null
     const channelType = channel ? channel.type : undefined
     const channelName = channel ? channel.name : undefined
     const [userId, setUserId] = useState<string | null>(() => getCurrentUserId())
-    // scope строится только для личных диалогов: иконка нужна лишь в DM с ботом
-    // реалма, а публичные/приватные/GM-каналы к реалму не привязываются.
+    // scope строится только для личных диалогов: иконка в шапке нужна лишь в DM
+    // с ботом реалма, а публичные/приватные/GM-каналы к реалму не привязываются.
     const scope = useMemo<PluginScope | null>(() => {
         if (!channelId || !userId || channelType !== 'D') {
             return null
@@ -53,6 +59,12 @@ export default function ChannelHeaderIcon({channel}: ChannelHeaderIconProps) {
     // и перехватчик клика по ссылке, и TicketDeepLinkPage, когда уводит ссылку
     // из DM в канал (см. deepLink.ts).
     const [pendingOpenId, setPendingOpenId] = useState<string | null>(null)
+    // scope/context, с которыми открыта модалка. Обычно это текущий DM с ботом,
+    // но при клике иконки в App Bar из другого канала сюда кладётся DM-канал,
+    // полученный с бэкенда: клиент id бота реалма не знает, а реалм
+    // определяется по боту (см. PluginDM на бэкенде).
+    const [modalScope, setModalScope] = useState<PluginScope | null>(null)
+    const [modalContext, setModalContext] = useState<PluginContextResult | null>(null)
     const aliveRef = useRef(true)
 
     useEffect(() => {
@@ -107,9 +119,9 @@ export default function ChannelHeaderIcon({channel}: ChannelHeaderIconProps) {
         }
     }, [scope?.channelId]);
 
-    // Показываем ли мы сейчас модалку — по тем же условиям, что и рендер: флаг
-    // нужен перехватчику клика по ссылке, чтобы гасить навигацию только когда
-    // заявку есть куда показать (см. deepLink.ts).
+    // Показываем ли мы сейчас модалку в текущем канале — по тем же условиям, что
+    // и кнопка в шапке: флаг нужен перехватчику клика по ссылке, чтобы гасить
+    // навигацию только когда заявку есть куда показать (см. deepLink.ts).
     const modalHost = Boolean(scope && ready && context?.bound);
     useEffect(() => {
         setModalHost(modalHost);
@@ -135,74 +147,107 @@ export default function ChannelHeaderIcon({channel}: ChannelHeaderIconProps) {
         requestGreeting(scope).catch(() => undefined);
     }, [modalHost, scope]);
 
-    // openModal показывает модалку и обновляет контекст: справочники/роли к
-    // моменту клика могли устареть. Определяем до раннего return, потому что на
-    // него подписывается ещё и иконка в App Bar (см. subscribePluginOpen).
-    const openModal = useCallback(() => {
-        if (!scope) {
+    // openWith показывает модалку с заданным scope/контекстом. Вынесено до
+    // раннего return, потому что на него подписываются иконка в App Bar и
+    // перехватчик ссылок.
+    const openWith = useCallback((s: PluginScope, c: PluginContextResult) => {
+        setModalScope(s)
+        setModalContext(c)
+        setOpen(true)
+    }, [])
+
+    // openCurrent открывает модалку в текущем DM с ботом (иконка в шапке):
+    // справочники/роли к моменту клика могли устареть, поэтому обновляем контекст.
+    const openCurrent = useCallback(() => {
+        if (!scope || !context) {
             return
         }
-        setOpen(true)
+        openWith(scope, context)
         getContextFresh(scope)
             .then(data => {
                 if (aliveRef.current) {
-                    setContext(data)
+                    setModalContext(data)
                 }
             })
             .catch(() => undefined)
-    }, [scope])
+    }, [scope, context, openWith])
+
+    // openFromAnywhere — клик иконки в App Bar: открываем модалку, не уводя
+    // пользователя из текущего канала. Если мы уже в DM с ботом, scope берём из
+    // текущего канала; иначе спрашиваем бэкенд, с каким ботом у пользователя
+    // личный диалог, и работаем с этим DM-каналом. Пользователя при этом может
+    // ещё не быть в системе — его создаст /plugin/context по боту.
+    const openFromAnywhere = useCallback(() => {
+        if (scope && context && context.bound) {
+            openCurrent()
+            return
+        }
+        getDmScope()
+            .then(dmScope => {
+                if (!dmScope) {
+                    return null
+                }
+                return getContextFresh(dmScope).then(dmContext => ({scope: dmScope, context: dmContext}))
+            })
+            .then(resolved => {
+                if (resolved && aliveRef.current && resolved.context.bound) {
+                    openWith(resolved.scope, resolved.context)
+                }
+            })
+            .catch(() => undefined)
+    }, [scope, context, openCurrent, openWith])
 
     // Клик по ссылке на заявку, когда модалка уже смонтирована: показываем её
     // прямо в текущем канале, вообще никуда не переходя.
     useEffect(() => subscribeOpen(ticketId => {
-        setPendingOpenId(ticketId);
-        setOpen(true);
-    }), []);
+        if (!scope || !context || !context.bound) {
+            return
+        }
+        setPendingOpenId(ticketId)
+        openWith(scope, context)
+    }), [scope, context, openWith])
 
-    // Иконка в App Bar просит открыть модалку. Этот компонент смонтирован как
-    // хост только в личном диалоге с ботом, поэтому открываем модалку на месте.
-    useEffect(() => subscribePluginOpen(openModal), [openModal]);
+    // Иконка в App Bar просит открыть модалку из любого канала.
+    useEffect(() => subscribePluginOpen(openFromAnywhere), [openFromAnywhere])
 
-    // Ссылка на заявку положила её id в deepLink, а иконка App Bar — флаг
-    // открытия. Забираем их здесь — только когда модалка действительно сможет
+    // Ссылка на заявку положила её id в deepLink (запасной путь через маршрут
+    // плагина). Забираем её здесь — только когда модалка действительно сможет
     // открыться (bound), иначе запись сгорела бы впустую вместе с единственным
     // шансом её показать.
     useEffect(() => {
-        if (!ready || !context?.bound || open || pendingOpenId) {
+        if (!ready || !context?.bound || open || pendingOpenId || !scope) {
             return
         }
-        const pending = takePendingTicket();
+        const pending = takePendingTicket()
         if (pending) {
             setPendingOpenId(pending)
-            setOpen(true)
-            return
+            openWith(scope, context)
         }
-        if (takePendingOpen()) {
-            setOpen(true)
-        }
-    }, [ready, context?.bound, open, pendingOpenId])
+    }, [ready, context?.bound, open, pendingOpenId, scope, context, openWith])
 
-    if (!scope || !ready || !context || !context.bound) {
-        return null
-    }
+    const showButton = Boolean(scope && ready && context && context.bound)
 
     return (
         <>
-            <button
-                type='button'
-                className='it-ticket-header-icon channel-header__icon channel-header__icon--wide channel-header__icon--left'
-                aria-label='Заявки в IT отдел'
-                title='Заявки в IT отдел'
-                onClick={openModal}
-            >
-                <ClipboardCheckIcon size={16} />
-                <span className='it-ticket-header-icon__label'>Заявки</span>
-            </button>
-            {open && scope
+            {showButton && scope
+                ? (
+                    <button
+                        type='button'
+                        className='it-ticket-header-icon channel-header__icon channel-header__icon--wide channel-header__icon--left'
+                        aria-label='Заявки в IT отдел'
+                        title='Заявки в IT отдел'
+                        onClick={openCurrent}
+                    >
+                        <ClipboardCheckIcon size={16} />
+                        <span className='it-ticket-header-icon__label'>Заявки</span>
+                    </button>
+                )
+                : null}
+            {open && modalScope && modalContext
                 ? createPortal(
                         <ModalController
-                            scope={scope}
-                            context={context}
+                            scope={modalScope}
+                            context={modalContext}
                             initialPendingOpenId={pendingOpenId}
                             onClose={() => {
                                 setOpen(false);

@@ -52,6 +52,14 @@ export interface PluginScope {
     botUserId?: string;
 }
 
+// PluginDMScope — личный диалог пользователя с ботом реалма (ответ /plugin/dm).
+// По нему иконка в App Bar открывает модалку из любого канала: модалка работает
+// с DM-каналом бота, id которого клиент не знает.
+export interface PluginDMScope {
+    channelId: string;
+    botUserId: string;
+}
+
 export interface PluginContextResult {
     bound: boolean;
     realmId: string;
@@ -161,18 +169,13 @@ export interface PluginApiErrorBody {
     message?: string;
 }
 
-// PluginChannel — минимальный слепок канала из стора Mattermost. Нужен, чтобы
-// найти личный диалог с ботом: у DM-канала type === 'D', а name — пара id через
-// «__» (текущий пользователь и собеседник).
+// PluginChannel — минимальный слепок канала из стора Mattermost. Приходит в
+// action иконки App Bar; сама кнопка аргументы не использует (модалку хостит
+// ChannelHeaderIcon, смонтированный в шапке каждого канала).
 export interface PluginChannel {
     id: string;
     type?: string;
     name?: string;
-}
-
-export interface PluginProfile {
-    id?: string;
-    is_bot?: boolean;
 }
 
 export interface PluginStore {
@@ -180,18 +183,12 @@ export interface PluginStore {
         entities: {
             users: {
                 currentUserId?: string;
-                // profiles нужны, чтобы отличить бота от человека: у бота is_bot === true.
-                profiles?: Record<string, PluginProfile>;
             };
             // Имя текущей команды нужно, чтобы увести ссылку с маршрута плагина в
             // канал: маршрут плагина живёт вне команд, а адрес канала — /{team}/channels/{id}.
             teams: {
                 currentTeamId?: string;
                 teams: Record<string, {id: string; name: string}>;
-            };
-            // channels.channels — карта каналов по id, из неё ищется DM с ботом.
-            channels?: {
-                channels?: Record<string, PluginChannel>;
             };
         };
     };
@@ -202,8 +199,9 @@ export interface PluginRegistry {
     registerChannelHeaderIcon(input: {component: ComponentType<{channel: {id: string}}>}): string;
 
     // registerAppBarComponent добавляет иконку в правую колонку App Bar. action
-    // вызывается с текущим каналом и участником. В старых версиях MM метода
-    // может не быть — тогда иконку в App Bar просто не регистрируем.
+    // вызывается с текущим каналом и участником, но кнопка их не использует:
+    // она лишь просит хост (ChannelHeaderIcon) открыть модалку на месте. В
+    // старых версиях MM метода может не быть — тогда иконку не регистрируем.
     registerAppBarComponent?(input: {
         iconUrl: string;
         tooltipText: string;

@@ -37,6 +37,7 @@ func (h *Handler) registerPluginRoutes(r *gin.RouterGroup, cfg config.Mattermost
 	{
 		plugin.POST("/context", h.handlePluginContext)
 		plugin.POST("/greeting", h.handlePluginGreeting)
+		plugin.GET("/dm", h.handlePluginDM)
 		plugin.GET("/tickets", h.handlePluginListMine)
 		plugin.POST("/tickets", h.handlePluginCreateTicket)
 		plugin.GET("/tickets/:id", h.handlePluginGetTicket)
@@ -131,6 +132,26 @@ func (h *Handler) handlePluginGreeting(c *gin.Context) {
 	}
 
 	response.SendData(c, gin.H{"ok": true})
+}
+
+// handlePluginDM отдаёт личный диалог пользователя с ботом реалма. По нему
+// иконка в App Bar открывает модалку из любого канала: клиент не знает id бота
+// реалма, а DM-канал создаётся идемпотентно. Реалм определяется по боту, поэтому
+// системной учётки у пользователя может ещё не быть.
+func (h *Handler) handlePluginDM(c *gin.Context) {
+	userID := c.Query("userId")
+	if userID == "" {
+		response.SendError(c, models.ErrInvalidInput)
+		return
+	}
+
+	dm, err := h.service.PluginDM(c, userID)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+
+	response.SendData(c, dm)
 }
 
 func (h *Handler) handlePluginListMine(c *gin.Context) {

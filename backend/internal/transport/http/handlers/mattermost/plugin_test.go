@@ -285,3 +285,58 @@ func TestPluginCreateTicketRejectsBadPriority(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 }
+
+// stubDMMattermost отдаёт фиксированный личный диалог и захватывает userId.
+type stubDMMattermost struct {
+	services.Mattermost
+	gotUserID string
+}
+
+func (s *stubDMMattermost) PluginDM(_ context.Context, mmUserID string) (*models.PluginDMResult, error) {
+	s.gotUserID = mmUserID
+	return &models.PluginDMResult{ChannelID: "dm1", BotUserID: "bot1"}, nil
+}
+
+func TestPluginDMPassesUserID(t *testing.T) {
+	engine := gin.New()
+	stub := &stubDMMattermost{}
+	h := &Handler{service: stub}
+	h.registerPluginRoutes(engine.Group("/api/v1"), config.MattermostConfig{
+		PluginToken:      "secret",
+		AllowedServerIPs: []string{"192.0.2.0/24"},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/plugin/dm?userId=mm1", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, "mm1", stub.gotUserID)
+
+	var resp struct {
+		Data struct {
+			ChannelID string `json:"channelId"`
+			BotUserID string `json:"botUserId"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, "dm1", resp.Data.ChannelID)
+	assert.Equal(t, "bot1", resp.Data.BotUserID)
+}
+
+func TestPluginDMMissingUserID(t *testing.T) {
+	engine := gin.New()
+	h := &Handler{service: nil}
+	h.registerPluginRoutes(engine.Group("/api/v1"), config.MattermostConfig{
+		PluginToken:      "secret",
+		AllowedServerIPs: []string{"192.0.2.0/24"},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/plugin/dm", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+}

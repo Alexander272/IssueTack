@@ -141,6 +141,9 @@ type Mattermost interface {
 	// Scope несёт канал, Mattermost-пользователя и бота реалма для личного диалога.
 	PluginContext(ctx context.Context, scope models.PluginScope) (*models.PluginContextResult, error)
 	PluginGreeting(ctx context.Context, scope models.PluginScope) error
+	// PluginDM отдаёт личный диалог пользователя с ботом реалма — по нему иконка
+	// в App Bar открывает модалку из любого канала.
+	PluginDM(ctx context.Context, mmUserID string) (*models.PluginDMResult, error)
 	PluginCreateTicket(ctx context.Context, input *models.PluginCreateTicketInput) (*models.PluginCreateTicketResult, error)
 	PluginListMine(ctx context.Context, scope models.PluginScope) ([]models.PluginTicketShort, error)
 	PluginGetTicket(ctx context.Context, scope models.PluginScope, ticketID string) (*models.PluginTicketDetail, error)

@@ -3,6 +3,7 @@ import type {
     PluginComment,
     PluginContextResult,
     PluginCreateResult,
+    PluginDMScope,
     PluginScope,
     PluginStore,
     PluginTicketDetail,
@@ -42,40 +43,33 @@ export function getCurrentTeamName(): string | null {
     return current && current.name ? current.name : null;
 }
 
-// findBotDmChannelId ищет личный диалог текущего пользователя с ботом. Идём по
-// карте каналов стора: DM — это type === 'D', имя которого склеено из двух id
-// через «__», а собеседник — тот, у кого is_bot === true. Иконка в App Bar
-// нужна, чтобы открыть модалку, и канал для этого берётся здесь, поэтому
-// привязанные каналы и realm-контекст не требуются.
-export function findBotDmChannelId(): string | null {
-    const self = getCurrentUserId();
-    if (!self || !storeRef || typeof storeRef.getState !== 'function') {
+// getDmScope возвращает личный диалог пользователя с ботом реалма: по нему
+// иконка в App Bar открывает модалку из любого канала. id бота клиент не знает
+// (в отличие от id пользователя), поэтому диалог резолвит бэкенд — реалм
+// определяется по боту, а не по пользователю: у свежего сотрудника системной
+// учётки ещё нет. Диалог неизменен, поэтому кэшируем на пользователя.
+let dmScopeCache: {userId: string; scope: PluginScope} | null = null;
+
+export async function getDmScope(): Promise<PluginScope | null> {
+    const userId = getCurrentUserId();
+    if (!userId) {
         return null;
     }
-    const state = storeRef.getState();
-    const users = state && state.entities ? state.entities.users : undefined;
-    const channels = state && state.entities ? state.entities.channels : undefined;
-    const profiles = users ? users.profiles : undefined;
-    const map = channels ? channels.channels : undefined;
-    if (!profiles || !map) {
+    if (dmScopeCache && dmScopeCache.userId === userId) {
+        return dmScopeCache.scope;
+    }
+    try {
+        const qs = new URLSearchParams({userId});
+        const data = await request<PluginDMScope>(`/plugins/issuetrack/api/dm?${qs.toString()}`);
+        if (!data || !data.channelId || !data.botUserId) {
+            return null;
+        }
+        const scope: PluginScope = {channelId: data.channelId, userId, botUserId: data.botUserId};
+        dmScopeCache = {userId, scope};
+        return scope;
+    } catch (e) {
         return null;
     }
-    for (const id of Object.keys(map)) {
-        const channel = map[id];
-        if (!channel || channel.type !== 'D' || !channel.name) {
-            continue;
-        }
-        const ids = channel.name.split('__');
-        if (ids.length !== 2) {
-            continue;
-        }
-        const other = ids[0] === self ? ids[1] : ids[0];
-        const profile = profiles[other];
-        if (profile && profile.is_bot === true) {
-            return channel.id;
-        }
-    }
-    return null;
 }
 
 export function subscribeCurrentUser(listener: (userId: string | null) => void): () => void {

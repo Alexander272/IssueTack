@@ -42,10 +42,17 @@ export const Header = ({ task, onEdit, onTransfer }: Props) => {
 	const handleMenuClose = () => setAnchorEl(null)
 
 	const handleBack = () => {
-		if (location.key !== 'default') {
+		// 1. Проверяем, что это не первая страница в текущей вкладке
+		// (window.history.state.idx > 0 означает, что сзади точно есть страница нашего приложения)
+		const canGoBack = window.history.state && window.history.state.idx > 0
+
+		// 2. Дополнительно страхуемся: если мы пришли с /auth, назад идти точно не нужно
+		const cameFromAuth = location.state?.from?.pathname === AppRoutes.Auth
+
+		if (canGoBack && !cameFromAuth) {
 			navigate(-1)
 		} else {
-			if (!hasNoGroups) navigate(AppRoutes.Home, { replace: true })
+			if (hasNoGroups) navigate(AppRoutes.Home, { replace: true })
 			else navigate(AppRoutes.Tasks, { replace: true })
 		}
 	}
