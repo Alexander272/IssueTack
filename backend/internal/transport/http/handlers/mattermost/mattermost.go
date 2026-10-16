@@ -211,6 +211,15 @@ func (h *Handler) handleWSEvent(c *gin.Context) {
 		return
 	}
 
+	// Системные сообщения Mattermost («X добавил бота в канал», «X создал
+	// канал») приходят от имени пользователя и не пусты, но пользователь ничего
+	// не писал: без этого фильтра бот отвечал на них справкой. Собственные посты
+	// бота отсеивает HandleDM по id авторитетного бота.
+	if post.Type != "" {
+		c.Status(http.StatusOK)
+		return
+	}
+
 	if post.UserId == "" || (post.Message == "" && len(post.FileIds) == 0) {
 		c.Status(http.StatusOK)
 		return

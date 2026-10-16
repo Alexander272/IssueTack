@@ -27,6 +27,7 @@ type capturedPost struct {
 	channelID string
 	message   string
 	props     model.StringInterface
+	fileIDs   []string
 }
 
 // mmCapture перехватывает обращения бота к Mattermost: посты, открытие диалогов,
@@ -40,6 +41,13 @@ type mmCapture struct {
 	// teamUsers — на тот же запрос с фильтром in_team (синк по командам).
 	users     []*model.User
 	teamUsers map[string][]*model.User
+	// botID отдаётся на GET /api/v4/users/me: id бота, авторитетный для токена
+	// (см. resolveBotUserID). Пустая строка — заглушка отвечает ошибкой, как
+	// недоступный Mattermost.
+	botID string
+	// failPosts заставляет заглушку отвечать ошибкой на POST /api/v4/posts —
+	// для проверки отката пометки о приветствии.
+	failPosts bool
 }
 
 // mmServer поднимает Mattermost-заглушку: сохраняет отправленные посты и
@@ -58,13 +66,24 @@ func mmServer(t *testing.T, capture *mmCapture) *httptest.Server {
 			assert.Equal(t, http.MethodPost, r.Method)
 			var sent model.Post
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&sent))
+			if capture.failPosts {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"id":"api.post.create_post.app_error","message":"boom"}`))
+				return
+			}
 			*capture.posts = append(*capture.posts, capturedPost{
 				channelID: sent.ChannelId,
 				message:   sent.Message,
 				props:     sent.Props,
+				fileIDs:   sent.FileIds,
 			})
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"id":"p1","channel_id":"` + sent.ChannelId + `"}`))
+
+		case r.URL.Path == "/api/v4/files":
+			// Загрузка файла-вложения (скриншот приветствия): отдаём один file_info.
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"file_infos":[{"id":"f1","name":"header.png"}]}`))
 
 		case strings.HasPrefix(r.URL.Path, "/api/v4/posts/") && strings.HasSuffix(r.URL.Path, "/patch"):
 			assert.Equal(t, http.MethodPut, r.Method)
@@ -124,6 +143,16 @@ func mmServer(t *testing.T, capture *mmCapture) *httptest.Server {
 			name := strings.TrimPrefix(r.URL.Path, "/api/v4/teams/name/")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(mustJSON(t, &model.Team{Id: name, Name: name})))
+
+		case r.URL.Path == "/api/v4/users/me":
+			// Проверка bot-токена: GetMe отдаёт id бота, авторитетный для токена.
+			if capture.botID == "" {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"id":"api.context.unknown","message":"boom"}`))
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(mustJSON(t, &model.User{Id: capture.botID, Username: "issuetrack-bot"})))
 
 		default:
 			require.Failf(t, "unexpected mattermost call", "%s %s", r.Method, r.URL.Path)
@@ -323,6 +352,64 @@ func dmFixtureService(t *testing.T, capture *mmCapture, comments *MockCommentsSe
 		BaseURL:    testBaseURL,
 	})
 	return svc, repo, users, userRealms, tickets
+}
+
+// TestHandleDM_IgnoresEmptyMessage: пустое сообщение без явного вызова команды —
+// не вопрос боту, справкой на него отвечать нельзя (бот писал тому, кто ничего не
+// писал). Заодно это экономит поход в БД: настройки реалма не нужны.
+func TestHandleDM_IgnoresEmptyMessage(t *testing.T) {
+	var posts []capturedPost
+	svc, repo, _, _, _ := dmService(t, &posts)
+
+	require.NoError(t, svc.HandleDM(context.Background(), &models.HandleDMInput{
+		MmUserID:  "mm1",
+		ChannelID: "ch1",
+		Message:   "   ",
+	}))
+
+	assert.Empty(t, posts)
+	repo.AssertNotCalled(t, "GetByChannelID", mock.Anything, mock.Anything)
+}
+
+// TestHandleDM_EmptySlashCommandShowsHelp: пустой вызов команды — осознанное
+// действие (у slash-команды есть trigger_id), поэтому справку бот показывает.
+func TestHandleDM_EmptySlashCommandShowsHelp(t *testing.T) {
+	realmID := uuid.New()
+
+	var posts []capturedPost
+	svc, repo, users, _, _ := dmService(t, &posts)
+	repo.On("GetByChannelID", mock.Anything, "ch1").Return(realmSettings(realmID), nil)
+	// Пользователь без прав: isAdmin=false, до проверки реалма дело не доходит.
+	users.On("GetByMattermostID", mock.Anything, "mm1").Return(nil, assert.AnError)
+
+	require.NoError(t, svc.HandleDM(context.Background(), &models.HandleDMInput{
+		MmUserID:  "mm1",
+		ChannelID: "ch1",
+		TriggerID: "trigger-1",
+		Message:   "",
+	}))
+
+	require.Len(t, posts, 1)
+	assert.Contains(t, posts[0].message, "Можно не печатать команды")
+}
+
+// TestHandleDM_IgnoresOwnPost: автор — сам бот. Такое сообщение приходит по
+// HTTP-пути (веб-сокет отсеивает его фильтром AcceptPost), и без защиты бот
+// ответил бы сам себе, породив новый входящий пост и бесконечный цикл.
+func TestHandleDM_IgnoresOwnPost(t *testing.T) {
+	realmID := uuid.New()
+
+	var posts []capturedPost
+	svc, repo, _, _, _ := dmService(t, &posts)
+	repo.On("GetByChannelID", mock.Anything, "ch1").Return(realmSettings(realmID), nil)
+
+	require.NoError(t, svc.HandleDM(context.Background(), &models.HandleDMInput{
+		MmUserID:  "bot-id",
+		ChannelID: "ch1",
+		Message:   "привет",
+	}))
+
+	assert.Empty(t, posts, "на собственный пост бот не отвечает")
 }
 
 func TestMenuButtons(t *testing.T) {

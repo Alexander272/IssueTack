@@ -29,6 +29,8 @@ type MattermostRepoInterface interface {
 	GetByUserID(ctx context.Context, userID uuid.UUID) (*models.RealmMattermost, error)
 	GetByTicketID(ctx context.Context, ticketID uuid.UUID) (*models.RealmMattermost, error)
 	Upsert(ctx context.Context, tx Tx, dto *models.RealmMattermost) error
+	ClaimGreeting(ctx context.Context, realmID, userID uuid.UUID) (bool, error)
+	ReleaseGreeting(ctx context.Context, realmID, userID uuid.UUID) error
 	Delete(ctx context.Context, tx Tx, realmID uuid.UUID) error
 }
 
@@ -172,6 +174,33 @@ func (r *MattermostRepo) Delete(ctx context.Context, tx Tx, realmID uuid.UUID) e
 	query := fmt.Sprintf(`DELETE FROM %s WHERE realm_id = $1`, Tables.Mattermost)
 
 	_, err := r.getExec(tx).Exec(ctx, query, realmID)
+	if err != nil {
+		return MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	return nil
+}
+
+// ClaimGreeting атомарно резервирует приветствие за пользователем. Возвращает
+// true, если запись создана впервые (приветствие ещё не отправляли) — тогда
+// вызывающий шлёт сообщение и при неудаче зовёт ReleaseGreeting. false — уже
+// приветствовали, слать не нужно.
+func (r *MattermostRepo) ClaimGreeting(ctx context.Context, realmID, userID uuid.UUID) (bool, error) {
+	query := fmt.Sprintf(`INSERT INTO %s (realm_id, user_id) VALUES ($1, $2)
+		ON CONFLICT (realm_id, user_id) DO NOTHING`, Tables.MattermostGreetings)
+
+	tag, err := r.db.Exec(ctx, query, realmID, userID)
+	if err != nil {
+		return false, MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// ReleaseGreeting снимает пометку, если приветствие не удалось доставить:
+// иначе пользователь остался бы без него навсегда.
+func (r *MattermostRepo) ReleaseGreeting(ctx context.Context, realmID, userID uuid.UUID) error {
+	query := fmt.Sprintf(`DELETE FROM %s WHERE realm_id = $1 AND user_id = $2`, Tables.MattermostGreetings)
+
+	_, err := r.db.Exec(ctx, query, realmID, userID)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}

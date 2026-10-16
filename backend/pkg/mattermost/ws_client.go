@@ -28,26 +28,45 @@ type wsEventData struct {
 
 type PostedEvent struct {
 	ChannelID string
-	Post      *model.Post
-	Username  string
+	// ChannelType — тип канала Mattermost («D» — личный диалог, «O»/«P» —
+	// канал). По нему обработчик отличает личную переписку от канала.
+	ChannelType string
+	Post        *model.Post
+	Username    string
 }
 
 type WSEventHandler func(ctx context.Context, event PostedEvent)
 
-type WSClient struct {
-	serverURL string
-	botUserID string
-	handler   WSEventHandler
-	conn      *websocket.Conn
-	mu        sync.Mutex
-	cancel    context.CancelFunc
+// DirectAddedEvent — событие direct_added: создан личный диалог. Bot получает
+// его, лишь если состоит в канале (DM с ним — да). CreatorID — инициатор
+// создания, TeammateID — второй участник: когда диалог заводит пользователь,
+// CreatorID = пользователь, TeammateID = бот; когда бот пишет первым
+// (уведомление) — наоборот.
+type DirectAddedEvent struct {
+	ChannelID  string
+	CreatorID  string
+	TeammateID string
 }
 
-func NewWSClient(serverURL, botUserID string, handler WSEventHandler) *WSClient {
+// DirectAddedHandler вызывается на событие direct_added. Может быть nil.
+type DirectAddedHandler func(ctx context.Context, event DirectAddedEvent)
+
+type WSClient struct {
+	serverURL   string
+	botUserID   string
+	handler     WSEventHandler
+	directAdded DirectAddedHandler
+	conn        *websocket.Conn
+	mu          sync.Mutex
+	cancel      context.CancelFunc
+}
+
+func NewWSClient(serverURL, botUserID string, handler WSEventHandler, directAdded DirectAddedHandler) *WSClient {
 	return &WSClient{
-		serverURL: strings.TrimRight(serverURL, "/"),
-		botUserID: botUserID,
-		handler:   handler,
+		serverURL:   strings.TrimRight(serverURL, "/"),
+		botUserID:   botUserID,
+		handler:     handler,
+		directAdded: directAdded,
 	}
 }
 
@@ -183,11 +202,29 @@ func (c *WSClient) listen(ctx context.Context) {
 		}
 
 		var msg struct {
-			Event string          `json:"event"`
-			Data  json.RawMessage `json:"data"`
+			Event     string          `json:"event"`
+			Data      json.RawMessage `json:"data"`
+			Broadcast struct {
+				ChannelID string `json:"channel_id"`
+			} `json:"broadcast"`
 		}
 		if err := json.Unmarshal(raw, &msg); err != nil {
 			logger.Warn("mattermost WS unmarshal error", logger.ErrAttr(err))
+			continue
+		}
+
+		// direct_added — создан личный диалог. Канал события лежит в broadcast
+		// (не в data), участники — в data.
+		if msg.Event == "direct_added" && len(msg.Data) > 0 {
+			if c.directAdded == nil {
+				continue
+			}
+			event, err := parseDirectAddedEvent(msg.Broadcast.ChannelID, msg.Data)
+			if err != nil {
+				logger.Warn("mattermost WS unmarshal direct_added error", logger.ErrAttr(err))
+				continue
+			}
+			c.directAdded(ctx, event)
 			continue
 		}
 
@@ -211,20 +248,67 @@ func (c *WSClient) listen(ctx context.Context) {
 			continue
 		}
 
-		if post.UserId == c.botUserID {
-			continue
-		}
-
-		if post.Message == "" && len(post.FileIds) == 0 {
+		if !AcceptPost(&post, c.botUserID) {
 			continue
 		}
 
 		c.handler(ctx, PostedEvent{
-			ChannelID: post.ChannelId,
-			Post:      &post,
-			Username:  data.SenderName,
+			ChannelID:   post.ChannelId,
+			ChannelType: data.ChannelType,
+			Post:        &post,
+			Username:    data.SenderName,
 		})
 	}
+}
+
+// parseDirectAddedEvent разбирает полезную нагрузку события direct_added.
+// Канал приходит не в data, а в broadcast — его передаёт вызывающий.
+func parseDirectAddedEvent(channelID string, data json.RawMessage) (DirectAddedEvent, error) {
+	var payload struct {
+		CreatorID  string `json:"creator_id"`
+		TeammateID string `json:"teammate_id"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return DirectAddedEvent{}, err
+	}
+	return DirectAddedEvent{
+		ChannelID:  channelID,
+		CreatorID:  payload.CreatorID,
+		TeammateID: payload.TeammateID,
+	}, nil
+}
+
+// AcceptPost решает, отдавать ли пост обработчику. Бот отвечает только на
+// обычные сообщения пользователя, поэтому отбрасываются:
+//   - свой собственный пост (иначе бот отвечает сам себе — цикл «справка на
+//     справку» заваливает диалог тысячами сообщений);
+//   - системное сообщение Mattermost (например, «X добавил бота в канал»): оно
+//     приходит от имени пользователя и не пусто, но пользователь ничего не
+//     писал — раньше бот отвечал на него справкой;
+//   - пост другого бота/интеграции (props.from_bot);
+//   - пост без текста и файлов.
+//
+// botUserID — id бота, авторитетный для текущего токена (см.
+// MattermostService.resolveBotUserID): с устаревшим значением фильтр пропускает
+// собственные сообщения бота.
+func AcceptPost(post *model.Post, botUserID string) bool {
+	if post == nil || post.UserId == "" || post.UserId == botUserID {
+		return false
+	}
+	if post.Type != "" {
+		return false
+	}
+	if isBotPost(post) {
+		return false
+	}
+	return post.Message != "" || len(post.FileIds) > 0
+}
+
+// isBotPost сообщает, что пост отправлен ботом: Mattermost помечает такие посты
+// пропом from_bot (валидатор сервера допускает только строку "true").
+func isBotPost(post *model.Post) bool {
+	value, ok := post.Props[model.PostPropsFromBot].(string)
+	return ok && value == "true"
 }
 
 func (c *WSClient) Stop() {

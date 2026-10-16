@@ -7,6 +7,7 @@ import {
     getCachedContext,
     getCurrentTeamName,
     getCurrentUserId,
+    requestGreeting,
     subscribeCurrentUser,
 } from '../api'
 import {rememberChannel, setModalHost, subscribeOpen, takePendingTicket} from '../deepLink'
@@ -114,6 +115,25 @@ export default function ChannelHeaderIcon({channel}: ChannelHeaderIconProps) {
         setModalHost(modalHost);
         return () => setModalHost(false);
     }, [modalHost]);
+
+    // Приветствие бота: пользователь открыл личный диалог. Ключ в sessionStorage
+    // гасит повторные вызовы при переключении каналов в рамках сессии, а
+    // окончательно повтор отсекает бэкенд (отметка «уже приветствовали» в БД).
+    useEffect(() => {
+        if (!modalHost || !scope) {
+            return;
+        }
+        const key = `it-plugin-greeted:${scope.userId}:${scope.botUserId || scope.channelId}`;
+        try {
+            if (window.sessionStorage.getItem(key)) {
+                return;
+            }
+            window.sessionStorage.setItem(key, '1');
+        } catch (e) {
+            // sessionStorage может быть недоступен — не мешаем вызову.
+        }
+        requestGreeting(scope).catch(() => undefined);
+    }, [modalHost, scope]);
 
     // Клик по ссылке на заявку, когда модалка уже смонтирована: показываем её
     // прямо в текущем канале, вообще никуда не переходя.

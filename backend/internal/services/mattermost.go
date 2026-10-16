@@ -88,6 +88,7 @@ type MattermostService struct {
 	baseURL       string
 	wsClients     map[string]*mattermost.WSClient
 	wsMu          sync.Mutex
+	wsGuard       *inboundGuard
 	pendingFiles  sync.Map
 	recentTickets sync.Map
 	pluginCache   *pluginContextCache
@@ -113,6 +114,7 @@ func NewMattermostService(deps *MattermostDeps) *MattermostService {
 		most:        deps.Most,
 		baseURL:     deps.BaseURL,
 		wsClients:   make(map[string]*mattermost.WSClient),
+		wsGuard:     newInboundGuard(),
 		pluginCache: newPluginContextCache(),
 	}
 }
@@ -138,6 +140,7 @@ type Mattermost interface {
 	// Плагин MM (webapp + plugin-server → /api/v1/plugin/*).
 	// Scope несёт канал, Mattermost-пользователя и бота реалма для личного диалога.
 	PluginContext(ctx context.Context, scope models.PluginScope) (*models.PluginContextResult, error)
+	PluginGreeting(ctx context.Context, scope models.PluginScope) error
 	PluginCreateTicket(ctx context.Context, input *models.PluginCreateTicketInput) (*models.PluginCreateTicketResult, error)
 	PluginListMine(ctx context.Context, scope models.PluginScope) ([]models.PluginTicketShort, error)
 	PluginGetTicket(ctx context.Context, scope models.PluginScope, ticketID string) (*models.PluginTicketDetail, error)
@@ -222,6 +225,10 @@ func (s *MattermostService) SaveSettings(ctx context.Context, realmID uuid.UUID,
 		return fmt.Errorf("failed to save mattermost settings: %w", err)
 	}
 
+	// Перезапуск: StartWSForRealm идемпотентен, поэтому уже запущенный сокет
+	// продолжил бы работу со старым токеном до перезапуска приложения.
+	s.StopWSForRealm(realmID)
+
 	if err := s.StartWSForRealm(ctx, realmID); err != nil {
 		logger.Error("failed to start WS after save",
 			logger.StringAttr("realm_id", realmID.String()),
@@ -244,6 +251,15 @@ func (s *MattermostService) DeleteSettings(ctx context.Context, realmID uuid.UUI
 // HandleDM обрабатывает личное сообщение пользователя: диспетчеризует его
 // на создание заявки, статус, помощь или синхронизацию.
 func (s *MattermostService) HandleDM(ctx context.Context, input *models.HandleDMInput) error {
+	// Пустое сообщение без явного вызова команды — не вопрос боту. Раньше на
+	// такой пост (в т.ч. на системное сообщение Mattermost, доехавшее по
+	// HTTP-пути) бот отвечал справкой, то есть писал тому, кто ничего не писал.
+	// Пустой вызов команды (у slash-команды есть trigger_id) остаётся вопросом:
+	// человек осознанно её вызвал и ждёт ответа.
+	if strings.TrimSpace(input.Message) == "" && len(input.FileIDs) == 0 && input.TriggerID == "" {
+		return nil
+	}
+
 	var settings *models.RealmMattermost
 	var err error
 
@@ -254,6 +270,16 @@ func (s *MattermostService) HandleDM(ctx context.Context, input *models.HandleDM
 	}
 	if err != nil {
 		return fmt.Errorf("failed to find realm settings: %w", err)
+	}
+
+	// Автор — сам бот: на собственные сообщения бот не отвечает. Иначе при
+	// расхождении bot_user_id (остался от прежнего токена или правился руками в
+	// БД) каждое сообщение бота возвращалось как входящее и порождало новое —
+	// цикл «справка на справку». Веб-сокет отсеивает такие посты фильтром
+	// AcceptPost по id, авторитетному для токена; здесь — та же защита для
+	// HTTP-путей.
+	if input.MmUserID == settings.BotUserID {
+		return nil
 	}
 
 	msg := strings.TrimSpace(input.Message)

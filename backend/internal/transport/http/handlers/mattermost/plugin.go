@@ -36,6 +36,7 @@ func (h *Handler) registerPluginRoutes(r *gin.RouterGroup, cfg config.Mattermost
 	plugin.Use(middleware.PluginTokenGuard(cfg.PluginToken))
 	{
 		plugin.POST("/context", h.handlePluginContext)
+		plugin.POST("/greeting", h.handlePluginGreeting)
 		plugin.GET("/tickets", h.handlePluginListMine)
 		plugin.POST("/tickets", h.handlePluginCreateTicket)
 		plugin.GET("/tickets/:id", h.handlePluginGetTicket)
@@ -107,6 +108,29 @@ func (h *Handler) handlePluginContext(c *gin.Context) {
 	}
 
 	response.SendData(c, ctx)
+}
+
+// handlePluginGreeting отправляет приветствие пользователю, открывшему личный
+// диалог с ботом реалма. Вызывается webapp-плагином при монтировании иконки в
+// шапке DM. Идемпотентно: повторные вызовы ничего не шлют.
+func (h *Handler) handlePluginGreeting(c *gin.Context) {
+	var req pluginContextRequest
+	if err := utils.BindJSON(c, &req); err != nil {
+		response.SendError(c, err)
+		return
+	}
+
+	err := h.service.PluginGreeting(c, models.PluginScope{
+		ChannelID: req.ChannelID,
+		MmUserID:  req.UserID,
+		BotUserID: req.BotUserID,
+	})
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+
+	response.SendData(c, gin.H{"ok": true})
 }
 
 func (h *Handler) handlePluginListMine(c *gin.Context) {

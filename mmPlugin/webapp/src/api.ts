@@ -192,6 +192,17 @@ export async function getContextFresh(scope: PluginScope): Promise<PluginContext
     return getContext(scope);
 }
 
+// requestGreeting сообщает бэкенду, что пользователь открыл личный диалог с ботом.
+// Бэкенд отправляет приветствие один раз за пользователя (отметка в БД), поэтому
+// повторные вызовы безопасны. Ошибку гасит вызывающий: приветствие не критично.
+export async function requestGreeting(scope: PluginScope): Promise<void> {
+    await request(`/plugins/issuetrack/api/greeting`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({channelId: scope.channelId, userId: scope.userId, botUserId: scope.botUserId || ''}),
+    });
+}
+
 export async function getMyTickets(scope: PluginScope): Promise<PluginTicketShort[]> {
     return request<PluginTicketShort[]>(`/plugins/issuetrack/api/tickets?${scopeQuery(scope).toString()}`);
 }

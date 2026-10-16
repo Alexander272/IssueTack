@@ -38,6 +38,7 @@ var Tables = struct {
 	NotificationSettings   string
 	TicketCounters         string
 	Mattermost             string
+	MattermostGreetings    string
 	TicketSubscriptions    string
 	TicketFavorites        string
 }{
@@ -66,6 +67,7 @@ var Tables = struct {
 	NotificationSettings:   "user_notification_settings",
 	TicketCounters:         "ticket_counters",
 	Mattermost:             "realm_mattermost",
+	MattermostGreetings:    "mattermost_greetings",
 	TicketSubscriptions:    "ticket_subscriptions",
 	TicketFavorites:        "ticket_favorites",
 }

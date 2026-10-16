@@ -21,12 +21,13 @@ type CreatePostDTO struct {
 	Message     string
 	Buttons     []InteractiveButton
 	Attachments []Attachment
+	FileIDs     []string
 }
 
 // Create sends a message to the channel. Buttons are rendered as an action row
 // above the cards, Attachments as cards under the text. Returns the created post id.
 func (s *Post) Create(botToken string, dto CreatePostDTO) (string, error) {
-	post := &model.Post{ChannelId: dto.ChannelID, Message: dto.Message}
+	post := &model.Post{ChannelId: dto.ChannelID, Message: dto.Message, FileIds: dto.FileIDs}
 	// Кнопки поста — ведущая карточка, которую Mattermost рисует рядом над
 	// остальными. props собираем одним вызовом postProps: иначе карточки
 	// затирают кнопки (и наоборот).

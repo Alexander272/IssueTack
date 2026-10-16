@@ -1040,6 +1040,14 @@ func (m *MockMattermostRepo) Delete(ctx context.Context, tx postgres.Tx, realmID
 	args := m.Called(ctx, tx, realmID)
 	return args.Error(0)
 }
+func (m *MockMattermostRepo) ClaimGreeting(ctx context.Context, realmID, userID uuid.UUID) (bool, error) {
+	args := m.Called(ctx, realmID, userID)
+	return args.Bool(0), args.Error(1)
+}
+func (m *MockMattermostRepo) ReleaseGreeting(ctx context.Context, realmID, userID uuid.UUID) error {
+	args := m.Called(ctx, realmID, userID)
+	return args.Error(0)
+}
 
 type mockTransactionManager struct{}
 
