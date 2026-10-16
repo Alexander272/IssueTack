@@ -49,7 +49,7 @@ func newEqFixture(t *testing.T, pool *pgxpool.Pool) *eqFixture {
 
 func eqString(s string) *string { return &s }
 
-func newEquipmentDTO(f *eqFixture, typeID uuid.UUID, name string) *models.EquipmentDTO {
+func newEquipmentDTO(f *eqFixture, typeID *uuid.UUID, name string) *models.EquipmentDTO {
 	return &models.EquipmentDTO{
 		RealmID:      f.realmID,
 		TypeID:       typeID,
@@ -72,14 +72,26 @@ func TestEquipmentRepo_Stage3Flow(t *testing.T) {
 
 	repo := NewEquipmentRepo(pool, NewTransactionRepo(pool))
 
-	kit, err := repo.Create(ctx, nil, newEquipmentDTO(f, f.typeID, "Комплект A"))
+	// Комплект — без типа: у комплекта типа нет (`type_id` NULL), а `Create`
+	// репозитория это не проверяет (правило — в сервисе). Так этот прогон заодно
+	// проверяет чтение типового NULL через `LEFT JOIN`.
+	kit, err := repo.Create(ctx, nil, newEquipmentDTO(f, nil, "Комплект A"))
 	require.NoError(t, err)
 
 	// Помечаем как комплект напрямую (Create не выставляет is_kit).
 	_, err = pool.Exec(ctx, `UPDATE equipment SET is_kit = true WHERE id = $1`, kit.ID)
 	require.NoError(t, err)
 
-	comp, err := repo.Create(ctx, nil, newEquipmentDTO(f, f.kitType, "Модуль памяти"))
+	// Чтение комплекта не должно ни падать на NULL-типе, ни подставлять чужой тип:
+	// name/kind пустые, id типа — NULL.
+	fetched, err := repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: kit.ID, RealmID: f.realmID})
+	require.NoError(t, err)
+	assert.Nil(t, fetched.TypeID)
+	assert.Empty(t, fetched.TypeName)
+	assert.Empty(t, fetched.TypeKind)
+	assert.True(t, fetched.IsKit)
+
+	comp, err := repo.Create(ctx, nil, newEquipmentDTO(f, &f.kitType, "Модуль памяти"))
 	require.NoError(t, err)
 
 	// addComposition + setHolderAndStatus + event в одной транзакции.

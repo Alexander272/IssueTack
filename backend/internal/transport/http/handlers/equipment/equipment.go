@@ -46,6 +46,8 @@ func Register(api *gin.RouterGroup, service services.Equipment, maxSize int64, m
 		equipment.GET("/stats", handlers.getStats)
 		equipment.GET("/types", handlers.getTypes)
 		equipment.GET("/types/:id", handlers.getTypeByID)
+		equipment.GET("/templates", handlers.getTemplates)
+		equipment.GET("/templates/:id", handlers.getTemplateByID)
 		equipment.GET("/acts", handlers.getActs)
 		equipment.GET("/acts/:id", handlers.getActByID)
 		equipment.GET("/acts/:id/document", handlers.getActDocument)
@@ -61,12 +63,15 @@ func Register(api *gin.RouterGroup, service services.Equipment, maxSize int64, m
 		equipment.DELETE("/:id/composition", handlers.removeComponents)
 		equipment.POST("/types", handlers.createType)
 		equipment.PUT("/types/:id", handlers.updateType)
+		equipment.POST("/templates", handlers.createTemplate)
+		equipment.PUT("/templates/:id", handlers.updateTemplate)
 		equipment.POST("/acts", handlers.createAct)
 		equipment.POST("/acts/:id/signed", handlers.uploadActSigned)
 
 		equipment.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceEquipment).Delete()))
 		equipment.DELETE("/:id", handlers.delete)
 		equipment.DELETE("/types/:id", handlers.deleteType)
+		equipment.DELETE("/templates/:id", handlers.deleteTemplate)
 	}
 }
 
@@ -172,7 +177,7 @@ func (h *Handler) create(c *gin.Context) {
 		return
 	}
 
-	dto := &models.EquipmentDTO{}
+	dto := &models.CreateEquipmentDTO{}
 	if err := c.BindJSON(dto); err != nil {
 		response.SendError(c, err)
 		return
@@ -346,6 +351,110 @@ func (h *Handler) deleteType(c *gin.Context) {
 	}
 
 	if err := h.service.DeleteType(c, &models.DelEquipmentTypeDTO{ID: id, RealmID: realmID}); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) getTemplates(c *gin.Context) {
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	data, err := h.service.GetKitTemplates(c, realmID)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	response.SendData(c, data)
+}
+
+func (h *Handler) getTemplateByID(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	data, err := h.service.GetKitTemplateByID(c, &models.GetEquipmentKitTemplateByIdDTO{ID: id, RealmID: realmID})
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	response.SendData(c, data)
+}
+
+func (h *Handler) createTemplate(c *gin.Context) {
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	dto := &models.EquipmentKitTemplateDTO{}
+	if err := c.BindJSON(dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	dto.RealmID = realmID
+
+	if err := h.service.CreateKitTemplate(c, dto); err != nil {
+		response.SendError(c, err, dto)
+		return
+	}
+	c.JSON(http.StatusCreated, response.IdResponse{Id: dto.ID, Message: "Шаблон комплекта создан"})
+}
+
+func (h *Handler) updateTemplate(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	dto := &models.EquipmentKitTemplateDTO{}
+	if err := c.BindJSON(dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	if dto.ID == nil || id != *dto.ID {
+		response.SendError(c, fmt.Errorf("%w: %s", models.ErrInvalidInput, "id is not equal to dto.ID"))
+		return
+	}
+	dto.ID = &id
+	dto.RealmID = realmID
+
+	if err := h.service.UpdateKitTemplate(c, dto); err != nil {
+		response.SendError(c, err, dto)
+		return
+	}
+	c.JSON(http.StatusOK, response.IdResponse{Id: id, Message: "Шаблон комплекта обновлён"})
+}
+
+func (h *Handler) deleteTemplate(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	if err := h.service.DeleteKitTemplate(c, &models.DelEquipmentKitTemplateDTO{ID: id, RealmID: realmID}); err != nil {
 		response.SendError(c, err)
 		return
 	}

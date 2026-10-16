@@ -84,10 +84,10 @@ func TestEquipmentService_DeriveHolderStatus(t *testing.T) {
 			repo := newRepo()
 			svc := NewEquipmentService(repo, &mockTransactionManager{}, testEquipmentConf(t))
 
-			_, err := svc.Create(ctx, &models.EquipmentDTO{
-				RealmID: realmID, TypeID: typeID, Name: "Единица",
+			_, err := svc.Create(ctx, &models.CreateEquipmentDTO{EquipmentDTO: models.EquipmentDTO{
+				RealmID: realmID, TypeID: &typeID, Name: "Единица",
 				Status: tt.status, HolderUserID: tt.holderID, HolderName: tt.holderName,
-			})
+			}})
 			require.NoError(t, err)
 			require.NotNil(t, repo.created)
 			assert.Equal(t, tt.want, repo.created.Status)
@@ -99,7 +99,7 @@ func TestEquipmentService_DeriveHolderStatus(t *testing.T) {
 
 			id := uuid.New()
 			_, err := svc.Update(ctx, &models.EquipmentDTO{
-				ID: &id, RealmID: realmID, TypeID: typeID, Name: "Единица",
+				ID: &id, RealmID: realmID, TypeID: &typeID, Name: "Единица",
 				Status: tt.status, HolderUserID: tt.holderID, HolderName: tt.holderName,
 			})
 			require.NoError(t, err)

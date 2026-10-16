@@ -42,6 +42,8 @@ export const EquipmentTypesSection: FC = () => {
 	const unitCounts = useMemo(() => {
 		const map: Record<string, number> = {}
 		;(unitsData?.data ?? []).forEach(unit => {
+			// У комплекта типа нет — в счётчики типов он не попадает.
+			if (!unit.typeId) return
 			map[unit.typeId] = (map[unit.typeId] ?? 0) + 1
 		})
 		return map

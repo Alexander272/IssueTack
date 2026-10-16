@@ -3,7 +3,7 @@ import { useMatch, useNavigate } from 'react-router'
 import { Box } from '@mui/material'
 
 import { AppRoutes } from '@/pages/router/routes'
-import { EquipmentDialog } from '../components/Dialogs'
+import { EquipmentDialog, EquipmentKitDialog } from '../components/Dialogs'
 import { DetailModal } from '../components/Detail'
 import { EquipmentList } from '../components/List'
 import { Header } from '../components/Header'
@@ -45,13 +45,22 @@ export const EquipmentPage: FC = () => {
 
 			<EquipmentList onOpen={setPickedId} />
 
-			<EquipmentDialog
-				key={dialogSeq}
-				open={dialogOpen}
-				onClose={() => setDialogOpen(false)}
-				unit={null}
-				isKitDefault={dialogKit}
-			/>
+			{/* Комплект собирается в своей модалке: она шлёт единицу и состав одним
+			    запросом, а обычная форма единицы — нет. */}
+			{dialogKit ? (
+				<EquipmentKitDialog
+					key={dialogSeq}
+					open={dialogOpen}
+					onClose={() => setDialogOpen(false)}
+				/>
+			) : (
+				<EquipmentDialog
+					key={dialogSeq}
+					open={dialogOpen}
+					onClose={() => setDialogOpen(false)}
+					unit={null}
+				/>
+			)}
 
 			<DetailModal
 				key={openId ?? 'closed'}

@@ -55,45 +55,55 @@ func (s *EquipmentService) AddComponents(ctx context.Context, dto *models.KitCom
 	}
 
 	return s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
-		opID := uuid.New()
-		now := time.Now()
-		actorID := actorID(dto.Actor)
-
-		for _, comp := range dto.Components {
-			if comp.ComponentID == dto.ID {
-				return models.ErrEquipmentCycle
-			}
-			item, err := s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: comp.ComponentID, RealmID: dto.RealmID})
-			if err != nil {
-				return fmt.Errorf("failed to get component. error: %w", err)
-			}
-			open, err := s.repo.GetOpenByComponent(ctx, comp.ComponentID)
-			if err != nil && !errors.Is(err, models.ErrNotFound) {
-				return fmt.Errorf("failed to get open composition. error: %w", err)
-			}
-			if err == nil {
-				if open.KitID == dto.ID {
-					continue
-				}
-				return models.ErrEquipmentComponentInKit
-			}
-
-			if err := s.repo.OpenComposition(ctx, tx, &models.KitComposition{
-				KitID: dto.ID, ComponentID: comp.ComponentID, StartedAt: now,
-				StartedBy: actorID, Reason: dto.Reason,
-			}); err != nil {
-				return fmt.Errorf("failed to open composition. error: %w", err)
-			}
-			if err := s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
-				EquipmentID: dto.ID, EventType: models.EquipmentEventComponentAdded, OperationID: opID,
-				ComponentID: &comp.ComponentID, NewValue: componentJSON(item),
-				UserID: actorID, Comment: dto.Reason,
-			}); err != nil {
-				return fmt.Errorf("failed to create event. error: %w", err)
-			}
-		}
-		return nil
+		return s.openComponents(ctx, tx, &models.OpenComponentsDTO{
+			RealmID: dto.RealmID, KitID: dto.ID, Components: dto.Components,
+			Reason: dto.Reason, Actor: dto.Actor,
+		})
 	})
+}
+
+// openComponents открывает членство компонентов в комплекте и пишет событие
+// журнала на каждый — в переданной транзакции. Один набор правил на два входа:
+// AddComponents и Create (стартовый состав нового комплекта).
+func (s *EquipmentService) openComponents(ctx context.Context, tx postgres.Tx, dto *models.OpenComponentsDTO) error {
+	opID := uuid.New()
+	now := time.Now()
+	actor := actorID(dto.Actor)
+
+	for _, comp := range dto.Components {
+		if comp.ComponentID == dto.KitID {
+			return models.ErrEquipmentCycle
+		}
+		item, err := s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: comp.ComponentID, RealmID: dto.RealmID})
+		if err != nil {
+			return fmt.Errorf("failed to get component. error: %w", err)
+		}
+		open, err := s.repo.GetOpenByComponent(ctx, comp.ComponentID)
+		if err != nil && !errors.Is(err, models.ErrNotFound) {
+			return fmt.Errorf("failed to get open composition. error: %w", err)
+		}
+		if err == nil {
+			if open.KitID == dto.KitID {
+				continue
+			}
+			return models.ErrEquipmentComponentInKit
+		}
+
+		if err := s.repo.OpenComposition(ctx, tx, &models.KitComposition{
+			KitID: dto.KitID, ComponentID: comp.ComponentID, StartedAt: now,
+			StartedBy: actor, Reason: dto.Reason,
+		}); err != nil {
+			return fmt.Errorf("failed to open composition. error: %w", err)
+		}
+		if err := s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
+			EquipmentID: dto.KitID, EventType: models.EquipmentEventComponentAdded, OperationID: opID,
+			ComponentID: &comp.ComponentID, NewValue: componentJSON(item),
+			UserID: actor, Comment: dto.Reason,
+		}); err != nil {
+			return fmt.Errorf("failed to create event. error: %w", err)
+		}
+	}
+	return nil
 }
 
 // RemoveComponents исключает единицы из состава комплекта.

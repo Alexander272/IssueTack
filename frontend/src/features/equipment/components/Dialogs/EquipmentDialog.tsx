@@ -45,6 +45,7 @@ type Props = {
 }
 
 // Значения формы: при редактировании — из единицы, при создании — пустые.
+// typeId у комплекта равен null, поэтому в форме это пустая строка.
 const toDefault = (unit?: IEquipment | null, isKitDefault = false): IEquipmentDTO => ({
 	id: unit?.id,
 	typeId: unit?.typeId ?? '',
@@ -92,6 +93,9 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, isKitDefault, 
 	const saveHandler = handleSubmit(async (form: IEquipmentDTO) => {
 		const payload: IEquipmentDTO = {
 			...form,
+			// У комплекта типа нет: не шлём пустую строку, иначе бэкенд не разберёт
+			// её как UUID. У единицы тип обязателен (поле «Тип» в форме).
+			typeId: form.isKit ? undefined : form.typeId || undefined,
 			serialNumber: form.serialNumber || null,
 			inventoryNumber: form.inventoryNumber || null,
 			holderName: form.holderName || null,

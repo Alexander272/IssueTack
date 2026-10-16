@@ -50,8 +50,8 @@ type Equipment interface {
 	GetTree(ctx context.Context, dto *models.GetEquipmentTreeDTO) ([]*models.EquipmentTreeNode, int, error)
 	// GetStats возвращает счётчики единиц реалма для шапки страницы.
 	GetStats(ctx context.Context, realmID uuid.UUID) (*models.EquipmentStats, error)
-	// Create создаёт единицу оборудования.
-	Create(ctx context.Context, dto *models.EquipmentDTO) (*models.Equipment, error)
+	// Create создаёт единицу оборудования (для комплекта — сразу с составом).
+	Create(ctx context.Context, dto *models.CreateEquipmentDTO) (*models.Equipment, error)
 	// Update обновляет единицу оборудования (с проверкой циклов в дереве комплектов).
 	Update(ctx context.Context, dto *models.EquipmentDTO) (*models.Equipment, error)
 	// Delete удаляет единицу оборудования.
@@ -76,6 +76,17 @@ type Equipment interface {
 	AddComponents(ctx context.Context, dto *models.KitCompositionOpDTO) error
 	// RemoveComponents исключает единицы из состава комплекта.
 	RemoveComponents(ctx context.Context, dto *models.KitCompositionOpDTO) error
+
+	// GetKitTemplates возвращает шаблоны комплектов реалма вместе с позициями.
+	GetKitTemplates(ctx context.Context, realmID uuid.UUID) ([]*models.EquipmentKitTemplate, error)
+	// GetKitTemplateByID возвращает шаблон комплекта по идентификатору.
+	GetKitTemplateByID(ctx context.Context, req *models.GetEquipmentKitTemplateByIdDTO) (*models.EquipmentKitTemplate, error)
+	// CreateKitTemplate создаёт шаблон комплекта.
+	CreateKitTemplate(ctx context.Context, dto *models.EquipmentKitTemplateDTO) error
+	// UpdateKitTemplate обновляет шаблон комплекта (состав заменяется целиком).
+	UpdateKitTemplate(ctx context.Context, dto *models.EquipmentKitTemplateDTO) error
+	// DeleteKitTemplate удаляет шаблон комплекта.
+	DeleteKitTemplate(ctx context.Context, dto *models.DelEquipmentKitTemplateDTO) error
 
 	// GetActs возвращает список актов реалма.
 	GetActs(ctx context.Context, filter *models.EquipmentActsFilter) ([]*models.EquipmentAct, int, error)
@@ -137,28 +148,52 @@ func (s *EquipmentService) GetStats(ctx context.Context, realmID uuid.UUID) (*mo
 }
 
 // Create создаёт единицу оборудования. Вставка и событие журнала «создано» идут
-// одной транзакцией: журнал — часть операции, а не пост-обработка.
-func (s *EquipmentService) Create(ctx context.Context, dto *models.EquipmentDTO) (*models.Equipment, error) {
-	normalizeEquipmentDTO(dto)
-	deriveHolderStatus(dto)
+// одной транзакцией: журнал — часть операции, а не пост-обработка. Для комплекта
+// можно сразу передать стартовый состав — он открывается в той же транзакции,
+// поэтому «комплект без состава» при частичном сбое не остаётся.
+func (s *EquipmentService) Create(ctx context.Context, dto *models.CreateEquipmentDTO) (*models.Equipment, error) {
+	eq := &dto.EquipmentDTO
+	normalizeEquipmentDTO(eq)
+	deriveHolderStatus(eq)
 
-	if err := s.ensureParentCanBePart(ctx, dto); err != nil {
+	// У комплекта типа нет: присланный игнорируем. Единице тип обязателен —
+	// колонка nullable только потому, что одно поле обслуживает оба случая.
+	if eq.IsKit {
+		eq.TypeID = nil
+	} else if eq.TypeID == nil {
+		return nil, models.ErrInvalidInput
+	}
+
+	if len(dto.Components) > 0 && !eq.IsKit {
+		return nil, models.ErrEquipmentNotKit
+	}
+
+	if err := s.ensureParentCanBePart(ctx, eq); err != nil {
 		return nil, err
 	}
-	if err := s.ensureParentCanHost(ctx, dto); err != nil {
+	if err := s.ensureParentCanHost(ctx, eq); err != nil {
 		return nil, err
 	}
 
 	var data *models.Equipment
 	err := s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
-		created, err := s.repo.Create(ctx, tx, dto)
+		created, err := s.repo.Create(ctx, tx, eq)
 		if err != nil {
 			return fmt.Errorf("failed to create equipment. error: %w", err)
 		}
 		data = created
-		return s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
+		if err := s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
 			EquipmentID: created.ID, EventType: models.EquipmentEventCreated, OperationID: uuid.New(),
-			NewValue: equipmentCreatedJSON(created), UserID: actorID(dto.Actor),
+			NewValue: equipmentCreatedJSON(created), UserID: actorID(eq.Actor),
+		}); err != nil {
+			return err
+		}
+		if len(dto.Components) == 0 {
+			return nil
+		}
+		return s.openComponents(ctx, tx, &models.OpenComponentsDTO{
+			RealmID: eq.RealmID, KitID: created.ID, Components: dto.Components,
+			Reason: "Создание комплекта", Actor: eq.Actor,
 		})
 	})
 	if err != nil {
@@ -177,6 +212,13 @@ func (s *EquipmentService) Update(ctx context.Context, dto *models.EquipmentDTO)
 	}
 	normalizeEquipmentDTO(dto)
 	deriveHolderStatus(dto)
+
+	// У комплекта типа нет — правка формы не должна его ему навязывать.
+	if dto.IsKit {
+		dto.TypeID = nil
+	} else if dto.TypeID == nil {
+		return nil, models.ErrInvalidInput
+	}
 
 	if err := s.ensureParentCanBePart(ctx, dto); err != nil {
 		return nil, err
@@ -241,13 +283,17 @@ func (s *EquipmentService) Delete(ctx context.Context, dto *models.DelEquipmentD
 
 // ensureParentCanBePart проверяет, что единица, у которой задан родитель
 // (физический состав, parent_id), относится к типу, допустимому в составе:
-// комплектующему или расходнику. Логические комплекты (is_kit) не
-// ограничиваются — там состав ведётся через kit_compositions.
+// комплектующему или расходнику. Комплекту parent_id не нужен — состав ведётся
+// через kit_compositions, поэтому комплект в чужой физический состав не кладётся.
 func (s *EquipmentService) ensureParentCanBePart(ctx context.Context, dto *models.EquipmentDTO) error {
 	if dto.ParentID == nil {
 		return nil
 	}
-	eqType, err := s.repo.GetTypeByID(ctx, &models.GetEquipmentTypeByIdDTO{ID: dto.TypeID, RealmID: dto.RealmID})
+	// Типа нет только у комплекта — он в физический состав не входит.
+	if dto.IsKit || dto.TypeID == nil {
+		return models.ErrEquipmentParentNotPart
+	}
+	eqType, err := s.repo.GetTypeByID(ctx, &models.GetEquipmentTypeByIdDTO{ID: *dto.TypeID, RealmID: dto.RealmID})
 	if err != nil {
 		return fmt.Errorf("failed to get equipment type. error: %w", err)
 	}

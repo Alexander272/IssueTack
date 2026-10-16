@@ -83,6 +83,7 @@ export const apiSlice = createApi({
 		'ChecklistTemplates',
 		'Statistics',
 		'EquipmentTypes',
+		'EquipmentTemplates',
 		'Equipment',
 		'EquipmentActs',
 	],

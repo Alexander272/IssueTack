@@ -100,7 +100,7 @@ func TestEquipmentService_ParentRequiresPart(t *testing.T) {
 
 			dto := &models.EquipmentDTO{
 				RealmID: realmID,
-				TypeID:  typeID,
+				TypeID:  &typeID,
 				Name:    "Единица",
 				Status:  models.EquipmentStatusInStock,
 			}
@@ -108,7 +108,7 @@ func TestEquipmentService_ParentRequiresPart(t *testing.T) {
 				dto.ParentID = &parentID
 			}
 
-			_, err := svc.Create(ctx, dto)
+			_, err := svc.Create(ctx, &models.CreateEquipmentDTO{EquipmentDTO: *dto})
 
 			if tt.allowed {
 				require.NoError(t, err)
@@ -130,7 +130,7 @@ func TestEquipmentService_ParentRequiresPart(t *testing.T) {
 			dto := &models.EquipmentDTO{
 				ID:      &id,
 				RealmID: realmID,
-				TypeID:  typeID,
+				TypeID:  &typeID,
 				Name:    "Единица",
 				Status:  models.EquipmentStatusInStock,
 			}
@@ -184,13 +184,13 @@ func TestEquipmentService_ParentMustHost(t *testing.T) {
 
 			dto := &models.EquipmentDTO{
 				RealmID:  realmID,
-				TypeID:   typeID,
+				TypeID:   &typeID,
 				Name:     "Комплектующее",
 				Status:   models.EquipmentStatusInStock,
 				ParentID: &parentID,
 			}
 
-			_, err := svc.Create(ctx, dto)
+			_, err := svc.Create(ctx, &models.CreateEquipmentDTO{EquipmentDTO: *dto})
 
 			if tt.allowed {
 				require.NoError(t, err)
@@ -213,7 +213,7 @@ func TestEquipmentService_ParentMustHost(t *testing.T) {
 			dto := &models.EquipmentDTO{
 				ID:       &id,
 				RealmID:  realmID,
-				TypeID:   typeID,
+				TypeID:   &typeID,
 				Name:     "Комплектующее",
 				Status:   models.EquipmentStatusInStock,
 				ParentID: &parentID,

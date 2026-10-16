@@ -14,6 +14,8 @@ import type {
 	IEquipmentDTO,
 	IEquipmentEvent,
 	IEquipmentFilter,
+	IEquipmentKitTemplate,
+	IEquipmentKitTemplateDTO,
 	IEquipmentList,
 	IEquipmentStats,
 	IEquipmentTreeArgs,
@@ -541,6 +543,87 @@ const equipmentApiSlice = apiSlice.injectEndpoints({	overrideExisting: false,
 				}
 			},
 		}),
+
+		getAllEquipmentTemplates: builder.query<{ data: IEquipmentKitTemplate[] }, void>({
+			query: () => ({
+				url: API.equipment.templates,
+				method: 'GET',
+			}),
+			providesTags: [{ type: 'EquipmentTemplates', id: 'ALL' }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		getEquipmentTemplate: builder.query<{ data: IEquipmentKitTemplate }, string>({
+			query: id => ({
+				url: API.equipment.templateById(id),
+				method: 'GET',
+			}),
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		createEquipmentTemplate: builder.mutation<{ id: string; message: string }, IEquipmentKitTemplateDTO>({
+			query: body => ({
+				url: API.equipment.templates,
+				method: 'POST',
+				body,
+			}),
+			invalidatesTags: [{ type: 'EquipmentTemplates', id: 'ALL' }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		updateEquipmentTemplate: builder.mutation<{ id: string; message: string }, IEquipmentKitTemplateDTO>({
+			query: body => ({
+				url: API.equipment.templateById(body.id!),
+				method: 'PUT',
+				body,
+			}),
+			invalidatesTags: [{ type: 'EquipmentTemplates', id: 'ALL' }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		deleteEquipmentTemplate: builder.mutation<void, string>({
+			query: id => ({
+				url: API.equipment.templateById(id),
+				method: 'DELETE',
+			}),
+			invalidatesTags: [{ type: 'EquipmentTemplates', id: 'ALL' }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
 	}),
 })
 
@@ -575,4 +658,9 @@ export const {
 	useCreateEquipmentTypeMutation,
 	useUpdateEquipmentTypeMutation,
 	useDeleteEquipmentTypeMutation,
+	useGetAllEquipmentTemplatesQuery,
+	useGetEquipmentTemplateQuery,
+	useCreateEquipmentTemplateMutation,
+	useUpdateEquipmentTemplateMutation,
+	useDeleteEquipmentTemplateMutation,
 } = equipmentApiSlice

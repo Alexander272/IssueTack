@@ -1,4 +1,6 @@
 export { EquipmentDialog } from './EquipmentDialog'
+export { EquipmentKitDialog } from './EquipmentKitDialog'
+export { EquipmentTemplateDialog } from './EquipmentTemplateDialog'
 export { EquipmentAssignDialog } from './EquipmentAssignDialog'
 export { EquipmentCompositionDialog } from './EquipmentCompositionDialog'
 export { EquipmentPartsDialog } from './EquipmentPartsDialog'

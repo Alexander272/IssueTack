@@ -122,7 +122,7 @@ type DelEquipmentTypeDTO struct {
 type Equipment struct {
 	ID              uuid.UUID         `json:"id" db:"id"`
 	RealmID         uuid.UUID         `json:"realmId" db:"realm_id"`
-	TypeID          uuid.UUID         `json:"typeId" db:"type_id"`
+	TypeID          *uuid.UUID        `json:"typeId" db:"type_id"`
 	TypeName        string            `json:"typeName" db:"type_name"`
 	TypeKind        EquipmentTypeKind `json:"typeKind" db:"type_kind"`
 	Name            string            `json:"name" db:"name"`
@@ -217,7 +217,7 @@ type GetEquipmentByIdDTO struct {
 type EquipmentDTO struct {
 	ID              *uuid.UUID      `json:"id" db:"id"`
 	RealmID         uuid.UUID       `json:"realmId" db:"realm_id"`
-	TypeID          uuid.UUID       `json:"typeId" db:"type_id" binding:"required,uuid"`
+	TypeID          *uuid.UUID      `json:"typeId" db:"type_id"`
 	Name            string          `json:"name" db:"name" binding:"required"`
 	Vendor          string          `json:"vendor" db:"vendor"`
 	Model           string          `json:"model" db:"model"`
@@ -246,6 +246,26 @@ type DelEquipmentDTO struct {
 	RealmID uuid.UUID `json:"realmId" db:"realm_id"`
 }
 
+// CreateEquipmentDTO — тело POST /equipment: единица/комплект и, для комплекта,
+// необязательный стартовый состав. Поля единицы разворачиваются в JSON рядом с
+// components (встроенная структура), поэтому существующий контракт не меняется.
+// Состав принимается только при создании: в EquipmentDTO его нет, чтобы PUT не
+// мог молча переопределить состав комплекта.
+type CreateEquipmentDTO struct {
+	EquipmentDTO
+	Components []ComponentOpItem `json:"components"`
+}
+
+// OpenComponentsDTO — параметры добавления состава в рамках транзакции. Один
+// набор правил на два входа: Create (стартовый состав) и AddComponents.
+type OpenComponentsDTO struct {
+	RealmID    uuid.UUID
+	KitID      uuid.UUID
+	Components []ComponentOpItem
+	Reason     string
+	Actor      *Actor
+}
+
 // KitComposition — членство компонента в логическом комплекте (интервальная история).
 type KitComposition struct {
 	ID          uuid.UUID  `json:"id" db:"id"`
@@ -263,6 +283,60 @@ type KitComposition struct {
 	ComponentName string `json:"componentName" db:"component_name"`
 	StartedByName string `json:"startedByName" db:"started_by_name"`
 	EndedByName   string `json:"endedByName" db:"ended_by_name"`
+}
+
+// EquipmentKitTemplate — шаблон комплекта: именованный набор типов оборудования,
+// из которого собирают логический комплект (например, «Стандартное рабочее место»).
+type EquipmentKitTemplate struct {
+	ID          uuid.UUID                   `json:"id" db:"id"`
+	RealmID     uuid.UUID                   `json:"realmId" db:"realm_id"`
+	Name        string                      `json:"name" db:"name"`
+	Description string                      `json:"description" db:"description"`
+	SortOrder   int                         `json:"sortOrder" db:"sort_order"`
+	Items       []*EquipmentKitTemplateItem `json:"items" db:"-"`
+	CreatedAt   time.Time                   `json:"createdAt" db:"created_at"`
+	UpdatedAt   time.Time                   `json:"updatedAt" db:"updated_at"`
+}
+
+// EquipmentKitTemplateItem — позиция шаблона: требуемый тип оборудования.
+// TypeName/TypeKind резолвит SQL-джойн, чтобы клиенту не тянуть справочник типов.
+type EquipmentKitTemplateItem struct {
+	ID         uuid.UUID         `json:"id" db:"id"`
+	TemplateID uuid.UUID         `json:"templateId" db:"template_id"`
+	TypeID     uuid.UUID         `json:"typeId" db:"type_id"`
+	TypeName   string            `json:"typeName" db:"type_name"`
+	TypeKind   EquipmentTypeKind `json:"typeKind" db:"type_kind"`
+	SortOrder  int               `json:"sortOrder" db:"sort_order"`
+}
+
+type GetEquipmentKitTemplatesDTO struct {
+	RealmID uuid.UUID `json:"realmId" db:"realm_id"`
+}
+
+type GetEquipmentKitTemplateByIdDTO struct {
+	ID      uuid.UUID `json:"id" db:"id"`
+	RealmID uuid.UUID `json:"realmId" db:"realm_id"`
+}
+
+// EquipmentKitTemplateDTO — создание/правка шаблона. Items передаются целиком:
+// правка заменяет состав шаблона, а не патчит отдельные позиции.
+type EquipmentKitTemplateDTO struct {
+	ID          *uuid.UUID                    `json:"id" db:"id"`
+	RealmID     uuid.UUID                     `json:"realmId" db:"realm_id"`
+	Name        string                        `json:"name" db:"name" binding:"required"`
+	Description string                        `json:"description" db:"description"`
+	SortOrder   int                           `json:"sortOrder" db:"sort_order"`
+	Items       []EquipmentKitTemplateItemDTO `json:"items"`
+}
+
+type EquipmentKitTemplateItemDTO struct {
+	TypeID    uuid.UUID `json:"typeId" binding:"required,uuid"`
+	SortOrder int       `json:"sortOrder"`
+}
+
+type DelEquipmentKitTemplateDTO struct {
+	ID      uuid.UUID `json:"id" db:"id"`
+	RealmID uuid.UUID `json:"realmId" db:"realm_id"`
 }
 
 // EquipmentAssignment — текущая/историческая выдача единицы.

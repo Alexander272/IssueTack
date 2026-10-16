@@ -10,10 +10,12 @@ import { inputProps } from './consts'
 
 // Идентификация единицы: название, тип, статус, производитель, модель и номера.
 // Справочник типов секция грузит сама: единственный потребитель — эта форма.
+// У комплекта типа нет, поэтому для него поле «Тип» не показывается.
 export const IdentityFields: FC = () => {
-	const { control } = useFormContext<IEquipmentDTO>()
+	const { control, watch } = useFormContext<IEquipmentDTO>()
 	const { data } = useGetAllEquipmentTypesQuery()
 	const types = data?.data ?? []
+	const isKit = Boolean(watch('isKit'))
 
 	return (
 		<Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
@@ -34,31 +36,33 @@ export const IdentityFields: FC = () => {
 				/>
 			</Field>
 
-			<Field label='Тип' required>
-				<Controller
-					control={control}
-					name='typeId'
-					rules={{ required: 'Обязательное поле' }}
-					render={({ field, fieldState }) => (
-						<TextField
-							{...field}
-							select
-							{...inputProps}
-							error={Boolean(fieldState.error)}
-							helperText={fieldState.error?.message}
-						>
-							<MenuItem value='' disabled>
-								Выберите тип
-							</MenuItem>
-							{types.map(t => (
-								<MenuItem key={t.id} value={t.id}>
-									{t.name}
+			{!isKit && (
+				<Field label='Тип' required>
+					<Controller
+						control={control}
+						name='typeId'
+						rules={{ required: 'Обязательное поле' }}
+						render={({ field, fieldState }) => (
+							<TextField
+								{...field}
+								select
+								{...inputProps}
+								error={Boolean(fieldState.error)}
+								helperText={fieldState.error?.message}
+							>
+								<MenuItem value='' disabled>
+									Выберите тип
 								</MenuItem>
-							))}
-						</TextField>
-					)}
-				/>
-			</Field>
+								{types.map(t => (
+									<MenuItem key={t.id} value={t.id}>
+										{t.name}
+									</MenuItem>
+								))}
+							</TextField>
+						)}
+					/>
+				</Field>
+			)}
 
 			<Field label='Статус'>
 				<Controller

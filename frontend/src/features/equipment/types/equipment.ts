@@ -69,7 +69,8 @@ export const HOLDER_DERIVED_STATUSES: EquipmentStatus[] = ['in_stock', 'in_use']
 export interface IEquipment {
 	id: string
 	realmId: string
-	typeId: string
+	// typeId — null у комплекта: у комплекта нет типа (только у единиц).
+	typeId: string | null
 	typeName: string
 	typeKind: EquipmentTypeKind
 	name: string
@@ -101,7 +102,7 @@ export interface IEquipment {
 
 export interface IEquipmentDTO {
 	id?: string
-	typeId: string
+	typeId?: string
 	name: string
 	vendor?: string
 	model?: string
@@ -119,6 +120,10 @@ export interface IEquipmentDTO {
 	notes?: string
 	isKit?: boolean
 	kitId?: string | null
+	// components — стартовый состав комплекта, принимается только при создании
+	// (POST /equipment). В PUT поле игнорируется: состав правится отдельными
+	// операциями состава.
+	components?: { componentId: string }[]
 }
 
 export interface IEquipmentFilter {
@@ -330,4 +335,44 @@ export interface IEquipmentActFilter {
 export interface IEquipmentActList {
 	data: IEquipmentAct[]
 	total: number
+}
+
+// ===== Шаблоны комплектов =====
+
+// IEquipmentKitTemplate — именованный набор типов оборудования, из которого
+// собирают комплект («Стандартное рабочее место»). Позиция шаблона — именно ТИП:
+// при применении шаблона слоты заполняются типами, а конкретные единицы
+// выбираются со склада.
+export interface IEquipmentKitTemplate {
+	id: string
+	realmId: string
+	name: string
+	description: string
+	sortOrder: number
+	items: IEquipmentKitTemplateItem[]
+	createdAt: string
+	updatedAt: string
+}
+
+export interface IEquipmentKitTemplateItem {
+	id: string
+	templateId: string
+	typeId: string
+	// typeName/typeKind резолвит сервер джойном, чтобы не тянуть справочник типов.
+	typeName: string
+	typeKind: EquipmentTypeKind
+	sortOrder: number
+}
+
+export interface IEquipmentKitTemplateItemDTO {
+	typeId: string
+	sortOrder?: number
+}
+
+export interface IEquipmentKitTemplateDTO {
+	id?: string
+	name: string
+	description?: string
+	sortOrder?: number
+	items: IEquipmentKitTemplateItemDTO[]
 }

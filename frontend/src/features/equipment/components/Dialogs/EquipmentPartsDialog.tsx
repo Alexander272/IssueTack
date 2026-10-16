@@ -39,7 +39,7 @@ type Props = {
 // поля, поэтому переносим текущие значения и меняем только parentId.
 const toPayload = (child: IEquipment, parentId: string | null): IEquipmentDTO => ({
 	id: child.id,
-	typeId: child.typeId,
+	typeId: child.typeId ?? undefined,
 	name: child.name,
 	vendor: child.vendor,
 	model: child.model,

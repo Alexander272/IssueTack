@@ -24,11 +24,11 @@ func TestEquipmentService_CreateWritesCreatedEvent(t *testing.T) {
 	}
 	svc := NewEquipmentService(repo, &mockTransactionManager{}, testEquipmentConf(t))
 
-	created, err := svc.Create(ctx, &models.EquipmentDTO{
-		RealmID: realmID, TypeID: typeID, Name: "Принтер HP LaserJet",
+	created, err := svc.Create(ctx, &models.CreateEquipmentDTO{EquipmentDTO: models.EquipmentDTO{
+		RealmID: realmID, TypeID: &typeID, Name: "Принтер HP LaserJet",
 		Status: models.EquipmentStatusInStock, InventoryNumber: &inventory,
 		Actor: &models.Actor{ID: actorID},
-	})
+	}})
 	require.NoError(t, err)
 
 	require.Len(t, repo.events, 1)
@@ -79,7 +79,7 @@ func TestEquipmentService_UpdateWritesMovedEvent(t *testing.T) {
 			svc := NewEquipmentService(repo, &mockTransactionManager{}, testEquipmentConf(t))
 
 			_, err := svc.Update(ctx, &models.EquipmentDTO{
-				ID: &id, RealmID: realmID, TypeID: typeID, Name: "Принтер HP LaserJet",
+				ID: &id, RealmID: realmID, TypeID: &typeID, Name: "Принтер HP LaserJet",
 				Status:   models.EquipmentStatusInUse,
 				SiteID:   tt.siteID,
 				Location: &tt.location,

@@ -81,6 +81,13 @@ type Equipment interface {
 	CloseOpenByComponent(ctx context.Context, tx Tx, componentID uuid.UUID, endedBy *uuid.UUID, reason string, actID *uuid.UUID) error
 	CloseOpenByKit(ctx context.Context, tx Tx, kitID uuid.UUID, endedBy *uuid.UUID, reason string, actID *uuid.UUID) error
 
+	// Шаблоны комплектов
+	GetKitTemplates(ctx context.Context, realmID uuid.UUID) ([]*models.EquipmentKitTemplate, error)
+	GetKitTemplateByID(ctx context.Context, req *models.GetEquipmentKitTemplateByIdDTO) (*models.EquipmentKitTemplate, error)
+	CreateKitTemplate(ctx context.Context, tx Tx, dto *models.EquipmentKitTemplateDTO) error
+	UpdateKitTemplate(ctx context.Context, tx Tx, dto *models.EquipmentKitTemplateDTO) error
+	DeleteKitTemplate(ctx context.Context, dto *models.DelEquipmentKitTemplateDTO) error
+
 	// Акты
 	GetActs(ctx context.Context, filter *models.EquipmentActsFilter) ([]*models.EquipmentAct, int, error)
 	GetActByID(ctx context.Context, req *models.GetEquipmentActByIDDTO) (*models.EquipmentAct, error)
@@ -95,7 +102,7 @@ type Equipment interface {
 // и COUNT(*) OVER() для тотала страницы.
 func equipmentSelectBase() string {
 	return fmt.Sprintf(`SELECT 
-			e.id, e.realm_id, e.type_id, et.name, et.kind, e.name, e.vendor, e.model,
+			e.id, e.realm_id, e.type_id, COALESCE(et.name, ''), COALESCE(et.kind::text, ''), e.name, e.vendor, e.model,
 			e.serial_number, e.inventory_number, e.specs, e.status, e.parent_id, e.site_id, s.name,
 			e.holder_user_id, e.holder_name,
 			%s,
@@ -107,7 +114,7 @@ func equipmentSelectBase() string {
 			) AS container_name,
 			COUNT(*) OVER() AS total_count
 		FROM %s e
-		JOIN %s et ON et.id = e.type_id
+		LEFT JOIN %s et ON et.id = e.type_id
 		LEFT JOIN %s s ON s.id = e.site_id
 		LEFT JOIN %s u ON u.id = e.holder_user_id`,
 		fullNameSQL("u"),
@@ -238,7 +245,7 @@ func (r *EquipmentRepo) GetStats(ctx context.Context, realmID uuid.UUID) (*model
 			COUNT(*) FILTER (WHERE e.is_kit)::int,
 			COUNT(*) FILTER (WHERE NOT e.is_kit AND e.status = 'in_stock' AND et.kind IN ('component', 'consumable'))::int
 		FROM %s e
-		JOIN %s et ON et.id = e.type_id
+		LEFT JOIN %s et ON et.id = e.type_id
 		WHERE e.realm_id = $1`, Tables.Equipment, Tables.EquipmentTypes)
 
 	stats := &models.EquipmentStats{}
@@ -257,13 +264,18 @@ func (r *EquipmentRepo) Create(ctx context.Context, tx Tx, dto *models.Equipment
 		specs = []byte("{}")
 	}
 
+	// type_id NULL-able: у комплекта типа нет (см. equipment_type_nullable_for_kits).
+	var typeID any
+	if dto.TypeID != nil {
+		typeID = dto.TypeID
+	}
 	query := fmt.Sprintf(`INSERT INTO %s (id, realm_id, type_id, name, vendor, model, serial_number, inventory_number,
 			specs, status, parent_id, site_id, holder_user_id, holder_name, location, purchase_date, warranty_until, notes, created_by, is_kit)
 		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), $9::jsonb, $10, $11, $12, $13, NULLIF($14, ''), NULLIF($15, ''), $16::date, $17::date, $18, $19, $20)`,
 		Tables.Equipment)
 
 	_, err := r.getExec(tx).Exec(ctx, query,
-		id, dto.RealmID, dto.TypeID, dto.Name, dto.Vendor, dto.Model,
+		id, dto.RealmID, typeID, dto.Name, dto.Vendor, dto.Model,
 		dto.SerialNumber, dto.InventoryNumber, specs, dto.Status, dto.ParentID, dto.SiteID,
 		dto.HolderUserID, dto.HolderName, dto.Location, dto.PurchaseDate, dto.WarrantyUntil,
 		dto.Notes, dto.CreatedBy, dto.IsKit)
@@ -279,13 +291,18 @@ func (r *EquipmentRepo) Update(ctx context.Context, tx Tx, dto *models.Equipment
 		specs = []byte("{}")
 	}
 
+	// type_id NULL-able: у комплекта типа нет.
+	var typeID any
+	if dto.TypeID != nil {
+		typeID = dto.TypeID
+	}
 	query := fmt.Sprintf(`UPDATE %s SET type_id=$2, name=$3, vendor=$4, model=$5, serial_number=$6, inventory_number=$7,
 			specs=$8::jsonb, status=$9, parent_id=$10, site_id=$11, holder_user_id=$12, holder_name=$13, location=$14,
 			purchase_date=$15::date, warranty_until=$16::date, notes=$17, updated_at=NOW()
 		WHERE id=$1 AND realm_id=$18`, Tables.Equipment)
 
 	res, err := r.getExec(tx).Exec(ctx, query,
-		dto.ID, dto.TypeID, dto.Name, dto.Vendor, dto.Model,
+		dto.ID, typeID, dto.Name, dto.Vendor, dto.Model,
 		dto.SerialNumber, dto.InventoryNumber, specs, dto.Status, dto.ParentID, dto.SiteID,
 		dto.HolderUserID, dto.HolderName, dto.Location, dto.PurchaseDate, dto.WarrantyUntil,
 		dto.Notes, dto.RealmID)
