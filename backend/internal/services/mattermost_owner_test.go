@@ -40,7 +40,10 @@ type ownerOpts struct {
 	customers []*models.UserData
 	// allCustomers — весь ответ GetByMembership, включая неактивных.
 	allCustomers []*models.UserData
-	mmUserID     string
+	// categories/sites — справочники диалога; для проверки порядка полей.
+	categories []*models.Category
+	sites      []*models.Site
+	mmUserID   string
 }
 
 func ownerService(t *testing.T, opts ownerOpts) *ownerFixture {
@@ -95,12 +98,12 @@ func ownerService(t *testing.T, opts ownerOpts) *ownerFixture {
 		Groups:     groups,
 		Categories: &fakeCategoriesSvc{
 			get: func(context.Context, *models.GetCategoriesDTO) ([]*models.Category, error) {
-				return nil, nil
+				return opts.categories, nil
 			},
 		},
 		Sites: &fakeSitesSvc{
 			get: func(context.Context, *models.GetSitesDTO) ([]*models.Site, error) {
-				return nil, nil
+				return opts.sites, nil
 			},
 		},
 		Access:   access,
@@ -267,16 +270,40 @@ func TestDialogOpen_OwnerSelect_SkipsInactive(t *testing.T) {
 	assert.Equal(t, active.ID.String(), el.Options[0].Value)
 }
 
-func TestDialogOpen_OwnerSelect_PlacedBeforeCategory(t *testing.T) {
+// TestDialogOpen_FieldOrder закрепляет порядок полей диалога: он повторяет
+// форму создания заявки (веб TaskCreateForm и плагин CreateTab) —
+// Категория → Площадка → Заголовок → Описание → Заказчик.
+func TestDialogOpen_FieldOrder(t *testing.T) {
 	f := ownerService(t, ownerOpts{
 		role:      ownerRole{isSupervisor: true},
 		customers: []*models.UserData{{ID: uuid.New(), Username: "client", IsActive: true}},
+		categories: []*models.Category{
+			{ID: uuid.New(), Name: "Оборудование"},
+		},
+		sites: []*models.Site{{ID: uuid.New(), Name: "Головной офис"}},
 	})
 
 	elements := f.openDialog(t)
-	require.Len(t, elements, 3)
-	assert.Equal(t, []string{"title", "description", "ownerId"},
-		[]string{elements[0].Name, elements[1].Name, elements[2].Name})
+	require.Len(t, elements, 5)
+	assert.Equal(t,
+		[]string{"categoryId", "siteId", "title", "description", "ownerId"},
+		[]string{elements[0].Name, elements[1].Name, elements[2].Name, elements[3].Name, elements[4].Name})
+}
+
+// TestDialogOpen_FieldOrder_PlainRequester — у чистого заявителя поля «Заказчик»
+// нет, остальные идут в том же порядке.
+func TestDialogOpen_FieldOrder_PlainRequester(t *testing.T) {
+	f := ownerService(t, ownerOpts{
+		role:       ownerRole{},
+		categories: []*models.Category{{ID: uuid.New(), Name: "Оборудование"}},
+		sites:      []*models.Site{{ID: uuid.New(), Name: "Головной офис"}},
+	})
+
+	elements := f.openDialog(t)
+	require.Len(t, elements, 4)
+	assert.Equal(t,
+		[]string{"categoryId", "siteId", "title", "description"},
+		[]string{elements[0].Name, elements[1].Name, elements[2].Name, elements[3].Name})
 }
 
 func TestDialogSubmit_SetsOwnerFromSelection(t *testing.T) {

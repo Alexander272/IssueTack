@@ -12,7 +12,7 @@ import (
 )
 
 // TestSendGreeting_FirstTime: первая отправка помечает пользователя и уходит
-// личным сообщением со скриншотом кнопки «Создать заявку».
+// личным сообщением со скриншотом кнопки «Заявки».
 func TestSendGreeting_FirstTime(t *testing.T) {
 	realmID, userID := uuid.New(), uuid.New()
 
@@ -25,7 +25,7 @@ func TestSendGreeting_FirstTime(t *testing.T) {
 	require.Len(t, posts, 1)
 	assert.Equal(t, "dm1", posts[0].channelID)
 	assert.Contains(t, posts[0].message, "На связи чат-бот IT-поддержки")
-	assert.Contains(t, posts[0].message, "«Создать заявку»")
+	assert.Contains(t, posts[0].message, "«Заявки»")
 	assert.Equal(t, []string{"f1"}, posts[0].fileIDs, "к приветствию приложен скриншот")
 }
 

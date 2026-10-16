@@ -374,55 +374,9 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 				</div>
 			</section>
 
-			{isExecutor ? (
-				<section className='it-ticket-section'>
-					<div className='it-ticket-section__head'>
-						<div className='it-ticket-section__num'>2</div>
-						<div>
-							<div className='it-ticket-section__title'>Заказчик</div>
-							<div className='it-ticket-section__subtitle'>Выберите заказчика, для которого создаётся заявка</div>
-						</div>
-					</div>
-					<div className='it-ticket-section__body'>
-						<label className='it-f-label'>
-							<span className='it-f-label__text'>
-								Заказчик <span className='it-f-required'>*</span>
-							</span>
-							<select
-								className={`it-f${fieldErrors.ownerId ? ' it-f--error' : ''}`}
-								value={ownerId}
-								onChange={e => {
-									setOwnerId(e.target.value)
-									clearFieldError('ownerId')
-								}}
-							>
-								<option value=''>— Выберите заказчика —</option>
-								{customers.map(u => (
-									<option key={u.id} value={u.id}>
-										{pluginUserLabel(u)}
-									</option>
-								))}
-							</select>
-							{fieldErrors.ownerId ? <span className='it-f__err'>{fieldErrors.ownerId}</span> : null}
-							{customers.length === 0 ? <span className='it-f-label__hint'>Нет заказчиков</span> : null}
-						</label>
-
-						<label className='it-f-label it-f-check'>
-							<input
-								className='it-f-check__box'
-								type='checkbox'
-								checked={assigneeId === context.user.id}
-								onChange={e => setAssigneeId(e.target.checked ? context.user.id : '')}
-							/>
-							<span className='it-f-check__text'>Назначить меня исполнителем</span>
-						</label>
-					</div>
-				</section>
-			) : null}
-
 			<section className='it-ticket-section'>
 				<div className='it-ticket-section__head'>
-					<div className='it-ticket-section__num'>{isExecutor ? 3 : 2}</div>
+					<div className='it-ticket-section__num'>2</div>
 					<div>
 						<div className='it-ticket-section__title'>Описание проблемы</div>
 						<div className='it-ticket-section__subtitle'>
@@ -490,6 +444,55 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 					</div>
 				</div>
 			</section>
+
+			{/* Заказчик — отдельная секция только исполнителю; в веб-форме
+				CustomerSelectionSection идёт после «Описания», поэтому и здесь
+				она после него, чтобы порядок полей совпадал. */}
+			{isExecutor ? (
+				<section className='it-ticket-section'>
+					<div className='it-ticket-section__head'>
+						<div className='it-ticket-section__num'>3</div>
+						<div>
+							<div className='it-ticket-section__title'>Заказчик</div>
+							<div className='it-ticket-section__subtitle'>Выберите заказчика, для которого создаётся заявка</div>
+						</div>
+					</div>
+					<div className='it-ticket-section__body'>
+						<label className='it-f-label'>
+							<span className='it-f-label__text'>
+								Заказчик <span className='it-f-required'>*</span>
+							</span>
+							<select
+								className={`it-f${fieldErrors.ownerId ? ' it-f--error' : ''}`}
+								value={ownerId}
+								onChange={e => {
+									setOwnerId(e.target.value)
+									clearFieldError('ownerId')
+								}}
+							>
+								<option value=''>— Выберите заказчика —</option>
+								{customers.map(u => (
+									<option key={u.id} value={u.id}>
+										{pluginUserLabel(u)}
+									</option>
+								))}
+							</select>
+							{fieldErrors.ownerId ? <span className='it-f__err'>{fieldErrors.ownerId}</span> : null}
+							{customers.length === 0 ? <span className='it-f-label__hint'>Нет заказчиков</span> : null}
+						</label>
+
+						<label className='it-f-label it-f-check'>
+							<input
+								className='it-f-check__box'
+								type='checkbox'
+								checked={assigneeId === context.user.id}
+								onChange={e => setAssigneeId(e.target.checked ? context.user.id : '')}
+							/>
+							<span className='it-f-check__text'>Назначить меня исполнителем</span>
+						</label>
+					</div>
+				</section>
+			) : null}
 
 			{isManager ? (
 				<section className='it-ticket-section'>

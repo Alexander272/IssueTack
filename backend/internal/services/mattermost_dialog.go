@@ -250,14 +250,11 @@ func (s *MattermostService) HandleDialogOpen(ctx context.Context, input *models.
 		logger.Warn("failed to load sites for dialog", logger.ErrAttr(err))
 	}
 
-	elements := []mattermost.DialogElement{
-		{DisplayName: "Заголовок", Name: "title", Type: "text", MaxLength: 150},
-		{DisplayName: "Описание", Name: "description", Type: "textarea", MaxLength: 3000},
-	}
-
-	if ownerEl := s.ownerSelectElement(ctx, realmID, input.UserID); ownerEl != nil {
-		elements = append(elements, *ownerEl)
-	}
+	// Порядок полей повторяет форму создания заявки (веб TaskCreateForm и
+	// плагин CreateTab): сначала «что и где» (категория, площадка), затем
+	// «описание», и в конце заказчик. Пользователи не путаются при переходе
+	// между диалогом бота и формой.
+	elements := make([]mattermost.DialogElement, 0, 5)
 
 	if len(categories) > 0 {
 		opts := make([]*model.PostActionOptions, 0, len(categories))
@@ -283,6 +280,15 @@ func (s *MattermostService) HandleDialogOpen(ctx context.Context, input *models.
 		elements = append(elements, mattermost.DialogElement{
 			DisplayName: "Площадка", Name: "siteId", Type: "select", Options: opts,
 		})
+	}
+
+	elements = append(elements,
+		mattermost.DialogElement{DisplayName: "Заголовок", Name: "title", Type: "text", MaxLength: 150},
+		mattermost.DialogElement{DisplayName: "Описание", Name: "description", Type: "textarea", MaxLength: 3000},
+	)
+
+	if ownerEl := s.ownerSelectElement(ctx, realmID, input.UserID); ownerEl != nil {
+		elements = append(elements, *ownerEl)
 	}
 
 	if err := s.most.Dialog.Open(settings.BotToken, mattermost.OpenRequest{
