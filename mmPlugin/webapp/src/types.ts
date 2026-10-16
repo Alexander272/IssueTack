@@ -161,17 +161,37 @@ export interface PluginApiErrorBody {
     message?: string;
 }
 
+// PluginChannel — минимальный слепок канала из стора Mattermost. Нужен, чтобы
+// найти личный диалог с ботом: у DM-канала type === 'D', а name — пара id через
+// «__» (текущий пользователь и собеседник).
+export interface PluginChannel {
+    id: string;
+    type?: string;
+    name?: string;
+}
+
+export interface PluginProfile {
+    id?: string;
+    is_bot?: boolean;
+}
+
 export interface PluginStore {
     getState: () => {
         entities: {
             users: {
                 currentUserId?: string;
+                // profiles нужны, чтобы отличить бота от человека: у бота is_bot === true.
+                profiles?: Record<string, PluginProfile>;
             };
             // Имя текущей команды нужно, чтобы увести ссылку с маршрута плагина в
             // канал: маршрут плагина живёт вне команд, а адрес канала — /{team}/channels/{id}.
             teams: {
                 currentTeamId?: string;
                 teams: Record<string, {id: string; name: string}>;
+            };
+            // channels.channels — карта каналов по id, из неё ищется DM с ботом.
+            channels?: {
+                channels?: Record<string, PluginChannel>;
             };
         };
     };
@@ -180,6 +200,15 @@ export interface PluginStore {
 
 export interface PluginRegistry {
     registerChannelHeaderIcon(input: {component: ComponentType<{channel: {id: string}}>}): string;
+
+    // registerAppBarComponent добавляет иконку в правую колонку App Bar. action
+    // вызывается с текущим каналом и участником. В старых версиях MM метода
+    // может не быть — тогда иконку в App Bar просто не регистрируем.
+    registerAppBarComponent?(input: {
+        iconUrl: string;
+        tooltipText: string;
+        action: (channel: PluginChannel, member: unknown) => void;
+    }): string;
 
     // registerCustomRoute монтирует компонент по адресу
     // /plug/<pluginId>/<route>. Компонент не получает props (в том числе

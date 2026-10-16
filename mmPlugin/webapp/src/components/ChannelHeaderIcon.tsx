@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useRef, useState} from 'react'
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 import {createPortal} from 'react-dom'
 
 import {
@@ -10,7 +10,7 @@ import {
     requestGreeting,
     subscribeCurrentUser,
 } from '../api'
-import {rememberChannel, setModalHost, subscribeOpen, takePendingTicket} from '../deepLink'
+import {rememberChannel, setModalHost, subscribeOpen, subscribePluginOpen, takePendingOpen, takePendingTicket} from '../deepLink'
 import type {PluginContextResult, PluginScope} from '../types'
 import ModalController from './ModalController'
 import {ClipboardCheckIcon} from './icons'
@@ -135,6 +135,23 @@ export default function ChannelHeaderIcon({channel}: ChannelHeaderIconProps) {
         requestGreeting(scope).catch(() => undefined);
     }, [modalHost, scope]);
 
+    // openModal показывает модалку и обновляет контекст: справочники/роли к
+    // моменту клика могли устареть. Определяем до раннего return, потому что на
+    // него подписывается ещё и иконка в App Bar (см. subscribePluginOpen).
+    const openModal = useCallback(() => {
+        if (!scope) {
+            return
+        }
+        setOpen(true)
+        getContextFresh(scope)
+            .then(data => {
+                if (aliveRef.current) {
+                    setContext(data)
+                }
+            })
+            .catch(() => undefined)
+    }, [scope])
+
     // Клик по ссылке на заявку, когда модалка уже смонтирована: показываем её
     // прямо в текущем канале, вообще никуда не переходя.
     useEffect(() => subscribeOpen(ticketId => {
@@ -142,9 +159,14 @@ export default function ChannelHeaderIcon({channel}: ChannelHeaderIconProps) {
         setOpen(true);
     }), []);
 
-    // Ссылка на заявку положила её id в deepLink и ушла в канал. Забираем его
-    // здесь — только когда модалка действительно сможет открыться (bound), иначе
-    // запись сгорела бы впустую вместе с единственным шансом её показать.
+    // Иконка в App Bar просит открыть модалку. Этот компонент смонтирован как
+    // хост только в личном диалоге с ботом, поэтому открываем модалку на месте.
+    useEffect(() => subscribePluginOpen(openModal), [openModal]);
+
+    // Ссылка на заявку положила её id в deepLink, а иконка App Bar — флаг
+    // открытия. Забираем их здесь — только когда модалка действительно сможет
+    // открыться (bound), иначе запись сгорела бы впустую вместе с единственным
+    // шансом её показать.
     useEffect(() => {
         if (!ready || !context?.bound || open || pendingOpenId) {
             return
@@ -153,25 +175,15 @@ export default function ChannelHeaderIcon({channel}: ChannelHeaderIconProps) {
         if (pending) {
             setPendingOpenId(pending)
             setOpen(true)
+            return
+        }
+        if (takePendingOpen()) {
+            setOpen(true)
         }
     }, [ready, context?.bound, open, pendingOpenId])
 
     if (!scope || !ready || !context || !context.bound) {
         return null
-    }
-
-    const openModal = () => {
-        setOpen(true)
-        if (!scope) {
-            return
-        }
-        getContextFresh(scope)
-            .then(data => {
-                if (aliveRef.current) {
-                    setContext(data)
-                }
-            })
-            .catch(() => undefined)
     }
 
     return (

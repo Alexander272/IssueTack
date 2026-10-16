@@ -42,6 +42,42 @@ export function getCurrentTeamName(): string | null {
     return current && current.name ? current.name : null;
 }
 
+// findBotDmChannelId ищет личный диалог текущего пользователя с ботом. Идём по
+// карте каналов стора: DM — это type === 'D', имя которого склеено из двух id
+// через «__», а собеседник — тот, у кого is_bot === true. Иконка в App Bar
+// нужна, чтобы открыть модалку, и канал для этого берётся здесь, поэтому
+// привязанные каналы и realm-контекст не требуются.
+export function findBotDmChannelId(): string | null {
+    const self = getCurrentUserId();
+    if (!self || !storeRef || typeof storeRef.getState !== 'function') {
+        return null;
+    }
+    const state = storeRef.getState();
+    const users = state && state.entities ? state.entities.users : undefined;
+    const channels = state && state.entities ? state.entities.channels : undefined;
+    const profiles = users ? users.profiles : undefined;
+    const map = channels ? channels.channels : undefined;
+    if (!profiles || !map) {
+        return null;
+    }
+    for (const id of Object.keys(map)) {
+        const channel = map[id];
+        if (!channel || channel.type !== 'D' || !channel.name) {
+            continue;
+        }
+        const ids = channel.name.split('__');
+        if (ids.length !== 2) {
+            continue;
+        }
+        const other = ids[0] === self ? ids[1] : ids[0];
+        const profile = profiles[other];
+        if (profile && profile.is_bot === true) {
+            return channel.id;
+        }
+    }
+    return null;
+}
+
 export function subscribeCurrentUser(listener: (userId: string | null) => void): () => void {
     if (!storeRef || typeof storeRef.subscribe !== 'function') {
         return () => undefined;

@@ -33,6 +33,14 @@ module.exports = {
                 test: /\.css$/,
                 use: ['style-loader', 'css-loader'],
             },
+            // Иконка плагина для App Bar вшивается в бандл как data-URI: publicPath
+            // равен '/', поэтому отдельный файл ассета отдавался бы из корня MM,
+            // а не из каталога плагина. asset/inline отдаёт строку с base64 в
+            // iconUrl — ровно то, что ждёт registerAppBarComponent.
+            {
+                test: /\.png$/,
+                type: 'asset/inline',
+            },
         ],
     },
     externals: {
