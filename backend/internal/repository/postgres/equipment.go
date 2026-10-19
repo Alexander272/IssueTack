@@ -95,6 +95,14 @@ type Equipment interface {
 	// SetActSignedFile помечает акт подписанным и записывает реквизиты файла.
 	SetActSignedFile(ctx context.Context, tx Tx, dto *models.SignEquipmentActDTO) error
 	NextActSeq(ctx context.Context, tx Tx, realmID uuid.UUID) (int, error)
+
+	// Инвентарные номера
+	// NextInventoryNumber возвращает следующее значение счётчика реалма для серии
+	// (unit/kit). Вызывается в транзакции создания/правки: откат не «сжигает» номер.
+	NextInventoryNumber(ctx context.Context, tx Tx, realmID uuid.UUID, series models.EquipmentInventorySeries) (int, error)
+	// InventoryNumberExists сообщает, занят ли номер в реалме: ручной ввод может
+	// обогнать счётчик, и сгенерированному значению нельзя занять чужое.
+	InventoryNumberExists(ctx context.Context, tx Tx, realmID uuid.UUID, number string) (bool, error)
 }
 
 // equipmentSelectBase — выборка единицы со справочными полями (тип, площадка,

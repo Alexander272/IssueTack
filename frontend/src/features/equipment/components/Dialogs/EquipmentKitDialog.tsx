@@ -194,7 +194,12 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose }) => {
 								control={control}
 								name='inventoryNumber'
 								render={({ field }) => (
-									<TextField {...field} {...inputProps} placeholder='Необязательно' />
+									<TextField
+										{...field}
+										{...inputProps}
+										placeholder='Необязательно'
+										helperText='Оставьте пустым — номер присвоится автоматически (KIT-…)'
+									/>
 								)}
 							/>
 						</Field>

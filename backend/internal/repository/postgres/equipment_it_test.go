@@ -209,3 +209,71 @@ func TestEquipmentRepo_Stage3Flow(t *testing.T) {
 	assert.Equal(t, "Тестов Тест", compHistory[0].StartedByName)
 	assert.Equal(t, "Тестов Тест", compHistory[0].EndedByName)
 }
+
+// TestEquipmentRepo_InventoryNumberCounter проверяет счётчик инвентарных номеров
+// на реальном upsert: серии независимы, а откат транзакции возвращает счётчик
+// назад — номер не «сгорает» при неудачном создании.
+func TestEquipmentRepo_InventoryNumberCounter(t *testing.T) {
+	pool := itPool(t)
+	f := newEqFixture(t, pool)
+	ctx := context.Background()
+
+	repo := NewEquipmentRepo(pool, NewTransactionRepo(pool))
+
+	tx, err := repo.BeginTx(ctx)
+	require.NoError(t, err)
+	first, err := repo.NextInventoryNumber(ctx, tx, f.realmID, models.InventorySeriesUnit)
+	require.NoError(t, err)
+	second, err := repo.NextInventoryNumber(ctx, tx, f.realmID, models.InventorySeriesUnit)
+	require.NoError(t, err)
+	kit, err := repo.NextInventoryNumber(ctx, tx, f.realmID, models.InventorySeriesKit)
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit(ctx))
+
+	assert.Equal(t, 1, first)
+	assert.Equal(t, 2, second)
+	assert.Equal(t, 1, kit, "у серии комплектов свой счётчик")
+
+	// Откат не «сжигает» номер: счётчик откатывается вместе с транзакцией.
+	tx, err = repo.BeginTx(ctx)
+	require.NoError(t, err)
+	_, err = repo.NextInventoryNumber(ctx, tx, f.realmID, models.InventorySeriesUnit)
+	require.NoError(t, err)
+	require.NoError(t, tx.Rollback(ctx))
+
+	tx, err = repo.BeginTx(ctx)
+	require.NoError(t, err)
+	third, err := repo.NextInventoryNumber(ctx, tx, f.realmID, models.InventorySeriesUnit)
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit(ctx))
+	assert.Equal(t, 3, third, "после отката следующий номер — 3, а не 4")
+}
+
+// TestEquipmentRepo_InventoryNumberExists проверяет проверку занятости номера:
+// сервис опирается на неё, чтобы пропустить значение, занятое ручным вводом.
+func TestEquipmentRepo_InventoryNumberExists(t *testing.T) {
+	pool := itPool(t)
+	f := newEqFixture(t, pool)
+	ctx := context.Background()
+
+	repo := NewEquipmentRepo(pool, NewTransactionRepo(pool))
+
+	exists, err := repo.InventoryNumberExists(ctx, nil, f.realmID, "000001")
+	require.NoError(t, err)
+	assert.False(t, exists)
+
+	dto := newEquipmentDTO(f, &f.typeID, "Ноутбук с номером")
+	dto.InventoryNumber = eqString("000001")
+	_, err = repo.Create(ctx, nil, dto)
+	require.NoError(t, err)
+
+	exists, err = repo.InventoryNumberExists(ctx, nil, f.realmID, "000001")
+	require.NoError(t, err)
+	assert.True(t, exists)
+
+	// Номер уникален в пределах реалма: в другом реалме то же значение свободно.
+	other := newEqFixture(t, pool)
+	exists, err = repo.InventoryNumberExists(ctx, nil, other.realmID, "000001")
+	require.NoError(t, err)
+	assert.False(t, exists, "уникальность номера — в пределах реалма")
+}

@@ -17,11 +17,28 @@ import (
 // интерфейса не вызываются.
 type fakeEquipmentRepo struct {
 	repository.Equipment
-	eqType  *models.EquipmentType
-	parent  *models.Equipment
-	created *models.EquipmentDTO
-	updated *models.EquipmentDTO
-	events  []*models.EquipmentEvent
+	eqType   *models.EquipmentType
+	parent   *models.Equipment
+	created  *models.EquipmentDTO
+	updated  *models.EquipmentDTO
+	events   []*models.EquipmentEvent
+	invSeq   map[models.EquipmentInventorySeries]int
+	invTaken map[string]bool
+}
+
+// NextInventoryNumber/InventoryNumberExists — счётчик инвентарных номеров
+// в памяти: сервис генерирует номер при создании и правке, и без этих методов
+// встроенный в структуру nil-интерфейс паниковал бы.
+func (f *fakeEquipmentRepo) NextInventoryNumber(_ context.Context, _ postgres.Tx, _ uuid.UUID, series models.EquipmentInventorySeries) (int, error) {
+	if f.invSeq == nil {
+		f.invSeq = map[models.EquipmentInventorySeries]int{}
+	}
+	f.invSeq[series]++
+	return f.invSeq[series], nil
+}
+
+func (f *fakeEquipmentRepo) InventoryNumberExists(_ context.Context, _ postgres.Tx, _ uuid.UUID, number string) (bool, error) {
+	return f.invTaken[number], nil
 }
 
 func (f *fakeEquipmentRepo) GetTypeByID(_ context.Context, _ *models.GetEquipmentTypeByIdDTO) (*models.EquipmentType, error) {

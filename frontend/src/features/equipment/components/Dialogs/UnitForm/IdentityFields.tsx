@@ -113,7 +113,9 @@ export const IdentityFields: FC = () => {
 				<Controller
 					control={control}
 					name='inventoryNumber'
-					render={({ field }) => <TextField {...field} {...inputProps} />}
+					render={({ field }) => (
+						<TextField {...field} {...inputProps} helperText='Оставьте пустым — номер присвоится автоматически' />
+					)}
 				/>
 			</Field>
 		</Box>

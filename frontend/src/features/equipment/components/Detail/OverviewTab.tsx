@@ -1,6 +1,6 @@
 import { useState, type FC } from 'react'
 import { Box, Button, Stack, Typography } from '@mui/material'
-import { PackageIcon, PlusIcon } from 'lucide-mui'
+import { PackageIcon, PlusIcon, PrinterIcon } from 'lucide-mui'
 
 import type { IEquipment } from '../../types/equipment'
 import { canBePart } from '../../types/equipment'
@@ -13,6 +13,7 @@ import { PermRules } from '@/features/access/constants/permissions'
 import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
 import { EquipmentCompositionDialog, EquipmentPartsDialog } from '../Dialogs'
 import { DetailCard } from './DetailCard'
+import { InventoryLabel, InventoryLabelPrint } from './InventoryLabel'
 import { softButtonSx } from './consts'
 import { EmptyState } from './EmptyState'
 import { EquipmentTasks } from './EquipmentTasks'
@@ -45,6 +46,9 @@ export const OverviewTab: FC<Props> = ({ unit, onOpenUnit }) => {
 	const canWrite = useCheckPermissions({ anyOf: [PermRules.Equipment.Write] })
 	const [compositionOpen, setCompositionOpen] = useState(false)
 	const [partsOpen, setPartsOpen] = useState(false)
+	// Не булев флаг, а счётчик: печать перезапускается с ремаунта слоя, поэтому
+	// повторное нажатие «Печать» сработает, даже если браузер не прислал afterprint.
+	const [printNonce, setPrintNonce] = useState<number | null>(null)
 	const isKit = unit.isKit
 	const isUnit = !isKit && !canBePart(unit.typeKind)
 	// Установленность — это физический родитель (parent_id) или членство в
@@ -116,6 +120,25 @@ export const OverviewTab: FC<Props> = ({ unit, onOpenUnit }) => {
 					</Box>
 				</DetailCard>
 
+				{unit.inventoryNumber && (
+					<DetailCard
+						title='Инвентарная этикетка'
+						divided
+						action={
+							<Button
+								size='small'
+								startIcon={<PrinterIcon sx={{ fontSize: 14 }} />}
+								sx={softButtonSx}
+								onClick={() => setPrintNonce(n => (n ?? 0) + 1)}
+							>
+								Печать
+							</Button>
+						}
+					>
+						<InventoryLabel name={unit.name} inventoryNumber={unit.inventoryNumber} />
+					</DetailCard>
+				)}
+
 				{unit.notes && (
 					<DetailCard title='Примечание'>
 						<Typography sx={{ fontSize: 14, color: '#334155', whiteSpace: 'pre-wrap' }}>
@@ -168,6 +191,13 @@ export const OverviewTab: FC<Props> = ({ unit, onOpenUnit }) => {
 				<EquipmentCompositionDialog open onClose={() => setCompositionOpen(false)} unit={unit} />
 			)}
 			{!isKit && partsOpen && <EquipmentPartsDialog open onClose={() => setPartsOpen(false)} unit={unit} />}
+			{printNonce !== null && unit.inventoryNumber && (
+				<InventoryLabelPrint
+					key={printNonce}
+					unit={unit}
+					onClose={() => setPrintNonce(null)}
+				/>
+			)}
 		</>
 	)
 }

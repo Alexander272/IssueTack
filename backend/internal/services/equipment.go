@@ -177,6 +177,14 @@ func (s *EquipmentService) Create(ctx context.Context, dto *models.CreateEquipme
 
 	var data *models.Equipment
 	err := s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+		if eq.InventoryNumber == nil {
+			number, err := s.nextInventoryNumber(ctx, tx, eq.RealmID, inventorySeries(eq.IsKit))
+			if err != nil {
+				return err
+			}
+			eq.InventoryNumber = &number
+		}
+
 		created, err := s.repo.Create(ctx, tx, eq)
 		if err != nil {
 			return fmt.Errorf("failed to create equipment. error: %w", err)
@@ -251,6 +259,17 @@ func (s *EquipmentService) Update(ctx context.Context, dto *models.EquipmentDTO)
 
 	var data *models.Equipment
 	err = s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+		if dto.InventoryNumber == nil {
+			// Серию берём из состояния до правки: `is_kit` репозиторий не
+			// перезаписывает, то есть комплект комплектом и остаётся, а форма
+			// могла не прислать флаг.
+			number, err := s.nextInventoryNumber(ctx, tx, dto.RealmID, inventorySeries(previous.IsKit))
+			if err != nil {
+				return err
+			}
+			dto.InventoryNumber = &number
+		}
+
 		updated, err := s.repo.Update(ctx, tx, dto)
 		if err != nil {
 			return fmt.Errorf("failed to update equipment. error: %w", err)
@@ -334,6 +353,41 @@ func normalizeEquipmentDTO(dto *models.EquipmentDTO) {
 	dto.InventoryNumber = emptyToNil(dto.InventoryNumber)
 	dto.HolderName = emptyToNil(dto.HolderName)
 	dto.Location = emptyToNil(dto.Location)
+}
+
+// inventorySeries выбирает серию автоинвентарного номера: комплект нумеруется
+// отдельно от единиц (с префиксом «KIT-»), чтобы значения двух серий не путались.
+func inventorySeries(isKit bool) models.EquipmentInventorySeries {
+	if isKit {
+		return models.InventorySeriesKit
+	}
+	return models.InventorySeriesUnit
+}
+
+// nextInventoryNumber выдаёт свободный инвентарный номер серии в реалме. Счётчик
+// монотонный, но ручной ввод (или перенос из старой системы) мог занять будущее
+// значение, поэтому кандидат проверяется на занятость и счётчик листается дальше.
+// Проверка — обычный SELECT, а не попытка вставки: упавший statement абортит
+// транзакцию, и повторить в ней вставку уже нельзя. Лимит попыток — предохранитель
+// от зацикливания, на практике не достигается.
+func (s *EquipmentService) nextInventoryNumber(ctx context.Context, tx postgres.Tx, realmID uuid.UUID, series models.EquipmentInventorySeries) (string, error) {
+	const maxAttempts = 50
+
+	for i := 0; i < maxAttempts; i++ {
+		seq, err := s.repo.NextInventoryNumber(ctx, tx, realmID, series)
+		if err != nil {
+			return "", fmt.Errorf("failed to get inventory number counter. error: %w", err)
+		}
+		number := models.InventoryNumber(series, seq)
+		taken, err := s.repo.InventoryNumberExists(ctx, tx, realmID, number)
+		if err != nil {
+			return "", fmt.Errorf("failed to check inventory number. error: %w", err)
+		}
+		if !taken {
+			return number, nil
+		}
+	}
+	return "", fmt.Errorf("failed to generate inventory number for realm %s: no free value in %d attempts", realmID, maxAttempts)
 }
 
 // deriveHolderStatus выводит пару «на складе»/«в эксплуатации» из держателя и

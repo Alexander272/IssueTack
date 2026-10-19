@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"io"
 	"time"
 
@@ -83,6 +84,28 @@ func (e EquipmentEventType) IsValid() bool {
 		return true
 	}
 	return false
+}
+
+// EquipmentInventorySeries — серия автоинвентарного номера: единицы и комплекты
+// нумеруются независимо, у каждой серии свой счётчик в БД
+// (equipment_inventory_counters). Единица получает только цифры, комплект —
+// значение того же вида, но с префиксом «KIT-», чтобы номера двух серий не
+// путались при вводе/сканировании.
+type EquipmentInventorySeries string
+
+const (
+	InventorySeriesUnit EquipmentInventorySeries = "unit"
+	InventorySeriesKit  EquipmentInventorySeries = "kit"
+)
+
+// InventoryNumber собирает инвентарный номер из серии и порядкового значения
+// счётчика: «000123» для единицы и «KIT-000123» для комплекта. Паддинг в шесть
+// цифр держит одинаковую длину номера (и этикетки со штрихкодом).
+func InventoryNumber(series EquipmentInventorySeries, seq int) string {
+	if series == InventorySeriesKit {
+		return fmt.Sprintf("KIT-%06d", seq)
+	}
+	return fmt.Sprintf("%06d", seq)
 }
 
 // EquipmentType — тип оборудования (справочник реалма): ноутбук, RAM, монитор и т.д.
