@@ -156,7 +156,12 @@ func (r *notificationRepository) GetCategoryEventSubscribers(ctx context.Context
 				WHERE c->>'id' = $1 AND c->>$2 = 'true'
 			)`, Tables.NotificationSettings)
 
-	return r.querySubscribers(ctx, query, categoryID.String(), eventField, "failed to get category event subscribers")
+	return r.querySubscribers(ctx, subscriberQuery{
+		Query:      query,
+		ID:         categoryID.String(),
+		EventField: eventField,
+		ErrMsg:     "failed to get category event subscribers",
+	})
 }
 
 func (r *notificationRepository) GetGroupEventSubscribers(ctx context.Context, groupID uuid.UUID, eventField string) ([]uuid.UUID, error) {
@@ -171,13 +176,29 @@ func (r *notificationRepository) GetGroupEventSubscribers(ctx context.Context, g
 				WHERE g->>'id' = $1 AND g->>$2 = 'true'
 			)`, Tables.GroupMembers, Tables.NotificationSettings)
 
-	return r.querySubscribers(ctx, query, groupID.String(), eventField, "failed to get group event subscribers")
+	return r.querySubscribers(ctx, subscriberQuery{
+		Query:      query,
+		ID:         groupID.String(),
+		EventField: eventField,
+		ErrMsg:     "failed to get group event subscribers",
+	})
 }
 
-func (r *notificationRepository) querySubscribers(ctx context.Context, query string, id, eventField string, errMsg string) ([]uuid.UUID, error) {
-	rows, err := r.db.Query(ctx, query, id, eventField)
+// subscriberQuery — параметры общей выборки подписчиков: сам запрос, значение
+// $1 (id категории/группы) и имя jsonb-поля события. id и eventField — обе
+// строки, поэтому передаются полями, а не позиционно: перестановка давала бы
+// тихую пустую выборку вместо ошибки.
+type subscriberQuery struct {
+	Query      string
+	ID         string
+	EventField string
+	ErrMsg     string
+}
+
+func (r *notificationRepository) querySubscribers(ctx context.Context, q subscriberQuery) ([]uuid.UUID, error) {
+	rows, err := r.db.Query(ctx, q.Query, q.ID, q.EventField)
 	if err != nil {
-		return nil, MapError(fmt.Errorf("%s: %w", errMsg, err))
+		return nil, MapError(fmt.Errorf("%s: %w", q.ErrMsg, err))
 	}
 	defer rows.Close()
 

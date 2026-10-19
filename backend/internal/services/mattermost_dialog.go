@@ -469,10 +469,18 @@ func (s *MattermostService) handleTicketStatusAction(ctx context.Context, action
 		return nil, fmt.Errorf("failed to find realm settings: %w", err)
 	}
 
-	if action == actionReopen {
-		return s.openReopenDialog(ctx, settings, ticketID, realmID, from, input)
+	p := &models.TicketDialogDTO{
+		Settings: settings,
+		TicketID: ticketID,
+		RealmID:  realmID,
+		From:     from,
+		Input:    input,
 	}
-	return s.openCancelDialog(ctx, settings, action, ticketID, realmID, from, input)
+
+	if action == actionReopen {
+		return s.openReopenDialog(ctx, p)
+	}
+	return s.openCancelDialog(ctx, p, action)
 }
 
 // openCancelDialog просит подтвердить необратимый переход: отмену заявки или
@@ -480,33 +488,35 @@ func (s *MattermostService) handleTicketStatusAction(ctx context.Context, action
 // пару Submit/Cancel, поэтому подтверждение выглядит так же, как модалка в
 // веб-плагине. Смещение среза и id сообщения едут в State: ответ диалога не
 // умеет обновлять посты, карточку правит сам handleCancelSubmission.
-func (s *MattermostService) openCancelDialog(ctx context.Context, settings *models.RealmMattermost, action string, ticketID, realmID uuid.UUID, from int, input *models.InteractiveActionDTO) (*ActionResult, error) {
-	if input.TriggerID == "" {
+// Сам `action` (отмена/подтверждение) остаётся отдельным аргументом: диалог
+// возврата в работу его не использует.
+func (s *MattermostService) openCancelDialog(ctx context.Context, p *models.TicketDialogDTO, action string) (*ActionResult, error) {
+	if p.Input.TriggerID == "" {
 		return &ActionResult{Ephemeral: "Не удалось открыть диалог: Mattermost не передал trigger_id"}, nil
 	}
 
 	req := mattermost.OpenRequest{
-		TriggerID:   input.TriggerID,
-		RealmID:     realmID.String(),
+		TriggerID:   p.Input.TriggerID,
+		RealmID:     p.RealmID.String(),
 		Title:       "Отменить заявку",
 		SubmitLabel: "Отменить заявку",
-		State:       fmt.Sprintf(`{"from":%d,"post_id":%q}`, from, input.PostID),
+		State:       fmt.Sprintf(`{"from":%d,"post_id":%q}`, p.From, p.Input.PostID),
 	}
 	switch action {
 	case actionConfirm:
-		req.CallbackID = confirmCallbackPrefix + ticketID.String()
+		req.CallbackID = confirmCallbackPrefix + p.TicketID.String()
 		req.Title = "Подтвердить решение"
 		req.SubmitLabel = "Закрыть заявку"
 		req.Introduction = "Подтвердить решение и закрыть заявку? Действие необратимо."
 	default:
-		req.CallbackID = cancelCallbackPrefix + ticketID.String()
+		req.CallbackID = cancelCallbackPrefix + p.TicketID.String()
 		req.Introduction = "Отменить заявку? Действие необратимо."
 	}
-	if subject := s.ticketSubject(ctx, ticketID); subject != "" {
+	if subject := s.ticketSubject(ctx, p.TicketID); subject != "" {
 		req.Introduction = subject + ". " + req.Introduction
 	}
 
-	if err := s.most.Dialog.Open(settings.BotToken, req); err != nil {
+	if err := s.most.Dialog.Open(p.Settings.BotToken, req); err != nil {
 		logger.Warn("failed to open confirmation dialog",
 			logger.StringAttr("action", action),
 			logger.ErrAttr(err),
@@ -560,20 +570,20 @@ func (s *MattermostService) changeTicketStatus(ctx context.Context, user *models
 // openReopenDialog спрашивает причину возврата заявки в работу. Порядок как в
 // плагине: сначала меняем статус, потом пишем комментарий с причиной — на
 // «решённой» заявке внешний комментарий запрещён.
-func (s *MattermostService) openReopenDialog(ctx context.Context, settings *models.RealmMattermost, ticketID, realmID uuid.UUID, from int, input *models.InteractiveActionDTO) (*ActionResult, error) {
-	if input.TriggerID == "" {
+func (s *MattermostService) openReopenDialog(ctx context.Context, p *models.TicketDialogDTO) (*ActionResult, error) {
+	if p.Input.TriggerID == "" {
 		return &ActionResult{Ephemeral: "Не удалось открыть диалог: Mattermost не передал trigger_id"}, nil
 	}
 
 	intro := "Укажите причину возврата заявки в работу."
-	if subject := s.ticketSubject(ctx, ticketID); subject != "" {
+	if subject := s.ticketSubject(ctx, p.TicketID); subject != "" {
 		intro = subject + ". " + intro
 	}
 
-	err := s.most.Dialog.Open(settings.BotToken, mattermost.OpenRequest{
-		TriggerID:    input.TriggerID,
-		RealmID:      realmID.String(),
-		CallbackID:   reopenCallbackPrefix + ticketID.String(),
+	err := s.most.Dialog.Open(p.Settings.BotToken, mattermost.OpenRequest{
+		TriggerID:    p.Input.TriggerID,
+		RealmID:      p.RealmID.String(),
+		CallbackID:   reopenCallbackPrefix + p.TicketID.String(),
 		Title:        "Вернуть заявку в работу",
 		Introduction: intro,
 		SubmitLabel:  "Вернуть в работу",
@@ -586,7 +596,7 @@ func (s *MattermostService) openReopenDialog(ctx context.Context, settings *mode
 		}},
 		// post_id кладём в State: в SubmitDialogRequest его нет, а после
 		// возврата в работу карточку в списке надо перерисовать.
-		State: fmt.Sprintf(`{"from":%d,"post_id":%q}`, from, input.PostID),
+		State: fmt.Sprintf(`{"from":%d,"post_id":%q}`, p.From, p.Input.PostID),
 	})
 	if err != nil {
 		logger.Warn("failed to open reopen dialog", logger.ErrAttr(err))
