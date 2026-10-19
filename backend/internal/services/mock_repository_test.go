@@ -818,8 +818,23 @@ func (m *MockNotificationService) NotifyOverdue(ctx context.Context, ticket *mod
 	args := m.Called(ctx, ticket)
 	return args.Error(0)
 }
+func (m *MockNotificationService) NotifyReminderHigh(ctx context.Context, ticket *models.Ticket, interval time.Duration) error {
+	args := m.Called(ctx, ticket, interval)
+	return args.Error(0)
+}
+func (m *MockNotificationService) NotifyReminderUrgent(ctx context.Context, ticket *models.Ticket, interval time.Duration) error {
+	args := m.Called(ctx, ticket, interval)
+	return args.Error(0)
+}
 func (m *MockNotificationService) GetOverdueTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error) {
 	args := m.Called(ctx, now)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
+func (m *MockNotificationService) GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority) ([]uuid.UUID, error) {
+	args := m.Called(ctx, priority)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -1337,6 +1352,17 @@ func (m *MockNotificationsRepo) GetOverdueTicketIDs(ctx context.Context, now tim
 	}
 	return args.Get(0).([]uuid.UUID), args.Error(1)
 }
+func (m *MockNotificationsRepo) GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority) ([]uuid.UUID, error) {
+	args := m.Called(ctx, priority)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
+func (m *MockNotificationsRepo) CanSendReminder(ctx context.Context, ticketID uuid.UUID, event string, minInterval time.Duration) (bool, error) {
+	args := m.Called(ctx, ticketID, event, minInterval)
+	return args.Bool(0), args.Error(1)
+}
 func (m *MockNotificationsRepo) GetUpcomingDeadlineTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error) {
 	args := m.Called(ctx, now)
 	if args.Get(0) == nil {
@@ -1523,4 +1549,20 @@ func (m *MockUserRealmsRepo) GetRealmSupervisors(ctx context.Context, realmID uu
 		return []uuid.UUID{}, args.Error(1)
 	}
 	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
+type MockAppSettings struct {
+	mock.Mock
+}
+
+func (m *MockAppSettings) Get(ctx context.Context) (map[string]string, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[string]string), args.Error(1)
+}
+
+func (m *MockAppSettings) SetMany(ctx context.Context, items map[string]string) error {
+	args := m.Called(ctx, items)
+	return args.Error(0)
 }

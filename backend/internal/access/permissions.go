@@ -12,7 +12,7 @@ const (
 	ResourceActivity  ResourceSlug = "activity_log"
 	ResourceTicket    ResourceSlug = "ticket"
 	ResourceChecklist ResourceSlug = "checklist"
-)
+	)
 
 var OrderOfResources = map[ResourceSlug]int{
 	ResourceTicket:    1,

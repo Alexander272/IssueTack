@@ -828,3 +828,63 @@ func mockGroupsForMembership(t *testing.T, userID, realmID uuid.UUID, groupIDs [
 	mockGroups.On("GetMemberGroups", mock.Anything, userID, &realmID).Return(groupIDs, nil).Once()
 	return mockGroups
 }
+
+func TestNotificationService_NotifyReminderHigh_Success(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	assigneeID := uuid.New()
+	managerID := uuid.New()
+	ticket := &models.Ticket{
+		ID:       uuid.New(),
+		Title:    "High priority task",
+		Assignee: &models.UserShort{ID: assigneeID},
+		Manager:  &models.UserShort{ID: managerID},
+	}
+
+	mockRepo.On("CanSendReminder", mock.Anything, ticket.ID, models.EventReminderHigh, reminderDedupInterval(3*time.Hour)).Return(true, nil).Once()
+	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID, managerID)
+
+	err := svc.NotifyReminderHigh(context.Background(), ticket, 3*time.Hour)
+
+	require.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
+}
+
+func TestNotificationService_NotifyReminderHigh_NotYetTime(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	ticket := &models.Ticket{
+		ID:       uuid.New(),
+		Title:    "High priority task",
+		Assignee: &models.UserShort{ID: uuid.New()},
+	}
+
+	mockRepo.On("CanSendReminder", mock.Anything, ticket.ID, models.EventReminderHigh, reminderDedupInterval(3*time.Hour)).Return(false, nil).Once()
+
+	err := svc.NotifyReminderHigh(context.Background(), ticket, 3*time.Hour)
+
+	require.NoError(t, err)
+	mockRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
+	mockNotifier.AssertNotCalled(t, "Notify", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestNotificationService_NotifyReminderUrgent_Success(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	assigneeID := uuid.New()
+	ticket := &models.Ticket{
+		ID:       uuid.New(),
+		Title:    "Urgent task",
+		Assignee: &models.UserShort{ID: assigneeID},
+	}
+
+	mockRepo.On("CanSendReminder", mock.Anything, ticket.ID, models.EventReminderUrgent, reminderDedupInterval(time.Hour)).Return(true, nil).Once()
+	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID)
+
+	err := svc.NotifyReminderUrgent(context.Background(), ticket, time.Hour)
+
+	require.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
+}

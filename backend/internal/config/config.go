@@ -32,6 +32,11 @@ type (
 		AutoCloseSchedule string `yaml:"auto_close_schedule" env:"TICKETS_AUTO_CLOSE_SCHEDULE" env-default:"@daily"`
 		// Расписание проверки просроченных задач ("@hourly", "@every 30m", "" — отключено)
 		NotifyOverdueSchedule string `yaml:"notify_overdue_schedule" env:"TICKETS_NOTIFY_OVERDUE_SCHEDULE" env-default:"@hourly"`
+		// Частота напоминаний по активным заявкам с приоритетом "высокий" (0 — отключено).
+		// Меняется только через конфиг: https://... (перезапуск приложения).
+		NotifyHighPriorityInterval time.Duration `yaml:"notify_high_priority_interval" env:"TICKETS_NOTIFY_HIGH_PRIORITY_INTERVAL" env-default:"3h"`
+		// Частота напоминаний по активным заявкам с приоритетом "критичный" (0 — отключено)
+		NotifyUrgentPriorityInterval time.Duration `yaml:"notify_urgent_priority_interval" env:"TICKETS_NOTIFY_URGENT_PRIORITY_INTERVAL" env-default:"1h"`
 		// Расписание напоминаний исполнителям о приближении срока ("@hourly", "" — отключено)
 		DeadlineSoonSchedule string `yaml:"deadline_soon_schedule" env:"TICKETS_DEADLINE_SOON_SCHEDULE" env-default:"@hourly"`
 		// Расписание очистки «закреплённых» (temporary) избранных ("@daily", "" — отключено)

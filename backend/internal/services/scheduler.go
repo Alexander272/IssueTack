@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/config"
+	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/go-co-op/gocron/v2"
 )
@@ -104,6 +105,30 @@ func (s *SchedulerService) Start(conf *config.TicketConfig) error {
 		logger.Info("favorite-cleanup scheduler started, schedule: " + conf.FavoriteCleanupSchedule)
 	}
 
+	if conf.NotifyHighPriorityInterval > 0 {
+		_, err := s.cron.NewJob(
+			gocron.DurationJob(conf.NotifyHighPriorityInterval),
+			gocron.NewTask(s.notifyHighPriorityJob, conf.NotifyHighPriorityInterval),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create high-priority-reminder job. error: %w", err)
+		}
+		registered = true
+		logger.Info("high-priority-reminder scheduler started, interval: " + conf.NotifyHighPriorityInterval.String())
+	}
+
+	if conf.NotifyUrgentPriorityInterval > 0 {
+		_, err := s.cron.NewJob(
+			gocron.DurationJob(conf.NotifyUrgentPriorityInterval),
+			gocron.NewTask(s.notifyUrgentPriorityJob, conf.NotifyUrgentPriorityInterval),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create urgent-priority-reminder job. error: %w", err)
+		}
+		registered = true
+		logger.Info("urgent-priority-reminder scheduler started, interval: " + conf.NotifyUrgentPriorityInterval.String())
+	}
+
 	if registered {
 		s.cron.Start()
 	}
@@ -191,5 +216,47 @@ func (s *SchedulerService) favoriteCleanupJob(ctx context.Context) {
 	}
 	if n > 0 {
 		logger.Info(fmt.Sprintf("Cleaned up %d temporary favorites", n))
+	}
+}
+
+func (s *SchedulerService) notifyHighPriorityJob(ctx context.Context, interval time.Duration) {
+	ids, err := s.notifications.GetActiveByPriorityGlobal(ctx, models.PriorityHigh)
+	if err != nil {
+		logger.Error("failed to get high-priority tickets:", logger.ErrAttr(err))
+		return
+	}
+	for _, id := range ids {
+		ticket, err := s.tickets.GetSummary(ctx, id)
+		if err != nil {
+			logger.Error("failed to load high-priority ticket", logger.StringAttr("ticket_id", id.String()), logger.ErrAttr(err))
+			continue
+		}
+		if err := s.notifications.NotifyReminderHigh(ctx, ticket, interval); err != nil {
+			logger.Error("failed to notify reminder high:", logger.StringAttr("ticket_id", id.String()), logger.ErrAttr(err))
+		}
+	}
+	if len(ids) > 0 {
+		logger.Info(fmt.Sprintf("Found %d high-priority tickets", len(ids)))
+	}
+}
+
+func (s *SchedulerService) notifyUrgentPriorityJob(ctx context.Context, interval time.Duration) {
+	ids, err := s.notifications.GetActiveByPriorityGlobal(ctx, models.PriorityUrgent)
+	if err != nil {
+		logger.Error("failed to get critical-priority tickets:", logger.ErrAttr(err))
+		return
+	}
+	for _, id := range ids {
+		ticket, err := s.tickets.GetSummary(ctx, id)
+		if err != nil {
+			logger.Error("failed to load critical-priority ticket", logger.StringAttr("ticket_id", id.String()), logger.ErrAttr(err))
+			continue
+		}
+		if err := s.notifications.NotifyReminderUrgent(ctx, ticket, interval); err != nil {
+			logger.Error("failed to notify reminder critical:", logger.StringAttr("ticket_id", id.String()), logger.ErrAttr(err))
+		}
+	}
+	if len(ids) > 0 {
+		logger.Info(fmt.Sprintf("Found %d critical-priority tickets", len(ids)))
 	}
 }

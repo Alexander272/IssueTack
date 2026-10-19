@@ -72,6 +72,13 @@ type Notifications interface {
 	NotifyOverdue(ctx context.Context, ticket *models.Ticket) error
 	// GetOverdueTicketIDs возвращает ID активных тикетов с просроченным сроком.
 	GetOverdueTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error)
+	// GetActiveByPriorityGlobal возвращает ID активных непросроченных тикетов заданного приоритета.
+	GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority) ([]uuid.UUID, error)
+	// NotifyReminderHigh оповещает о задаче с высоким приоритетом (периодическое напоминание).
+	// interval — настроенная частота напоминаний; из неё выводится минимальный интервал дедупа.
+	NotifyReminderHigh(ctx context.Context, ticket *models.Ticket, interval time.Duration) error
+	// NotifyReminderUrgent оповещает о задаче с критичным приоритетом (периодическое напоминание).
+	NotifyReminderUrgent(ctx context.Context, ticket *models.Ticket, interval time.Duration) error
 	// NotifyDeadlineSoon оповещает исполнителя о приближении срока тикета (ticket.deadline_soon).
 	NotifyDeadlineSoon(ctx context.Context, ticket *models.Ticket) error
 	// GetUpcomingDeadlineTicketIDs возвращает ID активных тикетов с будущим сроком и исполнителем.
@@ -168,6 +175,119 @@ func (s *NotificationService) NotifyOverdue(ctx context.Context, ticket *models.
 	logger.Info("overdue notification processed",
 		logger.StringAttr("ticket_id", ticket.ID.String()),
 		logger.StringAttr("title", ticket.Title),
+		logger.IntAttr("recipients", len(pending)),
+		logger.IntAttr("delivered", len(delivered)),
+	)
+
+	return nil
+}
+
+// reminderDedupInterval вычисляет минимальный интервал между напоминаниями из
+// настроенной частоты: чуть меньше самой частоты, чтобы повторный прогон cron в
+// пределах одного периода не отправил напоминание дважды.
+func reminderDedupInterval(interval time.Duration) time.Duration {
+	if interval <= 0 {
+		return time.Minute
+	}
+	margin := interval / 4
+	if margin > 5*time.Minute {
+		margin = 5 * time.Minute
+	}
+	dedup := interval - margin
+	if dedup < time.Minute {
+		dedup = time.Minute
+	}
+	return dedup
+}
+
+// NotifyReminderHigh — периодическое напоминание по активным тикетам с высоким приоритетом.
+// Дедупликация временная: не чаще выведенного из interval Dedup-интервала
+// (защита от повторных прогонов cron).
+func (s *NotificationService) NotifyReminderHigh(ctx context.Context, ticket *models.Ticket, interval time.Duration) error {
+	return s.notifyPriorityReminder(ctx, ticket, models.EventReminderHigh, string(models.NotificationTicketReminderHigh), "Напоминание (высокий приоритет)", reminderDedupInterval(interval))
+}
+
+// NotifyReminderUrgent — периодическое напоминание по активным тикетам с критичным приоритетом.
+func (s *NotificationService) NotifyReminderUrgent(ctx context.Context, ticket *models.Ticket, interval time.Duration) error {
+	return s.notifyPriorityReminder(ctx, ticket, models.EventReminderUrgent, string(models.NotificationTicketReminderUrgent), "Критичное напоминание", reminderDedupInterval(interval))
+}
+
+// notifyPriorityReminder — общая логика периодических напоминаний по приоритету. Получатели:
+// исполнитель, менеджер и подписчики категории/группы на соответствующее событие.
+func (s *NotificationService) notifyPriorityReminder(ctx context.Context, ticket *models.Ticket, event, notifType, title string, minInterval time.Duration) error {
+	if ticket == nil {
+		return nil
+	}
+	ok, err := s.repo.CanSendReminder(ctx, ticket.ID, event, minInterval)
+	if err != nil {
+		return fmt.Errorf("failed to check %s reminder: %w", event, err)
+	}
+	if !ok {
+		return nil
+	}
+
+	recipients := make(map[uuid.UUID]struct{})
+	if ticket.Assignee != nil {
+		recipients[ticket.Assignee.ID] = struct{}{}
+	}
+	if ticket.Manager != nil {
+		recipients[ticket.Manager.ID] = struct{}{}
+	}
+
+	subs, err := s.subscribersByEvent(ctx, ticket, event)
+	if err != nil {
+		return err
+	}
+	for _, id := range subs {
+		recipients[id] = struct{}{}
+	}
+	if ticket.Category != nil {
+		catSubs, err := s.repo.GetCategoryEventSubscribers(ctx, ticket.Category.ID, models.EventFieldName(event))
+		if err != nil {
+			return fmt.Errorf("failed to get %s category subscribers: %w", event, err)
+		}
+		for _, id := range catSubs {
+			recipients[id] = struct{}{}
+		}
+	}
+	if ticket.Group != nil {
+		grpSubs, err := s.repo.GetGroupEventSubscribers(ctx, ticket.Group.ID, models.EventFieldName(event))
+		if err != nil {
+			return fmt.Errorf("failed to get %s group subscribers: %w", event, err)
+		}
+		for _, id := range grpSubs {
+			recipients[id] = struct{}{}
+		}
+	}
+
+	pending := make([]uuid.UUID, 0, len(recipients))
+	for userID := range recipients {
+		pending = append(pending, userID)
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+
+	data, err := json.Marshal(map[string]any{
+		"ticket_id": ticket.ID.String(),
+		"title":     ticket.Title,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal %s notification data: %w", event, err)
+	}
+
+	dto := &models.CreateNotificationDTO{
+		Type:  notifType,
+		Title: title,
+		Body:  ticket.Title,
+		Data:  data,
+	}
+	delivered := s.deliver(ctx, ticket, pending, dto)
+	s.persistForUsers(ctx, delivered, dto)
+
+	logger.Info("priority reminder processed",
+		logger.StringAttr("event", event),
+		logger.StringAttr("ticket_id", ticket.ID.String()),
 		logger.IntAttr("recipients", len(pending)),
 		logger.IntAttr("delivered", len(delivered)),
 	)
@@ -519,6 +639,11 @@ func (s *NotificationService) AttachmentAdded(ctx context.Context, ticket *model
 // GetOverdueTicketIDs возвращает ID активных тикетов с просроченным сроком.
 func (s *NotificationService) GetOverdueTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error) {
 	return s.repo.GetOverdueTicketIDs(ctx, now)
+}
+
+// GetActiveByPriorityGlobal возвращает ID активных непросроченных тикетов заданного приоритета.
+func (s *NotificationService) GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority) ([]uuid.UUID, error) {
+	return s.repo.GetActiveByPriorityGlobal(ctx, priority)
 }
 
 // NotifyDeadlineSoon оповещает исполнителя тикета о приближении срока (ticket.deadline_soon).

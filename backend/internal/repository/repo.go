@@ -138,7 +138,7 @@ func NewRepository(pool *pgxpool.Pool, memDB *redis.Client, conf config.AuthConf
 		Comments:            postgres.NewCommentRepo(pool, transaction),
 		ActivityLog:         postgres.NewActivityRepo(pool, transaction),
 		Notifications:       postgres.NewNotificationRepo(pool, transaction),
-		TicketSubscriptions: postgres.NewSubscriptionRepo(pool, transaction),
+	TicketSubscriptions: postgres.NewSubscriptionRepo(pool, transaction),
 		TicketFavorites:     postgres.NewFavoriteRepo(pool, transaction),
 		Mattermost:          postgres.NewMattermostRepo(pool, transaction),
 	}

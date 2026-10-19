@@ -41,6 +41,7 @@ var Tables = struct {
 	MattermostGreetings    string
 	TicketSubscriptions    string
 	TicketFavorites        string
+	ReminderLastSent       string
 }{
 	Sites:                  "sites",
 	Realms:                 "realms",
@@ -70,4 +71,5 @@ var Tables = struct {
 	MattermostGreetings:    "mattermost_greetings",
 	TicketSubscriptions:    "ticket_subscriptions",
 	TicketFavorites:        "ticket_favorites",
+	ReminderLastSent:       "reminder_last_sent",
 }

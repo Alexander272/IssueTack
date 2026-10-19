@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func ticketServiceFixtures() (*MockTicketsRepo, *MockActivityLogService, *MockSubtaskService, *MockAttachmentService, *MockNotificationService, *MockGroupsRepo, *MockAccessPolicies, *TicketService) {
@@ -380,6 +381,88 @@ func TestTicketService_Create_Success(t *testing.T) {
 	assert.Equal(t, &managerID, dto.ManagerID)
 }
 
+// TestTicketService_Create_CategoryDefaultDueDays проверяет, что менеджеру (правомочному
+// задавать срок) при создании заявки проставляется срок по умолчанию из категории, если
+// срок не задан явно.
+func TestTicketService_Create_CategoryDefaultDueDays(t *testing.T) {
+	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+	mockCategories := new(MockCategoriesRepo)
+	svc.categories = mockCategories
+
+	actorID := uuid.New()
+	realmID := uuid.New()
+	groupID := uuid.New()
+	categoryID := uuid.New()
+	assigneeID := uuid.New()
+	id := uuid.New()
+	days := 3
+	dto := &models.TicketDTO{
+		ID:         &id,
+		Actor:      &models.Actor{ID: actorID, Name: "test"},
+		Title:      "Ticket",
+		RealmID:    &realmID,
+		GroupID:    &groupID,
+		CategoryID: categoryID,
+		CreatorID:  actorID,
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceTicket), string(access.Write)).Return(true, nil)
+	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	mockGroups.On("GetByID", mock.Anything, &models.GetGroupDTO{ID: groupID, RealmID: &realmID}).Return(&models.Group{ID: groupID, DefaultAssigneeID: &assigneeID}, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{groupID}, nil)
+	mockCategories.On("GetByID", mock.Anything, &models.GetCategoryByIdDTO{ID: categoryID, RealmID: realmID}).Return(&models.Category{ID: categoryID, GroupID: groupID, DefaultDueDays: &days}, nil)
+	mockRepo.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: id}).Return(&models.Ticket{ID: id}, nil)
+	mockNotifications.On("TicketCreated", mock.Anything, mock.AnythingOfType("*models.Ticket"), mock.AnythingOfType("uuid.UUID")).Return(nil)
+
+	err := svc.Create(context.Background(), dto)
+	require.NoError(t, err)
+	require.NotNil(t, dto.DueDate)
+	assert.WithinDuration(t, time.Now().UTC().AddDate(0, 0, days), *dto.DueDate, time.Minute)
+}
+
+// TestTicketService_Create_CategoryDefaultDueDays_NotManager проверяет, что непривилегированному
+// создателю автоматический срок из категории не проставляется.
+func TestTicketService_Create_CategoryDefaultDueDays_NotManager(t *testing.T) {
+	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+	mockCategories := new(MockCategoriesRepo)
+	svc.categories = mockCategories
+
+	actorID := uuid.New()
+	realmID := uuid.New()
+	groupID := uuid.New()
+	categoryID := uuid.New()
+	assigneeID := uuid.New()
+	id := uuid.New()
+	days := 3
+	dto := &models.TicketDTO{
+		ID:         &id,
+		Actor:      &models.Actor{ID: actorID, Name: "test"},
+		Title:      "Ticket",
+		RealmID:    &realmID,
+		GroupID:    &groupID,
+		CategoryID: categoryID,
+		CreatorID:  actorID,
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceTicket), string(access.Write)).Return(true, nil)
+	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	mockGroups.On("GetByID", mock.Anything, &models.GetGroupDTO{ID: groupID, RealmID: &realmID}).Return(&models.Group{ID: groupID, DefaultAssigneeID: &assigneeID}, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockCategories.On("GetByID", mock.Anything, &models.GetCategoryByIdDTO{ID: categoryID, RealmID: realmID}).Return(&models.Category{ID: categoryID, GroupID: groupID, DefaultDueDays: &days}, nil)
+	mockRepo.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: id}).Return(&models.Ticket{ID: id}, nil)
+	mockNotifications.On("TicketCreated", mock.Anything, mock.AnythingOfType("*models.Ticket"), mock.AnythingOfType("uuid.UUID")).Return(nil)
+
+	err := svc.Create(context.Background(), dto)
+	require.NoError(t, err)
+	assert.Nil(t, dto.DueDate)
+}
+
 func TestTicketService_Create_WithSubtasks_Success(t *testing.T) {
 	mockRepo, mockLogs, mockSubtasks, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
 
@@ -446,7 +529,7 @@ func TestTicketService_Create_DueDate_NonManagerDenied(t *testing.T) {
 	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceTicket), string(access.Write)).Return(true, nil)
 	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(false, nil)
 	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceSite), string(access.Write)).Return(false, nil)
-	mockGroups.On("GetByID", mock.Anything, &models.GetGroupDTO{ID: groupID, RealmID: &realmID}).Return(&models.Group{ID: groupID}, nil)
+	mockGroups.On("GetByID", mock.Anything, &models.GetGroupDTO{ID: groupID, RealmID: &realmID}).Return(&models.Group{ID: groupID, DefaultAssigneeID: &assigneeID}, nil)
 	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
 
 	err := svc.Create(context.Background(), dto)
@@ -477,7 +560,7 @@ func TestTicketService_Create_DueDate_ManagerAllowed(t *testing.T) {
 	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceTicket), string(access.Write)).Return(true, nil)
 	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(false, nil)
 	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceSite), string(access.Write)).Return(false, nil)
-	mockGroups.On("GetByID", mock.Anything, &models.GetGroupDTO{ID: groupID, RealmID: &realmID}).Return(&models.Group{ID: groupID}, nil)
+	mockGroups.On("GetByID", mock.Anything, &models.GetGroupDTO{ID: groupID, RealmID: &realmID}).Return(&models.Group{ID: groupID, DefaultAssigneeID: &assigneeID}, nil)
 	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{groupID}, nil)
 	mockRepo.On("Create", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)

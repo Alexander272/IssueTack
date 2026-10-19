@@ -73,7 +73,7 @@ const accessesItems: SidebarItem[] = [
 		icon: <UserIcon sx={{ fontSize: 22 }} />,
 	},
 	{ path: AppRoutes.RoleAccess, label: 'Роли', icon: <ShieldCheckIcon sx={{ fontSize: 22 }} /> },
-	{ path: AppRoutes.Permissions, label: 'Права доступа', icon: <KeyRoundIcon fontSize='small' /> },
+	{ path: AppRoutes.Permissions, label: 'Права доступа', icon: <KeyRoundIcon fontSize='small' /> }
 ]
 
 export const sidebarRules: SidebarRule[] = [
