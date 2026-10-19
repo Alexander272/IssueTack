@@ -52,7 +52,7 @@ func (s *adapterService) LoadPolicy(model model.Model) error {
 	if err := persist.LoadPolicyLine(rootPolicy, model); err != nil {
 		return fmt.Errorf("failed to load root policy: %w", err)
 	}
-	logger.Debug("permissions", logger.StringAttr("root", rootPolicy))
+	// logger.Debug("permissions", logger.StringAttr("root", rootPolicy))
 
 	permissions, err := s.perms.LoadPolicy(s.ctx)
 	if err != nil {
@@ -60,7 +60,7 @@ func (s *adapterService) LoadPolicy(model model.Model) error {
 	}
 	for _, p := range permissions {
 		line := fmt.Sprintf("p, %s, %s, %s, %s", p.Role, p.Realm, p.Object, p.Action)
-		logger.Debug("permissions", logger.StringAttr("item", line))
+		// logger.Debug("permissions", logger.StringAttr("item", line))
 		if err := persist.LoadPolicyLine(line, model); err != nil {
 			return fmt.Errorf("failed to load permissions policy. error: %w", err)
 		}
@@ -72,7 +72,7 @@ func (s *adapterService) LoadPolicy(model model.Model) error {
 	}
 	for _, r := range roles {
 		line := fmt.Sprintf("g, %s, %s, %s", r.ParentRole, r.Role, r.Realm)
-		logger.Debug("permissions", logger.StringAttr("group", line))
+		// logger.Debug("permissions", logger.StringAttr("group", line))
 		if err := persist.LoadPolicyLine(line, model); err != nil {
 			return fmt.Errorf("failed to load group policy. error: %w", err)
 		}
@@ -84,7 +84,7 @@ func (s *adapterService) LoadPolicy(model model.Model) error {
 	}
 	for _, u := range users {
 		line := fmt.Sprintf("g, %s, %s, %s", u.UserID, u.RoleName, u.Realm)
-		logger.Debug("permissions", logger.StringAttr("group", line))
+		// logger.Debug("permissions", logger.StringAttr("group", line))
 		if err := persist.LoadPolicyLine(line, model); err != nil {
 			return fmt.Errorf("failed to load group policy. error: %w", err)
 		}
