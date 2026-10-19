@@ -44,6 +44,7 @@ type Notifications interface {
 	SaveSettings(ctx context.Context, tx Tx, userID uuid.UUID, settings json.RawMessage) error
 	// GetOverdueTicketIDs возвращает ID «активных» тикетов с просроченным сроком (due_date < now).
 	GetOverdueTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error)
+	GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority) ([]uuid.UUID, error)
 	// GetUpcomingDeadlineTicketIDs возвращает ID «активных» тикетов с будущим сроком (due_date > now)
 	// и исполнителем — кандидатов на напоминание «скоро срок».
 	GetUpcomingDeadlineTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error)
@@ -53,6 +54,9 @@ type Notifications interface {
 	// HasDeadlineReminder возвращает true, если исполнителю уже создано напоминание «скоро срок»
 	// по тикету на порог remindBeforeMinutes (дедупликация по data.remind_before).
 	HasDeadlineReminder(ctx context.Context, userID, ticketID uuid.UUID, remindBeforeMinutes int) (bool, error)
+	// CanSendReminder атомарно проверяет и фиксирует факт периодического напоминания
+	// (ticket_id, event): true — если ранее не отправляли или отправляли раньше now-minInterval.
+	CanSendReminder(ctx context.Context, ticketID uuid.UUID, event string, minInterval time.Duration) (bool, error)
 }
 
 func (r *notificationRepository) Create(ctx context.Context, tx Tx, dto *models.CreateNotificationDTO) error {
@@ -253,6 +257,38 @@ func (r *notificationRepository) GetOverdueTicketIDs(ctx context.Context, now ti
 	return data, nil
 }
 
+func (r *notificationRepository) GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority) ([]uuid.UUID, error) {
+	query := fmt.Sprintf(`
+		SELECT t.id
+		FROM %s t
+		WHERE t.priority = $1
+			AND t.status IN ('open','in_progress','pending','on_hold')
+			AND (t.due_date IS NULL OR t.due_date >= NOW())
+		ORDER BY t.created_at`, Tables.Tickets)
+
+	rows, err := r.db.Query(ctx, query, priority)
+	if err != nil {
+		return nil, MapError(fmt.Errorf("failed to get active priority ticket ids: %w", err))
+	}
+	defer rows.Close()
+
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, MapError(fmt.Errorf("scan row error: %w", err))
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
+	if ids == nil {
+		ids = []uuid.UUID{}
+	}
+	return ids, nil
+}
+
 // HasNotification возвращает true, если у пользователя уже есть уведомление заданного типа
 // по конкретному тикету (по полю data.ticket_id).
 func (r *notificationRepository) HasNotification(ctx context.Context, userID, ticketID uuid.UUID, notifType string) (bool, error) {
@@ -318,4 +354,29 @@ func (r *notificationRepository) HasDeadlineReminder(ctx context.Context, userID
 		return false, MapError(fmt.Errorf("failed to check existing deadline reminder: %w", err))
 	}
 	return exists, nil
+}
+
+// CanSendReminder проверяет, можно ли отправить периодическое напоминание.
+// Возвращает true, если ранее не отправляли ИЛИ отправляли давно (sent_at < now-minInterval).
+func (r *notificationRepository) CanSendReminder(ctx context.Context, ticketID uuid.UUID, event string, minInterval time.Duration) (bool, error) {
+	cutoff := time.Now().Add(-minInterval)
+	var ok bool
+	query := fmt.Sprintf(`UPDATE %s SET sent_at = NOW()
+		WHERE ticket_id = $1 AND event = $2 AND sent_at < $3
+		RETURNING TRUE`, Tables.ReminderLastSent)
+	err := r.db.QueryRow(ctx, query, ticketID, event, cutoff).Scan(&ok)
+	if err == pgx.ErrNoRows {
+		insert := fmt.Sprintf(`INSERT INTO %s (ticket_id, event, sent_at)
+			VALUES ($1, $2, NOW())
+			ON CONFLICT (ticket_id, event) DO NOTHING`, Tables.ReminderLastSent)
+		res, err2 := r.db.Exec(ctx, insert, ticketID, event)
+		if err2 != nil {
+			return false, MapError(fmt.Errorf("failed to upsert reminder_last_sent: %w", err2))
+		}
+		return res.RowsAffected() == 1, nil
+	}
+	if err != nil {
+		return false, MapError(fmt.Errorf("failed to update reminder_last_sent: %w", err))
+	}
+	return ok, nil
 }

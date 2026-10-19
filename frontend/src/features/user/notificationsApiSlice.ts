@@ -10,6 +10,8 @@ export interface ICategoryNotificationSetting {
 	status: boolean
 	comment: boolean
 	overdue: boolean
+	reminderHigh: boolean
+	reminderUrgent: boolean
 }
 
 export interface IGroupNotificationSetting {

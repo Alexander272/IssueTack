@@ -136,6 +136,30 @@ export const Form: FC<Props> = ({ control, groups, categoryGroups }) => {
 
 			<Stack>
 				<Typography variant='caption' sx={{ fontWeight: 600, mb: 0.5, display: 'block' }}>
+					Автоматический срок, дней
+				</Typography>
+				<Controller
+					control={control}
+					name='defaultDueDays'
+					render={({ field }) => (
+						<TextField
+							value={field.value ?? ''}
+							onChange={e => {
+								const raw = e.target.value
+								field.onChange(raw === '' ? null : Math.max(0, Number.parseInt(raw, 10) || 0))
+							}}
+							type='number'
+							fullWidth
+							slotProps={{ htmlInput: { min: 0, step: 1 } }}
+							placeholder='Не задано'
+							helperText='Проставится при создании заявки, если срок не указан вручную'
+						/>
+					)}
+				/>
+			</Stack>
+
+			<Stack>
+				<Typography variant='caption' sx={{ fontWeight: 600, mb: 0.5, display: 'block' }}>
 					Статус
 				</Typography>
 				<Controller

@@ -25,7 +25,14 @@ import { BoxFallback } from '@/components/Fallback/BoxFallback'
 import { NotificationSectionCard } from './NotificationSectionCard'
 import { SelectButtons } from './SelectButtons'
 
-const EMPTY_SETTING = { newTask: false, status: false, comment: false, overdue: false }
+const EMPTY_SETTING = {
+	newTask: false,
+	status: false,
+	comment: false,
+	overdue: false,
+	reminderHigh: false,
+	reminderUrgent: false,
+}
 
 export interface IGroupWithCategories extends IGroup {
 	categories: ICategory[]
@@ -72,6 +79,8 @@ export const CategoriesCard: FC = () => {
 				status: value,
 				comment: value,
 				overdue: value,
+				reminderHigh: value,
+				reminderUrgent: value,
 			})),
 			{ shouldDirty: true },
 		)
@@ -88,6 +97,8 @@ export const CategoriesCard: FC = () => {
 					status: value,
 					comment: value,
 					overdue: value,
+					reminderHigh: value,
+					reminderUrgent: value,
 				})),
 			{ shouldDirty: true },
 		)

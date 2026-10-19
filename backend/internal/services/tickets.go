@@ -479,6 +479,28 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		if !isManager && !supervisor {
 			return models.ErrPermissionDenied
 		}
+	} else if ok && dto.CategoryID != uuid.Nil {
+		// Автоматический срок из категории: проставляем только тем, кто вправе
+		// задать срок вручную (менеджер группы / админ реалма), иначе не навязываем.
+		// Ветка исполнителя (ok=false) исключена: срок ей всё равно недоступен.
+		category, err := s.categories.GetByID(ctx, &models.GetCategoryByIdDTO{ID: dto.CategoryID, RealmID: *dto.RealmID})
+		if err != nil {
+			return fmt.Errorf("failed to get category: %w", err)
+		}
+		if category.DefaultDueDays != nil && *category.DefaultDueDays > 0 {
+			isManager, err := s.isManagerOfGroup(ctx, &models.GroupShort{ID: *dto.GroupID}, dto.Actor.ID)
+			if err != nil {
+				return fmt.Errorf("failed to check manager access: %w", err)
+			}
+			supervisor, err := s.access.IsRealmSupervisor(ctx, dto.Actor.ID, realmStr)
+			if err != nil {
+				return fmt.Errorf("failed to check supervisor access: %w", err)
+			}
+			if isManager || supervisor {
+				dd := time.Now().UTC().AddDate(0, 0, *category.DefaultDueDays)
+				dto.DueDate = &dd
+			}
+		}
 	}
 
 	err = s.tx.WithinTransaction(ctx, func(newTx postgres.Tx) error {

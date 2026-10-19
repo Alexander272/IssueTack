@@ -17,10 +17,11 @@ type Category struct {
 	IsActive        bool                `json:"isActive" db:"is_active"`
 	// IsHidden — собственная скрытость категории (не эффективная): категория
 	// в скрытом разделе тоже невидима заказчику, но её флаг остаётся false.
-	IsHidden  bool      `json:"isHidden" db:"is_hidden"`
-	RealmID   uuid.UUID `json:"realmId" db:"realm_id"`
-	CreatedAt time.Time `json:"createdAt" db:"created_at"`
-	UpdatedAt time.Time `json:"updatedAt" db:"updated_at"`
+	IsHidden       bool      `json:"isHidden" db:"is_hidden"`
+	RealmID        uuid.UUID `json:"realmId" db:"realm_id"`
+	DefaultDueDays *int      `json:"defaultDueDays" db:"default_due_days"`
+	CreatedAt      time.Time `json:"createdAt" db:"created_at"`
+	UpdatedAt      time.Time `json:"updatedAt" db:"updated_at"`
 }
 
 type CategoryShort struct {
@@ -50,6 +51,7 @@ type CategoryDTO struct {
 	GroupID         uuid.UUID  `json:"groupId" db:"group_id"`
 	CategoryGroupID *uuid.UUID `json:"categoryGroupId" db:"category_group_id"`
 	Priority        Priority   `json:"priority" db:"def_priority"`
+	DefaultDueDays  *int       `json:"defaultDueDays" db:"default_due_days"`
 	IsActive        bool       `json:"isActive" db:"is_active"`
 	IsHidden        bool       `json:"isHidden" db:"is_hidden"`
 }

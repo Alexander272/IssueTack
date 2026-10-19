@@ -10,6 +10,7 @@ export interface ICategory {
 	priority: Priority
 	isActive: boolean
 	isHidden: boolean
+	defaultDueDays: number | null
 	createdAt: string
 	updatedAt: string
 }
@@ -29,4 +30,5 @@ export interface ICategoryDTO {
 	priority: Priority
 	isActive: boolean
 	isHidden: boolean
+	defaultDueDays: number | null
 }

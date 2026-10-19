@@ -123,6 +123,10 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 		prefix = "Новый комментарий"
 	case string(models.NotificationTicketAttachment):
 		prefix = "Новое вложение"
+	case string(models.NotificationTicketReminderHigh):
+		prefix = "Напоминание (высокий приоритет)"
+	case string(models.NotificationTicketReminderUrgent):
+		prefix = "Критичное напоминание"
 	default:
 		prefix = "Уведомление"
 	}

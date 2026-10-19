@@ -21,7 +21,7 @@ func Migrate(pool *pgxpool.Pool) error {
 	defer db.Close() // Закрывает обертку, но НЕ сам пул pgx
 
 	logger.Info("migration up till last")
-	if err := goose.Up(db, "."); err != nil {
+	if err := goose.Up(db, ".", goose.WithAllowMissing()); err != nil {
 		return fmt.Errorf("failed to migrate up: %w", err)
 	}
 

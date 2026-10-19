@@ -256,6 +256,7 @@ export const CategoryViewDialog: FC<Props> = ({ category, groupsMap, onClose, on
 									priority: category.priority,
 									isActive: category.isActive,
 									isHidden: category.isHidden,
+									defaultDueDays: category.defaultDueDays ?? null,
 								})
 							}}
 							variant='contained'
