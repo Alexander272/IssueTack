@@ -13,6 +13,7 @@
 - **Backend**: `cd backend && go run ./cmd/app`. Конфиг — `backend/configs/config.yaml`. Секреты — `backend/.env` (не коммитится). Миграции применяются автоматически при старте (`goose.Up`). HTTP на порту 9000.
 - **Frontend**: `cd frontend && npm start`. Vite-proxy на `http://localhost:9000`. Билд: `npm run build`. Линт: `npm run lint`.
 - **Миграции (вручную, из `backend/`)**: `goose -dir internal/migrate/postgres/migrations postgres "<dsn>" up/down`. Мемо по командам — `backend/notes.md`.
+- **Номер миграции уникален на весь репозиторий, а не на ветку.** Goose сверяет `goose_db_version` с файлами **по номеру** (имя файла ему безразлично), поэтому один и тот же номер в двух ветках (`20261015000005` = `hidden_categories` в `main` и `equipment_kit_templates` в `dev`) на общей dev-БД молча съедает одну из них: версия помечена применённой, а таблиц нет — `42P01`, 500. Новую миграцию заводи с номером выше максимума **обеих** веток; при коллизии перенумеровывай ту, что ещё не влита (feature-ветку), а не удаляй строку из `goose_db_version` (повторный накат `CREATE TRIGGER` без `IF NOT EXISTS` упадёт). `goose.WithAllowMissing()` в `migrate.go` (`main`) — вынужденная мера для того же случая: позволяет применить файл с номером ниже уже применённого в общей БД.
 
 ## Архитектура
 
