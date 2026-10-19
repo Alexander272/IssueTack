@@ -135,7 +135,12 @@ func TestNotificationService_TicketCommented_NotSelf(t *testing.T) {
 	mockNotifier.On("Notify", mock.Anything, assigneeID, mock.Anything, mock.Anything).Return(true, nil).Once()
 	mockRepo.On("Create", mock.Anything, nil, mock.Anything).Return(nil).Once()
 
-	err := svc.TicketCommented(context.Background(), ticket, actorID, "уточните сроки", "Петров Иван")
+	err := svc.TicketCommented(context.Background(), &models.NotificationCommentDTO{
+		Ticket:      ticket,
+		ActorID:     actorID,
+		CommentText: "уточните сроки",
+		AuthorLabel: "Петров Иван",
+	})
 	assert.NoError(t, err)
 	mockRepo.AssertExpectations(t)
 	mockNotifier.AssertExpectations(t)
@@ -164,7 +169,12 @@ func TestNotificationService_TicketCommented_SelfIsAssignee(t *testing.T) {
 		Assignee: &models.UserShort{ID: actorID},
 	}
 
-	err := svc.TicketCommented(context.Background(), ticket, actorID, "уточните сроки", "Петров Иван")
+	err := svc.TicketCommented(context.Background(), &models.NotificationCommentDTO{
+		Ticket:      ticket,
+		ActorID:     actorID,
+		CommentText: "уточните сроки",
+		AuthorLabel: "Петров Иван",
+	})
 	assert.NoError(t, err)
 	mockRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
 }

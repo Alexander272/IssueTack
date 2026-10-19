@@ -152,7 +152,13 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 	s.notifyOwnerViaMattermost(ctx, comment)
 	if s.notifications != nil {
 		authorLabel := s.commentAuthorLabel(ctx, comment.UserID)
-		if err := s.notifications.TicketCommented(ctx, ticket, comment.UserID, comment.Text, authorLabel); err != nil {
+		err := s.notifications.TicketCommented(ctx, &models.NotificationCommentDTO{
+			Ticket:      ticket,
+			ActorID:     comment.UserID,
+			CommentText: comment.Text,
+			AuthorLabel: authorLabel,
+		})
+		if err != nil {
 			logger.Warn("failed to notify about comment", logger.StringAttr("ticket_id", comment.TicketID.String()), logger.ErrAttr(err))
 		}
 	}

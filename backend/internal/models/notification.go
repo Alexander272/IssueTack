@@ -26,6 +26,28 @@ type CreateNotificationDTO struct {
 	Data   json.RawMessage `json:"data"`
 }
 
+// NotificationReminderDTO — параметры периодического напоминания по приоритету.
+// Отдельная структура вместо длинного списка позиционных аргументов: у
+// notifyPriorityReminder событие, тип уведомления, заголовок и интервал дедупа
+// идут рядом и легко перепутать местами при вызове.
+type NotificationReminderDTO struct {
+	Ticket      *Ticket
+	Event       string
+	NotifType   string
+	Title       string
+	MinInterval time.Duration
+}
+
+// NotificationCommentDTO — параметры уведомления о новом комментарии для
+// NotificationService.TicketCommented: текст комментария и подпись автора —
+// два одинаковых string подряд, поэтому позиционно их передавать нельзя.
+type NotificationCommentDTO struct {
+	Ticket      *Ticket
+	ActorID     uuid.UUID
+	CommentText string
+	AuthorLabel string
+}
+
 type NotificationSettings struct {
 	UserID   uuid.UUID       `json:"userId" db:"user_id"`
 	Settings json.RawMessage `json:"settings" db:"settings"`

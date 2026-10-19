@@ -537,7 +537,12 @@ func TestNotificationService_TicketCommented_NotifiesAssignee(t *testing.T) {
 
 	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID)
 
-	err := svc.TicketCommented(context.Background(), ticket, actorID, "уточните сроки", "Петров Иван")
+	err := svc.TicketCommented(context.Background(), &models.NotificationCommentDTO{
+		Ticket:      ticket,
+		ActorID:     actorID,
+		CommentText: "уточните сроки",
+		AuthorLabel: "Петров Иван",
+	})
 	assert.NoError(t, err)
 	mockRepo.AssertExpectations(t)
 	mockNotifier.AssertExpectations(t)
@@ -554,7 +559,12 @@ func TestNotificationService_TicketCommented_ActorExcluded(t *testing.T) {
 		Category: &models.CategoryShort{ID: uuid.New()},
 	}
 
-	err := svc.TicketCommented(context.Background(), ticket, actorID, "уточните сроки", "Петров Иван")
+	err := svc.TicketCommented(context.Background(), &models.NotificationCommentDTO{
+		Ticket:      ticket,
+		ActorID:     actorID,
+		CommentText: "уточните сроки",
+		AuthorLabel: "Петров Иван",
+	})
 	assert.NoError(t, err)
 	mockRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
 	mockNotifier.AssertNotCalled(t, "Notify", mock.Anything, mock.Anything, mock.Anything, mock.Anything)

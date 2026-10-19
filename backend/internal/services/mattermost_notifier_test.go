@@ -107,6 +107,48 @@ func TestMattermostNotifier_SendsCreatedDM(t *testing.T) {
 	mockSender.AssertExpectations(t)
 }
 
+// Напоминания по приоритету набраны в две строки: жирный заголовок отдельной
+// строкой, номер и тема заявки — под ним (без ведущего пробела у номера).
+func TestMattermostNotifier_SendsReminderDM_HeaderOnOwnLine(t *testing.T) {
+	cases := []struct {
+		name   string
+		ntype  models.NotificationType
+		header string
+	}{
+		{"high", models.NotificationTicketReminderHigh, "**Важная задача**"},
+		{"urgent", models.NotificationTicketReminderUrgent, "**Срочная задача!**"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockMMRepo, mockUsers, mockSender, svc := mattermostNotifierServiceFixtures()
+
+			userID := uuid.New()
+			mmID := "mm-user-reminders"
+			ticket := mmTicket()
+			realmID := *ticket.RealmID
+			dto := &models.CreateNotificationDTO{
+				Type:  string(tc.ntype),
+				Title: "Задача",
+				Body:  "Тестовая заявка",
+			}
+
+			mockMMRepo.On("GetByRealm", mock.Anything, realmID).Return(&models.RealmMattermost{RealmID: realmID, BotToken: "bt", BotUserID: "bb", IsActive: true}, nil)
+			mockUsers.On("GetByID", mock.Anything, userID).Return(&models.UserData{ID: userID, MattermostID: &mmID}, nil)
+			mockSender.On("Send", "bt", "bb", mmID, mock.MatchedBy(func(msg string) bool {
+				return assert.Contains(t, msg, tc.header+"\n№12: Тестовая заявка") &&
+					assert.NotContains(t, msg, tc.header+" №12") &&
+					assert.Contains(t, msg, "[Открыть](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
+			})).Return(nil).Once()
+
+			delivered, err := svc.Notify(context.Background(), userID, dto, ticket)
+			assert.NoError(t, err)
+			assert.True(t, delivered)
+			mockSender.AssertExpectations(t)
+		})
+	}
+}
+
 func TestMattermostNotifier_SendsUpdatedDMWithChanges(t *testing.T) {
 	mockMMRepo, mockUsers, mockSender, svc := mattermostNotifierServiceFixtures()
 

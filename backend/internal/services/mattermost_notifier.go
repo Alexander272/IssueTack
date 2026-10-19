@@ -103,7 +103,9 @@ func (n *mattermostNotifier) Notify(ctx context.Context, userID uuid.UUID, notif
 // format собирает текст DM для конкретного события. События «Задача …» («просрочена»,
 // «обновлена», «удалена») и «Скоро срок» выводят номер сразу после слова «Задача»/
 // «Скоро срок» («Задача №12 обновлена: …»), прочие типы — номер после префикса
-// («Новая задача №12: …»). Для overdue и deadline_soon при заданном дедлайне
+// («Новая задача №12: …»). Напоминания по приоритету («Важная задача»/
+// «Срочная задача!») набраны в две строки: заголовок жирной строкой, номер и
+// тема заявки — под ним обычным текстом. Для overdue и deadline_soon при заданном дедлайне
 // добавляется строка «Дедлайн: …». Блок ссылок общий для всех типов и добавляется
 // один раз (links), чтобы правило показа веб-ссылки жило в одном месте.
 func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, ticket *models.Ticket, notif *models.CreateNotificationDTO) string {
@@ -124,9 +126,9 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 	case string(models.NotificationTicketAttachment):
 		prefix = "Новое вложение"
 	case string(models.NotificationTicketReminderHigh):
-		prefix = "Напоминание (высокий приоритет)"
+		prefix = "Важная задача"
 	case string(models.NotificationTicketReminderUrgent):
-		prefix = "Критичное напоминание"
+		prefix = "Срочная задача!"
 	default:
 		prefix = "Уведомление"
 	}
@@ -157,7 +159,20 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 		return text + links
 	}
 
-	text := fmt.Sprintf("**%s%s: %s**", prefix, number, title)
+	var text string
+	// Напоминания по приоритету: заголовок отдельной жирной строкой, номер и тема
+	// заявки под ним. Номер ведёт себя как самостоятельная строка, поэтому ведущий
+	// пробел из number убирается; без номера — только тема, без висячего двоеточия.
+	if notif.Type == string(models.NotificationTicketReminderHigh) || notif.Type == string(models.NotificationTicketReminderUrgent) {
+		text = fmt.Sprintf("**%s**", prefix)
+		if number != "" {
+			text += fmt.Sprintf("\n%s: %s", strings.TrimPrefix(number, " "), title)
+		} else {
+			text += "\n" + title
+		}
+	} else {
+		text = fmt.Sprintf("**%s%s: %s**", prefix, number, title)
+	}
 
 	if notif.Type == string(models.NotificationTicketCreated) && ticket.Owner != nil {
 		if label := userShortLabel(ticket.Owner); label != "" {
