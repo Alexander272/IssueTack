@@ -66,6 +66,17 @@ function pluginUserLabel(u: PluginUserShort): string {
 	return u.username
 }
 
+// pluginDueDateFromCategory — значение для <input type="datetime-local">: срок
+// в днях от сегодняшнего дня на конец дня. Бэкенд (parsePluginDueDate) принимает
+// формат datetime-local, поэтому toISOString() не подходит.
+function pluginDueDateFromCategory(days: number): string {
+	const d = new Date()
+	d.setDate(d.getDate() + days)
+	d.setHours(23, 59, 0, 0)
+	const pad = (n: number) => String(n).padStart(2, '0')
+	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 export default function CreateTab({ scope, context, onCreated, onOpen, onDraftChange }: CreateTabProps) {
 	const userSiteId =
 		context.user?.siteId && (context.sites || []).some(s => s.id === context.user.siteId) ? context.user.siteId : ''
@@ -133,6 +144,10 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		const cat = categories.find(c => c.id === categoryId)
 		setGroupId(cat?.groupId ?? '')
 		if (cat?.priority) setPriority(cat.priority)
+		// Автосрок из категории — зеркало веба: дефолт категории проставляется в
+		// поле срока, а категория без автосрока его сбрасывает, иначе в форме
+		// остался бы срок предыдущей категории.
+		setDueDate(cat?.defaultDueDays != null ? pluginDueDateFromCategory(cat.defaultDueDays) : '')
 	}, [categoryId, categories, isManager])
 
 	useEffect(() => {

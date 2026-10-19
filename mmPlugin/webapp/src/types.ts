@@ -20,6 +20,9 @@ export interface PluginCategory {
     categoryGroupId?: string | null;
     categoryGroup?: {id: string; name: string};
     priority: Priority;
+    // Дефолтный срок в днях: если задан, форма создания подставляет его в
+    // поле «Срок выполнения» при выборе категории.
+    defaultDueDays?: number | null;
     isActive: boolean;
     realmId: string;
     createdAt: string;

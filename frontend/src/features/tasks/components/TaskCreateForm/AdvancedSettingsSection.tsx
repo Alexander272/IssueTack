@@ -58,6 +58,15 @@ export const AdvancedSettingsSection = ({
 		prevCategoryId.current = selectedCategoryId
 		const cat = categories.find(c => c.id === selectedCategoryId)
 		setValue('groupId', cat?.groupId ?? null)
+		// Автосрок из категории: форма показывает тот же дефолт, который бэкенд
+		// применил бы сам, пока dueDate пуст (только на создании — autoAssign).
+		// Срок ставится на конец выбранного дня, как и при ручном выборе даты.
+		// Категория без автосрока сбрасывает поле: иначе в форме остался бы срок
+		// предыдущей категории и уехал бы на заявку, хотя бэкенд его не применял бы.
+		setValue(
+			'dueDate',
+			cat?.defaultDueDays != null ? dayjs().add(cat.defaultDueDays, 'day').endOf('day').toISOString() : null,
+		)
 	}, [selectedCategoryId, categories, autoAssign, setValue])
 
 	useEffect(() => {
