@@ -23,6 +23,8 @@ import { MemberCard } from './MemberCard'
 const fmtDate = (d: string | null) => (d ? new Date(`${d}T00:00:00`).toLocaleDateString('ru-RU') : '—')
 
 // Характеристики — плоский список пар; артикулы показываем моноширинной плашкой.
+// Дат покупки/гарантии у комплекта нет: их нет ни в форме создания, ни в форме
+// правки, поэтому в карточке они не показываются (сами колонки в БД не трогаем).
 const specsOf = (unit: IEquipment) => [
 	{ label: 'Производитель', value: unit.vendor || '—' },
 	{ label: 'Модель', value: unit.model || '—' },
@@ -30,8 +32,12 @@ const specsOf = (unit: IEquipment) => [
 	{ label: 'Инвентарный номер', value: unit.inventoryNumber ?? '—', mono: true },
 	{ label: 'Площадка', value: unit.siteName || '—' },
 	{ label: 'Локация', value: unit.location ?? '—' },
-	{ label: 'Дата покупки', value: fmtDate(unit.purchaseDate) },
-	{ label: 'Гарантия до', value: fmtDate(unit.warrantyUntil) },
+	...(unit.isKit
+		? []
+		: [
+				{ label: 'Дата покупки', value: fmtDate(unit.purchaseDate) },
+				{ label: 'Гарантия до', value: fmtDate(unit.warrantyUntil) },
+			]),
 ]
 
 type Props = {

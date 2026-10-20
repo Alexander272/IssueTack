@@ -1,35 +1,37 @@
-import { useState, type FC } from 'react'
+import { useState, type FC, type ReactNode } from 'react'
 import {
 	Box,
 	Button,
-	Checkbox,
 	Dialog,
 	DialogActions,
 	DialogContent,
 	DialogTitle,
-	FormControlLabel,
+	Divider,
 	IconButton,
+	MenuItem,
+	Stack,
 	TextField,
 	Typography,
 	useMediaQuery,
 	useTheme,
 } from '@mui/material'
-import { Controller, FormProvider, useForm } from 'react-hook-form'
-import { Trash2Icon, XIcon } from 'lucide-mui'
+import { Controller, useForm } from 'react-hook-form'
+import { CheckIcon, Trash2Icon, WarehouseIcon, XIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
 import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
 import type { IEquipment, IEquipmentDTO } from '../../types/equipment'
+import { EQUIPMENT_STATUS_OPTIONS, HOLDER_DERIVED_STATUSES } from '../../types/equipment'
 import {
 	useCreateEquipmentMutation,
 	useDeleteEquipmentMutation,
+	useGetAllEquipmentTypesQuery,
 	useUpdateEquipmentMutation,
 } from '../../equipmentApiSlice'
+import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
 import { Field } from './UnitForm/Field'
 import { inputProps } from './UnitForm/consts'
-import { IdentityFields } from './UnitForm/IdentityFields'
-import { OwnershipFields } from './UnitForm/OwnershipFields'
 import { PermRules } from '@/features/access/constants/permissions'
 import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
 
@@ -37,16 +39,17 @@ type Props = {
 	open: boolean
 	onClose: () => void
 	unit?: IEquipment | null
-	// isKitDefault — при создании (без unit) сразу отметить «Комплект».
-	isKitDefault?: boolean
 	// onDeleted — единицу удалили: вызывающему мало закрыть форму, карточку
 	// единицы тоже нужно убрать (иначе она осталась бы пустой).
 	onDeleted?: () => void
 }
 
 // Значения формы: при редактировании — из единицы, при создании — пустые.
-// typeId у комплекта равен null, поэтому в форме это пустая строка.
-const toDefault = (unit?: IEquipment | null, isKitDefault = false): IEquipmentDTO => ({
+// Скрытые поля (vendor, model, specs, parentId, holderUserId, holderName,
+// isKit) по-прежнему заполняются из единицы и уходят в payload — правка не
+// должна молча стирать их, даже если соответствующих инпутов в форме нет.
+// В частности, без specs репозиторный UPDATE сбросил бы характеристики в {}.
+const toDefault = (unit?: IEquipment | null): IEquipmentDTO => ({
 	id: unit?.id,
 	typeId: unit?.typeId ?? '',
 	name: unit?.name ?? '',
@@ -54,6 +57,7 @@ const toDefault = (unit?: IEquipment | null, isKitDefault = false): IEquipmentDT
 	model: unit?.model ?? '',
 	serialNumber: unit?.serialNumber ?? '',
 	inventoryNumber: unit?.inventoryNumber ?? '',
+	specs: unit?.specs,
 	status: unit?.status ?? 'in_stock',
 	parentId: unit?.parentId ?? null,
 	siteId: unit?.siteId ?? null,
@@ -63,18 +67,43 @@ const toDefault = (unit?: IEquipment | null, isKitDefault = false): IEquipmentDT
 	purchaseDate: unit?.purchaseDate ?? '',
 	warrantyUntil: unit?.warrantyUntil ?? '',
 	notes: unit?.notes ?? '',
-	isKit: unit?.isKit ?? isKitDefault,
+	isKit: unit?.isKit ?? false,
 })
 
-// Диалог создания/редактирования единицы оборудования: держит форму, её
-// сохранение и удаление единицы (в режиме правки, через подтверждение), а поля
-// раскладывает по секциям UnitForm. Секции берут справочники и права из формы и
-// своих запросов — контейнеру их протаскивать не нужно.
-export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, isKitDefault, onDeleted }) => {
+// Заголовок секции формы: мелкая ЗАГЛАВНАЯ подпись-разделитель (как в макете).
+const SectionLabel: FC<{ children: ReactNode }> = ({ children }) => (
+	<Typography
+		variant='caption'
+		sx={{
+			display: 'block',
+			color: 'text.secondary',
+			fontWeight: 600,
+			textTransform: 'uppercase',
+			letterSpacing: '0.04em',
+			mb: 1.5,
+		}}
+	>
+		{children}
+	</Typography>
+)
+
+// Диалог создания/редактирования единицы оборудования. Раскладка — по макету:
+// обязательные поля в первой секции, затем «Расположение» и «Дополнительно»,
+// между секциями — разделители. «Комплект», «Часть комплекта», «Производитель»
+// и «Модель» из формы убраны: комплекты ведутся в своей модалке, а имя/модель
+// живут в наименовании. Их значения по-прежнему сохраняются молча.
+// Комплекты сюда не попадают: создание и правка комплекта — EquipmentKitDialog
+// (одна и та же форма в обоих режимах), DetailHeader выбирает диалог по isKit.
+export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) => {
 	const theme = useTheme()
 	// На телефоне форма на всю ширину — как TaskCreateModal и карточка DetailModal.
 	const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
 	const isEdit = Boolean(unit?.id)
+
+	const { data: typesData } = useGetAllEquipmentTypesQuery()
+	const { data: sitesData } = useGetAllSitesQuery()
+	const types = typesData?.data ?? []
+	const sites = sitesData?.data ?? []
 
 	const canDelete = useCheckPermissions({ anyOf: [PermRules.Equipment.Delete] })
 	const [deleteOpen, setDeleteOpen] = useState(false)
@@ -83,7 +112,7 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, isKitDefault, 
 	const [remove, { isLoading: isDeleting }] = useDeleteEquipmentMutation()
 
 	const methods = useForm<IEquipmentDTO>({
-		defaultValues: toDefault(unit, isKitDefault),
+		defaultValues: toDefault(unit),
 		mode: 'onTouched',
 	})
 	const { control, handleSubmit, formState } = methods
@@ -93,9 +122,9 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, isKitDefault, 
 	const saveHandler = handleSubmit(async (form: IEquipmentDTO) => {
 		const payload: IEquipmentDTO = {
 			...form,
-			// У комплекта типа нет: не шлём пустую строку, иначе бэкенд не разберёт
-			// её как UUID. У единицы тип обязателен (поле «Тип» в форме).
-			typeId: form.isKit ? undefined : form.typeId || undefined,
+			// Не шлём пустую строку вместо UUID: тип обязателен у единицы,
+			// а форма комплект сюда больше не попадает.
+			typeId: form.typeId || undefined,
 			serialNumber: form.serialNumber || null,
 			inventoryNumber: form.inventoryNumber || null,
 			holderName: form.holderName || null,
@@ -135,70 +164,258 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, isKitDefault, 
 		}
 	}
 
+	// Две колонки на десктопе, одна на телефоне — как в макете.
+	const grid = { display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }
+
 	return (
 		<Dialog
 			open={open}
 			onClose={onClose}
 			fullWidth
 			fullScreen={isMobile}
-			maxWidth='sm'
+			maxWidth='md'
 			slotProps={{
-				paper: { sx: { borderRadius: { xs: 0, sm: '16px' }, p: { xs: 0, sm: 1 } } },
+				paper: {
+					sx: {
+						borderRadius: { xs: 0, sm: '16px' },
+						// Максимальная высота как в макете (max-h-[90vh]): контент
+						// прокручивается, шапка и футер остаются на месте.
+						maxHeight: '90vh',
+					},
+				},
 			}}
 		>
-			<DialogTitle sx={{ m: 0, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-				<Typography variant='h6' component='div' sx={{ fontWeight: 'bold' }}>
-					{isEdit ? 'Редактирование оборудования' : 'Новое оборудование'}
-				</Typography>
+			<DialogTitle
+				sx={{ m: 0, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}
+			>
+				<Stack>
+					<Typography variant='h6' sx={{ fontWeight: 'bold' }}>
+						{isEdit ? 'Редактирование оборудования' : 'Новое оборудование'}
+					</Typography>
+					<Typography variant='caption' sx={{ color: 'text.secondary' }}>
+						{isEdit ? 'Обновите данные единицы' : 'Оборудование будет добавлено на склад'}
+					</Typography>
+				</Stack>
 				<IconButton onClick={onClose} sx={{ color: 'text.secondary' }}>
-					<XIcon sx={{ fontSize: 16 }} />
+					<XIcon sx={{ fontSize: 18 }} />
 				</IconButton>
 			</DialogTitle>
 
-			<FormProvider {...methods}>
-				<form onSubmit={saveHandler}>
-					<DialogContent
-						dividers
-						sx={{ borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', py: 3 }}
-					>
-						<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-							<IdentityFields />
-
-							<OwnershipFields />
-
-							<Field label='Примечание'>
+			<form onSubmit={saveHandler}>
+				<DialogContent dividers sx={{ py: 3 }}>
+					<Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+						{/* Основная информация: тип, название, номера */}
+						<Box sx={grid}>
+							<Field label='Тип оборудования' required>
 								<Controller
 									control={control}
-									name='notes'
-									render={({ field }) => (
-										<TextField {...field} multiline minRows={2} {...inputProps} />
+									name='typeId'
+									rules={{ required: 'Выберите тип' }}
+									render={({ field, fieldState }) => (
+										<TextField
+											{...field}
+											select
+											{...inputProps}
+											error={Boolean(fieldState.error)}
+											helperText={fieldState.error?.message}
+										>
+											<MenuItem value='' disabled>
+												— Выберите тип —
+											</MenuItem>
+											{types.map(t => (
+												<MenuItem key={t.id} value={t.id}>
+													{t.name}
+												</MenuItem>
+											))}
+										</TextField>
 									)}
 								/>
 							</Field>
 
-							<Controller
-								control={control}
-								name='isKit'
-								render={({ field }) => (
-									<FormControlLabel
-										control={
-											<Checkbox
-												checked={Boolean(field.value)}
-												onChange={e => field.onChange(e.target.checked)}
-											/>
-										}
-										label='Это комплект (можно вести логический состав и выдавать вместе)'
-									/>
-								)}
-							/>
-						</Box>
-					</DialogContent>
+							<Field label='Название' required>
+								<Controller
+									control={control}
+									name='name'
+									rules={{ required: 'Обязательное поле' }}
+									render={({ field, fieldState }) => (
+										<TextField
+											{...field}
+											{...inputProps}
+											placeholder='Например: Dell OptiPlex 7090'
+											error={Boolean(fieldState.error)}
+											helperText={fieldState.error?.message}
+										/>
+									)}
+								/>
+							</Field>
 
-					<DialogActions sx={{ p: 2, gap: 1, justifyContent: 'flex-end' }}>
-						{/* Удаление живёт здесь, рядом с сохранением: `mr: 'auto'`
-						    отжимает кнопку влево, а `type='button'` не даёт ей
-						    отправить форму. */}
-						{isEdit && canDelete && (
+							<Field label='Серийный номер'>
+								<Controller
+									control={control}
+									name='serialNumber'
+									render={({ field }) => (
+										<TextField {...field} {...inputProps} placeholder='CN-0XYZ-12345' />
+									)}
+								/>
+							</Field>
+
+							<Field label='Инвентарный номер'>
+								<Controller
+									control={control}
+									name='inventoryNumber'
+									render={({ field }) => (
+										<TextField
+											{...field}
+											{...inputProps}
+											placeholder='Оставьте пустым для автогенерации'
+										/>
+									)}
+								/>
+							</Field>
+						</Box>
+
+						<Divider />
+
+						{/* Расположение: площадка (обязательна при создании) и локация */}
+						<Box>
+							<SectionLabel>Расположение</SectionLabel>
+							<Box sx={grid}>
+								{/* Площадка обязательна при создании: без держателя и локации
+								    CHECK «держатель ИЛИ место» не пропустит пустую единицу. На
+								    правке оставляем необязательным — у места может быть держатель. */}
+								<Field label='Площадка' required={!isEdit}>
+									<Controller
+										control={control}
+										name='siteId'
+										rules={isEdit ? undefined : { required: 'Укажите площадку' }}
+										render={({ field, fieldState }) => (
+											<TextField
+												{...field}
+												select
+												{...inputProps}
+												value={field.value ?? ''}
+												error={Boolean(fieldState.error)}
+												helperText={fieldState.error?.message}
+											>
+												<MenuItem value=''>— Выберите площадку —</MenuItem>
+												{sites.map(s => (
+													<MenuItem key={s.id} value={s.id}>
+														{s.name}
+													</MenuItem>
+												))}
+											</TextField>
+										)}
+									/>
+								</Field>
+
+								<Field label='Локация'>
+									<Controller
+										control={control}
+										name='location'
+										render={({ field }) => (
+											<TextField {...field} {...inputProps} placeholder='Склад, стеллаж А-3' />
+										)}
+									/>
+								</Field>
+							</Box>
+						</Box>
+
+						<Divider />
+
+						{/* Дополнительно: даты, примечание и (на правке) статус */}
+						<Box>
+							<SectionLabel>Дополнительно</SectionLabel>
+							<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+								<Box sx={grid}>
+									<Field label='Дата покупки'>
+										<Controller
+											control={control}
+											name='purchaseDate'
+											render={({ field }) => (
+												<TextField
+													{...field}
+													type='date'
+													{...inputProps}
+													slotProps={{ inputLabel: { shrink: true } }}
+												/>
+											)}
+										/>
+									</Field>
+
+									<Field label='Гарантия до'>
+										<Controller
+											control={control}
+											name='warrantyUntil'
+											render={({ field }) => (
+												<TextField
+													{...field}
+													type='date'
+													{...inputProps}
+													slotProps={{ inputLabel: { shrink: true } }}
+												/>
+											)}
+										/>
+									</Field>
+								</Box>
+
+								{/* Статус при создании всегда «На складе» — его выводит бэкенд
+								    из держателя. Поле показываем только на правке, где можно
+								    выбрать ручной статус (ремонт, дефект, списание). */}
+								{isEdit && (
+									<Field label='Статус'>
+										<Controller
+											control={control}
+											name='status'
+											render={({ field }) => (
+												<TextField {...field} select {...inputProps}>
+													{EQUIPMENT_STATUS_OPTIONS.map(s => (
+														<MenuItem
+															key={s.value}
+															value={s.value}
+															disabled={HOLDER_DERIVED_STATUSES.includes(s.value)}
+														>
+															{s.label}
+														</MenuItem>
+													))}
+												</TextField>
+											)}
+										/>
+									</Field>
+								)}
+
+								<Field label='Примечание'>
+									<Controller
+										control={control}
+										name='notes'
+										render={({ field }) => (
+											<TextField
+												{...field}
+												{...inputProps}
+												multiline
+												minRows={2}
+												placeholder='Состояние, комплектация, особенности...'
+											/>
+										)}
+									/>
+								</Field>
+							</Box>
+						</Box>
+					</Box>
+				</DialogContent>
+
+				{/* Футер серый, слева — подсказка о складе (или удаление на правке),
+				    справа — отмена/сохранение. */}
+				<DialogActions
+					sx={{
+						justifyContent: 'space-between',
+						bgcolor: 'grey.50',
+						p: 2,
+					}}
+				>
+					{/* Слева — подсказка о складе при создании или удаление при правке;
+					    без прав на удаление слот пустой, чтобы кнопки остались справа. */}
+					{isEdit ? (
+						canDelete ? (
 							<Button
 								type='button'
 								variant='outlined'
@@ -206,16 +423,26 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, isKitDefault, 
 								onClick={() => setDeleteOpen(true)}
 								disabled={isDeleting}
 								startIcon={<Trash2Icon sx={{ fontSize: 18 }} />}
-								sx={{ textTransform: 'none', mr: 'auto' }}
+								sx={{ textTransform: 'none' }}
 							>
 								Удалить
 							</Button>
-						)}
+						) : (
+							<Box />
+						)
+					) : (
+						<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'text.secondary' }}>
+							<WarehouseIcon sx={{ fontSize: 16, color: 'primary.main' }} />
+							<Typography variant='body2'>Будет добавлено на склад</Typography>
+						</Box>
+					)}
+
+					<Box sx={{ display: 'flex', gap: 1 }}>
 						<Button
 							type='button'
 							onClick={onClose}
 							variant='outlined'
-							sx={{ textTransform: 'none', color: 'text.primary', borderColor: '#ddd' }}
+							sx={{ textTransform: 'none', color: 'text.primary', borderColor: 'grey.300' }}
 						>
 							Отмена
 						</Button>
@@ -223,13 +450,14 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, isKitDefault, 
 							type='submit'
 							variant='contained'
 							disabled={isLoading || !formState.isValid}
+							startIcon={isEdit ? undefined : <CheckIcon sx={{ fontSize: 16 }} />}
 							sx={{ textTransform: 'none', px: 3 }}
 						>
 							{isEdit ? 'Сохранить' : 'Создать'}
 						</Button>
-					</DialogActions>
-				</form>
-			</FormProvider>
+					</Box>
+				</DialogActions>
+			</form>
 
 			{/* Подтверждение удаления — отдельным диалогом поверх формы, чтобы
 			    промах по кнопке не удалял единицу сразу. */}
