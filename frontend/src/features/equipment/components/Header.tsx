@@ -184,7 +184,7 @@ export const Header: FC<Props> = ({ onCreate }) => {
 						<ListItemIcon>
 							<PackageOpenIcon sx={{ fontSize: 16, color: '#0e0e0e' }} />
 						</ListItemIcon>
-						Новый комплект
+						Комплект
 					</MenuItem>
 					<MenuItem disabled>
 						<ListItemIcon>

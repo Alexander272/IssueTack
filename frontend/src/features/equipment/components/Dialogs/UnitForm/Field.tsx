@@ -7,7 +7,7 @@ export const FieldLabel: FC<{ children: ReactNode; required?: boolean }> = ({ ch
 	<Typography variant='caption' sx={{ fontWeight: 600, mb: 0.5, display: 'block' }}>
 		{children}
 		{required && (
-			<Typography component='span' color='error'>
+			<Typography component='span' color='error' sx={{ lineHeight: '1' }}>
 				{' '}
 				*
 			</Typography>
