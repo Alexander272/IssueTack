@@ -204,6 +204,8 @@ func (r *userRepo) GetByMattermostID(ctx context.Context, mattermostID string) (
 	return data[0], nil
 }
 
+// GetAll возвращает пользователей (вне realm — всех, с realm — только его
+// участников). Порядок — по фамилии, затем имени и username, как в GetByMembership.
 func (r *userRepo) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.UserData, error) {
 	baseQuery := fmt.Sprintf(`SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.created_at,
 			u.mattermost_id,
@@ -229,10 +231,10 @@ func (r *userRepo) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.Us
 	var args []any
 
 	if realmID != nil {
-		query = baseQuery + ` WHERE ur.realm_id = $1 ORDER BY u.first_name, u.last_name, u.username, rl.name`
+		query = baseQuery + ` WHERE ur.realm_id = $1 ORDER BY NULLIF(u.last_name, ''), u.first_name, u.username, rl.name`
 		args = []any{*realmID}
 	} else {
-		query = baseQuery + ` ORDER BY u.first_name, u.last_name, u.username, rl.name`
+		query = baseQuery + ` ORDER BY NULLIF(u.last_name, ''), u.first_name, u.username, rl.name`
 	}
 
 	rows, err := r.db.Query(ctx, query, args...)
@@ -256,6 +258,8 @@ func (r *userRepo) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.Us
 // GetByMembership возвращает пользователей realm, отфильтрованных по членству в группах:
 // MembershipCustomers — пользователи вне всех групп («заказчики»), MembershipExecutors —
 // пользователи хотя бы в одной группе («исполнители»).
+// Оба списка селектов («Заявитель»/«Заказчик»/«Исполнитель») идут по порядку SQL:
+// по фамилии, затем имени и username; пользователь без фамилии — в конец списка.
 func (r *userRepo) GetByMembership(ctx context.Context, realmID uuid.UUID, membership models.MembershipFilter) ([]*models.UserData, error) {
 	var membershipClause string
 	switch membership {
@@ -290,7 +294,7 @@ func (r *userRepo) GetByMembership(ctx context.Context, realmID uuid.UUID, membe
 				JOIN %s g ON gm.group_id = g.id
 				WHERE gm.user_id = u.id AND g.realm_id = $1
 			)
-		ORDER BY u.first_name, u.last_name, u.username`,
+		ORDER BY NULLIF(u.last_name, ''), u.first_name, u.username`,
 		Tables.Users, Tables.UserRealms, Tables.Roles, Tables.Realms, membershipClause, Tables.GroupMembers, Tables.Groups,
 	)
 

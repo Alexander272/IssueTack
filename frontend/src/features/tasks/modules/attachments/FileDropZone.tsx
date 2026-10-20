@@ -159,7 +159,9 @@ export const FileDropZone = ({ files = [], onChange, onUpload, compact = false }
 							Нажмите для загрузки
 						</Typography>
 					</Typography>
-					<Typography sx={{ fontSize: '0.6875rem', color: '#9ca3af' }}>перетащите или вставьте (Ctrl+V)</Typography>
+					<Typography sx={{ fontSize: '0.6875rem', color: '#9ca3af' }}>
+						перетащите или вставьте (Ctrl+V)
+					</Typography>
 				</Box>
 			) : (
 				<Box
@@ -167,7 +169,8 @@ export const FileDropZone = ({ files = [], onChange, onUpload, compact = false }
 					sx={{
 						border: '2px dashed #d1d5db',
 						borderRadius: '12px',
-						p: 4,
+						py: 2,
+						px: 4,
 						textAlign: 'center',
 						cursor: 'pointer',
 						bgcolor: dragging ? '#eff6ff' : '#fff',

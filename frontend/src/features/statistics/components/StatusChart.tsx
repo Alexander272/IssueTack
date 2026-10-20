@@ -16,13 +16,28 @@ const ORDER: TicketStatus[] = [...ACTIVE_STATUSES, 'resolved', 'closed', 'cancel
 
 const fallbackColor = '#90a4ae'
 
+// getChartColorFromText нормализует цвет до фиксированных S/L, сохраняя только
+// тон HEX-фона статуса. У resolved (#E8F5E9) и closed (#C8E6C9) тон отличается
+// на 3° — сектора совпадали. Поэтому для закрытых задаём светлоту явно: тот же
+// зелёный, но заметно темнее решённых (как в бейдже статуса).
+const STATUS_TONE: Partial<Record<TicketStatus, { saturation?: number; lightness?: number }>> = {
+	closed: { saturation: 70, lightness: 38 },
+}
+
+const statusColor = (status: TicketStatus) => {
+	const hex = STATUS_MAP[status]?.bgColor
+	if (!hex) return fallbackColor
+	const tone = STATUS_TONE[status]
+	return getChartColorFromText(hex, tone?.saturation, tone?.lightness)
+}
+
 export const StatusChart: FC<Props> = ({ buckets, isLoading }) => {
 	const counts = new Map(buckets.map(bucket => [bucket.status, bucket.count]))
 	const data = ORDER.filter(status => (counts.get(status) ?? 0) > 0).map(status => ({
 		id: status,
 		value: counts.get(status) ?? 0,
 		label: STATUS_MAP[status]?.label ?? status,
-		color: getChartColorFromText(STATUS_MAP[status]?.bgColor) ?? fallbackColor,
+		color: statusColor(status),
 	}))
 
 	return (
