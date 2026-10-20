@@ -8,23 +8,30 @@ import {
 	DialogActions,
 	DialogContent,
 	DialogTitle,
-	FormControlLabel,
 	IconButton,
 	MenuItem,
+	Stack,
 	TextField,
 	Typography,
 	useMediaQuery,
 	useTheme,
 } from '@mui/material'
 import { Controller, useForm, useWatch } from 'react-hook-form'
-import { XIcon } from 'lucide-mui'
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
+import dayjs from 'dayjs'
+import { InfoIcon, UserPlusIcon, XIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
+import { DateTextField } from '@/components/DatePicker/DatePicker'
 import type { IAssignEquipmentDTO, IEquipment } from '../../types/equipment'
-import { useAssignEquipmentMutation } from '../../equipmentApiSlice'
 import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
 import { useGetRealmUsersQuery } from '@/features/user/usersApiSlice'
+import { useAssignEquipmentMutation } from '../../equipmentApiSlice'
+import { resolveTypeIcon } from '../../typeIcons'
+import { EquipmentStatusBadge } from '../EquipmentStatusBadge'
+import { Field } from './UnitForm/Field'
+import { inputProps } from './UnitForm/consts'
 
 type Props = {
 	open: boolean
@@ -32,58 +39,85 @@ type Props = {
 	unit: IEquipment
 }
 
-const fieldLabelSx = { fontWeight: 600, mb: 0.5, display: 'block' }
-const inputProps = { size: 'small' as const, fullWidth: true }
+// Значения формы: место — реквизит диалога, а не DTO. Момент выдачи хранится
+// в assignedAt строкой ISO (её даёт DateTimePicker), skipAct выводится из
+// чекбокса «Создать акт выдачи» (по умолчанию акт формируется).
+type AssignForm = {
+	userId: string | null
+	holderName: string
+	siteId: string | null
+	location: string
+	comment: string
+	createAct: boolean
+	assignedAt: string | null
+}
 
 const userLabel = (u: { lastName: string; firstName: string; username: string }) => {
 	const full = `${u.lastName} ${u.firstName}`.trim()
 	return full ? `${full} (${u.username})` : u.username
 }
 
+// Вариант freeSolo — либо сотрудник из справочника, либо набранная строка.
+const optionLabel = (option: string | { lastName: string; firstName: string; username: string }) =>
+	typeof option === 'string' ? option : userLabel(option)
+
+// Диалог выдачи оборудования — по макету: шапка с подписью, карточка того, что
+// выдаём (иконка типа, статус, тип · инв. № · S/N), получатель, площадка и
+// локация, дата выдачи, комментарий и опции (акт, принудительное
+// переназначение). Связь с заявкой и уведомления получателю пока не заведены.
 export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 	const theme = useTheme()
 	// На телефоне диалог выдачи — во весь экран (как форма создания заявки).
 	const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
 	const [assign, { isLoading }] = useAssignEquipmentMutation()
 	const { data: sitesData } = useGetAllSitesQuery()
-	const { data: usersData } = useGetRealmUsersQuery('executors')
+	// Получателем может быть любой пользователь реалма, не только участник
+	// групп: оборудование выдают и заказчикам, и сотрудникам без заявок,
+	// поэтому справочник запрашивается без фильтра членства.
+	const { data: usersData } = useGetRealmUsersQuery('all')
 
 	const sites = sitesData?.data ?? []
 	const users = usersData?.data ?? []
 
-	const { control, handleSubmit } = useForm<IAssignEquipmentDTO>({
+	// Место выдаётся тем же, что у единицы: выдача — про держателя, а не про
+	// переезд. Оператор может переписать оба поля, тогда место сменится.
+	const methods = useForm<AssignForm>({
 		defaultValues: {
 			userId: null,
 			holderName: '',
-			siteId: null,
-			location: '',
+			siteId: unit.siteId ?? null,
+			location: unit.location ?? '',
 			comment: '',
-			force: false,
-			skipAct: false,
+			createAct: true,
+			assignedAt: dayjs().toISOString(),
 		},
 		mode: 'onTouched',
 	})
+	const { control, handleSubmit } = methods
 
-	const userId = useWatch({ control, name: 'userId' })
-	const holderName = useWatch({ control, name: 'holderName' })
-	const siteId = useWatch({ control, name: 'siteId' })
-	const location = useWatch({ control, name: 'location' })
-	const canSubmit = Boolean(userId || holderName || siteId || location)
+	const createAct = useWatch({ control, name: 'createAct' })
 
-	// Место — реквизит единицы: пустые поля в выдаче означают «единица не
-	// переезжает», поэтому оператору нужно видеть, какое место останется.
-	const currentPlace = [unit.siteName, unit.location].filter(Boolean).join(', ')
-	const placeHint = currentPlace
-		? `Пусто — место не меняется (сейчас: ${currentPlace}).`
-		: 'Пусто — место не задаётся: единица будет числиться за держателем.'
+	// Подпись карточки: у комплекта нет типа и серийного номера, поэтому пустые
+	// части отбрасываются, а не оставляют « · » на конце.
+	const subtitle = [
+		unit.isKit ? '' : unit.typeName,
+		unit.inventoryNumber && `Инв. №${unit.inventoryNumber}`,
+		unit.serialNumber && `S/N: ${unit.serialNumber}`,
+	]
+		.filter(Boolean)
+		.join(' · ')
+
+	const icon = resolveTypeIcon({ isKit: unit.isKit, icon: unit.typeIcon, typeName: unit.typeName })
 
 	const saveHandler = handleSubmit(async form => {
 		const payload: IAssignEquipmentDTO = {
-			...form,
 			userId: form.userId || null,
 			holderName: form.holderName || null,
 			siteId: form.siteId || null,
 			location: form.location || null,
+			comment: form.comment,
+			skipAct: !form.createAct,
+			assignedAt: form.assignedAt ?? undefined,
 		}
 		try {
 			await assign({ id: unit.id, body: payload }).unwrap()
@@ -102,167 +136,264 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 			fullWidth
 			fullScreen={isMobile}
 			maxWidth='sm'
-			slotProps={{ paper: { sx: { borderRadius: { xs: 0, sm: '16px' }, p: { xs: 0, sm: 1 } } } }}
+			slotProps={{
+				paper: {
+					sx: {
+						borderRadius: { xs: 0, sm: '16px' },
+						// Как в макете (max-h-[90vh]): прокручивается контент,
+						// шапка и футер остаются на месте.
+						maxHeight: '90vh',
+					},
+				},
+			}}
 		>
 			<DialogTitle
-				sx={{ m: 0, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+				sx={{ m: 0, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}
 			>
-				<Typography variant='h6' component='div' sx={{ fontWeight: 'bold' }}>
-					Выдача оборудования
-				</Typography>
+				<Stack>
+					<Typography variant='h6' sx={{ fontWeight: 'bold' }}>
+						Выдача оборудования
+					</Typography>
+					<Typography variant='caption' sx={{ color: 'text.secondary' }}>
+						Передача оборудования сотруднику под подпись
+					</Typography>
+				</Stack>
 				<IconButton onClick={onClose} sx={{ color: 'text.secondary' }}>
-					<XIcon sx={{ fontSize: 16 }} />
+					<XIcon sx={{ fontSize: 18 }} />
 				</IconButton>
 			</DialogTitle>
 
 			<form onSubmit={saveHandler}>
-				<DialogContent
-					dividers
-					sx={{ borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', py: 3 }}
-				>
+				<DialogContent dividers>
 					<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-						<Typography variant='body2' sx={{ color: '#6b7280' }}>
-							{unit.name}
-							{unit.isKit ? ' (комплект)' : ''}
-						</Typography>
+						{/* Что выдаём: иконка типа в тоне реестра, название со
+						    статусом и мелкая подпись с номерами. */}
+						<Box
+							sx={{
+								display: 'flex',
+								alignItems: 'center',
+								gap: 1.5,
+								p: 2,
+								borderRadius: '10px',
+								border: '1px solid',
+								borderColor: 'primary.main',
+								bgcolor: 'rgba(234, 238, 252, 0.5)',
+							}}
+						>
+							<Box
+								sx={{
+									display: 'flex',
+									alignItems: 'center',
+									justifyContent: 'center',
+									width: 48,
+									height: 48,
+									borderRadius: '8px',
+									bgcolor: icon.bg,
+									flexShrink: 0,
+								}}
+							>
+								<icon.Icon sx={{ fontSize: 22, color: icon.color }} />
+							</Box>
+							<Box sx={{ minWidth: 0, flex: 1 }}>
+								<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+									<Typography sx={{ fontSize: '0.875rem', fontWeight: 600 }}>{unit.name}</Typography>
+									<EquipmentStatusBadge status={unit.status} />
+								</Box>
+								{subtitle && (
+									<Typography variant='caption' sx={{ color: 'text.secondary' }}>
+										{subtitle}
+									</Typography>
+								)}
+							</Box>
+						</Box>
 
-						<Box>
-							<Typography variant='caption' sx={fieldLabelSx}>
-								Держатель (сотрудник)
-							</Typography>
+						{/* Получатель: сотрудник из справочника либо свободное ФИО —
+						    выдать можно и внешнему сотруднику без учётки. Одно поле
+						    с freeSolo: выбранный вариант приходит объектом IUserData
+						    (уходит в userId), набранный руками текст — строкой
+						    (уходит в holderName). */}
+						<Field label='Получатель' required>
 							<Controller
 								control={control}
 								name='userId'
-								render={({ field }) => (
+								rules={{
+									validate: value =>
+										Boolean(value || methods.getValues('holderName')) ||
+										'Выберите сотрудника или укажите его ФИО',
+								}}
+								render={({ field, fieldState }) => (
 									<Autocomplete
+										freeSolo
 										options={users}
-										getOptionLabel={userLabel}
-										value={users.find(u => u.id === field.value) ?? null}
-										onChange={(_e, value) => field.onChange(value?.id ?? null)}
+										getOptionLabel={optionLabel}
+										// Сотрудник опознаётся по ссылке на объект из
+										// options; иначе в поле показывается введённое
+										// ФИО ('' вместо null — свободное значение).
+										value={users.find(u => u.id === field.value) ?? (field.value ? '' : null)}
+										onChange={(_e, value) => {
+											if (value && typeof value === 'object') {
+												field.onChange(value.id)
+												methods.setValue('holderName', '')
+												return
+											}
+											const text = typeof value === 'string' ? value : ''
+											field.onChange(null)
+											methods.setValue('holderName', text)
+										}}
 										renderInput={params => (
-											<TextField {...params} size='small' placeholder='Выберите сотрудника' />
+											<TextField
+												{...params}
+												{...inputProps}
+												placeholder='— Выберите сотрудника или укажите ФИО —'
+												error={Boolean(fieldState.error)}
+												helperText={fieldState.error?.message}
+											/>
 										)}
 									/>
 								)}
 							/>
-						</Box>
+						</Field>
 
-						<Box>
-							<Typography variant='caption' sx={fieldLabelSx}>
-								Держатель (название)
-							</Typography>
+						{/* Площадка и локация заполнены текущим местом единицы: пустые
+						    поля в выдаче означают «единица не переезжает». */}
+						<Stack direction={'row'} spacing={1}>
+							<Field label='Площадка' required>
+								<Controller
+									control={control}
+									name='siteId'
+									rules={{ required: 'Укажите площадку' }}
+									render={({ field, fieldState }) => (
+										<TextField
+											{...field}
+											select
+											{...inputProps}
+											value={field.value ?? ''}
+											error={Boolean(fieldState.error)}
+											helperText={fieldState.error?.message}
+										>
+											<MenuItem value=''>— Выберите площадку —</MenuItem>
+											{sites.map(s => (
+												<MenuItem key={s.id} value={s.id}>
+													{s.name}
+												</MenuItem>
+											))}
+										</TextField>
+									)}
+								/>
+							</Field>
+
+							<Field label='Локация'>
+								<Controller
+									control={control}
+									name='location'
+									render={({ field }) => (
+										<TextField {...field} {...inputProps} placeholder='Каб. 301' />
+									)}
+								/>
+							</Field>
+						</Stack>
+
+						<Field label='Дата и время выдачи' required>
 							<Controller
 								control={control}
-								name='holderName'
-								render={({ field }) => (
-									<TextField {...field} {...inputProps} placeholder='Или свободный текст' />
+								name='assignedAt'
+								rules={{ required: 'Укажите дату и время' }}
+								render={({ field, fieldState }) => (
+									<DateTimePicker
+										value={field.value ? dayjs(field.value) : null}
+										onChange={date => field.onChange(date ? date.toISOString() : null)}
+										slots={{ textField: DateTextField }}
+										slotProps={{
+											textField: {
+												fullWidth: true,
+												size: 'small',
+												error: Boolean(fieldState.error),
+												helperText: fieldState.error?.message,
+											},
+										}}
+									/>
 								)}
 							/>
-						</Box>
+						</Field>
 
-						<Box>
-							<Box
-								sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}
-							>
-								<Box>
-									<Typography variant='caption' sx={fieldLabelSx}>
-										Площадка
-									</Typography>
-									<Controller
-										control={control}
-										name='siteId'
-										render={({ field }) => (
-											<TextField {...field} select {...inputProps} value={field.value ?? ''}>
-												<MenuItem value=''>Не указана</MenuItem>
-												{sites.map(s => (
-													<MenuItem key={s.id} value={s.id}>
-														{s.name}
-													</MenuItem>
-												))}
-											</TextField>
-										)}
-									/>
-								</Box>
-								<Box>
-									<Typography variant='caption' sx={fieldLabelSx}>
-										Локация
-									</Typography>
-									<Controller
-										control={control}
-										name='location'
-										render={({ field }) => (
-											<TextField {...field} {...inputProps} placeholder='Склад, полка A' />
-										)}
-									/>
-								</Box>
-							</Box>
-							<Typography variant='caption' sx={{ color: '#9ca3af', mt: 0.5, display: 'block' }}>
-								{placeHint}
-							</Typography>
-						</Box>
-
-						<Box>
-							<Typography variant='caption' sx={fieldLabelSx}>
-								Комментарий
-							</Typography>
+						<Field label='Комментарий'>
 							<Controller
 								control={control}
 								name='comment'
-								render={({ field }) => <TextField {...field} multiline minRows={2} {...inputProps} />}
+								render={({ field }) => (
+									<TextField
+										{...field}
+										{...inputProps}
+										multiline
+										minRows={2}
+										placeholder='Причина выдачи, особенности...'
+									/>
+								)}
 							/>
+						</Field>
+
+						{/* Опции — как в макете: строка с чекбоксом и пояснением.
+						    Уведомление получателю пока не реализовано. */}
+						<Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 2.5 }}>
+							<Box
+								sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, cursor: 'pointer' }}
+								onClick={() => methods.setValue('createAct', !createAct, { shouldDirty: true })}
+							>
+								<Controller
+									control={control}
+									name='createAct'
+									render={({ field }) => (
+										<Checkbox
+											checked={Boolean(field.value)}
+											onChange={e => field.onChange(e.target.checked)}
+											sx={{ mt: -0.75, ml: -0.75 }}
+										/>
+									)}
+								/>
+								<Box>
+									<Typography sx={{ fontSize: '0.875rem', fontWeight: 500 }}>
+										Создать акт выдачи
+									</Typography>
+									<Typography variant='caption' sx={{ color: 'text.secondary' }}>
+										Автоматически сформировать акт для подписания
+									</Typography>
+								</Box>
+							</Box>
 						</Box>
-
-						<Controller
-							control={control}
-							name='force'
-							render={({ field }) => (
-								<FormControlLabel
-									control={
-										<Checkbox
-											checked={Boolean(field.value)}
-											onChange={e => field.onChange(e.target.checked)}
-										/>
-									}
-									label='Переназначить принудительно (у состава может быть другой держатель)'
-								/>
-							)}
-						/>
-
-						<Controller
-							control={control}
-							name='skipAct'
-							render={({ field }) => (
-								<FormControlLabel
-									control={
-										<Checkbox
-											checked={Boolean(field.value)}
-											onChange={e => field.onChange(e.target.checked)}
-										/>
-									}
-									label='Не формировать акт выдачи'
-								/>
-							)}
-						/>
 					</Box>
 				</DialogContent>
 
-				<DialogActions sx={{ p: 2, gap: 1, justifyContent: 'flex-end' }}>
-					<Button
-						type='button'
-						onClick={onClose}
-						variant='outlined'
-						sx={{ textTransform: 'none', color: 'text.primary', borderColor: '#ddd' }}
-					>
-						Отмена
-					</Button>
-					<Button
-						type='submit'
-						variant='contained'
-						disabled={isLoading || !canSubmit}
-						sx={{ textTransform: 'none', px: 3 }}
-					>
-						Выдать
-					</Button>
+				{/* Футер серый: слева — что произойдёт со статусом, справа — кнопки. */}
+				<DialogActions sx={{ justifyContent: 'space-between', bgcolor: 'grey.50', p: 2 }}>
+					<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, color: 'text.secondary' }}>
+						<InfoIcon sx={{ fontSize: 16, color: 'info.main' }} />
+						<Typography variant='body2'>Статус изменится на «В эксплуатации»</Typography>
+					</Box>
+
+					<Box sx={{ display: 'flex', gap: 1 }}>
+						<Button
+							type='button'
+							onClick={onClose}
+							variant='outlined'
+							sx={{
+								textTransform: 'none',
+								color: 'text.primary',
+								borderColor: 'grey.300',
+								backgroundColor: 'white',
+							}}
+						>
+							Отмена
+						</Button>
+						<Button
+							type='submit'
+							variant='contained'
+							disabled={isLoading}
+							sx={{ textTransform: 'none', px: 3 }}
+						>
+							<UserPlusIcon sx={{ fontSize: 18, mr: 1 }} />
+							Выдать
+						</Button>
+					</Box>
 				</DialogActions>
 			</form>
 		</Dialog>

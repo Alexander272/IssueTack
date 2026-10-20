@@ -457,7 +457,11 @@ type AssignEquipmentDTO struct {
 	Comment  string     `json:"comment"`
 	Force    bool       `json:"force"`
 	SkipAct  bool       `json:"skipAct"`
-	Actor    *Actor     `json:"-"`
+	// AssignedAt — момент выдачи из формы (RFC3339). nil = сейчас. Будущее
+	// время отклоняется (EQ017): оформлять выдачу заранее нельзя, а задним
+	// числом — можно, акт подписывают позже факта.
+	AssignedAt *time.Time `json:"assignedAt"`
+	Actor      *Actor     `json:"-"`
 }
 
 // UnassignEquipmentDTO — возврат оборудования на склад/вместо хранения.
@@ -505,7 +509,10 @@ type EquipmentActDTO struct {
 	SiteID          *uuid.UUID `json:"siteId"`
 	Location        *string    `json:"location"`
 	Comment         string     `json:"comment"`
-	Actor           *Actor     `json:"-"`
+	// IssuedAt — момент акта из формы выдачи (RFC3339), nil = сейчас.
+	// Внутреннее поле: наружу через этот DTO не уходит, поэтому json "-".
+	IssuedAt *time.Time `json:"-"`
+	Actor    *Actor     `json:"-"`
 }
 
 // GetEquipmentActByIDDTO — запрос акта по ID.

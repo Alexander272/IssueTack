@@ -21,7 +21,7 @@ export const Field: FC<{ label: string; required?: boolean; children: ReactNode 
 	required,
 	children,
 }) => (
-	<Box>
+	<Box sx={{ width: '100%' }}>
 		<FieldLabel required={required}>{label}</FieldLabel>
 		{children}
 	</Box>

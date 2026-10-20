@@ -16,10 +16,13 @@ import {
 	useTheme,
 } from '@mui/material'
 import { Controller, useForm } from 'react-hook-form'
+import { DatePicker } from '@mui/x-date-pickers/DatePicker'
+import dayjs from 'dayjs'
 import { CheckIcon, Trash2Icon, WarehouseIcon, XIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
+import { DateTextField } from '@/components/DatePicker/DatePicker'
 import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
 import type { IEquipment, IEquipmentDTO } from '../../types/equipment'
 import { EQUIPMENT_STATUS_OPTIONS, HOLDER_DERIVED_STATUSES } from '../../types/equipment'
@@ -332,11 +335,11 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 											control={control}
 											name='purchaseDate'
 											render={({ field }) => (
-												<TextField
-													{...field}
-													type='date'
-													{...inputProps}
-													slotProps={{ inputLabel: { shrink: true } }}
+												<DatePicker
+													value={field.value ? dayjs(field.value) : null}
+													onChange={date => field.onChange(date ? date.format('YYYY-MM-DD') : null)}
+													slots={{ textField: DateTextField }}
+													slotProps={{ textField: { fullWidth: true, size: 'small' } }}
 												/>
 											)}
 										/>
@@ -347,11 +350,11 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 											control={control}
 											name='warrantyUntil'
 											render={({ field }) => (
-												<TextField
-													{...field}
-													type='date'
-													{...inputProps}
-													slotProps={{ inputLabel: { shrink: true } }}
+												<DatePicker
+													value={field.value ? dayjs(field.value) : null}
+													onChange={date => field.onChange(date ? date.format('YYYY-MM-DD') : null)}
+													slots={{ textField: DateTextField }}
+													slotProps={{ textField: { fullWidth: true, size: 'small' } }}
 												/>
 											)}
 										/>

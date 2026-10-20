@@ -26,6 +26,18 @@ func (s *EquipmentService) Assign(ctx context.Context, dto *models.AssignEquipme
 		return models.ErrEquipmentNotAssignable
 	}
 
+	// Дата выдачи: из формы приходит точный момент (datetime-local), по
+	// умолчанию — сейчас. На будущее задать нельзя: проверка до транзакции,
+	// чтобы не занимать её при отказе. Прошлое разрешено — акт оформляют
+	// позже факта.
+	assignedAt := time.Now()
+	if dto.AssignedAt != nil {
+		if dto.AssignedAt.After(assignedAt) {
+			return models.ErrEquipmentAssignDateInFuture
+		}
+		assignedAt = *dto.AssignedAt
+	}
+
 	// Место — реквизит единицы («где она лежит»), а не часть выдачи: пустые
 	// «Площадка»/«Локация» в диалоге означают «единица не переезжает». Раньше они
 	// затирали место (SetHolderAndStatus записывал nil), и вместе с местом пропадала
@@ -62,6 +74,10 @@ func (s *EquipmentService) Assign(ctx context.Context, dto *models.AssignEquipme
 
 	return s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
 		opID := uuid.New()
+		// Реальное время переоформления: им закрывается прежняя открытая выдача.
+		// Новая запись получает assignedAt (момент из формы). При переоформлении
+		// задним числом интервалы могут накладываться — осознанный компромисс:
+		// закрывать чужую выдачу в прошлом хуже.
 		now := time.Now()
 		actorID := actorID(dto.Actor)
 
@@ -82,7 +98,7 @@ func (s *EquipmentService) Assign(ctx context.Context, dto *models.AssignEquipme
 				HolderName:  dto.HolderName,
 				SiteID:      dto.SiteID,
 				Location:    dto.Location,
-				AssignedAt:  now,
+				AssignedAt:  assignedAt,
 				AssignedBy:  actorID,
 				Comment:     dto.Comment,
 			}); err != nil {
@@ -111,6 +127,7 @@ func (s *EquipmentService) Assign(ctx context.Context, dto *models.AssignEquipme
 			SiteID:          dto.SiteID,
 			Location:        dto.Location,
 			Comment:         dto.Comment,
+			IssuedAt:        &assignedAt,
 			Actor:           dto.Actor,
 		}, affected)
 	})

@@ -83,6 +83,13 @@ func (s *EquipmentService) buildAct(ctx context.Context, tx postgres.Tx, dto *mo
 	}
 	number := fmt.Sprintf("АКТ-%d-%04d", time.Now().Year(), seq)
 
+	// Дата акта: момент выдачи из формы, иначе — сейчас при ручном создании
+	// акта.
+	issuedAt := time.Now()
+	if dto.IssuedAt != nil {
+		issuedAt = *dto.IssuedAt
+	}
+
 	act := &models.EquipmentAct{
 		RealmID:         dto.RealmID,
 		Number:          number,
@@ -93,7 +100,7 @@ func (s *EquipmentService) buildAct(ctx context.Context, tx postgres.Tx, dto *mo
 		SiteID:          dto.SiteID,
 		Location:        dto.Location,
 		IssuedBy:        actorID(dto.Actor),
-		IssuedAt:        time.Now(),
+		IssuedAt:        issuedAt,
 		Content:         content,
 		Comment:         dto.Comment,
 	}

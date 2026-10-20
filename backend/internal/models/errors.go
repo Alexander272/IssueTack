@@ -84,6 +84,7 @@ var (
 	ErrEquipmentParentNotPart       = NewDomainError(errors.New("only a component or consumable can have a parent"), http.StatusBadRequest, "EQ014", "В физический состав можно включить только комплектующее или расходник")
 	ErrEquipmentParentCannotHost    = NewDomainError(errors.New("a component, consumable or kit cannot host equipment"), http.StatusBadRequest, "EQ015", "Родителем может быть только устройство или периферия")
 	ErrEquipmentActNotSigned        = NewDomainError(errors.New("equipment act is not signed"), http.StatusConflict, "EQ016", "Подписанный акт ещё не загружен")
+	ErrEquipmentAssignDateInFuture  = NewDomainError(errors.New("assignment date is in the future"), http.StatusBadRequest, "EQ017", "Дата выдачи не может быть в будущем")
 
 	// 400 Bad Request
 	ErrInvalidInput          = NewDomainError(errors.New("invalid input data"), http.StatusBadRequest, "BR001", "Переданы некорректные данные")

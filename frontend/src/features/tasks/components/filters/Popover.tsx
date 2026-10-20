@@ -10,7 +10,10 @@ import {
 	Chip,
 	Typography,
 } from '@mui/material'
+import { DatePicker } from '@mui/x-date-pickers/DatePicker'
+import dayjs from 'dayjs'
 
+import { DateTextField } from '@/components/DatePicker/DatePicker'
 import type { TicketStatus, Priority } from '../../types/task'
 import { STATUS_OPTIONS, PRIORITY_MAP } from '../../constants/taskMaps'
 import type { FilterValues } from './types'
@@ -158,19 +161,19 @@ export const Popover: FC<Props> = ({
 				<Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #eaeef2' }}>
 					<Typography sx={sectionSx}>Срок</Typography>
 					<Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
-						<TextField
-							type='date'
+						<DatePicker
 							label='С'
-							value={local.dueDateFrom}
-							onChange={e => update('dueDateFrom', e.target.value)}
-							slotProps={{ inputLabel: { shrink: true } }}
+							value={local.dueDateFrom ? dayjs(local.dueDateFrom) : null}
+							onChange={date => update('dueDateFrom', date ? date.format('YYYY-MM-DD') : '')}
+							slots={{ textField: DateTextField }}
+							slotProps={{ textField: { fullWidth: true, size: 'small' } }}
 						/>
-						<TextField
-							type='date'
+						<DatePicker
 							label='По'
-							value={local.dueDateTo}
-							onChange={e => update('dueDateTo', e.target.value)}
-							slotProps={{ inputLabel: { shrink: true } }}
+							value={local.dueDateTo ? dayjs(local.dueDateTo) : null}
+							onChange={date => update('dueDateTo', date ? date.format('YYYY-MM-DD') : '')}
+							slots={{ textField: DateTextField }}
+							slotProps={{ textField: { fullWidth: true, size: 'small' } }}
 						/>
 					</Box>
 				</Box>

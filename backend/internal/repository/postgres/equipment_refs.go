@@ -19,7 +19,9 @@ func fullNameSQL(alias string) string {
 // Нужен для снимка события: журнал иммутабелен, а FK объявлены ON DELETE SET NULL,
 // поэтому подпись фиксируется в момент записи, а не джойном на чтении.
 func (r *EquipmentRepo) GetUserFullName(ctx context.Context, userID uuid.UUID) (string, error) {
-	query := fmt.Sprintf(`SELECT %s FROM %s WHERE id = $1`, fullNameSQL("u"), Tables.Users)
+	// Алиас обязателен: fullNameSQL строит выражение по колонкам алиаса, а в
+	// запросе без `u` Postgres отвечает 42P01 «missing FROM-clause entry».
+	query := fmt.Sprintf(`SELECT %s FROM %s u WHERE u.id = $1`, fullNameSQL("u"), Tables.Users)
 
 	var name *string
 	if err := r.db.QueryRow(ctx, query, userID).Scan(&name); err != nil {

@@ -170,6 +170,18 @@ func TestEquipmentRepo_Stage3Flow(t *testing.T) {
 	assert.Equal(t, models.EquipmentEventComponentAdded, events[0].EventType)
 	assert.Equal(t, "Тестов Тест", events[0].UserName)
 
+	// Резолв подписей для снимка события: в запросе по id обязателен алиас
+	// таблицы users — без него Postgres отвечает 42P01 «missing FROM-clause
+	// entry for table "u"», и выдача падает с 500 (регресс, из-за которого
+	// GetUserFullName собирал выражение по алиасу, а сам алиаса не объявлял).
+	name, err := repo.GetUserFullName(ctx, f.userID)
+	require.NoError(t, err)
+	assert.Equal(t, "Тестов Тест", name)
+
+	siteName, err := repo.GetSiteName(ctx, siteID)
+	require.NoError(t, err)
+	assert.Equal(t, "ППРЗ", siteName)
+
 	// Акт.
 	tx, err = repo.BeginTx(ctx)
 	require.NoError(t, err)

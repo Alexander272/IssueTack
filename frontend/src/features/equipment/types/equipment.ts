@@ -268,6 +268,9 @@ export interface IAssignEquipmentDTO {
 	comment?: string
 	force?: boolean
 	skipAct?: boolean
+	// assignedAt — момент выдачи (RFC3339), его отдаёт DateTimePicker; не
+	// передан — сервер поставит текущее время. Будущее отклоняется (EQ017).
+	assignedAt?: string
 }
 
 export interface IUnassignEquipmentDTO {
