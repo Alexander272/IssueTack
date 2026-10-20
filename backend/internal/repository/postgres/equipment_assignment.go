@@ -17,7 +17,7 @@ import (
 // справочники реалма ради строки истории.
 func assignmentSelectBase() string {
 	return fmt.Sprintf(`SELECT a.id, a.equipment_id, a.user_id, a.holder_name, a.site_id, a.location,
-			a.assigned_at, a.unassigned_at, a.assigned_by, a.comment,
+			a.assigned_at, a.unassigned_at, a.return_due_at, a.assigned_by, a.comment,
 			%s AS holder_full_name, s.name AS site_name, %s AS assigned_by_name
 		FROM %s a
 		LEFT JOIN %s hu ON hu.id = a.user_id
@@ -32,7 +32,7 @@ func scanAssignment(row rowScanner) (*models.EquipmentAssignment, error) {
 	var holderFullName, siteName, assignedByName *string
 
 	if err := row.Scan(&a.ID, &a.EquipmentID, &a.UserID, &a.HolderName, &a.SiteID, &a.Location,
-		&a.AssignedAt, &a.UnassignedAt, &a.AssignedBy, &a.Comment,
+		&a.AssignedAt, &a.UnassignedAt, &a.ReturnDueAt, &a.AssignedBy, &a.Comment,
 		&holderFullName, &siteName, &assignedByName); err != nil {
 		return nil, err
 	}
@@ -104,15 +104,57 @@ func (r *EquipmentRepo) GetAssignmentHistory(ctx context.Context, realmID, equip
 	return data, nil
 }
 
+// GetDueReturns возвращает открытые выдачи со сроком возврата не позже now.
+func (r *EquipmentRepo) GetDueReturns(ctx context.Context, now time.Time) ([]*models.EquipmentDueReturn, error) {
+	// Подписи (ФИО держателя/название площадки/название типа) резолвит SQL — как в
+	// assignmentSelectBase: напоминанию не нужны справочники реалма. Выдачи без
+	// автора отбрасываются: напоминание уходит тому, кто выдал, и без него адресата нет.
+	query := fmt.Sprintf(`SELECT a.id, a.equipment_id, e.realm_id, a.assigned_by,
+			COALESCE(%s, a.holder_name, '') AS holder_name,
+			COALESCE(s.name, '') AS site_name,
+			e.name, COALESCE(et.name, '') AS type_name, e.inventory_number,
+			a.return_due_at
+		FROM %s a
+		JOIN %s e ON e.id = a.equipment_id
+		LEFT JOIN %s hu ON hu.id = a.user_id
+		LEFT JOIN %s s ON s.id = a.site_id
+		LEFT JOIN %s et ON et.id = e.type_id
+		WHERE a.unassigned_at IS NULL AND a.return_due_at IS NOT NULL
+			AND a.return_due_at <= $1 AND a.assigned_by IS NOT NULL
+		ORDER BY a.return_due_at`,
+		fullNameSQL("hu"), Tables.EquipmentAssignments, Tables.Equipment,
+		Tables.Users, Tables.Sites, Tables.EquipmentTypes)
+
+	rows, err := r.db.Query(ctx, query, now)
+	if err != nil {
+		return nil, MapError(fmt.Errorf("failed to get due returns: %w", err))
+	}
+	defer rows.Close()
+
+	data := []*models.EquipmentDueReturn{}
+	for rows.Next() {
+		item := &models.EquipmentDueReturn{}
+		if err := rows.Scan(&item.AssignmentID, &item.EquipmentID, &item.RealmID, &item.IssuedBy, &item.HolderName,
+			&item.SiteName, &item.Name, &item.TypeName, &item.InventoryNumber, &item.ReturnDueAt); err != nil {
+			return nil, MapError(fmt.Errorf("scan row error: %w", err))
+		}
+		data = append(data, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
+	return data, nil
+}
+
 func (r *EquipmentRepo) CreateAssignment(ctx context.Context, tx Tx, a *models.EquipmentAssignment) error {
 	if a.ID == uuid.Nil {
 		a.ID = uuid.New()
 	}
-	query := fmt.Sprintf(`INSERT INTO %s (id, equipment_id, user_id, holder_name, site_id, location, assigned_at, unassigned_at, assigned_by, comment)
-		VALUES ($1, $2, $3, NULLIF($4, ''), $5, NULLIF($6, ''), $7, $8, $9, $10)`, Tables.EquipmentAssignments)
+	query := fmt.Sprintf(`INSERT INTO %s (id, equipment_id, user_id, holder_name, site_id, location, assigned_at, unassigned_at, return_due_at, assigned_by, comment)
+		VALUES ($1, $2, $3, NULLIF($4, ''), $5, NULLIF($6, ''), $7, $8, $9, $10, $11)`, Tables.EquipmentAssignments)
 
 	_, err := r.getExec(tx).Exec(ctx, query, a.ID, a.EquipmentID, a.UserID, a.HolderName, a.SiteID, a.Location,
-		a.AssignedAt, a.UnassignedAt, a.AssignedBy, a.Comment)
+		a.AssignedAt, a.UnassignedAt, a.ReturnDueAt, a.AssignedBy, a.Comment)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}

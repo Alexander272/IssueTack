@@ -65,6 +65,9 @@ type Equipment interface {
 	// единицы, куда её ставит возврат.
 	GetLastStoredPlace(ctx context.Context, equipmentID uuid.UUID) (*uuid.UUID, *string, error)
 	GetAssignmentHistory(ctx context.Context, realmID, equipmentID uuid.UUID) ([]*models.EquipmentAssignment, error)
+	// GetDueReturns возвращает открытые выдачи со сроком возврата не позже now:
+	// по ним cron шлёт напоминание тому, кто выдал.
+	GetDueReturns(ctx context.Context, now time.Time) ([]*models.EquipmentDueReturn, error)
 	CreateAssignment(ctx context.Context, tx Tx, a *models.EquipmentAssignment) error
 	CloseAssignment(ctx context.Context, tx Tx, id uuid.UUID, at time.Time, comment string) error
 
@@ -114,6 +117,9 @@ func equipmentSelectBase() string {
 			e.serial_number, e.inventory_number, e.specs, e.status, e.parent_id, e.site_id, s.name,
 			e.holder_user_id, e.holder_name,
 			%s,
+			(SELECT a.return_due_at FROM %s a
+				WHERE a.equipment_id = e.id AND a.unassigned_at IS NULL
+				ORDER BY a.assigned_at DESC LIMIT 1) AS return_due_at,
 			e.location, e.purchase_date::text, e.warranty_until::text, e.notes,
 			e.is_kit, e.kit_id, e.created_by, e.created_at, e.updated_at,
 			COALESCE(
@@ -126,6 +132,7 @@ func equipmentSelectBase() string {
 		LEFT JOIN %s s ON s.id = e.site_id
 		LEFT JOIN %s u ON u.id = e.holder_user_id`,
 		fullNameSQL("u"),
+		Tables.EquipmentAssignments,
 		Tables.Equipment, Tables.Equipment, Tables.Equipment, Tables.EquipmentTypes, Tables.Sites, Tables.Users)
 }
 
@@ -142,6 +149,7 @@ func scanEquipmentRow(row rowScanner) (*models.Equipment, int, error) {
 		&item.SerialNumber, &item.InventoryNumber, &item.Specs, &item.Status,
 		&item.ParentID, &item.SiteID, &siteName,
 		&item.HolderUserID, &item.HolderName, &holderFullName,
+		&item.ReturnDueAt,
 		&item.Location, &item.PurchaseDate, &item.WarrantyUntil, &item.Notes,
 		&item.IsKit, &item.KitID, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &item.ContainerName, &total,
 	); err != nil {

@@ -168,10 +168,13 @@ type Equipment struct {
 	HolderUserID    *uuid.UUID        `json:"holderUserId" db:"holder_user_id"`
 	HolderName      *string           `json:"holderName" db:"holder_name"`
 	HolderFullName  string            `json:"holderFullName" db:"holder_user_full_name"`
-	Location        *string           `json:"location" db:"location"`
-	PurchaseDate    *string           `json:"purchaseDate" db:"purchase_date"`
-	WarrantyUntil   *string           `json:"warrantyUntil" db:"warranty_until"`
-	Notes           string            `json:"notes" db:"notes"`
+	// ReturnDueAt — срок возврата текущей (открытой) выдачи. nil — держателя нет
+	// или срок не задавали. Нужен карточке, чтобы показать «просрочен возврат».
+	ReturnDueAt   *time.Time `json:"returnDueAt" db:"return_due_at"`
+	Location      *string    `json:"location" db:"location"`
+	PurchaseDate  *string    `json:"purchaseDate" db:"purchase_date"`
+	WarrantyUntil *string    `json:"warrantyUntil" db:"warranty_until"`
+	Notes         string     `json:"notes" db:"notes"`
 	// ContainerName — имя контейнера для подписи «внутри …» в плоском списке:
 	// физический родитель (parent_id) или логический комплект (kit_id).
 	ContainerName *string    `json:"containerName" db:"container_name"`
@@ -379,14 +382,37 @@ type EquipmentAssignment struct {
 	Location     *string    `json:"location" db:"location"`
 	AssignedAt   time.Time  `json:"assignedAt" db:"assigned_at"`
 	UnassignedAt *time.Time `json:"unassignedAt" db:"unassigned_at"`
-	AssignedBy   *uuid.UUID `json:"assignedBy" db:"assigned_by"`
-	Comment      string     `json:"comment" db:"comment"`
+	// ReturnDueAt — ожидаемый срок возврата (nil = срок не задавали). Реквизит
+	// конкретной выдачи: у следующей он свой, а закрытая строка хранит свой срок.
+	ReturnDueAt *time.Time `json:"returnDueAt" db:"return_due_at"`
+	AssignedBy  *uuid.UUID `json:"assignedBy" db:"assigned_by"`
+	Comment     string     `json:"comment" db:"comment"`
 
 	// Подписи ссылок резолвит SQL (см. assignmentSelectBase): ФИО держателя и того,
 	// кто выдал (fallback — свободный текст holder_name), название площадки.
 	HolderFullName string `json:"holderFullName" db:"holder_full_name"`
 	SiteName       string `json:"siteName" db:"site_name"`
 	AssignedByName string `json:"assignedByName" db:"assigned_by_name"`
+}
+
+// EquipmentDueReturn — открытая выдача, у которой наступил срок возврата. Данных
+// ровно столько, сколько нужно напоминанию: кому шлём (IssuedBy), о чём (имя и
+// номер единицы) и на какой срок ссылаться (ReturnDueAt).
+type EquipmentDueReturn struct {
+	AssignmentID uuid.UUID `json:"assignmentId" db:"assignment_id"`
+	EquipmentID  uuid.UUID `json:"equipmentId" db:"equipment_id"`
+	// RealmID — реалм единицы: по нему выбирается Mattermost-интеграция для
+	// отправки напоминания.
+	RealmID uuid.UUID `json:"realmId" db:"realm_id"`
+	// IssuedBy — тот, кто выдал: напоминание уходит ему. Пусто быть не может:
+	// выдачи без автора (старые/миграции) в выборку не попадают.
+	IssuedBy        uuid.UUID `json:"issuedBy" db:"issued_by"`
+	HolderName      string    `json:"holderName" db:"holder_name"`
+	SiteName        string    `json:"siteName" db:"site_name"`
+	Name            string    `json:"name" db:"name"`
+	TypeName        string    `json:"typeName" db:"type_name"`
+	InventoryNumber *string   `json:"inventoryNumber" db:"inventory_number"`
+	ReturnDueAt     time.Time `json:"returnDueAt" db:"return_due_at"`
 }
 
 // EquipmentEvent — событие жизненного цикла оборудования.
@@ -461,7 +487,10 @@ type AssignEquipmentDTO struct {
 	// время отклоняется (EQ017): оформлять выдачу заранее нельзя, а задним
 	// числом — можно, акт подписывают позже факта.
 	AssignedAt *time.Time `json:"assignedAt"`
-	Actor      *Actor     `json:"-"`
+	// ReturnDueAt — ожидаемый срок возврата (RFC3339). nil = не задан (выдают и
+	// бессрочно). Раньше момента выдачи быть не может (EQ019).
+	ReturnDueAt *time.Time `json:"returnDueAt"`
+	Actor       *Actor     `json:"-"`
 }
 
 // UnassignEquipmentDTO — возврат оборудования на склад/вместо хранения.

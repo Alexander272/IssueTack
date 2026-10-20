@@ -36,6 +36,8 @@ type (
 		DeadlineSoonSchedule string `yaml:"deadline_soon_schedule" env:"TICKETS_DEADLINE_SOON_SCHEDULE" env-default:"@hourly"`
 		// Расписание очистки «закреплённых» (temporary) избранных ("@daily", "" — отключено)
 		FavoriteCleanupSchedule string `yaml:"favorite_cleanup_schedule" env:"TICKETS_FAVORITE_CLEANUP_SCHEDULE" env-default:"@daily"`
+		// Расписание напоминаний о сроке возврата выданного оборудования ("@daily", "" — отключено)
+		EquipmentReturnSchedule string `yaml:"equipment_return_schedule" env:"TICKETS_EQUIPMENT_RETURN_SCHEDULE" env-default:"@daily"`
 	}
 
 	FileServerConfig struct {

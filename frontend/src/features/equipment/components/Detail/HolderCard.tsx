@@ -1,5 +1,6 @@
 import { useState, type FC } from 'react'
 import { Box, Button, Stack, Typography } from '@mui/material'
+import dayjs from 'dayjs'
 import { PackageCheckIcon, PackageMinusIcon, UserRoundXIcon, WarehouseIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
@@ -38,6 +39,11 @@ export const HolderCard: FC<Props> = ({ unit }) => {
 	const inStock = unit.status === 'in_stock'
 	const vacant = !hasHolder
 	const installed = Boolean(unit.parentId || unit.kitId)
+	// Срок возврата — реквизит открытой выдачи, поэтому показываем его только при
+	// держателе. Просроченным считаем день, который уже прошёл (сравнение по дню):
+	// в день возврата напоминание только приходит, торопить рано.
+	const returnDueAt = unit.returnDueAt ? dayjs(unit.returnDueAt) : null
+	const returnOverdue = Boolean(hasHolder && returnDueAt && returnDueAt.isBefore(dayjs(), 'day'))
 	const initials = holder
 		.split(' ')
 		.map(s => s[0])
@@ -107,6 +113,15 @@ export const HolderCard: FC<Props> = ({ unit }) => {
 							<Typography sx={{ fontSize: 12, color: '#64748b' }} noWrap>
 								{unit.siteName || unit.location || '—'}
 							</Typography>
+							{returnDueAt && (
+								<Typography
+									sx={{ fontSize: 12, color: returnOverdue ? 'error.main' : '#64748b' }}
+									noWrap
+								>
+									{returnOverdue ? 'Возврат просрочен с ' : 'Вернуть до '}
+									{returnDueAt.format('DD.MM.YYYY')}
+								</Typography>
+							)}
 						</Box>
 					</Box>
 					<Stack
@@ -114,6 +129,31 @@ export const HolderCard: FC<Props> = ({ unit }) => {
 						spacing={1}
 						sx={{ alignItems: 'center', flexShrink: 0, ml: 'auto', flexWrap: 'wrap' }}
 					>
+						{returnOverdue && (
+							<Box
+								component='span'
+								sx={{
+									display: 'inline-flex',
+									alignItems: 'center',
+									gap: 0.75,
+									px: 1.25,
+									py: 0.5,
+									borderRadius: '8px',
+									border: '1px solid #fecaca',
+									bgcolor: '#fef2f2',
+									color: '#b91c1c',
+									fontSize: 12,
+									fontWeight: 500,
+									whiteSpace: 'nowrap',
+								}}
+							>
+								<Box
+									component='span'
+									sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#ef4444' }}
+								/>
+								Просрочен возврат
+							</Box>
+						)}
 						{vacant && inStock && (
 							<Box
 								component='span'

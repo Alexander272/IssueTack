@@ -17,6 +17,7 @@ import {
 	useTheme,
 } from '@mui/material'
 import { Controller, useForm, useWatch } from 'react-hook-form'
+import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
 import dayjs from 'dayjs'
 import { InfoIcon, UserPlusIcon, XIcon } from 'lucide-mui'
@@ -50,6 +51,8 @@ type AssignForm = {
 	comment: string
 	createAct: boolean
 	assignedAt: string | null
+	// returnDueAt — предполагаемый срок возврата. Пусто = выдают бессрочно.
+	returnDueAt: string | null
 }
 
 const userLabel = (u: { lastName: string; firstName: string; username: string }) => {
@@ -90,6 +93,7 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 			comment: '',
 			createAct: true,
 			assignedAt: dayjs().toISOString(),
+			returnDueAt: null,
 		},
 		mode: 'onTouched',
 	})
@@ -118,6 +122,7 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 			comment: form.comment,
 			skipAct: !form.createAct,
 			assignedAt: form.assignedAt ?? undefined,
+			returnDueAt: form.returnDueAt,
 		}
 		try {
 			await assign({ id: unit.id, body: payload }).unwrap()
@@ -268,7 +273,7 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 
 						{/* Площадка и локация заполнены текущим местом единицы: пустые
 						    поля в выдаче означают «единица не переезжает». */}
-						<Stack direction={'row'} spacing={1}>
+						<Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
 							<Field label='Площадка' required>
 								<Controller
 									control={control}
@@ -316,28 +321,70 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 							</Field>
 						</Stack>
 
-						<Field label='Дата и время выдачи' required>
-							<Controller
-								control={control}
-								name='assignedAt'
-								rules={{ required: 'Укажите дату и время' }}
-								render={({ field, fieldState }) => (
-									<DateTimePicker
-										value={field.value ? dayjs(field.value) : null}
-										onChange={date => field.onChange(date ? date.toISOString() : null)}
-										slots={{ textField: DateTextField }}
-										slotProps={{
-											textField: {
-												fullWidth: true,
-												size: 'small',
-												error: Boolean(fieldState.error),
-												helperText: fieldState.error?.message,
-											},
-										}}
-									/>
-								)}
-							/>
-						</Field>
+						<Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+							<Field label='Дата и время выдачи' required>
+								<Controller
+									control={control}
+									name='assignedAt'
+									rules={{ required: 'Укажите дату и время' }}
+									render={({ field, fieldState }) => (
+										<DateTimePicker
+											value={field.value ? dayjs(field.value) : null}
+											onChange={date => field.onChange(date ? date.toISOString() : null)}
+											slots={{ textField: DateTextField }}
+											slotProps={{
+												textField: {
+													fullWidth: true,
+													size: 'small',
+													error: Boolean(fieldState.error),
+													helperText: fieldState.error?.message,
+												},
+											}}
+										/>
+									)}
+								/>
+							</Field>
+
+							{/* Предполагаемый срок возврата: необязателен (без него выдают
+						    бессрочно). В этот день выдавшему придёт напоминание в
+						    Mattermost. Проверка «не раньше выдачи» дублирует серверную
+						    (EQ019) — чтобы ошибку было видно до отправки. */}
+							<Field label='Предполагаемый срок возврата'>
+								<Controller
+									control={control}
+									name='returnDueAt'
+									rules={{
+										validate: value => {
+											if (!value) return true
+											const assignedAt = methods.getValues('assignedAt')
+											if (assignedAt && dayjs(value).isBefore(dayjs(assignedAt), 'day')) {
+												return 'Срок возврата не может быть раньше даты выдачи'
+											}
+											return true
+										},
+									}}
+									render={({ field, fieldState }) => (
+										<DatePicker
+											value={field.value ? dayjs(field.value) : null}
+											onChange={date => field.onChange(date ? date.toISOString() : null)}
+											slots={{ textField: DateTextField }}
+											slotProps={{
+												textField: {
+													fullWidth: true,
+													size: 'small',
+													error: Boolean(fieldState.error),
+													// Подсказка до ошибки: срок необязателен, и без
+													// пояснения пустое поле читается как «забыли».
+													helperText:
+														fieldState.error?.message ?? 'Напомним о возврате в этот день',
+												},
+												field: { clearable: true },
+											}}
+										/>
+									)}
+								/>
+							</Field>
+						</Stack>
 
 						<Field label='Комментарий'>
 							<Controller
@@ -387,7 +434,9 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 				</DialogContent>
 
 				{/* Футер серый: слева — что произойдёт со статусом, справа — кнопки. */}
-				<DialogActions sx={{ justifyContent: 'space-between', bgcolor: 'grey.50', px: { xs: 1.5, sm: 2 }, py: 2 }}>
+				<DialogActions
+					sx={{ justifyContent: 'space-between', bgcolor: 'grey.50', px: { xs: 1.5, sm: 2 }, py: 2 }}
+				>
 					<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, color: 'text.secondary' }}>
 						<InfoIcon sx={{ fontSize: 16, color: 'info.main' }} />
 						<Typography variant='body2'>Статус изменится на «В эксплуатации»</Typography>

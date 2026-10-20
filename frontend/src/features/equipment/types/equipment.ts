@@ -91,6 +91,9 @@ export interface IEquipment {
 	holderUserId: string | null
 	holderName: string | null
 	holderFullName: string
+	// returnDueAt — срок возврата текущей (открытой) выдачи. null — держателя нет
+	// или срок не задавали. По нему карточка рисует «просрочен возврат».
+	returnDueAt: string | null
 	location: string | null
 	purchaseDate: string | null
 	warrantyUntil: string | null
@@ -191,6 +194,9 @@ export interface IEquipmentAssignment {
 	location: string | null
 	assignedAt: string
 	unassignedAt: string | null
+	// returnDueAt — ожидаемый срок возврата (null = срок не задавали). Реквизит
+	// конкретной выдачи.
+	returnDueAt: string | null
 	assignedBy: string | null
 	comment: string
 	// Подписи ссылок резолвит бэкенд (SQL-джойн): клиенту не нужен справочник
@@ -271,6 +277,9 @@ export interface IAssignEquipmentDTO {
 	// assignedAt — момент выдачи (RFC3339), его отдаёт DateTimePicker; не
 	// передан — сервер поставит текущее время. Будущее отклоняется (EQ017).
 	assignedAt?: string
+	// returnDueAt — ожидаемый срок возврата (RFC3339). Не передан — выдают
+	// бессрочно. Раньше даты выдачи быть не может (EQ019).
+	returnDueAt?: string | null
 }
 
 export interface IUnassignEquipmentDTO {

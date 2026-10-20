@@ -35,4 +35,8 @@ const (
 	NotificationTicketAttachment NotificationType = "ticket.attachment_added"
 	NotificationTicketOverdue    NotificationType = "ticket.overdue"
 	NotificationDeadlineSoon     NotificationType = "ticket.deadline_soon"
+	// NotificationEquipmentReturnDue — напоминание о необходимости вернуть
+	// выданное оборудование: приходит тому, кто выдал, когда наступил срок
+	// возврата, а единица всё ещё у держателя.
+	NotificationEquipmentReturnDue NotificationType = "equipment.return_due"
 )

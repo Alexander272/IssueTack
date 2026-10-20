@@ -241,6 +241,14 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 
 			const holder = a.holderFullName || a.holderName
 			const place = placeLabel(a.siteName, a.location)
+			// Срок возврата показываем у открытой выдачи (возврата ещё не было):
+			// у закрытой строки он уже неактуален и только засорял бы ленту.
+			const dueNote =
+				a.returnDueAt && !a.unassignedAt
+					? `${
+							dayjs(a.returnDueAt).isBefore(dayjs(), 'day') ? 'Возврат просрочен с ' : 'Вернуть до '
+						}${dayjs(a.returnDueAt).format('DD.MM.YYYY')}`
+					: null
 			if (holder) {
 				list.push({
 					id: `assign-${a.id}`,
@@ -251,7 +259,7 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 					actor: a.assignedByName || undefined,
 					action: 'Выдано',
 					to: { label: holder, color: '#16a34a' },
-					note: [place, a.comment].filter(Boolean).join(' · ') || undefined,
+					note: [place, dueNote, a.comment].filter(Boolean).join(' · ') || undefined,
 				})
 			} else if (place) {
 				// Строка без держателя — единица стоит на площадке: это либо возврат

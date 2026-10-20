@@ -38,6 +38,12 @@ func (s *EquipmentService) Assign(ctx context.Context, dto *models.AssignEquipme
 		assignedAt = *dto.AssignedAt
 	}
 
+	// Срок возврата: необязателен (выдают и бессрочно), но не может быть раньше
+	// выдачи — иначе напоминание придёт сразу же. Проверка до транзакции.
+	if dto.ReturnDueAt != nil && dto.ReturnDueAt.Before(assignedAt) {
+		return models.ErrEquipmentReturnDueBeforeAssign
+	}
+
 	// Место — реквизит единицы («где она лежит»), а не часть выдачи: пустые
 	// «Площадка»/«Локация» в диалоге означают «единица не переезжает». Раньше они
 	// затирали место (SetHolderAndStatus записывал nil), и вместе с местом пропадала
@@ -99,6 +105,7 @@ func (s *EquipmentService) Assign(ctx context.Context, dto *models.AssignEquipme
 				SiteID:      dto.SiteID,
 				Location:    dto.Location,
 				AssignedAt:  assignedAt,
+				ReturnDueAt: dto.ReturnDueAt,
 				AssignedBy:  actorID,
 				Comment:     dto.Comment,
 			}); err != nil {

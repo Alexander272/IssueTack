@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/config"
+	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/go-co-op/gocron/v2"
 )
@@ -18,6 +19,10 @@ type SchedulerService struct {
 	tickets       Tickets
 	notifications Notifications
 	favorites     TicketFavorites
+	// equipmentReturn — напоминание о сроке возврата оборудования. Отдельный
+	// сценарий (не связан с тикетами), поэтому своя зависимость: тикетный
+	// NotificationService сюда не подходит по форме (Notifier получает заявку).
+	equipmentReturn *equipmentReturnReminder
 }
 
 // SchedulerDeps содержит зависимости для создания SchedulerService.
@@ -25,6 +30,11 @@ type SchedulerDeps struct {
 	Tickets       Tickets
 	Notifications Notifications
 	Favorites     TicketFavorites
+	// EquipmentReturns — репозиторий оборудования для напоминаний о сроке возврата.
+	EquipmentReturns EquipmentDueReturns
+	MMRepo           repository.Mattermost
+	Users            Users
+	MMSender         mattermostSender
 }
 
 // Scheduler описывает сервис планировщика фоновых заданий.
@@ -47,6 +57,12 @@ func NewSchedulerService(deps *SchedulerDeps) *SchedulerService {
 		tickets:       deps.Tickets,
 		notifications: deps.Notifications,
 		favorites:     deps.Favorites,
+		equipmentReturn: newEquipmentReturnReminder(&EquipmentReturnReminderDeps{
+			Equipment: deps.EquipmentReturns,
+			MMRepo:    deps.MMRepo,
+			Users:     deps.Users,
+			Sender:    deps.MMSender,
+		}),
 	}
 }
 
@@ -102,6 +118,18 @@ func (s *SchedulerService) Start(conf *config.TicketConfig) error {
 		}
 		registered = true
 		logger.Info("favorite-cleanup scheduler started, schedule: " + conf.FavoriteCleanupSchedule)
+	}
+
+	if conf.EquipmentReturnSchedule != "" {
+		_, err := s.cron.NewJob(
+			gocron.CronJob(conf.EquipmentReturnSchedule, false),
+			gocron.NewTask(s.equipmentReturnJob),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create equipment-return job. error: %w", err)
+		}
+		registered = true
+		logger.Info("equipment-return scheduler started, schedule: " + conf.EquipmentReturnSchedule)
 	}
 
 	if registered {
@@ -191,5 +219,20 @@ func (s *SchedulerService) favoriteCleanupJob(ctx context.Context) {
 	}
 	if n > 0 {
 		logger.Info(fmt.Sprintf("Cleaned up %d temporary favorites", n))
+	}
+}
+
+// equipmentReturnJob — фоновая задача cron: напоминает тем, кто выдал оборудование, что
+// наступил срок возврата. Дедупликация не нужна: напоминание уходит один раз — когда
+// дата возврата уже прошла, а выдача всё ещё открыта; вернули единицу — выдача закрыта
+// и в выборку больше не попадает.
+func (s *SchedulerService) equipmentReturnJob(ctx context.Context) {
+	sent, err := s.equipmentReturn.NotifyDueReturns(ctx, time.Now())
+	if err != nil {
+		logger.Error("failed to notify equipment return due:", logger.ErrAttr(err))
+		return
+	}
+	if sent > 0 {
+		logger.Info(fmt.Sprintf("Sent %d equipment return reminders", sent))
 	}
 }
