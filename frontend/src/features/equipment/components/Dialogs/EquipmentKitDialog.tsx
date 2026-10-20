@@ -22,6 +22,7 @@ import { toast } from 'react-toastify'
 import type { IFetchError } from '@/app/types/error'
 import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
 import type { IEquipment, IEquipmentDTO } from '../../types/equipment'
+import { canBePart } from '../../types/equipment'
 import {
 	useCreateEquipmentMutation,
 	useDeleteEquipmentMutation,
@@ -91,9 +92,16 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 
 	const sites = sitesData?.data ?? []
 	// Кандидаты в состав — единицы на складе, комплект в комплект не кладём.
-	const stockUnits = (unitsData?.data ?? []).filter(u => !u.isKit && u.status === 'in_stock')
+	// Комплектующие и расходники тоже не подходят: логический комплект собирается
+	// из устройств и периферии, а они — физический состав (parent_id), другая ось.
+	// Бэкенд отклонит их (EQ018), здесь не предлагаем.
+	const stockUnits = (unitsData?.data ?? []).filter(
+		u => !u.isKit && u.status === 'in_stock' && !canBePart(u.typeKind),
+	)
 	const templates = templatesData?.data ?? []
 	const types = typesData?.data ?? []
+	// Типы для слотов состава: то же ограничение, что у единиц.
+	const kitTypes = types.filter(t => !canBePart(t.kind))
 
 	const { control, handleSubmit, formState, setValue } = useForm<FormValues>({
 		defaultValues: {
@@ -131,7 +139,7 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 		replace(template.items.map(item => ({ typeId: item.typeId, unitId: '', locked: true })))
 	}
 
-	const addBlankRow = () => append({ typeId: types[0]?.id ?? '', unitId: '', locked: false })
+	const addBlankRow = () => append({ typeId: kitTypes[0]?.id ?? '', unitId: '', locked: false })
 
 	const saveHandler = handleSubmit(async form => {
 		if (isEdit && unit) {
@@ -440,7 +448,10 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 																	setValue(`rows.${index}.unitId`, '')
 																}}
 															>
-																{types.map(type => (
+																{/* Текущий тип, выпавший из списка (слот из старого
+																    шаблона с комплектующим) — показываем, иначе поле
+																    выглядело бы пустым при непустом значении. */}
+																{[...kitTypes, ...types.filter(t => t.id === field.value && canBePart(t.kind))].map(type => (
 																	<MenuItem key={type.id} value={type.id}>
 																		{type.name}
 																	</MenuItem>

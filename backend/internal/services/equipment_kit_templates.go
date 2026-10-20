@@ -62,24 +62,21 @@ func (s *EquipmentService) DeleteKitTemplate(ctx context.Context, dto *models.De
 	return nil
 }
 
-// normalizeKitTemplateDTO чистит состав шаблона: пустые и повторяющиеся типы
-// отбрасываются, sort_order проставляется по порядку следования. nil-состав
-// остаётся nil — для правки это «не трогать позиции», в отличие от явного [].
+// normalizeKitTemplateDTO чистит состав шаблона: пустые типы отбрасываются,
+// sort_order проставляется по порядку следования. Повторяющиеся типы НЕ
+// схлопываются: в шаблоне «Стандартное рабочее место» два монитора — это две
+// позиции одного типа, а не дубль. nil-состав остаётся nil — для правки это
+// «не трогать позиции», в отличие от явного [].
 func normalizeKitTemplateDTO(dto *models.EquipmentKitTemplateDTO) {
 	if dto.Items == nil {
 		return
 	}
 
-	seen := make(map[uuid.UUID]struct{}, len(dto.Items))
 	items := make([]models.EquipmentKitTemplateItemDTO, 0, len(dto.Items))
 	for _, item := range dto.Items {
 		if item.TypeID == uuid.Nil {
 			continue
 		}
-		if _, ok := seen[item.TypeID]; ok {
-			continue
-		}
-		seen[item.TypeID] = struct{}{}
 		items = append(items, models.EquipmentKitTemplateItemDTO{TypeID: item.TypeID, SortOrder: len(items)})
 	}
 	dto.Items = items

@@ -20,6 +20,7 @@ import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
 import type { IEquipmentKitTemplate, IEquipmentKitTemplateDTO } from '../../types/equipment'
+import { canBePart } from '../../types/equipment'
 import {
 	useCreateEquipmentTemplateMutation,
 	useGetAllEquipmentTypesQuery,
@@ -50,6 +51,10 @@ export const EquipmentTemplateDialog: FC<Props> = ({ open, onClose, template }) 
 
 	const { data: typesData } = useGetAllEquipmentTypesQuery()
 	const types = typesData?.data ?? []
+	// В шаблоне комплекта — только устройства и периферия: комплектующие и
+	// расходники это физический состав (parent_id), другая ось. Бэкенд отклонит
+	// их при сборке комплекта, поэтому не предлагаем их и здесь.
+	const kitTypes = types.filter(t => !canBePart(t.kind))
 
 	const [create, { isLoading: isCreating }] = useCreateEquipmentTemplateMutation()
 	const [update, { isLoading: isUpdating }] = useUpdateEquipmentTemplateMutation()
@@ -175,7 +180,11 @@ export const EquipmentTemplateDialog: FC<Props> = ({ open, onClose, template }) 
 													size='small'
 													sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
 												>
-													{types.map(type => (
+													{/* Уже выбранный тип, выпавший из списка (шаблон
+													    собран до запрета комплектующих или тип стал
+													    комплектующим) — показываем, иначе поле выглядело
+													    бы пустым, хотя значение есть. */}
+													{[...kitTypes, ...types.filter(t => t.id === field.value && canBePart(t.kind))].map(type => (
 														<MenuItem key={type.id} value={type.id}>
 															{type.name}
 														</MenuItem>
@@ -192,7 +201,7 @@ export const EquipmentTemplateDialog: FC<Props> = ({ open, onClose, template }) 
 
 							<Button
 								type='button'
-								onClick={() => append({ typeId: types[0]?.id ?? '' })}
+								onClick={() => append({ typeId: kitTypes[0]?.id ?? '' })}
 								startIcon={<PlusIcon sx={{ fontSize: 16 }} />}
 								sx={{ mt: 1, textTransform: 'none' }}
 							>

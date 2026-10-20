@@ -37,9 +37,9 @@ func (f *fakeKitTemplateRepo) DeleteKitTemplate(_ context.Context, dto *models.D
 }
 
 // TestEquipmentService_KitTemplateNormalize закрепляет чистку состава шаблона:
-// пустые и повторяющиеся типы отбрасываются, sort_order идёт по порядку. Без
-// этого шаблон с дублями давал бы в комплекте две позиции одного типа, а
-// нулевой typeId ломал бы FK.
+// пустые типы отбрасываются, sort_order идёт по порядку, а ПОВТОРЯЮЩИЕСЯ типы
+// сохраняются — в шаблоне «Стандартное рабочее место» два монитора это две
+// позиции одного типа. Нулевой typeId ломал бы FK, поэтому отбрасывается.
 func TestEquipmentService_KitTemplateNormalize(t *testing.T) {
 	ctx := context.Background()
 	realmID := uuid.New()
@@ -61,11 +61,14 @@ func TestEquipmentService_KitTemplateNormalize(t *testing.T) {
 	require.NoError(t, svc.CreateKitTemplate(ctx, dto))
 
 	require.NotNil(t, repo.created)
-	require.Len(t, repo.created.Items, 2)
+	require.Len(t, repo.created.Items, 3)
 	assert.Equal(t, typeA, repo.created.Items[0].TypeID)
 	assert.Equal(t, 0, repo.created.Items[0].SortOrder)
 	assert.Equal(t, typeB, repo.created.Items[1].TypeID)
 	assert.Equal(t, 1, repo.created.Items[1].SortOrder)
+	// Один и тот же тип во второй раз — отдельная позиция (второй монитор).
+	assert.Equal(t, typeA, repo.created.Items[2].TypeID)
+	assert.Equal(t, 2, repo.created.Items[2].SortOrder)
 }
 
 // TestEquipmentService_UpdateKitTemplate_RequiresID проверяет, что правка без id

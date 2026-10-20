@@ -78,6 +78,13 @@ func (s *EquipmentService) openComponents(ctx context.Context, tx postgres.Tx, d
 		if err != nil {
 			return fmt.Errorf("failed to get component. error: %w", err)
 		}
+		// Логический комплект — это про устройства (ноутбук, монитор, мышь),
+		// а комплектующие и расходники — про физический состав (parent_id).
+		// Оси разные, смешивать их нельзя: проверка одна на оба входа
+		// (AddComponents и стартовый состав в Create).
+		if item.TypeKind.CanBePart() {
+			return models.ErrEquipmentPartInKit
+		}
 		open, err := s.repo.GetOpenByComponent(ctx, comp.ComponentID)
 		if err != nil && !errors.Is(err, models.ErrNotFound) {
 			return fmt.Errorf("failed to get open composition. error: %w", err)

@@ -21,6 +21,7 @@ import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
 import type { IEquipment } from '../../types/equipment'
+import { canBePart } from '../../types/equipment'
 import {
 	useAddEquipmentComponentsMutation,
 	useGetAllEquipmentQuery,
@@ -49,7 +50,12 @@ export const EquipmentCompositionDialog: FC<Props> = ({ open, onClose, unit }) =
 
 	const members = data?.data ?? []
 	const memberIds = new Set(members.map(m => m.id))
-	const candidates = (unitsData?.data ?? []).filter(u => u.id !== unit.id && !memberIds.has(u.id))
+	// В логический комплект входят только устройства и периферия: комплектующие
+	// и расходники — это физический состав (parent_id), другая ось. Бэкенд
+	// отклоняет их (EQ018), здесь просто не показываем как кандидатов.
+	const candidates = (unitsData?.data ?? []).filter(
+		u => u.id !== unit.id && !memberIds.has(u.id) && !canBePart(u.typeKind),
+	)
 
 	const handleAdd = async () => {
 		if (!selected) return

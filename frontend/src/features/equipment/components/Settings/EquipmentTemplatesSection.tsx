@@ -5,10 +5,7 @@ import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
 import type { IEquipmentKitTemplate } from '../../types/equipment'
-import {
-	useDeleteEquipmentTemplateMutation,
-	useGetAllEquipmentTemplatesQuery,
-} from '../../equipmentApiSlice'
+import { useDeleteEquipmentTemplateMutation, useGetAllEquipmentTemplatesQuery } from '../../equipmentApiSlice'
 import { EquipmentTemplateDialog } from '../Dialogs'
 import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
 import { PermRules } from '@/features/access/constants/permissions'
@@ -93,8 +90,9 @@ export const EquipmentTemplatesSection: FC = () => {
 						flexDirection: 'column',
 						alignItems: 'center',
 						gap: 1,
-						py: 6,
+						py: 2,
 						px: 2,
+						mt: 5,
 						bgcolor: '#fff',
 						border: '1px dashed #d1d5db',
 						borderRadius: '12px',
@@ -111,7 +109,7 @@ export const EquipmentTemplatesSection: FC = () => {
 				</Box>
 			) : (
 				<Box>
-					<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+					<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
 						<Typography
 							variant='subtitle2'
 							sx={{ color: '#374151', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.3 }}

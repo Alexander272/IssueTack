@@ -11,6 +11,7 @@ import {
 	IconButton,
 	MenuItem,
 	TextField,
+	Tooltip,
 	Typography,
 	useMediaQuery,
 	useTheme,
@@ -192,36 +193,42 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 											{(['', ...TYPE_ICON_KEYS] as string[]).map(key => {
 												const selected = field.value === key
 												// Плитка «Авто» показывает живую иконку по текущему названию.
-												const { Icon, color } = key
+												const { Icon, color, label } = key
 													? TYPE_ICONS[key as TypeIconKey]
 													: resolveTypeIcon({ typeName })
 												return (
-													<Box
-														component='button'
-														type='button'
+													<Tooltip
 														key={key || 'auto'}
-														aria-label={key || 'Авто'}
-														aria-pressed={selected}
-														onClick={() => field.onChange(key)}
-														sx={{
-															width: 40,
-															height: 40,
-															p: 0,
-															borderRadius: '8px',
-															border: '1px solid #d1d5db',
-															borderStyle: selected || key ? 'solid' : 'dashed',
-															borderColor: selected ? '#0432a5' : key ? '#d1d5db' : '#9ca3af',
-															outline: selected ? '1px solid #0432a5' : 'none',
-															outlineOffset: 1,
-															bgcolor: selected ? '#eef2ff' : '#fff',
-															cursor: 'pointer',
-															display: 'flex',
-															alignItems: 'center',
-															justifyContent: 'center',
-														}}
+														title={key ? label : 'Авто — иконка подбирается по названию типа'}
+														arrow
+														slotProps={{ popper: { sx: { pointerEvents: 'none' } } }}
 													>
-														<Icon sx={{ color, fontSize: 20 }} />
-													</Box>
+														<Box
+															component='button'
+															type='button'
+															aria-label={key ? label : 'Авто'}
+															aria-pressed={selected}
+															onClick={() => field.onChange(key)}
+															sx={{
+																width: 40,
+																height: 40,
+																p: 0,
+																borderRadius: '8px',
+																border: '1px solid #d1d5db',
+																borderStyle: selected || key ? 'solid' : 'dashed',
+																borderColor: selected ? '#0432a5' : key ? '#d1d5db' : '#9ca3af',
+																outline: selected ? '1px solid #0432a5' : 'none',
+																outlineOffset: 1,
+																bgcolor: selected ? '#eef2ff' : '#fff',
+																cursor: 'pointer',
+																display: 'flex',
+																alignItems: 'center',
+																justifyContent: 'center',
+															}}
+														>
+															<Icon sx={{ color, fontSize: 20 }} />
+														</Box>
+													</Tooltip>
 												)
 											})}
 										</Box>
