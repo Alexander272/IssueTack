@@ -107,7 +107,7 @@ export const EquipmentTemplateDialog: FC<Props> = ({ open, onClose, template }) 
 			maxWidth='sm'
 			slotProps={{ paper: { sx: { borderRadius: { xs: 0, sm: '12px' } } } }}
 		>
-			<DialogTitle sx={{ m: 0, px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+			<DialogTitle sx={{ m: 0, px: { xs: 1.5, sm: 3 }, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
 				<Typography variant='h6' sx={{ fontWeight: 700 }}>
 					{isEdit ? 'Редактирование шаблона' : 'Новый шаблон комплекта'}
 				</Typography>
@@ -117,7 +117,7 @@ export const EquipmentTemplateDialog: FC<Props> = ({ open, onClose, template }) 
 			</DialogTitle>
 
 			<form onSubmit={saveHandler}>
-				<DialogContent dividers sx={{ px: 3, py: 2.5 }}>
+				<DialogContent dividers sx={{ px: { xs: 1.5, sm: 3 }, py: { xs: 2, sm: 2.5 } }}>
 					<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
 						<Field label='Название' required>
 							<Controller
@@ -203,7 +203,7 @@ export const EquipmentTemplateDialog: FC<Props> = ({ open, onClose, template }) 
 					</Box>
 				</DialogContent>
 
-				<DialogActions sx={{ px: 3, py: 2, gap: 1, justifyContent: 'flex-end' }}>
+				<DialogActions sx={{ px: { xs: 1.5, sm: 3 }, py: 2, gap: 1, justifyContent: 'flex-end' }}>
 					<Button
 						type='button'
 						onClick={onClose}

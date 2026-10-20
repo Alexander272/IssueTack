@@ -71,7 +71,9 @@ export const AttachTaskDialog: FC<Props> = ({ open, onClose, unit }) => {
 			fullScreen={isMobile}
 			slotProps={{ paper: { sx: { borderRadius: { xs: 0, sm: '16px' }, p: { xs: 0, sm: 1 } } } }}
 		>
-			<DialogTitle sx={{ m: 0, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+			<DialogTitle
+				sx={{ m: 0, px: { xs: 1.5, sm: 2 }, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+			>
 				<Typography variant='h6' component='div' sx={{ fontWeight: 'bold' }}>
 					Привязать заявку
 				</Typography>
@@ -80,7 +82,7 @@ export const AttachTaskDialog: FC<Props> = ({ open, onClose, unit }) => {
 				</IconButton>
 			</DialogTitle>
 
-			<DialogContent dividers sx={{ borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', py: 3 }}>
+			<DialogContent dividers sx={{ borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', px: { xs: 1.5, sm: 3 }, py: { xs: 2, sm: 3 } }}>
 				<Stack spacing={2}>
 					<TextField
 						value={search}
@@ -127,7 +129,7 @@ export const AttachTaskDialog: FC<Props> = ({ open, onClose, unit }) => {
 				</Stack>
 			</DialogContent>
 
-			<DialogActions sx={{ p: 2 }}>
+			<DialogActions sx={{ px: { xs: 1.5, sm: 2 }, py: 2 }}>
 				<Button
 					onClick={onClose}
 					variant='outlined'

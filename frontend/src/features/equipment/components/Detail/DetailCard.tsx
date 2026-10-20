@@ -19,9 +19,11 @@ export const DetailCard: FC<Props> = ({ title, action, divided, children }) => (
 		sx={{
 			bgcolor: '#fff',
 			border: '1px solid #e9eef5',
-			borderRadius: '16px',
+			// На телефоне карточка почти во всю ширину модалки, поэтому падинги
+			// и скругление уменьшены: 12px и 12px на xs, прежние 20px и 16px с sm.
+			borderRadius: { xs: '12px', sm: '16px' },
 			boxShadow: '0 1px 2px rgba(16, 24, 40, 0.04)',
-			p: 2.5,
+			p: { xs: 1.5, sm: 2.5 },
 		}}
 	>
 		{title && (

@@ -181,15 +181,28 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 				paper: {
 					sx: {
 						borderRadius: { xs: 0, sm: '16px' },
-						// Максимальная высота как в макете (max-h-[90vh]): контент
-						// прокручивается, шапка и футер остаются на месте.
-						maxHeight: '90vh',
+						// Максимальная высота как в макете (max-h-[90vh]) на
+						// десктопе: контент прокручивается, шапка и футер
+						// остаются на месте. На телефоне окно открывается во
+						// весь экран (fullScreen), и MUI сам ставит maxHeight:
+						// none — наш sx побеждал бы его, и окно открывалось бы
+						// на 90% высоты с полями сверху и снизу.
+						maxHeight: { xs: 'none', sm: '90vh' },
 					},
 				},
 			}}
 		>
 			<DialogTitle
-				sx={{ m: 0, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}
+				// На телефоне окно во весь экран: отступы уменьшены до 12px по
+				// горизонтали и 16px по вертикали вместо 16/20. С sm — как было.
+				sx={{
+					m: 0,
+					px: { xs: 1.5, sm: 2 },
+					py: { xs: 2, sm: 2 },
+					display: 'flex',
+					justifyContent: 'space-between',
+					alignItems: 'flex-start',
+				}}
 			>
 				<Stack>
 					<Typography variant='h6' sx={{ fontWeight: 'bold' }}>
@@ -205,7 +218,7 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 			</DialogTitle>
 
 			<form onSubmit={saveHandler}>
-				<DialogContent dividers sx={{ py: 3 }}>
+				<DialogContent dividers sx={{ px: { xs: 1.5, sm: 3 }, py: { xs: 2, sm: 3 } }}>
 					<Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
 						{/* Основная информация: тип, название, номера */}
 						<Box sx={grid}>
@@ -412,7 +425,8 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 					sx={{
 						justifyContent: 'space-between',
 						bgcolor: 'grey.50',
-						p: 2,
+						px: { xs: 1.5, sm: 2 },
+						py: 2,
 					}}
 				>
 					{/* Слева — подсказка о складе при создании или удаление при правке;

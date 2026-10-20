@@ -213,7 +213,16 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 			maxWidth='md'
 			slotProps={{ paper: { sx: { borderRadius: { xs: 0, sm: '16px' } } } }}
 		>
-			<DialogTitle sx={{ m: 0, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+			<DialogTitle
+				sx={{
+					m: 0,
+					px: { xs: 1.5, sm: 2 },
+					py: 2,
+					display: 'flex',
+					justifyContent: 'space-between',
+					alignItems: 'center',
+				}}
+			>
 				<Stack>
 					<Typography variant='h6' sx={{ fontWeight: 'bold' }}>
 						{isEdit ? 'Редактирование комплекта' : 'Новый комплект'}
@@ -230,7 +239,7 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 			</DialogTitle>
 
 			<form onSubmit={saveHandler}>
-				<DialogContent dividers sx={{ borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0' }}>
+				<DialogContent dividers sx={{ borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', px: { xs: 1.5, sm: 3 }, py: { xs: 2, sm: 2 } }}>
 					<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
 						{/* Основные сведения о комплекте */}
 						<Box
@@ -492,7 +501,7 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 
 				{/* Футер: слева — счётчик состава при создании или удаление при
 				    правке (слот пустой без прав, чтобы кнопки остались справа). */}
-				<DialogActions sx={{ p: 2, gap: 1, justifyContent: 'space-between' }}>
+				<DialogActions sx={{ px: { xs: 1.5, sm: 2 }, py: 2, gap: 1, justifyContent: 'space-between' }}>
 					{isEdit ? (
 						canDelete ? (
 							<Button

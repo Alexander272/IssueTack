@@ -140,15 +140,27 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 				paper: {
 					sx: {
 						borderRadius: { xs: 0, sm: '16px' },
-						// Как в макете (max-h-[90vh]): прокручивается контент,
-						// шапка и футер остаются на месте.
-						maxHeight: '90vh',
+						// Как в макете (max-h-[90vh]) на десктопе: прокручивается
+						// контент, шапка и футер остаются на месте. На телефоне
+						// окно во весь экран (fullScreen), и MUI сам ставит
+						// maxHeight: none — наш sx побеждал бы его, и окно
+						// открывалось бы на 90% высоты с полями.
+						maxHeight: { xs: 'none', sm: '90vh' },
 					},
 				},
 			}}
 		>
 			<DialogTitle
-				sx={{ m: 0, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}
+				// На телефоне окно во весь экран: 12px по горизонтали и 16px по
+				// вертикали вместо 16/20. С sm — как было.
+				sx={{
+					m: 0,
+					px: { xs: 1.5, sm: 2 },
+					py: { xs: 2, sm: 2 },
+					display: 'flex',
+					justifyContent: 'space-between',
+					alignItems: 'flex-start',
+				}}
 			>
 				<Stack>
 					<Typography variant='h6' sx={{ fontWeight: 'bold' }}>
@@ -164,7 +176,7 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 			</DialogTitle>
 
 			<form onSubmit={saveHandler}>
-				<DialogContent dividers>
+				<DialogContent dividers sx={{ px: { xs: 1.5, sm: 3 }, py: { xs: 2, sm: 2 } }}>
 					<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
 						{/* Что выдаём: иконка типа в тоне реестра, название со
 						    статусом и мелкая подпись с номерами. */}
@@ -364,7 +376,7 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 				</DialogContent>
 
 				{/* Футер серый: слева — что произойдёт со статусом, справа — кнопки. */}
-				<DialogActions sx={{ justifyContent: 'space-between', bgcolor: 'grey.50', p: 2 }}>
+				<DialogActions sx={{ justifyContent: 'space-between', bgcolor: 'grey.50', px: { xs: 1.5, sm: 2 }, py: 2 }}>
 					<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, color: 'text.secondary' }}>
 						<InfoIcon sx={{ fontSize: 16, color: 'info.main' }} />
 						<Typography variant='body2'>Статус изменится на «В эксплуатации»</Typography>

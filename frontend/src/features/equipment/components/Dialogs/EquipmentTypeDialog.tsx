@@ -117,7 +117,7 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 					paper: { sx: { borderRadius: { xs: 0, sm: '12px' } } },
 				}}
 			>
-				<DialogTitle sx={{ m: 0, px: 3, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+				<DialogTitle sx={{ m: 0, px: { xs: 1.5, sm: 3 }, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
 					<Typography variant='h6' sx={{ fontWeight: 700 }}>
 						{isEdit ? 'Редактирование типа' : 'Новый тип оборудования'}
 					</Typography>
@@ -127,7 +127,7 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 				</DialogTitle>
 
 				<form onSubmit={saveHandler}>
-					<DialogContent dividers sx={{ px: 3, py: 2.5 }}>
+					<DialogContent dividers sx={{ px: { xs: 1.5, sm: 3 }, py: { xs: 2, sm: 2.5 } }}>
 						<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
 							<Box>
 								<Typography variant='caption' sx={{ fontWeight: 600, mb: 0.5, display: 'block', color: '#374151' }}>
@@ -234,7 +234,7 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 						</Box>
 					</DialogContent>
 
-					<DialogActions sx={{ px: 3, py: 2, gap: 1, justifyContent: isEdit ? 'space-between' : 'flex-end' }}>
+					<DialogActions sx={{ px: { xs: 1.5, sm: 3 }, py: 2, gap: 1, justifyContent: isEdit ? 'space-between' : 'flex-end' }}>
 						{isEdit && (
 							<Button
 								type='button'

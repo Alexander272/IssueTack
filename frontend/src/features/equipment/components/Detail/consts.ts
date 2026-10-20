@@ -19,6 +19,7 @@ export const softButtonSx = {
 	px: 1.5,
 	py: 0.5,
 	minWidth: 0,
+	border: '1px solid #7b9fee',
 	bgcolor: '#eff6ff',
 	color: '#2563eb',
 	'&:hover': { bgcolor: '#dbeafe' },

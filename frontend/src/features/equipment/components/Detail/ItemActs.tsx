@@ -82,6 +82,10 @@ const ActStatusChip: FC<{ status: EquipmentActStatus }> = ({ status }) => {
 				fontSize: 12,
 				fontWeight: 500,
 				whiteSpace: 'nowrap',
+				// Чип не сжимается и не переносится: его текст — nowrap, поэтому
+				// при сжатии содержимое вылезало за границы чипа и накладывалось
+				// на номер акта. Отдаём сжатие блоку номера (у него minWidth: 0).
+				flexShrink: 0,
 			}}
 		>
 			<Box component='span' sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: meta.color }} />
@@ -105,7 +109,6 @@ const ActRow: FC<RowProps> = ({ act, canWrite, onOpen, onDownload, onUpload }) =
 		onClick={() => onOpen(act)}
 		sx={{
 			display: 'flex',
-			alignItems: 'center',
 			gap: 2,
 			p: 1.5,
 			border: '1px solid #e9eef5',
@@ -114,10 +117,15 @@ const ActRow: FC<RowProps> = ({ act, canWrite, onOpen, onDownload, onUpload }) =
 			cursor: 'pointer',
 			transition: 'background-color 120ms ease',
 			'&:hover': { bgcolor: '#eff6ff' },
-			// На телефоне две кнопки не помещаются в строку с номером акта и статусом —
-			// переносим действия на отдельную строку во всю ширину (на широком экране
-			// порядок и вид прежние).
-			flexWrap: { xs: 'wrap', sm: 'nowrap' },
+			// Перенос разрешён на любой ширине: рядом с иконкой и номером могут
+			// не ужиться чип статуса и кнопки, и тогда они уезжают на новую
+			// строку. Без переноса чип прижимался к схлопнутому блоку номера,
+			// наезжал на «АКТ-…» и обрезал текст в «…».
+			flexWrap: 'wrap',
+			// Выравнивание по верху, а не по центру: при переносе центр считался
+			// бы по высоте всего блока, и иконка с номером уезжали бы вниз, к
+			// кнопкам.
+			alignItems: { xs: 'flex-start', md: 'center' },
 		}}
 	>
 		<Box
@@ -136,7 +144,7 @@ const ActRow: FC<RowProps> = ({ act, canWrite, onOpen, onDownload, onUpload }) =
 			<FileTextIcon sx={{ fontSize: 20 }} />
 		</Box>
 
-		<Box sx={{ minWidth: 0, flex: 1 }}>
+		<Box sx={{ minWidth: 0, flex: '1 1 200px' }}>
 			<Typography sx={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }} noWrap>
 				{act.number}
 			</Typography>
@@ -149,15 +157,20 @@ const ActRow: FC<RowProps> = ({ act, canWrite, onOpen, onDownload, onUpload }) =
 		<ActStatusChip status={act.status} />
 
 		<Stack
-			direction='row'
+			// direction задаётся пропом, а не через sx: Stack считает spacing по
+			// нему (margin-left в строке, margin-top в колонке) — если положить
+			// flexDirection в sx, направление для spacing останется undefined.
+			direction={{ xs: 'column', md: 'row' }}
 			spacing={0.75}
 			onClick={e => e.stopPropagation()}
 			sx={{
-				alignItems: 'center',
+				// До md кнопки стоят друг под другом во всю ширину строки (рядом не
+				// уживаются: «Загрузить подписанный» выдавливает «Скачать» и номер
+				// акта), на md и шире — компактная строка справа.
+				alignItems: { xs: 'stretch', md: 'center' },
 				flexShrink: 0,
-				flexWrap: 'wrap',
-				order: { xs: 3, sm: 0 },
-				flexBasis: { xs: '100%', sm: 'auto' },
+				order: { xs: 3, md: 0 },
+				flexBasis: { xs: '100%', md: 'auto' },
 			}}
 		>
 			{act.status === 'signed' ? (
@@ -378,8 +391,24 @@ const ActDetailDialog: FC<DetailProps> = ({
 	return (
 		<Dialog open onClose={onClose} fullWidth maxWidth='md'>
 			<DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-				<FileTextIcon sx={{ fontSize: 20, color: '#2563eb' }} />
-				<Typography sx={{ fontSize: 16, fontWeight: 600, color: '#0f172a', flex: 1 }}>{act.number}</Typography>
+				<FileTextIcon sx={{ fontSize: 20, color: '#2563eb', flexShrink: 0 }} />
+				{/* minWidth: 0 + overflow/ellipsis: без них flex-элемент не сжимается
+				    ниже ширины текста (min-width: auto), строка переполняется, и чип
+				    накладывается на номер — «АКТ-…» превращается в многоточие. */}
+				<Typography
+					sx={{
+						fontSize: 16,
+						fontWeight: 600,
+						color: '#0f172a',
+						flex: 1,
+						minWidth: 0,
+						overflow: 'hidden',
+						textOverflow: 'ellipsis',
+						whiteSpace: 'nowrap',
+					}}
+				>
+					{act.number}
+				</Typography>
 				<ActStatusChip status={act.status} />
 				<IconButton onClick={onClose} sx={{ ml: 0.5 }}>
 					<XIcon sx={{ fontSize: 16 }} />
@@ -393,7 +422,7 @@ const ActDetailDialog: FC<DetailProps> = ({
 							display: 'grid',
 							gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' },
 							gap: 2,
-							p: 2,
+							p: { xs: 1.5, sm: 2 },
 							border: '1px solid #e9eef5',
 							borderRadius: '12px',
 							bgcolor: '#f8fafc',
@@ -452,7 +481,7 @@ const ActDetailDialog: FC<DetailProps> = ({
 				</Stack>
 			</DialogContent>
 
-			<DialogActions sx={{ px: 3, py: 2 }}>
+			<DialogActions sx={{ px: { xs: 1.5, sm: 3 }, py: 2 }}>
 				{canWrite && !signed && (
 					<Button
 						startIcon={<UploadIcon sx={{ fontSize: 16 }} />}
