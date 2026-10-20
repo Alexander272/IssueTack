@@ -78,7 +78,7 @@ func (s *EquipmentService) Assign(ctx context.Context, dto *models.AssignEquipme
 		}
 	}
 
-	return s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+	err = s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
 		opID := uuid.New()
 		// Реальное время переоформления: им закрывается прежняя открытая выдача.
 		// Новая запись получает assignedAt (момент из формы). При переоформлении
@@ -138,6 +138,14 @@ func (s *EquipmentService) Assign(ctx context.Context, dto *models.AssignEquipme
 			Actor:           dto.Actor,
 		}, affected)
 	})
+	if err != nil {
+		return err
+	}
+
+	// Заявка в 1C:ERP — после коммита выдачи: заявка ссылается на единицу уже с
+	// новым держателем, и её сбой не откатывает выдачу.
+	s.createERPTicket(ctx, erpAssign, dto.ID, dto.RealmID, dto.Actor)
+	return nil
 }
 
 // Unassign снимает выдачу с единицы и её состава, возвращая на хранение.
@@ -184,7 +192,7 @@ func (s *EquipmentService) Unassign(ctx context.Context, dto *models.UnassignEqu
 		return err
 	}
 
-	return s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+	err = s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
 		opID := uuid.New()
 		now := time.Now()
 		actorID := actorID(dto.Actor)
@@ -224,6 +232,13 @@ func (s *EquipmentService) Unassign(ctx context.Context, dto *models.UnassignEqu
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	// Заявка в 1C:ERP — как и при выдаче: после коммита, сбой не откатывает возврат.
+	s.createERPTicket(ctx, erpUnassign, dto.ID, dto.RealmID, dto.Actor)
+	return nil
 }
 
 // resolveAssignmentLabels достаёт подписи держателя и площадки для снимка события

@@ -114,6 +114,7 @@ func NewServices(deps *Deps) *Services {
 	categoryGroups := NewCategoryGroupService(deps.Repo.CategoryGroups)
 	sites := NewSiteService(deps.Repo.Sites)
 	equipment := NewEquipmentService(deps.Repo.Equipment, transaction, &deps.Conf.FileServer)
+	equipment.SetERPConfig(deps.Conf.Equipment)
 	logs := NewActivityLogService(deps.Repo.ActivityLog, transaction)
 	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs, access)
 	statistics := NewStatisticsService(deps.Repo.Statistics, groups, access)
@@ -150,6 +151,10 @@ func NewServices(deps *Deps) *Services {
 		Categories:    categories,
 		Access:        access,
 	})
+
+	// Оборудование заводит заявку в 1C:ERP при выдаче/возврате, а заявку создаёт
+	// TicketService — цикл equipment → tickets разрывается поздним связыванием.
+	equipment.SetTicketCreator(tickets)
 
 	// Цикл tickets → attachments разорван: уведомление о вложении рассылает сам
 	// TicketService (UploadAttachment), поэтому attachments не зависят от тикетов

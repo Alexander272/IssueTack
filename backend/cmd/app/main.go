@@ -37,6 +37,13 @@ func main() {
 	}
 	logger.NewLogger(logger.WithLevel(conf.LogLevel), logger.WithAddSource(conf.LogSource))
 
+	// Реквизиты ERP-заявки не ломают запуск, но ошибка в них не видна до первой
+	// выдачи — поэтому предупреждаем сразу при старте, а не только в лог-строке
+	// третьего уровня редкости.
+	if warn := conf.Equipment.ValidateEquipment(); warn != "" {
+		logger.Warn(warn)
+	}
+
 	//* Dependencies
 	db, err := postgres.NewPostgresDB(context.Background(), &postgres.Config{
 		Host:     conf.Postgres.Host,

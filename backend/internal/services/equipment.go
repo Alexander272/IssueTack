@@ -19,11 +19,40 @@ type EquipmentService struct {
 	// conf — каталог и лимит загрузок: подписанные акты лежат рядом с вложениями
 	// заявок, поэтому берут те же настройки файлового хранилища.
 	conf *config.FileServerConfig
+	// erpConf — реквизиты ERP-заявки (категория/группа/площадка). Пусто — заявки
+	// на передачу техники в 1C:ERP не создаются.
+	erpConf config.EquipmentConfig
+	// tickets — создатель заявок. Приходит позднее (после сборки TicketService):
+	// тикеты не зависят от оборудования, а вот оборудование — от них, поэтому
+	// цикл разрывается сеттером. nil допустим: тогда ERP-заявка не создаётся.
+	tickets TicketCreator
+}
+
+// TicketCreator — минимальный интерфейс создания заявки: оборудованию нужен один
+// метод, а не весь TicketService. Заявку создаёт сам TicketService — вместе с
+// проверкой права на создание, журналом и уведомлениями, поэтому отдельного
+// «системного» пути в обход прав не появляется.
+type TicketCreator interface {
+	Create(ctx context.Context, dto *models.TicketDTO) error
 }
 
 // NewEquipmentService создаёт EquipmentService.
 func NewEquipmentService(repo repository.Equipment, tm TransactionManager, conf *config.FileServerConfig) *EquipmentService {
 	return &EquipmentService{repo: repo, tm: tm, conf: conf}
+}
+
+// SetERPConfig задаёт реквизиты заявки в 1C:ERP (категория/группа/площадка).
+// Отдельный сеттер, а не параметр конструктора: у реквизитов есть значение по
+// умолчанию — «не заданы» (заявка не создаётся), а конструктор остаётся удобным
+// для тестов, которым ERP-заявка не нужна.
+func (s *EquipmentService) SetERPConfig(conf config.EquipmentConfig) {
+	s.erpConf = conf
+}
+
+// SetTicketCreator подключает создателя заявок. Вызывается после сборки
+// TicketService — так разрывается цикл equipment → tickets.
+func (s *EquipmentService) SetTicketCreator(tc TicketCreator) {
+	s.tickets = tc
 }
 
 // Equipment — интерфейс работы с оборудованием.

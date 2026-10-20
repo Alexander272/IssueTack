@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/ilyakaznacheev/cleanenv"
 )
 
@@ -22,7 +23,23 @@ type (
 		Casbin        CasbinConfig     `yaml:"casbin"`
 		FileServer    FileServerConfig `yaml:"file_server"`
 		Tickets       TicketConfig     `yaml:"tickets"`
+		Equipment     EquipmentConfig  `yaml:"equipment"`
 		Mattermost    MattermostConfig `yaml:"mattermost"`
+	}
+
+	// EquipmentConfig — настройки учёта оборудования, не привязанные к отдельной
+	// операции: сейчас это реквизиты заявки на проведение передачи техники в 1C:ERP.
+	EquipmentConfig struct {
+		// ERP-задача — обычная заявка, которой нужны категория, группа и площадка.
+		// Идентификаторы реалмозависимы, поэтому задаются в конфиге (значения — из
+		// конкретной установки). Если хотя бы один пуст, заявка не создаётся:
+		// выдумывать группу/категорию нельзя, а тикет без группы создать нельзя.
+		// Группа должна совпадать с группой категории: исполнитель создаёт заявку
+		// по правилам категории (её группа подставляется автоматически), поэтому
+		// иначе заявка от исполнителя и от менеджера попадёт в разные группы.
+		ERPCategoryID string `yaml:"erp_category_id" env:"EQUIPMENT_ERP_CATEGORY_ID"`
+		ERPGroupID    string `yaml:"erp_group_id" env:"EQUIPMENT_ERP_GROUP_ID"`
+		ERPSiteID     string `yaml:"erp_site_id" env:"EQUIPMENT_ERP_SITE_ID"`
 	}
 
 	TicketConfig struct {
@@ -127,4 +144,35 @@ func Init(path string) (*Config, error) {
 	}
 
 	return &conf, nil
+}
+
+// ValidateEquipment проверяет реквизиты ERP-заявки и возвращает человекочитаемое
+// предупреждение (пустая строка — «всё в порядке»). Задумана как напоминание при
+// старте: интеграция включается тремя id, а ошибка в них не ломает запуск (заявка
+// просто молча не создаётся), поэтому нужен явный сигнал в лог, а не отказ.
+//
+// Полностью пустая настройка — это не ошибка, а «интеграция выключена»: отличаем
+// её от частично заполненной, где оператор явно начал настраивать и не закончил.
+func (c EquipmentConfig) ValidateEquipment() string {
+	filled := 0
+	for _, v := range []string{c.ERPCategoryID, c.ERPGroupID, c.ERPSiteID} {
+		if v != "" {
+			filled++
+		}
+	}
+
+	if filled == 0 {
+		return ""
+	}
+	if filled < 3 {
+		return "equipment.erp_*: заполнены не все реквизиты (нужны erp_category_id, erp_group_id, erp_site_id) — заявка в 1C:ERP создаваться не будет"
+	}
+
+	for _, v := range []string{c.ERPCategoryID, c.ERPGroupID, c.ERPSiteID} {
+		if _, err := uuid.Parse(v); err != nil {
+			return fmt.Sprintf("equipment.erp_*: значение %q не является UUID — заявка в 1C:ERP создаваться не будет", v)
+		}
+	}
+
+	return ""
 }
