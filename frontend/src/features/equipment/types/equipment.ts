@@ -21,6 +21,8 @@ export interface IEquipmentType {
 	realmId: string
 	name: string
 	kind: EquipmentTypeKind
+	// icon — ключ из реестра typeIcons; '' = «Авто» (подбор по названию типа).
+	icon: string
 	sortOrder: number
 	createdAt: string
 	updatedAt: string
@@ -31,6 +33,7 @@ export interface IEquipmentTypeDTO {
 	realmId?: string
 	name: string
 	kind: EquipmentTypeKind
+	icon: string
 	sortOrder: number
 }
 
@@ -73,6 +76,8 @@ export interface IEquipment {
 	typeId: string | null
 	typeName: string
 	typeKind: EquipmentTypeKind
+	// typeIcon — явный ключ иконки типа; '' = «Авто» (подбор по typeName).
+	typeIcon: string
 	name: string
 	vendor: string
 	model: string

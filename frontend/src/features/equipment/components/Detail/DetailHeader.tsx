@@ -5,8 +5,8 @@ import { PencilIcon, XIcon } from 'lucide-mui'
 import type { IEquipment } from '../../types/equipment'
 import { HOLDER_DERIVED_STATUSES, getEquipmentStatus } from '../../types/equipment'
 import { equipmentAccent } from '../../utils/typeKind'
-import { EquipmentDialog } from '../Dialogs'
-import { EquipmentKindIcon } from '../EquipmentKindIcon'
+import { EquipmentDialog, EquipmentKitDialog } from '../Dialogs'
+import { EquipmentTypeIcon } from '../EquipmentTypeIcon'
 import { PermRules } from '@/features/access/constants/permissions'
 import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
 
@@ -61,7 +61,7 @@ export const DetailHeader: FC<Props> = ({ unit, onClose }) => {
 						flexShrink: 0,
 					}}
 				>
-					<EquipmentKindIcon isKit={unit.isKit} kind={unit.typeKind} sx={{ fontSize: 24 }} />
+					<EquipmentTypeIcon isKit={unit.isKit} icon={unit.typeIcon} typeName={unit.typeName} sx={{ fontSize: 24 }} />
 				</Box>
 				<Box sx={{ flexGrow: 1, minWidth: 0, flexBasis: { xs: 0, sm: 'auto' } }}>
 					<Stack direction='row' spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
@@ -72,9 +72,11 @@ export const DetailHeader: FC<Props> = ({ unit, onClose }) => {
 						{unit.isKit && <StatusChip label='Комплект' color={accent} />}
 					</Stack>
 					{/* Тип, инвентарный и серийный номера на телефоне скрыты: строка
-					    отжимала название, а те же номера есть в характеристиках. */}
+					    отжимала название, а те же номера есть в характеристиках.
+					    У комплекта типа нет — его имя в подпись не подмешиваем
+					    (тип мог остаться только от старых данных). */}
 					<Typography variant='body2' sx={{ color: '#6b7280', mt: 0.25, display: { xs: 'none', sm: 'block' } }}>
-						{unit.typeName}
+						{unit.isKit ? '' : unit.typeName}
 						{unit.inventoryNumber ? ` · Инв. №${unit.inventoryNumber}` : ''}
 						{unit.serialNumber ? ` · S/N: ${unit.serialNumber}` : ''}
 					</Typography>
@@ -112,8 +114,15 @@ export const DetailHeader: FC<Props> = ({ unit, onClose }) => {
 			</Box>
 
 			{/* Условный рендер — форма монтируется заново при каждом открытии,
-			    чтобы не показывать значения предыдущего элемента. */}
-			{editOpen && <EquipmentDialog open onClose={() => setEditOpen(false)} onDeleted={onClose} unit={unit} />}
+			    чтобы не показывать значения предыдущего элемента. Комплект
+			    правится той же формой, что создавался (EquipmentKitDialog),
+			    единица — EquipmentDialog. */}
+			{editOpen &&
+				(unit.isKit ? (
+					<EquipmentKitDialog open onClose={() => setEditOpen(false)} onDeleted={onClose} unit={unit} />
+				) : (
+					<EquipmentDialog open onClose={() => setEditOpen(false)} onDeleted={onClose} unit={unit} />
+				))}
 		</>
 	)
 }

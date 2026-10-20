@@ -110,13 +110,16 @@ func InventoryNumber(series EquipmentInventorySeries, seq int) string {
 
 // EquipmentType — тип оборудования (справочник реалма): ноутбук, RAM, монитор и т.д.
 type EquipmentType struct {
-	ID        uuid.UUID         `json:"id" db:"id"`
-	RealmID   uuid.UUID         `json:"realmId" db:"realm_id"`
-	Name      string            `json:"name" db:"name"`
-	Kind      EquipmentTypeKind `json:"kind" db:"kind"`
-	SortOrder int               `json:"sortOrder" db:"sort_order"`
-	CreatedAt time.Time         `json:"createdAt" db:"created_at"`
-	UpdatedAt time.Time         `json:"updatedAt" db:"updated_at"`
+	ID      uuid.UUID         `json:"id" db:"id"`
+	RealmID uuid.UUID         `json:"realmId" db:"realm_id"`
+	Name    string            `json:"name" db:"name"`
+	Kind    EquipmentTypeKind `json:"kind" db:"kind"`
+	// Icon — ключ иконки из закрытого набора фронтового реестра; пустая
+	// строка = «Авто» (фронт подбирает иконку по названию типа).
+	Icon      string    `json:"icon" db:"icon"`
+	SortOrder int       `json:"sortOrder" db:"sort_order"`
+	CreatedAt time.Time `json:"createdAt" db:"created_at"`
+	UpdatedAt time.Time `json:"updatedAt" db:"updated_at"`
 }
 
 type GetEquipmentTypesDTO struct {
@@ -129,11 +132,14 @@ type GetEquipmentTypeByIdDTO struct {
 }
 
 type EquipmentTypeDTO struct {
-	ID        *uuid.UUID        `json:"id" db:"id"`
-	RealmID   uuid.UUID         `json:"realmId" db:"realm_id"`
-	Name      string            `json:"name" validate:"required" db:"name"`
-	Kind      EquipmentTypeKind `json:"kind" db:"kind" binding:"required,enum"`
-	SortOrder int               `json:"sortOrder" db:"sort_order"`
+	ID      *uuid.UUID        `json:"id" db:"id"`
+	RealmID uuid.UUID         `json:"realmId" db:"realm_id"`
+	Name    string            `json:"name" validate:"required" db:"name"`
+	Kind    EquipmentTypeKind `json:"kind" db:"kind" binding:"required,enum"`
+	// Icon пустой допустим (= «Авто»): набор ключей живёт во фронтовом
+	// реестре, бэкенд его не валидирует.
+	Icon      string `json:"icon" db:"icon"`
+	SortOrder int    `json:"sortOrder" db:"sort_order"`
 }
 
 type DelEquipmentTypeDTO struct {
@@ -148,6 +154,7 @@ type Equipment struct {
 	TypeID          *uuid.UUID        `json:"typeId" db:"type_id"`
 	TypeName        string            `json:"typeName" db:"type_name"`
 	TypeKind        EquipmentTypeKind `json:"typeKind" db:"type_kind"`
+	TypeIcon        string            `json:"typeIcon" db:"type_icon"`
 	Name            string            `json:"name" db:"name"`
 	Vendor          string            `json:"vendor" db:"vendor"`
 	Model           string            `json:"model" db:"model"`

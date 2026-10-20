@@ -15,13 +15,14 @@ import {
 	useMediaQuery,
 	useTheme,
 } from '@mui/material'
-import { Controller, useForm } from 'react-hook-form'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import { XIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
 import type { IEquipmentType, IEquipmentTypeDTO } from '../../types/equipment'
 import { EQUIPMENT_TYPE_KIND_OPTIONS } from '../../types/equipment'
+import { TYPE_ICONS, TYPE_ICON_KEYS, resolveTypeIcon, type TypeIconKey } from '../../typeIcons'
 import {
 	useCreateEquipmentTypeMutation,
 	useUpdateEquipmentTypeMutation,
@@ -55,11 +56,15 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 				id: type.id,
 				name: type.name,
 				kind: type.kind,
+				icon: type.icon,
 				sortOrder: type.sortOrder,
 			}
-			: { id: undefined, name: '', kind: 'device', sortOrder: 0 },
+			: { id: undefined, name: '', kind: 'device', icon: '', sortOrder: 0 },
 		mode: 'onTouched',
 	})
+	// Название нужно для плитки «Авто»: она показывает иконку, которая будет
+	// подобрана по текущему названию.
+	const typeName = useWatch({ control, name: 'name' })
 
 	const isLoading = isCreating || isUpdating || isDeleting
 
@@ -68,6 +73,7 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 			id: form.id,
 			name: form.name,
 			kind: form.kind,
+			icon: form.icon,
 			sortOrder: form.sortOrder ?? 0,
 		}
 		try {
@@ -172,6 +178,57 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 								/>
 								<FormHelperText sx={{ mt: 0.5 }}>
 									Комплектующие и расходники можно включить в физический состав; устройства и периферию — нет
+								</FormHelperText>
+							</Box>
+							<Box>
+								<Typography variant='caption' sx={{ fontWeight: 600, mb: 0.5, display: 'block', color: '#374151' }}>
+									Иконка
+								</Typography>
+								<Controller
+									control={control}
+									name='icon'
+									render={({ field }) => (
+										<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+											{(['', ...TYPE_ICON_KEYS] as string[]).map(key => {
+												const selected = field.value === key
+												// Плитка «Авто» показывает живую иконку по текущему названию.
+												const { Icon, color } = key
+													? TYPE_ICONS[key as TypeIconKey]
+													: resolveTypeIcon({ typeName })
+												return (
+													<Box
+														component='button'
+														type='button'
+														key={key || 'auto'}
+														aria-label={key || 'Авто'}
+														aria-pressed={selected}
+														onClick={() => field.onChange(key)}
+														sx={{
+															width: 40,
+															height: 40,
+															p: 0,
+															borderRadius: '8px',
+															border: '1px solid #d1d5db',
+															borderStyle: selected || key ? 'solid' : 'dashed',
+															borderColor: selected ? '#0432a5' : key ? '#d1d5db' : '#9ca3af',
+															outline: selected ? '1px solid #0432a5' : 'none',
+															outlineOffset: 1,
+															bgcolor: selected ? '#eef2ff' : '#fff',
+															cursor: 'pointer',
+															display: 'flex',
+															alignItems: 'center',
+															justifyContent: 'center',
+														}}
+													>
+														<Icon sx={{ color, fontSize: 20 }} />
+													</Box>
+												)
+											})}
+										</Box>
+									)}
+								/>
+								<FormHelperText sx={{ mt: 0.5 }}>
+									Пунктирная рамка — «Авто»: иконка подбирается по названию типа
 								</FormHelperText>
 							</Box>
 						</Box>

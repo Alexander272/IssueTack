@@ -4,7 +4,7 @@ import { BoxesIcon, ChevronDownIcon, ChevronRightIcon, MicrochipIcon } from 'luc
 
 import { equipmentAccent } from '../../utils/typeKind'
 import { useEquipmentTree } from '../treeState'
-import { EquipmentKindIcon } from '../EquipmentKindIcon'
+import { EquipmentTypeIcon } from '../EquipmentTypeIcon'
 import { EquipmentStatusBadge } from '../EquipmentStatusBadge'
 import { EquipmentCard } from './EquipmentCard'
 import { equipmentRowMeta, type EquipmentRowNode } from './rowMeta'
@@ -97,7 +97,7 @@ export const EquipmentRow: FC<Props> = ({ node, depth = 0 }) => {
 								justifyContent: 'center',
 							}}
 						>
-							<EquipmentKindIcon isKit={node.isKit} kind={node.typeKind} sx={{ fontSize: 18 }} />
+							<EquipmentTypeIcon isKit={node.isKit} icon={node.typeIcon} typeName={node.typeName} sx={{ fontSize: 18 }} />
 						</Box>
 						{nesting && (
 							<Box

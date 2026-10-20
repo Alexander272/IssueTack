@@ -4,7 +4,7 @@ import { ArrowUpRightIcon } from 'lucide-mui'
 
 import type { IEquipment } from '../../types/equipment'
 import { equipmentAccent } from '../../utils/typeKind'
-import { EquipmentKindIcon } from '../EquipmentKindIcon'
+import { EquipmentTypeIcon } from '../EquipmentTypeIcon'
 
 type Props = {
 	unit: IEquipment
@@ -47,7 +47,7 @@ export const MemberCard: FC<Props> = ({ unit, onOpen }) => {
 					flexShrink: 0,
 				}}
 			>
-				<EquipmentKindIcon isKit={unit.isKit} kind={unit.typeKind} sx={{ fontSize: 18 }} />
+				<EquipmentTypeIcon isKit={unit.isKit} icon={unit.typeIcon} typeName={unit.typeName} sx={{ fontSize: 18 }} />
 			</Box>
 			<Box sx={{ flexGrow: 1, minWidth: 0 }}>
 				<Typography sx={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }} noWrap>

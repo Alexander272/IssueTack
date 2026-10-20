@@ -4,7 +4,7 @@ import { BoxesIcon, ChevronDownIcon, MicrochipIcon } from 'lucide-mui'
 
 import { equipmentAccent } from '../../utils/typeKind'
 import { useEquipmentTree } from '../treeState'
-import { EquipmentKindIcon } from '../EquipmentKindIcon'
+import { EquipmentTypeIcon } from '../EquipmentTypeIcon'
 import { EquipmentStatusBadge } from '../EquipmentStatusBadge'
 import { equipmentRowMeta, type EquipmentRowNode } from './rowMeta'
 import { nestedListSx } from './nestedList'
@@ -95,7 +95,7 @@ export const EquipmentCard: FC<Props> = ({ node, embedded = false, children }) =
 							justifyContent: 'center',
 						}}
 					>
-						<EquipmentKindIcon isKit={node.isKit} kind={node.typeKind} sx={{ fontSize: embedded ? 16 : 18 }} />
+						<EquipmentTypeIcon isKit={node.isKit} icon={node.typeIcon} typeName={node.typeName} sx={{ fontSize: embedded ? 16 : 18 }} />
 					</Box>
 					{nesting && (
 						<Box

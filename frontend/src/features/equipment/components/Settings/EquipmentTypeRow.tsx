@@ -7,7 +7,8 @@ import { EQUIPMENT_TYPE_KIND_LABELS } from '../../types/equipment'
 import { PermRules } from '@/features/access/constants/permissions'
 import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
 import { pluralize } from '@/utils/plural'
-import { BADGE_STYLES, getIcon, getIconBg } from './typeIcons'
+import { resolveTypeIcon } from '../../typeIcons'
+import { BADGE_STYLES } from './typeGroups'
 
 type Props = {
 	type: IEquipmentType
@@ -26,6 +27,7 @@ type Props = {
 export const EquipmentTypeRow: FC<Props> = ({ type, count, onEdit, mobile = false }) => {
 	const canWrite = useCheckPermissions({ anyOf: [PermRules.Equipment.Write] })
 
+	const { Icon, color, bg } = resolveTypeIcon({ icon: type.icon, typeName: type.name })
 	const icon = (
 		<Box
 			sx={{
@@ -35,11 +37,11 @@ export const EquipmentTypeRow: FC<Props> = ({ type, count, onEdit, mobile = fals
 				display: 'flex',
 				alignItems: 'center',
 				justifyContent: 'center',
-				bgcolor: getIconBg(type),
+				bgcolor: bg,
 				flexShrink: 0,
 			}}
 		>
-			{getIcon(type)}
+			<Icon sx={{ color }} />
 		</Box>
 	)
 

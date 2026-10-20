@@ -9,7 +9,7 @@ import { PermRules } from '@/features/access/constants/permissions'
 import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
 import { pluralize } from '@/utils/plural'
 import { EquipmentTypeRow } from './EquipmentTypeRow'
-import { GROUP_LABELS, GROUP_ORDER, type GroupKey } from './typeIcons'
+import { GROUP_LABELS, GROUP_ORDER, type GroupKey } from './typeGroups'
 
 // Секция настроек «Типы оборудования»: справочник типов, разбитый по категориям,
 // с числом заведённых единиц и диалогом создания/правки.

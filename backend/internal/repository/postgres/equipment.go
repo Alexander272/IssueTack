@@ -110,7 +110,7 @@ type Equipment interface {
 // и COUNT(*) OVER() для тотала страницы.
 func equipmentSelectBase() string {
 	return fmt.Sprintf(`SELECT 
-			e.id, e.realm_id, e.type_id, COALESCE(et.name, ''), COALESCE(et.kind::text, ''), e.name, e.vendor, e.model,
+			e.id, e.realm_id, e.type_id, COALESCE(et.name, ''), COALESCE(et.kind::text, ''), COALESCE(et.icon, ''), e.name, e.vendor, e.model,
 			e.serial_number, e.inventory_number, e.specs, e.status, e.parent_id, e.site_id, s.name,
 			e.holder_user_id, e.holder_name,
 			%s,
@@ -137,7 +137,7 @@ func scanEquipmentRow(row rowScanner) (*models.Equipment, int, error) {
 	var total int
 
 	if err := row.Scan(
-		&item.ID, &item.RealmID, &item.TypeID, &item.TypeName, &item.TypeKind,
+		&item.ID, &item.RealmID, &item.TypeID, &item.TypeName, &item.TypeKind, &item.TypeIcon,
 		&item.Name, &item.Vendor, &item.Model,
 		&item.SerialNumber, &item.InventoryNumber, &item.Specs, &item.Status,
 		&item.ParentID, &item.SiteID, &siteName,
