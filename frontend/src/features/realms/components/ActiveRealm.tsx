@@ -44,7 +44,14 @@ export const ActiveRealm: FC<Props> = ({ sx, collapsed = false }) => {
 		<Select
 			value={realm?.id || ''}
 			onChange={changeHandler}
-			renderValue={collapsed ? () => <LayoutGridIcon sx={{ fontSize: 20, display: 'flex' }} /> : undefined}
+			// displayEmpty нужен, чтобы пустое значение (realm ещё не выбран)
+			// вообще отрисовалось: без него renderValue не вызывается, и селект пуст.
+			displayEmpty
+			renderValue={
+				collapsed
+					? () => <LayoutGridIcon sx={{ fontSize: 20, display: 'flex' }} />
+					: undefined
+			}
 			IconComponent={collapsed ? NoSelectIcon : undefined}
 			sx={{
 				color: palette.primary.main,

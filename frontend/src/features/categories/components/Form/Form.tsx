@@ -92,6 +92,9 @@ export const Form: FC<Props> = ({ control, groups, categoryGroups }) => {
 							select
 							fullWidth
 							value={field.value ?? ''}
+							// Пустое значение без displayEmpty не показывает пункт
+							// «Без раздела»: renderValue для '' не вызывается — нужен флаг.
+							slotProps={{ select: { displayEmpty: true } }}
 							onChange={e => field.onChange(e.target.value === '' ? null : e.target.value)}
 						>
 							<MenuItem value=''>Без раздела</MenuItem>

@@ -298,10 +298,23 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 											{...field}
 											{...inputProps}
 											select
+											value={field.value ?? ''}
 											placeholder='Площадка'
+											// Заглушка: пустой площадки нет в списке пунктов, а без
+											// displayEmpty renderValue для '' не вызывается — нужны оба.
+											slotProps={{
+												select: {
+													displayEmpty: true,
+													renderValue: value =>
+														value === '' || value == null
+															? '— Выберите площадку —'
+															: (sites.find(s => s.id === value)?.name ?? ''),
+												},
+											}}
 											error={Boolean(fieldState.error)}
 											helperText={fieldState.error?.message}
 										>
+											<MenuItem value=''>— Выберите площадку —</MenuItem>
 											{sites.map(site => (
 												<MenuItem key={site.id} value={site.id}>
 													{site.name}
@@ -369,6 +382,20 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 									fullWidth
 									value={templateId}
 									onChange={e => applyTemplate(e.target.value)}
+									// renderValue для пустого значения не вызывается без
+									// displayEmpty — нужны оба: заглушка «Без шаблона» и
+									// выбранный шаблон с суффиксом числа позиций.
+									slotProps={{
+										select: {
+											displayEmpty: true,
+											renderValue: value => {
+												if (value === '' || value == null) return 'Без шаблона'
+												const template = templates.find(t => t.id === value)
+												if (!template) return ''
+												return `${template.name}${template.items.length > 0 ? ` · ${template.items.length}` : ''}`
+											},
+										},
+									}}
 									sx={{ bgcolor: '#fff', borderRadius: '8px', mt: 0.5 }}
 								>
 									<MenuItem value=''>Без шаблона</MenuItem>
@@ -442,12 +469,29 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 																disabled={row.locked}
 																placeholder='Тип оборудования'
 																helperText={row.locked ? 'Из шаблона' : undefined}
+																// Заглушка для пустого типа (реалм без типов
+																// оборудования): renderValue без displayEmpty
+																// для '' не вызывается — нужны оба.
+																slotProps={{
+																	select: {
+																		displayEmpty: true,
+																		renderValue: value => {
+																			if (value === '' || value == null)
+																				return '— Выберите тип —'
+																			const type = types.find(t => t.id === value)
+																			return type?.name ?? ''
+																		},
+																	},
+																}}
 																onChange={e => {
 																	field.onChange(e)
 																	// Смена типа обнуляет единицу: прежняя к нему не подходит.
 																	setValue(`rows.${index}.unitId`, '')
 																}}
 															>
+																<MenuItem value='' disabled>
+																	— Выберите тип —
+																</MenuItem>
 																{/* Текущий тип, выпавший из списка (слот из старого
 																    шаблона с комплектующим) — показываем, иначе поле
 																    выглядело бы пустым при непустом значении. */}

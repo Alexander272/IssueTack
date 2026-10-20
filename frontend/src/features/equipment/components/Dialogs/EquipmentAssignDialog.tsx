@@ -280,6 +280,17 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 											select
 											{...inputProps}
 											value={field.value ?? ''}
+											// Заглушка: renderValue для пустого значения не
+											// вызывается без displayEmpty — нужны оба.
+											slotProps={{
+												select: {
+													displayEmpty: true,
+													renderValue: value =>
+														value === '' || value == null
+															? '— Выберите площадку —'
+															: (sites.find(s => s.id === value)?.name ?? ''),
+												},
+											}}
 											error={Boolean(fieldState.error)}
 											helperText={fieldState.error?.message}
 										>

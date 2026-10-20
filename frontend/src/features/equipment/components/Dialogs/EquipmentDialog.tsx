@@ -232,6 +232,18 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 											{...field}
 											select
 											{...inputProps}
+											// Заглушка: у MUI Select пустое значение без displayEmpty
+											// не подставляет пункт с value='', а renderValue для
+											// пустого не вызывается вовсе — нужны оба.
+											slotProps={{
+												select: {
+													displayEmpty: true,
+													renderValue: value =>
+														value === '' || value == null
+															? '— Выберите тип —'
+															: (types.find(t => t.id === value)?.name ?? ''),
+												},
+											}}
 											error={Boolean(fieldState.error)}
 											helperText={fieldState.error?.message}
 										>
@@ -310,6 +322,18 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 												select
 												{...inputProps}
 												value={field.value ?? ''}
+												// Пустое значение не показывает пункт-заглушку само
+												// (renderValue для пустого не вызывается без
+												// displayEmpty) — нужны оба.
+												slotProps={{
+													select: {
+														displayEmpty: true,
+														renderValue: value =>
+															value === '' || value == null
+																? '— Выберите площадку —'
+																: (sites.find(s => s.id === value)?.name ?? ''),
+													},
+												}}
 												error={Boolean(fieldState.error)}
 												helperText={fieldState.error?.message}
 											>
