@@ -249,7 +249,15 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 			</DialogTitle>
 
 			<form onSubmit={saveHandler}>
-				<DialogContent dividers sx={{ borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', px: { xs: 1.5, sm: 3 }, py: { xs: 2, sm: 2 } }}>
+				<DialogContent
+					dividers
+					sx={{
+						borderTop: '1px solid #f0f0f0',
+						borderBottom: '1px solid #f0f0f0',
+						px: { xs: 1.5, sm: 3 },
+						py: { xs: 2, sm: 2 },
+					}}
+				>
 					<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
 						{/* Основные сведения о комплекте */}
 						<Box
@@ -327,7 +335,7 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 								/>
 							</Field>
 
-							<Field label='Локация'>
+							<Field label='Расположение'>
 								<Controller
 									control={control}
 									name='location'
@@ -497,7 +505,12 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 																{/* Текущий тип, выпавший из списка (слот из старого
 																    шаблона с комплектующим) — показываем, иначе поле
 																    выглядело бы пустым при непустом значении. */}
-																{[...kitTypes, ...types.filter(t => t.id === field.value && canBePart(t.kind))].map(type => (
+																{[
+																	...kitTypes,
+																	...types.filter(
+																		t => t.id === field.value && canBePart(t.kind),
+																	),
+																].map(type => (
 																	<MenuItem key={type.id} value={type.id}>
 																		{type.name}
 																	</MenuItem>
@@ -518,7 +531,9 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 																}
 																value={selectedUnit}
 																disabled={!row.typeId}
-																onChange={(_e, value) => field.onChange(value?.id ?? '')}
+																onChange={(_e, value) =>
+																	field.onChange(value?.id ?? '')
+																}
 																renderInput={params => (
 																	<TextField
 																		{...params}

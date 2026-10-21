@@ -10,24 +10,20 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// VerifyToken проверяет access-токен локально по JWKS Keycloak.
+// Интроспекция не используется: с коротким TTL access-токена (~5 минут)
+// цена валидного отозванного токена до истечения приемлема, взамен —
+// меньше латентности, отказоустойчивее и меньше нагрузки на Keycloak.
 func (m *Middleware) VerifyToken(c *gin.Context) {
-	token := strings.Replace(c.GetHeader("Authorization"), "Bearer ", "", 1)
-
-	// TODO надо попробовать забирать из keycloak ключи и проверять токен здесь
-	result, err := m.keycloak.Client.RetrospectToken(c, token, m.keycloak.ClientId, m.keycloak.ClientSecret, m.keycloak.Realm)
-	if err != nil {
-		response.SendError(c, fmt.Errorf("%w: %v", models.ErrSessionEmpty, err))
-		return
-	}
-
-	if result == nil || result.Active == nil || !*result.Active {
-		response.SendError(c, models.ErrSessionExpired)
+	token := strings.TrimSpace(strings.Replace(c.GetHeader("Authorization"), "Bearer ", "", 1))
+	if token == "" {
+		response.SendError(c, models.ErrSessionEmpty)
 		return
 	}
 
 	user, err := m.services.Session.DecodeAccessToken(c, token)
 	if err != nil {
-		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidToken, err))
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrSessionExpired, err))
 		return
 	}
 

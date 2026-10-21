@@ -65,7 +65,7 @@ export const SitesView: FC = () => {
 						Площадки
 					</Typography>
 					<Typography variant='body2' sx={{ color: '#6b7280', display: { xs: 'none', sm: 'block' } }}>
-						Управление площадками и локациями
+						Управление площадками и расположениями
 					</Typography>
 				</Box>
 				<Button

@@ -33,7 +33,7 @@ const specsOf = (unit: IEquipment) => [
 	{ label: 'Серийный номер', value: unit.serialNumber ?? '—', mono: true },
 	{ label: 'Инвентарный номер', value: unit.inventoryNumber ?? '—', mono: true },
 	{ label: 'Площадка', value: unit.siteName || '—' },
-	{ label: 'Локация', value: unit.location ?? '—' },
+	{ label: 'Расположение', value: unit.location ?? '—' },
 	{ label: 'Магазин', value: unit.shop || '—' },
 	{ label: 'Номер заказа', value: unit.orderNumber ?? '—', mono: true },
 	...(unit.isKit
@@ -203,11 +203,7 @@ export const OverviewTab: FC<Props> = ({ unit, onOpenUnit }) => {
 			)}
 			{!isKit && partsOpen && <EquipmentPartsDialog open onClose={() => setPartsOpen(false)} unit={unit} />}
 			{printNonce !== null && unit.inventoryNumber && (
-				<InventoryLabelPrint
-					key={printNonce}
-					unit={unit}
-					onClose={() => setPrintNonce(null)}
-				/>
+				<InventoryLabelPrint key={printNonce} unit={unit} onClose={() => setPrintNonce(null)} />
 			)}
 		</>
 	)

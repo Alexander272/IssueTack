@@ -367,7 +367,7 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 									/>
 								</Field>
 
-								<Field label='Локация'>
+								<Field label='Расположение'>
 									<Controller
 										control={control}
 										name='location'
@@ -403,7 +403,11 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 													// Стрелка-маркер списка: у freeSolo можно и вписать
 													// руками, поэтому индикатор не MUI-шный по умолчанию,
 													// а явный — иначе поле выглядит как обычный ввод.
-													popupIcon={<ChevronDownIcon sx={{ fontSize: 18, color: 'text.secondary' }} />}
+													popupIcon={
+														<ChevronDownIcon
+															sx={{ fontSize: 18, color: 'text.secondary' }}
+														/>
+													}
 													renderInput={params => (
 														<TextField
 															{...params}
@@ -421,7 +425,11 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 											control={control}
 											name='orderNumber'
 											render={({ field }) => (
-												<TextField {...field} {...inputProps} placeholder='Номер заказа/накладной' />
+												<TextField
+													{...field}
+													{...inputProps}
+													placeholder='Номер заказа/накладной'
+												/>
 											)}
 										/>
 									</Field>
@@ -435,7 +443,9 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 											render={({ field }) => (
 												<DatePicker
 													value={field.value ? dayjs(field.value) : null}
-													onChange={date => field.onChange(date ? date.format('YYYY-MM-DD') : null)}
+													onChange={date =>
+														field.onChange(date ? date.format('YYYY-MM-DD') : null)
+													}
 													slots={{ textField: DateTextField }}
 													slotProps={{ textField: { fullWidth: true, size: 'small' } }}
 												/>
@@ -450,7 +460,9 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 											render={({ field }) => (
 												<DatePicker
 													value={field.value ? dayjs(field.value) : null}
-													onChange={date => field.onChange(date ? date.format('YYYY-MM-DD') : null)}
+													onChange={date =>
+														field.onChange(date ? date.format('YYYY-MM-DD') : null)
+													}
 													slots={{ textField: DateTextField }}
 													slotProps={{ textField: { fullWidth: true, size: 'small' } }}
 												/>

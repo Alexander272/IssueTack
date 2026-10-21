@@ -78,7 +78,7 @@ const optionLabel = (option: string | { lastName: string; firstName: string; use
 
 // Диалог выдачи оборудования — по макету: шапка с подписью, карточка того, что
 // выдаём (иконка типа, статус, тип · инв. № · S/N), получатель, площадка и
-// локация, дата выдачи, комментарий и опции (акт, принудительное
+// расположение, дата выдачи, комментарий и опции (акт, принудительное
 // переназначение). Связь с заявкой и уведомления получателю пока не заведены.
 export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 	const theme = useTheme()
@@ -289,7 +289,7 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 							/>
 						</Field>
 
-						{/* Площадка и локация заполнены текущим местом единицы: пустые
+						{/* Площадка и расположение заполнены текущим местом единицы: пустые
 						    поля в выдаче означают «единица не переезжает». */}
 						<Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
 							<Field label='Площадка' required>
@@ -328,7 +328,7 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 								/>
 							</Field>
 
-							<Field label='Локация'>
+							<Field label='Расположение'>
 								<Controller
 									control={control}
 									name='location'

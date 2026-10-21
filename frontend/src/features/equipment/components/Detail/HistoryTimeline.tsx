@@ -123,7 +123,7 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 	const { data: compositionData } = useGetEquipmentCompositionHistoryQuery(unit.id, { skip: !unit.isKit })
 
 	const entries = useMemo<Entry[]>(() => {
-		const events = (eventsData?.data ?? [])
+		const events = eventsData?.data ?? []
 		const rows = assignmentsData?.data ?? []
 
 		// Явная связь операции и строк выдачи. Событие называет строку, которую
@@ -137,7 +137,7 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 			if (e.closedAssignmentId) closedBy.set(e.closedAssignmentId, e)
 		})
 
-		// placeLabel собирает подпись места из пары «площадка + локация».
+		// placeLabel собирает подпись места из пары «площадка + расположение».
 		const placeLabel = (siteName: string | null, location: string | null) =>
 			[siteName, location].filter(Boolean).join(', ')
 
@@ -150,8 +150,7 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 		}
 
 		// placeText — подпись места строкой (для примечания к записи).
-		const placeText = (v: Record<string, unknown> | null) =>
-			v ? placeLabel(str(v.siteName), str(v.location)) : ''
+		const placeText = (v: Record<string, unknown> | null) => (v ? placeLabel(str(v.siteName), str(v.location)) : '')
 
 		// holderOf: снимок несёт и ФИО сотрудника, и свободный текст держателя.
 		const holderOf = (v: Record<string, unknown> | null): Value | undefined => {
@@ -247,11 +246,29 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 						note: eventComment,
 					}
 				case 'status_changed':
-					return { ...base, action: 'Изменён статус', from: statusOf(e.oldValue), to: statusOf(e.newValue), note: eventComment }
+					return {
+						...base,
+						action: 'Изменён статус',
+						from: statusOf(e.oldValue),
+						to: statusOf(e.newValue),
+						note: eventComment,
+					}
 				case 'repaired':
-					return { ...base, action: 'Отправлено в ремонт', from: statusOf(e.oldValue), to: statusOf(e.newValue), note: eventComment }
+					return {
+						...base,
+						action: 'Отправлено в ремонт',
+						from: statusOf(e.oldValue),
+						to: statusOf(e.newValue),
+						note: eventComment,
+					}
 				case 'written_off':
-					return { ...base, action: 'Списано', from: statusOf(e.oldValue), to: statusOf(e.newValue), note: eventComment }
+					return {
+						...base,
+						action: 'Списано',
+						from: statusOf(e.oldValue),
+						to: statusOf(e.newValue),
+						note: eventComment,
+					}
 				case 'defective': {
 					// Дефект — факт с данными: описание лежит в снимке события, а
 					// дата обнаружения — отдельным чипом, потому что её часто
@@ -268,9 +285,19 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 					}
 				}
 				case 'component_added':
-					return { ...base, action: 'Компонент добавлен в комплект', to: componentOf(e.newValue, e.componentId), note: eventComment }
+					return {
+						...base,
+						action: 'Компонент добавлен в комплект',
+						to: componentOf(e.newValue, e.componentId),
+						note: eventComment,
+					}
 				case 'component_removed':
-					return { ...base, action: 'Компонент исключён из комплекта', from: componentOf(e.oldValue, e.componentId), note: eventComment }
+					return {
+						...base,
+						action: 'Компонент исключён из комплекта',
+						from: componentOf(e.oldValue, e.componentId),
+						note: eventComment,
+					}
 				case 'component_replaced':
 					return {
 						...base,
@@ -290,7 +317,8 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 						.join(' · ')
 					return {
 						...base,
-						action: e.eventType === 'created' ? 'Добавлено оборудование' : getEquipmentEventLabel(e.eventType),
+						action:
+							e.eventType === 'created' ? 'Добавлено оборудование' : getEquipmentEventLabel(e.eventType),
 						note: [eventComment, details].filter(Boolean).join(' · ') || undefined,
 					}
 				}
@@ -401,9 +429,7 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 			...(compositionData?.data ?? []).flatMap(fromComposition),
 		]
 
-		return list
-			.filter(e => group === 'all' || e.group === group)
-			.sort((a, b) => time(b.date) - time(a.date))
+		return list.filter(e => group === 'all' || e.group === group).sort((a, b) => time(b.date) - time(a.date))
 	}, [assignmentsData, eventsData, compositionData, group])
 
 	// Группировка по дням: порядок дней — как в отсортированном списке (свежие выше).
@@ -480,7 +506,9 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 									gap: 1.5,
 								}}
 							>
-								<Typography sx={{ fontSize: 12, fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap' }}>
+								<Typography
+									sx={{ fontSize: 12, fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap' }}
+								>
 									{dayLabel(key)}
 								</Typography>
 								<Box sx={{ flex: 1, height: '1px', bgcolor: '#eef2f6' }} />
@@ -522,10 +550,16 @@ const TimelineRow: FC<{ entry: Entry; last: boolean }> = ({ entry, last }) => (
 		<Box sx={{ flex: 1, minWidth: 0, pb: last ? 1.5 : 2.5 }}>
 			<Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1 }}>
 				<Typography sx={{ fontSize: 14, color: '#374151' }}>
-					{entry.actor && <Box component='span' sx={{ fontWeight: 600, color: '#1f2937' }}>{entry.actor} </Box>}
+					{entry.actor && (
+						<Box component='span' sx={{ fontWeight: 600, color: '#1f2937' }}>
+							{entry.actor}{' '}
+						</Box>
+					)}
 					{entry.action}
 				</Typography>
-				<Typography sx={{ fontSize: 12, color: '#9ca3af', whiteSpace: 'nowrap' }}>{fmtTime(entry.date)}</Typography>
+				<Typography sx={{ fontSize: 12, color: '#9ca3af', whiteSpace: 'nowrap' }}>
+					{fmtTime(entry.date)}
+				</Typography>
 			</Box>
 
 			{(entry.from || entry.to) && (

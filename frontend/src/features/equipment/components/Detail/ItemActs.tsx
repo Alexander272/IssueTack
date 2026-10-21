@@ -18,7 +18,16 @@ import {
 	Typography,
 } from '@mui/material'
 import dayjs from 'dayjs'
-import { DownloadIcon, EyeIcon, FileSignatureIcon, FileTextIcon, PlusIcon, UploadIcon, XIcon } from 'lucide-mui'
+import {
+	DownloadIcon,
+	EyeIcon,
+	FileSignatureIcon,
+	FileTextIcon,
+	PlusIcon,
+	UploadIcon,
+	UserRoundArrowLeftIcon,
+	XIcon,
+} from 'lucide-mui'
 import { toast } from 'react-toastify'
 
 import { Loader } from '@/components/Fallback/Loader'
@@ -52,7 +61,7 @@ type ActStatusMeta = { label: string; color: string; bgcolor: string; border: st
 // (зелёный). Цвета те же, что у статусов оборудования, — вкладки не выглядят
 // разнородными.
 const ACT_STATUS_META: Record<EquipmentActStatus, ActStatusMeta> = {
-	formed: { label: 'Сформирован', color: '#b45309', bgcolor: '#fef3c7', border: '#fde68a' },
+	formed: { label: 'Ожидает подписи', color: '#b45309', bgcolor: '#fef3c7', border: '#fde68a' },
 	signed: { label: 'Подписан', color: '#15803d', bgcolor: '#dcfce7', border: '#bbf7d0' },
 }
 
@@ -153,9 +162,18 @@ const ActRow: FC<RowProps> = ({ act, canWrite, onOpen, onDownload, onUpload }) =
 		</Box>
 
 		<Box sx={{ minWidth: 0, flex: '1 1 200px' }}>
-			<Typography sx={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }} noWrap>
-				{act.number}
-			</Typography>
+			<Stack direction='row' sx={{ alignItems: 'center', flexWrap: 'wrap', gap: { xs: 0, sm: 1 } }}>
+				<Typography sx={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }} noWrap>
+					{act.number}
+				</Typography>
+				<Stack direction='row' spacing={0.25} sx={{ alignItems: 'center' }}>
+					<UserRoundArrowLeftIcon sx={{ fontSize: 14, color: '#64748b' }} />
+					<Typography sx={{ fontSize: 12, color: '#64748b' }} noWrap>
+						{act.recipientName ?? '—'}
+					</Typography>
+				</Stack>
+			</Stack>
+
 			<Typography sx={{ fontSize: 12, color: '#64748b' }} noWrap>
 				{formatDate(act.issuedAt)} · {ACT_KIND_LABEL}
 				{act.content?.length ? ` · ${act.content.length} поз.` : ''}
@@ -185,19 +203,24 @@ const ActRow: FC<RowProps> = ({ act, canWrite, onOpen, onDownload, onUpload }) =
 				<>
 					<Button
 						size='small'
-						startIcon={<EyeIcon sx={{ fontSize: 14 }} />}
-						sx={softButtonSx}
-						onClick={() => onOpen(act)}
-					>
-						Просмотреть
-					</Button>
-					<Button
-						size='small'
 						startIcon={<DownloadIcon sx={{ fontSize: 14 }} />}
-						sx={softButtonSx}
+						sx={{ ...softButtonSx, bgcolor: '#fff' }}
 						onClick={() => onDownload(act)}
 					>
 						Скачать
+					</Button>
+					<Button
+						size='small'
+						startIcon={<EyeIcon sx={{ fontSize: 14 }} />}
+						sx={{
+							...softButtonSx,
+							bgcolor: '#2563eb',
+							color: '#fff',
+							'&:hover': { bgcolor: '#2564ebc7' },
+						}}
+						onClick={() => onOpen(act)}
+					>
+						Просмотреть
 					</Button>
 				</>
 			) : (
@@ -205,7 +228,7 @@ const ActRow: FC<RowProps> = ({ act, canWrite, onOpen, onDownload, onUpload }) =
 					<Button
 						size='small'
 						startIcon={<DownloadIcon sx={{ fontSize: 14 }} />}
-						sx={softButtonSx}
+						sx={{ ...softButtonSx, bgcolor: '#fff' }}
 						onClick={() => onDownload(act)}
 					>
 						Скачать
@@ -214,10 +237,15 @@ const ActRow: FC<RowProps> = ({ act, canWrite, onOpen, onDownload, onUpload }) =
 						<Button
 							size='small'
 							startIcon={<UploadIcon sx={{ fontSize: 14 }} />}
-							sx={softButtonSx}
+							sx={{
+								...softButtonSx,
+								bgcolor: '#2563eb',
+								color: '#fff',
+								'&:hover': { bgcolor: '#2564ebc7' },
+							}}
 							onClick={() => onUpload(act)}
 						>
-							Загрузить подписанный
+							Загрузить скан
 						</Button>
 					)}
 				</>
@@ -666,7 +694,7 @@ const CreateActDialog: FC<CreateProps> = ({ open, unit, onClose }) => {
 					/>
 					<TextField
 						size='small'
-						label='Локация'
+						label='Расположение'
 						value={location}
 						onChange={e => setLocation(e.target.value)}
 					/>
