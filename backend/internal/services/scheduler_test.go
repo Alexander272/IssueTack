@@ -52,7 +52,7 @@ func TestSchedulerService_Start_PriorityReminders(t *testing.T) {
 	svc := NewSchedulerService(&SchedulerDeps{Tickets: ticketSvc})
 
 	err := svc.Start(&config.TicketConfig{
-		NotifyHighPriorityInterval:   3*time.Hour,
+		NotifyHighPriorityInterval:   3 * time.Hour,
 		NotifyUrgentPriorityInterval: time.Hour,
 	})
 	assert.NoError(t, err)
@@ -87,4 +87,58 @@ func TestSchedulerService_NotifyUrgentPriorityJob(t *testing.T) {
 
 	mockNotifications.AssertExpectations(t)
 	mockTickets.AssertExpectations(t)
+}
+
+// TestSchedulerService_Start_WorkingHours проверяет, что окно рабочего времени
+// разбирается в Start и не меняет число зарегистрированных задач.
+func TestSchedulerService_Start_WorkingHours(t *testing.T) {
+	_, _, _, _, _, _, _, ticketSvc := ticketServiceFixtures()
+	svc := NewSchedulerService(&SchedulerDeps{Tickets: ticketSvc})
+
+	err := svc.Start(&config.TicketConfig{
+		NotifyUrgentPriorityInterval: time.Hour,
+		WorkingHours: config.WorkingHoursConfig{
+			Start: "08:00", End: "18:00", Timezone: "UTC", Days: []string{"mon"},
+		},
+	})
+	assert.NoError(t, err)
+	assert.True(t, svc.workingHours.enabled)
+	assert.Equal(t, 8*time.Hour, svc.workingHours.start)
+	assert.Equal(t, 18*time.Hour, svc.workingHours.end)
+	assert.Len(t, svc.cron.Jobs(), 1)
+	assert.NoError(t, svc.Stop())
+}
+
+// TestSchedulerService_Jobs_SkippedOutsideWorkingHours — вне рабочего окна джобы
+// выходят до выборки: сервис уведомлений не вызывается, значит дедуп-слот
+// (reminder_last_sent) не занимается и напоминание не сдвигается на пол интервала.
+// Окно берётся «на завтрашний день» — сегодняшний weekday гарантированно вне
+// списка, результат не зависит от часа запуска теста.
+func TestSchedulerService_Jobs_SkippedOutsideWorkingHours(t *testing.T) {
+	tomorrow := time.Weekday((int(time.Now().Weekday()) + 1) % 7)
+	window := newWorkingHours(config.WorkingHoursConfig{
+		Start: "08:00", End: "18:00", Days: []string{weekdayNames[tomorrow]},
+	})
+	assert.False(t, window.allows(time.Now()), "окно должно быть вне сегодняшнего дня")
+
+	t.Run("priority reminder", func(t *testing.T) {
+		mockNotifications := new(MockNotificationService)
+		svc := NewSchedulerService(&SchedulerDeps{Tickets: new(MockTicketsService), Notifications: mockNotifications})
+		svc.workingHours = window
+
+		svc.notifyUrgentPriorityJob(t.Context(), time.Hour)
+		svc.notifyHighPriorityJob(t.Context(), 3*time.Hour)
+
+		mockNotifications.AssertNotCalled(t, "GetActiveByPriorityGlobal", mock.Anything, mock.Anything)
+	})
+
+	t.Run("overdue", func(t *testing.T) {
+		mockNotifications := new(MockNotificationService)
+		svc := NewSchedulerService(&SchedulerDeps{Tickets: new(MockTicketsService), Notifications: mockNotifications})
+		svc.workingHours = window
+
+		svc.notifyOverdueJob(t.Context())
+
+		mockNotifications.AssertNotCalled(t, "GetOverdueTicketIDs", mock.Anything, mock.Anything)
+	})
 }

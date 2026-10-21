@@ -19,6 +19,9 @@ type SchedulerService struct {
 	tickets       Tickets
 	notifications Notifications
 	favorites     TicketFavorites
+	// workingHours гейтит периодические рассылки по рабочему времени.
+	// Заполняется в Start; nil/выключенное окно — рассылка без ограничений.
+	workingHours *workingHours
 }
 
 // SchedulerDeps содержит зависимости для создания SchedulerService.
@@ -54,6 +57,13 @@ func NewSchedulerService(deps *SchedulerDeps) *SchedulerService {
 // Start регистрирует фоновые задания и запускает планировщик.
 func (s *SchedulerService) Start(conf *config.TicketConfig) error {
 	registered := false
+
+	s.workingHours = newWorkingHours(conf.WorkingHours)
+	if s.workingHours.enabled {
+		logger.Info("working-hours window for periodic notifications: " + s.workingHours.String())
+	} else {
+		logger.Info("working-hours window disabled: periodic notifications run on every tick")
+	}
 
 	if conf.ResolvedToClosedAfter > 0 {
 		_, err := s.cron.NewJob(
@@ -159,6 +169,10 @@ func (s *SchedulerService) autoCloseJob(ctx context.Context, delay time.Duration
 // notifyOverdueJob — фоновая задача cron: ищет активные тикеты с просроченным сроком и оповещает
 // о них заинтересованных пользователей (дедупликация выполняется в сервисе уведомлений).
 func (s *SchedulerService) notifyOverdueJob(ctx context.Context) {
+	if !s.workingHours.allows(time.Now()) {
+		logger.Debug("overdue-notify skipped: outside working hours")
+		return
+	}
 	ids, err := s.notifications.GetOverdueTicketIDs(ctx, time.Now())
 	if err != nil {
 		logger.Error("failed to get overdue tickets:", logger.ErrAttr(err))
@@ -183,6 +197,10 @@ func (s *SchedulerService) notifyOverdueJob(ctx context.Context) {
 // исполнителем и оповещает исполнителя о приближении срока (дедупликация по порогам —
 // в сервисе уведомлений).
 func (s *SchedulerService) notifyDeadlineSoonJob(ctx context.Context) {
+	if !s.workingHours.allows(time.Now()) {
+		logger.Debug("deadline-soon notify skipped: outside working hours")
+		return
+	}
 	ids, err := s.notifications.GetUpcomingDeadlineTicketIDs(ctx, time.Now())
 	if err != nil {
 		logger.Error("failed to get upcoming-deadline tickets:", logger.ErrAttr(err))
@@ -220,6 +238,10 @@ func (s *SchedulerService) favoriteCleanupJob(ctx context.Context) {
 }
 
 func (s *SchedulerService) notifyHighPriorityJob(ctx context.Context, interval time.Duration) {
+	if !s.workingHours.allows(time.Now()) {
+		logger.Debug("high-priority-reminder skipped: outside working hours")
+		return
+	}
 	ids, err := s.notifications.GetActiveByPriorityGlobal(ctx, models.PriorityHigh)
 	if err != nil {
 		logger.Error("failed to get high-priority tickets:", logger.ErrAttr(err))
@@ -241,6 +263,10 @@ func (s *SchedulerService) notifyHighPriorityJob(ctx context.Context, interval t
 }
 
 func (s *SchedulerService) notifyUrgentPriorityJob(ctx context.Context, interval time.Duration) {
+	if !s.workingHours.allows(time.Now()) {
+		logger.Debug("urgent-priority-reminder skipped: outside working hours")
+		return
+	}
 	ids, err := s.notifications.GetActiveByPriorityGlobal(ctx, models.PriorityUrgent)
 	if err != nil {
 		logger.Error("failed to get critical-priority tickets:", logger.ErrAttr(err))

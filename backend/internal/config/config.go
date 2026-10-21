@@ -41,6 +41,21 @@ type (
 		DeadlineSoonSchedule string `yaml:"deadline_soon_schedule" env:"TICKETS_DEADLINE_SOON_SCHEDULE" env-default:"@hourly"`
 		// Расписание очистки «закреплённых» (temporary) избранных ("@daily", "" — отключено)
 		FavoriteCleanupSchedule string `yaml:"favorite_cleanup_schedule" env:"TICKETS_FAVORITE_CLEANUP_SCHEDULE" env-default:"@daily"`
+		// Рабочее время периодических уведомлений: прогоны джоб вне окна пропускаются.
+		// Дефолты живут в config.yaml, а не в env-default: cleanenv подставляет
+		// env-default в незаполненное поле и перетёр бы явный «пусто» (выключение).
+		WorkingHours WorkingHoursConfig `yaml:"working_hours"`
+	}
+
+	WorkingHoursConfig struct {
+		// Начало окна, "HH:MM"; пустое start или end — ограничение отключено
+		Start string `yaml:"start" env:"TICKETS_WORKING_HOURS_START"`
+		// Конец окна, "HH:MM"
+		End string `yaml:"end" env:"TICKETS_WORKING_HOURS_END"`
+		// Часовой пояс окна (IANA, например Europe/Moscow); пусто — время сервера
+		Timezone string `yaml:"timezone" env:"TICKETS_WORKING_HOURS_TIMEZONE"`
+		// Дни недели (mon..sun, в yaml — список); пусто — все дни
+		Days []string `yaml:"days" env:"TICKETS_WORKING_HOURS_DAYS"`
 	}
 
 	FileServerConfig struct {
