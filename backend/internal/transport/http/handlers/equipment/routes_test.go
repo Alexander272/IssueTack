@@ -46,6 +46,7 @@ func TestEquipmentRoutes_StaticBeatsParam(t *testing.T) {
 	equipment.GET("/tree", func(c *gin.Context) { c.String(http.StatusOK, "getTree") })
 	equipment.GET("/stats", func(c *gin.Context) { c.String(http.StatusOK, "getStats") })
 	equipment.GET("/types", func(c *gin.Context) { c.String(http.StatusOK, "getTypes") })
+	equipment.GET("/shops", func(c *gin.Context) { c.String(http.StatusOK, "getShops") })
 	equipment.GET("/templates", func(c *gin.Context) { c.String(http.StatusOK, "getTemplates") })
 	equipment.GET("/templates/:id", func(c *gin.Context) { c.String(http.StatusOK, "getTemplateByID") })
 	equipment.GET("/acts", func(c *gin.Context) { c.String(http.StatusOK, "getActs") })
@@ -54,6 +55,7 @@ func TestEquipmentRoutes_StaticBeatsParam(t *testing.T) {
 		"/api/v1/equipment/tree":      "getTree",
 		"/api/v1/equipment/stats":     "getStats",
 		"/api/v1/equipment/types":     "getTypes",
+		"/api/v1/equipment/shops":     "getShops",
 		"/api/v1/equipment/templates": "getTemplates",
 		"/api/v1/equipment/acts":      "getActs",
 	} {

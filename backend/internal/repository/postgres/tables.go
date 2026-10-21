@@ -41,6 +41,7 @@ var Tables = struct {
 	TicketSubscriptions        string
 	TicketFavorites            string
 	EquipmentTypes             string
+	EquipmentShops             string
 	Equipment                  string
 	EquipmentAssignments       string
 	EquipmentEvents            string
@@ -78,6 +79,7 @@ var Tables = struct {
 	TicketSubscriptions:        "ticket_subscriptions",
 	TicketFavorites:            "ticket_favorites",
 	EquipmentTypes:             "equipment_types",
+	EquipmentShops:             "equipment_shops",
 	Equipment:                  "equipment",
 	EquipmentAssignments:       "equipment_assignments",
 	EquipmentEvents:            "equipment_events",

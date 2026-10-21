@@ -17,6 +17,10 @@ export type EquipmentTreeState = {
 	expanded: Set<string>
 	toggle: (id: string) => void
 	open: (id: string) => void
+	// search — текущая поисковая фраза (debounce-нутая). Дети узла запрашиваются тем
+	// же фильтром, что и корни: иначе раскрытый состав показывал бы всё подряд, тогда
+	// как корни уже отфильтрованы.
+	search: string
 }
 
 // Дефолт работает и вне провайдера (плоский список, отдельная строка): дерево
@@ -27,6 +31,7 @@ export const EquipmentTreeContext = createContext<EquipmentTreeState>({
 	expanded: new Set(),
 	toggle: () => {},
 	open: () => {},
+	search: '',
 })
 
 export const useEquipmentTree = () => useContext(EquipmentTreeContext)

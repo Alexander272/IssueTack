@@ -289,3 +289,124 @@ func TestEquipmentRepo_InventoryNumberExists(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, exists, "уникальность номера — в пределах реалма")
 }
+
+// TestEquipmentRepo_ShopOrder проверяет реквизиты закупки: shop/order_number
+// читаются и пишутся вместе с единицей, а название магазина из формы (freeSolo)
+// попадает в справочник подсказок. Пустой магазин в справочник не добавляется,
+// повторное сохранение того же названия не падает на уникальности (upsert).
+func TestEquipmentRepo_ShopOrder(t *testing.T) {
+	pool := itPool(t)
+	f := newEqFixture(t, pool)
+	ctx := context.Background()
+
+	repo := NewEquipmentRepo(pool, NewTransactionRepo(pool))
+
+	dto := newEquipmentDTO(f, &f.typeID, "Ноутбук из DNS")
+	dto.Shop = eqString("DNS")
+	dto.OrderNumber = eqString("DNS-2024-77312")
+	unit, err := repo.Create(ctx, nil, dto)
+	require.NoError(t, err)
+
+	assert.Equal(t, "DNS", *unit.Shop)
+	assert.Equal(t, "DNS-2024-77312", *unit.OrderNumber)
+
+	// Create добавил магазин в справочник той же транзакцией.
+	shops, err := repo.GetShops(ctx, &models.GetEquipmentShopsDTO{RealmID: f.realmID})
+	require.NoError(t, err)
+	require.Len(t, shops, 1)
+	assert.Equal(t, "DNS", shops[0].Name)
+
+	// Второе сохранение с тем же названием не падает (ON CONFLICT DO NOTHING).
+	second := newEquipmentDTO(f, &f.typeID, "Мышь")
+	second.Shop = eqString("DNS")
+	_, err = repo.Create(ctx, nil, second)
+	require.NoError(t, err)
+
+	shops, err = repo.GetShops(ctx, &models.GetEquipmentShopsDTO{RealmID: f.realmID})
+	require.NoError(t, err)
+	assert.Len(t, shops, 1, "повторное название не дублируется")
+
+	// Пустой магазин справочник не трогает (Shop == nil).
+	third := newEquipmentDTO(f, &f.typeID, "Клавиатура")
+	third.Shop = eqString("")
+	_, err = repo.Create(ctx, nil, third)
+	require.NoError(t, err)
+
+	// Правка меняет реквизиты и добавляет новый магазин.
+	upd := newEquipmentDTO(f, &f.typeID, "Ноутбук из DNS")
+	upd.ID = &unit.ID
+	upd.Shop = eqString("Ситилинк")
+	upd.OrderNumber = eqString("S-42")
+	updated, err := repo.Update(ctx, nil, upd)
+	require.NoError(t, err)
+	assert.Equal(t, "Ситилинк", *updated.Shop)
+	assert.Equal(t, "S-42", *updated.OrderNumber)
+
+	shops, err = repo.GetShops(ctx, &models.GetEquipmentShopsDTO{RealmID: f.realmID})
+	require.NoError(t, err)
+	assert.Len(t, shops, 2)
+}
+
+// TestEquipmentRepo_SearchByOrderNumber проверяет, что подстрочный поиск находит
+// единицу и её комплектующие по номеру заказа. Закупка — реквизит каждой единицы,
+// поэтому по одному заказу должны находиться и родитель, и его состав; формула
+// поиска одна на плоский список (Get) и дерево (GetTree), иначе «нашлось в списке,
+// но не в дереве» — регресс.
+func TestEquipmentRepo_SearchByOrderNumber(t *testing.T) {
+	pool := itPool(t)
+	f := newEqFixture(t, pool)
+	ctx := context.Background()
+
+	repo := NewEquipmentRepo(pool, NewTransactionRepo(pool))
+
+	// Родитель и комплектующее — из одного заказа.
+	parent := newEquipmentDTO(f, &f.typeID, "Системный блок")
+	parent.OrderNumber = eqString("ORD-777")
+	parentUnit, err := repo.Create(ctx, nil, parent)
+	require.NoError(t, err)
+
+	child := newEquipmentDTO(f, &f.kitType, "Модуль памяти")
+	child.OrderNumber = eqString("ORD-777")
+	child.ParentID = &parentUnit.ID
+	_, err = repo.Create(ctx, nil, child)
+	require.NoError(t, err)
+
+	// Единица из другого заказа — в выдачу не попадает.
+	other := newEquipmentDTO(f, &f.typeID, "Ноутбук")
+	other.OrderNumber = eqString("ORD-999")
+	_, err = repo.Create(ctx, nil, other)
+	require.NoError(t, err)
+
+	search := "ORD-777"
+
+	// Плоский список: и родитель, и комплектующее.
+	items, total, err := repo.Get(ctx, &models.EquipmentFilter{RealmID: f.realmID, Search: &search, Limit: 50})
+	require.NoError(t, err)
+	names := make([]string, 0, len(items))
+	for _, item := range items {
+		names = append(names, item.Name)
+	}
+	assert.ElementsMatch(t, []string{"Системный блок", "Модуль памяти"}, names)
+	assert.Equal(t, 2, total)
+
+	// Дерево, корни: находится родитель (комплектующее — не корень, у него есть parent).
+	roots, rootTotal, err := repo.GetTree(ctx, &models.GetEquipmentTreeDTO{RealmID: f.realmID, Search: &search, Limit: 50})
+	require.NoError(t, err)
+	require.Len(t, roots, 1)
+	assert.Equal(t, "Системный блок", roots[0].Equipment.Name)
+	assert.Equal(t, 1, rootTotal)
+
+	// Дети узла с тем же поиском: находится комплектующее по номеру заказа.
+	children, _, err := repo.GetTree(ctx, &models.GetEquipmentTreeDTO{RealmID: f.realmID, ParentID: &parentUnit.ID, Search: &search})
+	require.NoError(t, err)
+	require.Len(t, children, 1)
+	assert.Equal(t, "Модуль памяти", children[0].Equipment.Name)
+
+	// Поиск, который ни с чем не совпадает по номеру заказа, но совпадает по имени,
+	// тоже работает — формула не свелась к одному полю.
+	byName := "Ноутбук"
+	onlyName, _, err := repo.Get(ctx, &models.EquipmentFilter{RealmID: f.realmID, Search: &byName})
+	require.NoError(t, err)
+	require.Len(t, onlyName, 1)
+	assert.Equal(t, "Ноутбук", onlyName[0].Name)
+}

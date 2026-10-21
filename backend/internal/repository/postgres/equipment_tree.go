@@ -42,6 +42,11 @@ func (r *EquipmentRepo) GetTree(ctx context.Context, dto *models.GetEquipmentTre
 	w := &whereBuilder{}
 	eq(w, "e.realm_id", &dto.RealmID)
 
+	// Поиск по реквизитам единицы общий для корней и детей: та же формула, что в
+	// Get (см. equipmentSearchClause), чтобы имя/серийный/магазин/номер заказа
+	// искались одинаково в обоих режимах.
+	addEquipmentSearch(w, dto.Search)
+
 	if dto.ParentID == nil {
 		// $1 — realmID (первый аргумент eq). Статус и IsKit сужают только корни:
 		// дети раскрытого узла показываются целиком (как было на клиенте).

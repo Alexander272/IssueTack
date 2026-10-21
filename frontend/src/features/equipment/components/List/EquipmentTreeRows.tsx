@@ -107,8 +107,8 @@ type ChildrenProps = {
 // Дети узла: отдельный (ленивый) уровень дерева со своим RTK-запросом, поэтому
 // инвалидация тега Equipment перерисовывает уже раскрытые ветки.
 const NodeChildren: FC<ChildrenProps> = ({ parentId, depth }) => {
-	const { mobile } = useEquipmentTree()
-	const { data, isFetching } = useGetEquipmentTreeQuery({ parentId })
+	const { mobile, search } = useEquipmentTree()
+	const { data, isFetching } = useGetEquipmentTreeQuery({ parentId, search: search || undefined })
 	const nodes = useMemo(() => sortNodes(data?.data ?? []), [data])
 
 	if (isFetching && nodes.length === 0) {

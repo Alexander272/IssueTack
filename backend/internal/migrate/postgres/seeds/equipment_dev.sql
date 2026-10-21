@@ -122,16 +122,29 @@ BEGIN
         SELECT id INTO e_desktop FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1001';
     END IF;
 
+    -- Реквизиты закупки (shop/order_number) и свободные характеристики (specs) —
+    -- плоский словарь строк: значения читаются как текст в «Технических
+    -- характеристиках» карточки, а не как числа.
+    UPDATE equipment SET shop = 'DNS', order_number = 'DNS-2024-77312',
+        specs = '{"Процессор": "Intel Core i5-10400", "ОЗУ": "16 ГБ", "Накопитель": "512 ГБ SSD"}'::jsonb
+        WHERE realm_id = r_id AND inventory_number = 'INV-1001';
+
+    -- Справочник магазинов: подсказки для поля «Магазин» (autocomplete). Значение
+    -- из единицы выше (DNS) добавлено тем же upsert'ом, что делает форма.
+    INSERT INTO equipment_shops (realm_id, name)
+    VALUES (r_id, 'DNS'), (r_id, 'Ситилинк'), (r_id, 'Ozon'), (r_id, 'Wildberries')
+    ON CONFLICT (realm_id, name) DO NOTHING;
+
     IF NOT EXISTS (SELECT 1 FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1001-01') THEN
         INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, specs, status, location, parent_id)
         VALUES (r_id, t_ram, 'Память Kingston 8GB', 'Kingston', 'KVR26N19S8/8', 'RAM-K-0001', 'INV-1001-01',
-                '{"capacityGb": 8, "type": "DDR4"}'::jsonb, 'in_use', 'Кабинет 305', e_desktop);
+                '{"Ёмкость": "8 ГБ", "Тип": "DDR4"}'::jsonb, 'in_use', 'Кабинет 305', e_desktop);
     END IF;
 
     IF NOT EXISTS (SELECT 1 FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1001-02') THEN
         INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, specs, status, location, parent_id)
         VALUES (r_id, t_ssd, 'SSD Samsung 512GB', 'Samsung', 'MZ-77E512', 'SSD-S-0001', 'INV-1001-02',
-                '{"capacityGb": 512, "type": "SATA"}'::jsonb, 'in_use', 'Кабинет 305', e_desktop);
+                '{"Ёмкость": "512 ГБ", "Интерфейс": "SATA"}'::jsonb, 'in_use', 'Кабинет 305', e_desktop);
     END IF;
 
     -- Логический комплект: ноутбук + мышь + сумка (is_kit + kit_compositions).

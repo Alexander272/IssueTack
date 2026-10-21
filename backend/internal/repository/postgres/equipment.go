@@ -30,6 +30,10 @@ type Equipment interface {
 	DeleteType(ctx context.Context, dto *models.DelEquipmentTypeDTO) error
 	CountByType(ctx context.Context, realmID, typeID uuid.UUID) (int, error)
 
+	// Справочник магазинов: варианты для поля «Магазин» и upsert нового значения.
+	GetShops(ctx context.Context, req *models.GetEquipmentShopsDTO) ([]*models.EquipmentShop, error)
+	EnsureShop(ctx context.Context, tx Tx, realmID uuid.UUID, name string) error
+
 	// Единицы
 	Get(ctx context.Context, filter *models.EquipmentFilter) ([]*models.Equipment, int, error)
 	GetByID(ctx context.Context, req *models.GetEquipmentByIdDTO) (*models.Equipment, error)
@@ -114,7 +118,7 @@ type Equipment interface {
 func equipmentSelectBase() string {
 	return fmt.Sprintf(`SELECT 
 			e.id, e.realm_id, e.type_id, COALESCE(et.name, ''), COALESCE(et.kind::text, ''), COALESCE(et.icon, ''), e.name, e.vendor, e.model,
-			e.serial_number, e.inventory_number, e.specs, e.status, e.parent_id, e.site_id, s.name,
+			e.serial_number, e.inventory_number, e.specs, e.shop, e.order_number, e.status, e.parent_id, e.site_id, s.name,
 			e.holder_user_id, e.holder_name,
 			%s,
 			(SELECT a.return_due_at FROM %s a
@@ -146,7 +150,7 @@ func scanEquipmentRow(row rowScanner) (*models.Equipment, int, error) {
 	if err := row.Scan(
 		&item.ID, &item.RealmID, &item.TypeID, &item.TypeName, &item.TypeKind, &item.TypeIcon,
 		&item.Name, &item.Vendor, &item.Model,
-		&item.SerialNumber, &item.InventoryNumber, &item.Specs, &item.Status,
+		&item.SerialNumber, &item.InventoryNumber, &item.Specs, &item.Shop, &item.OrderNumber, &item.Status,
 		&item.ParentID, &item.SiteID, &siteName,
 		&item.HolderUserID, &item.HolderName, &holderFullName,
 		&item.ReturnDueAt,
@@ -165,6 +169,23 @@ func scanEquipmentRow(row rowScanner) (*models.Equipment, int, error) {
 		item.Specs = []byte("{}")
 	}
 	return item, total, nil
+}
+
+// addEquipmentSearch добавляет подстрочный поиск по реквизитам единицы. Одна
+// формула на плоский список (Get) и дерево (GetTree): иначе «найти по номеру
+// заказа» работало бы в одном режиме и не работало в другом. Пустая строка —
+// условие не добавляется.
+func addEquipmentSearch(w *whereBuilder, search *string) {
+	if search == nil || *search == "" {
+		return
+	}
+	pattern := "%" + *search + "%"
+	w.idx++
+	w.add(fmt.Sprintf(`(e.name ILIKE $%d OR e.vendor ILIKE $%d OR e.model ILIKE $%d
+		OR e.serial_number ILIKE $%d OR e.inventory_number ILIKE $%d OR e.order_number ILIKE $%d
+		OR e.shop ILIKE $%d)`, w.idx, w.idx+1, w.idx+2, w.idx+3, w.idx+4, w.idx+5, w.idx+6))
+	w.args = append(w.args, pattern, pattern, pattern, pattern, pattern, pattern, pattern)
+	w.idx += 6
 }
 
 func (r *EquipmentRepo) Get(ctx context.Context, filter *models.EquipmentFilter) ([]*models.Equipment, int, error) {
@@ -195,12 +216,7 @@ func (r *EquipmentRepo) Get(ctx context.Context, filter *models.EquipmentFilter)
 	like("e.inventory_number", filter.Inventory)
 
 	if filter.Search != nil && *filter.Search != "" {
-		pattern := "%" + *filter.Search + "%"
-		w.idx++
-		w.add(fmt.Sprintf(`(e.name ILIKE $%d OR e.vendor ILIKE $%d OR e.model ILIKE $%d
-			OR e.serial_number ILIKE $%d OR e.inventory_number ILIKE $%d)`, w.idx, w.idx+1, w.idx+2, w.idx+3, w.idx+4))
-		w.args = append(w.args, pattern, pattern, pattern, pattern, pattern)
-		w.idx += 4
+		addEquipmentSearch(w, filter.Search)
 	}
 
 	query := equipmentSelectBase()
@@ -293,18 +309,27 @@ func (r *EquipmentRepo) Create(ctx context.Context, tx Tx, dto *models.Equipment
 		typeID = dto.TypeID
 	}
 	query := fmt.Sprintf(`INSERT INTO %s (id, realm_id, type_id, name, vendor, model, serial_number, inventory_number,
-			specs, status, parent_id, site_id, holder_user_id, holder_name, location, purchase_date, warranty_until, notes, created_by, is_kit)
-		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), $9::jsonb, $10, $11, $12, $13, NULLIF($14, ''), NULLIF($15, ''), $16::date, $17::date, $18, $19, $20)`,
+			specs, shop, order_number, status, parent_id, site_id, holder_user_id, holder_name, location, purchase_date, warranty_until, notes, created_by, is_kit)
+		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), $9::jsonb, NULLIF($10, ''), NULLIF($11, ''), $12, $13, $14, $15, NULLIF($16, ''), NULLIF($17, ''), $18::date, $19::date, $20, $21, $22)`,
 		Tables.Equipment)
 
 	_, err := r.getExec(tx).Exec(ctx, query,
 		id, dto.RealmID, typeID, dto.Name, dto.Vendor, dto.Model,
-		dto.SerialNumber, dto.InventoryNumber, specs, dto.Status, dto.ParentID, dto.SiteID,
+		dto.SerialNumber, dto.InventoryNumber, specs, dto.Shop, dto.OrderNumber, dto.Status, dto.ParentID, dto.SiteID,
 		dto.HolderUserID, dto.HolderName, dto.Location, dto.PurchaseDate, dto.WarrantyUntil,
 		dto.Notes, dto.CreatedBy, dto.IsKit)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
+
+	// Новое название магазина из freeSolo-поля попадает в справочник подсказок —
+	// в той же транзакции, чтобы список и единица не расходились.
+	if dto.Shop != nil {
+		if err := r.EnsureShop(ctx, tx, dto.RealmID, *dto.Shop); err != nil {
+			return nil, err
+		}
+	}
+
 	return r.getByID(ctx, tx, &models.GetEquipmentByIdDTO{ID: id, RealmID: dto.RealmID})
 }
 
@@ -320,13 +345,13 @@ func (r *EquipmentRepo) Update(ctx context.Context, tx Tx, dto *models.Equipment
 		typeID = dto.TypeID
 	}
 	query := fmt.Sprintf(`UPDATE %s SET type_id=$2, name=$3, vendor=$4, model=$5, serial_number=$6, inventory_number=$7,
-			specs=$8::jsonb, status=$9, parent_id=$10, site_id=$11, holder_user_id=$12, holder_name=$13, location=$14,
-			purchase_date=$15::date, warranty_until=$16::date, notes=$17, updated_at=NOW()
-		WHERE id=$1 AND realm_id=$18`, Tables.Equipment)
+			specs=$8::jsonb, shop=NULLIF($9, ''), order_number=NULLIF($10, ''), status=$11, parent_id=$12, site_id=$13, holder_user_id=$14, holder_name=$15, location=$16,
+			purchase_date=$17::date, warranty_until=$18::date, notes=$19, updated_at=NOW()
+		WHERE id=$1 AND realm_id=$20`, Tables.Equipment)
 
 	res, err := r.getExec(tx).Exec(ctx, query,
 		dto.ID, typeID, dto.Name, dto.Vendor, dto.Model,
-		dto.SerialNumber, dto.InventoryNumber, specs, dto.Status, dto.ParentID, dto.SiteID,
+		dto.SerialNumber, dto.InventoryNumber, specs, dto.Shop, dto.OrderNumber, dto.Status, dto.ParentID, dto.SiteID,
 		dto.HolderUserID, dto.HolderName, dto.Location, dto.PurchaseDate, dto.WarrantyUntil,
 		dto.Notes, dto.RealmID)
 	if err != nil {
@@ -334,6 +359,12 @@ func (r *EquipmentRepo) Update(ctx context.Context, tx Tx, dto *models.Equipment
 	}
 	if tag := res.RowsAffected(); tag == 0 {
 		return nil, models.ErrNotFound
+	}
+	// Магазин мог быть изменён только в этой форме — добавляем его в справочник.
+	if dto.Shop != nil {
+		if err := r.EnsureShop(ctx, tx, dto.RealmID, *dto.Shop); err != nil {
+			return nil, err
+		}
 	}
 	return r.getByID(ctx, tx, &models.GetEquipmentByIdDTO{ID: *dto.ID, RealmID: dto.RealmID})
 }

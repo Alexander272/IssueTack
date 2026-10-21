@@ -159,6 +159,8 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 				model: unit.model,
 				serialNumber: unit.serialNumber,
 				specs: unit.specs,
+				shop: unit.shop,
+				orderNumber: unit.orderNumber,
 				status: unit.status,
 				purchaseDate: unit.purchaseDate,
 				warrantyUntil: unit.warrantyUntil,

@@ -87,6 +87,10 @@ type Equipment interface {
 	// DeleteType удаляет тип оборудования.
 	DeleteType(ctx context.Context, dto *models.DelEquipmentTypeDTO) error
 
+	// GetShops возвращает справочник магазинов реалма — варианты для поля «Магазин».
+	// Новое значение из freeSolo-поля добавляется при сохранении единицы.
+	GetShops(ctx context.Context, req *models.GetEquipmentShopsDTO) ([]*models.EquipmentShop, error)
+
 	// Get возвращает список единиц оборудования реалма с фильтрами и пагинацией.
 	Get(ctx context.Context, filter *models.EquipmentFilter) ([]*models.Equipment, int, error)
 	// GetByID возвращает единицу оборудования.

@@ -18,6 +18,7 @@ import type {
 	IEquipmentKitTemplate,
 	IEquipmentKitTemplateDTO,
 	IEquipmentList,
+	IEquipmentShop,
 	IEquipmentStats,
 	IEquipmentTreeArgs,
 	IEquipmentTreeList,
@@ -523,6 +524,22 @@ const equipmentApiSlice = apiSlice.injectEndpoints({	overrideExisting: false,
 			},
 		}),
 
+		getAllEquipmentShops: builder.query<{ data: IEquipmentShop[] }, void>({
+			query: () => ({
+				url: API.equipment.shops,
+				method: 'GET',
+			}),
+			providesTags: [{ type: 'EquipmentTypes', id: 'ALL' }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
 		getEquipmentType: builder.query<IEquipmentType, string>({
 			query: id => ({
 				url: API.equipment.typeById(id),
@@ -700,6 +717,7 @@ export const {
 	useLazyGetEquipmentActSignedFileQuery,
 	useUploadEquipmentActSignedMutation,
 	useGetAllEquipmentTypesQuery,
+	useGetAllEquipmentShopsQuery,
 	useGetEquipmentTypeQuery,
 	useCreateEquipmentTypeMutation,
 	useUpdateEquipmentTypeMutation,

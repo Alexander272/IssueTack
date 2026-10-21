@@ -43,7 +43,7 @@ export const EquipmentList: FC<Props> = ({ onOpen }) => {
 	const isKit = typeFilter === 'kit' ? true : typeFilter === 'unit' ? false : undefined
 
 	const rootsQuery = useGetEquipmentTreeQuery(
-		{ status: statusFilter, isKit, limit: PAGE_SIZE, offset: page * PAGE_SIZE },
+		{ status: statusFilter, isKit, search: query || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE },
 		{ skip: !treeMode },
 	)
 	const flatQuery = useGetAllEquipmentQuery(
@@ -97,8 +97,8 @@ export const EquipmentList: FC<Props> = ({ onOpen }) => {
 	// Строки дерева читают раскрытие/открытие из контекста: протаскивать их через
 	// рекурсию TreeNode/NodeChildren не нужно.
 	const treeState = useMemo(
-		() => ({ tree: treeMode, mobile, expanded, toggle, open: onOpen }),
-		[treeMode, mobile, expanded, toggle, onOpen],
+		() => ({ tree: treeMode, mobile, expanded, toggle, open: onOpen, search: query }),
+		[treeMode, mobile, expanded, toggle, onOpen, query],
 	)
 
 	return (

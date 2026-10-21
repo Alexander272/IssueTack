@@ -46,6 +46,8 @@ const toPayload = (child: IEquipment, parentId: string | null): IEquipmentDTO =>
 	serialNumber: child.serialNumber,
 	inventoryNumber: child.inventoryNumber,
 	specs: child.specs,
+	shop: child.shop,
+	orderNumber: child.orderNumber,
 	status: child.status,
 	parentId,
 	siteId: child.siteId,

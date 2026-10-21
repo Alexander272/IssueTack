@@ -152,6 +152,20 @@ type DelEquipmentTypeDTO struct {
 	RealmID uuid.UUID `json:"realmId" db:"realm_id"`
 }
 
+// EquipmentShop — магазин из справочника реалма. Источник подсказок для поля
+// «Магазин»: единица хранит название текстом (equipment.shop), справочник лишь
+// даёт варианты, чтобы одно и то же не вводили заново.
+type EquipmentShop struct {
+	ID        uuid.UUID `json:"id" db:"id"`
+	RealmID   uuid.UUID `json:"realmId" db:"realm_id"`
+	Name      string    `json:"name" db:"name"`
+	CreatedAt time.Time `json:"createdAt" db:"created_at"`
+}
+
+type GetEquipmentShopsDTO struct {
+	RealmID uuid.UUID `json:"realmId" db:"realm_id"`
+}
+
 // Equipment — единица оборудования (или компонент комплекта).
 type Equipment struct {
 	ID              uuid.UUID         `json:"id" db:"id"`
@@ -166,13 +180,17 @@ type Equipment struct {
 	SerialNumber    *string           `json:"serialNumber" db:"serial_number"`
 	InventoryNumber *string           `json:"inventoryNumber" db:"inventory_number"`
 	Specs           json.RawMessage   `json:"specs" db:"specs"`
-	Status          EquipmentStatus   `json:"status" db:"status"`
-	ParentID        *uuid.UUID        `json:"parentId" db:"parent_id"`
-	SiteID          *uuid.UUID        `json:"siteId" db:"site_id"`
-	SiteName        string            `json:"siteName" db:"site_name"`
-	HolderUserID    *uuid.UUID        `json:"holderUserId" db:"holder_user_id"`
-	HolderName      *string           `json:"holderName" db:"holder_name"`
-	HolderFullName  string            `json:"holderFullName" db:"holder_user_full_name"`
+	// Shop/OrderNumber — где и по какому заказу куплена единица. Реквизиты
+	// закупки, отдельные колонки (см. миграцию equipment_shop_order).
+	Shop           *string         `json:"shop" db:"shop"`
+	OrderNumber    *string         `json:"orderNumber" db:"order_number"`
+	Status         EquipmentStatus `json:"status" db:"status"`
+	ParentID       *uuid.UUID      `json:"parentId" db:"parent_id"`
+	SiteID         *uuid.UUID      `json:"siteId" db:"site_id"`
+	SiteName       string          `json:"siteName" db:"site_name"`
+	HolderUserID   *uuid.UUID      `json:"holderUserId" db:"holder_user_id"`
+	HolderName     *string         `json:"holderName" db:"holder_name"`
+	HolderFullName string          `json:"holderFullName" db:"holder_user_full_name"`
 	// ReturnDueAt — срок возврата текущей (открытой) выдачи. nil — держателя нет
 	// или срок не задавали. Нужен карточке, чтобы показать «просрочен возврат».
 	ReturnDueAt   *time.Time `json:"returnDueAt" db:"return_due_at"`
@@ -237,8 +255,12 @@ type GetEquipmentTreeDTO struct {
 	// IncludeWrittenOff — как в EquipmentFilter: списанное скрыто, пока флаг не
 	// выставлен (или пока явно не выбран статус written_off).
 	IncludeWrittenOff bool `form:"includeWrittenOff" json:"includeWrittenOff"`
-	Limit             int  `form:"limit" json:"limit"`
-	Offset            int  `form:"offset" json:"offset"`
+	// Search — подстрочный поиск по реквизитам единицы (имя, производитель, модель,
+	// серийный/инвентарный номер, магазин, номер заказа). В дереве сужает набор
+	// узлов уровня: на корнях ищет среди корней, у детей — среди детей узла.
+	Search *string `form:"search" json:"search"`
+	Limit  int     `form:"limit" json:"limit"`
+	Offset int     `form:"offset" json:"offset"`
 }
 
 // EquipmentStats — счётчики единиц реалма для подписи в шапке страницы.
@@ -269,6 +291,8 @@ type EquipmentDTO struct {
 	SerialNumber    *string         `json:"serialNumber" db:"serial_number"`
 	InventoryNumber *string         `json:"inventoryNumber" db:"inventory_number"`
 	Specs           json.RawMessage `json:"specs" db:"specs"`
+	Shop            *string         `json:"shop" db:"shop"`
+	OrderNumber     *string         `json:"orderNumber" db:"order_number"`
 	Status          EquipmentStatus `json:"status" db:"status" binding:"required,enum"`
 	ParentID        *uuid.UUID      `json:"parentId" db:"parent_id"`
 	SiteID          *uuid.UUID      `json:"siteId" db:"site_id"`

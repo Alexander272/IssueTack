@@ -39,6 +39,16 @@ export interface IEquipmentTypeDTO {
 	sortOrder: number
 }
 
+// IEquipmentShop — магазин из справочника реалма: источник подсказок для поля
+// «Магазин» (autocomplete). Единица хранит название текстом, справочник лишь
+// даёт варианты, чтобы одно и то же не вводили заново.
+export interface IEquipmentShop {
+	id: string
+	realmId: string
+	name: string
+	createdAt: string
+}
+
 export type EquipmentStatus = 'in_stock' | 'in_use' | 'repair' | 'defective' | 'reserved' | 'written_off'
 
 const EQUIPMENT_STATUS_MAP: Record<EquipmentStatus, { label: string; color: string }> = {
@@ -88,7 +98,12 @@ export interface IEquipment {
 	model: string
 	serialNumber: string | null
 	inventoryNumber: string | null
-	specs: Record<string, unknown>
+	// specs — свободные характеристики единицы: плоский словарь строк
+	// (ключ — название характеристики). Правится списком в форме.
+	specs: Record<string, string>
+	// shop/orderNumber — где и по какому заказу куплена единица.
+	shop: string | null
+	orderNumber: string | null
 	status: EquipmentStatus
 	parentId: string | null
 	siteId: string | null
@@ -121,7 +136,9 @@ export interface IEquipmentDTO {
 	model?: string
 	serialNumber?: string | null
 	inventoryNumber?: string | null
-	specs?: Record<string, unknown>
+	specs?: Record<string, string>
+	shop?: string | null
+	orderNumber?: string | null
 	status: EquipmentStatus
 	parentId?: string | null
 	siteId?: string | null
@@ -189,6 +206,10 @@ export interface IEquipmentTreeArgs {
 	parentId?: string
 	status?: EquipmentStatus
 	isKit?: boolean
+	// search — подстрочный поиск по реквизитам единицы (имя, серийный/инвентарный
+	// номер, магазин, номер заказа). В дереве сужает узлы уровня: на корнях — корни,
+	// у детей — состав узла.
+	search?: string
 	limit?: number
 	offset?: number
 }

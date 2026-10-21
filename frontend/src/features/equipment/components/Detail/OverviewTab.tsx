@@ -25,6 +25,8 @@ const fmtDate = (d: string | null) => (d ? new Date(`${d}T00:00:00`).toLocaleDat
 // Характеристики — плоский список пар; артикулы показываем моноширинной плашкой.
 // Дат покупки/гарантии у комплекта нет: их нет ни в форме создания, ни в форме
 // правки, поэтому в карточке они не показываются (сами колонки в БД не трогаем).
+// После штатных полей идут свободные характеристики из specs — их заводят в
+// форме списком пар; ключ становится подписью, значение — строкой справа.
 const specsOf = (unit: IEquipment) => [
 	{ label: 'Производитель', value: unit.vendor || '—' },
 	{ label: 'Модель', value: unit.model || '—' },
@@ -32,12 +34,15 @@ const specsOf = (unit: IEquipment) => [
 	{ label: 'Инвентарный номер', value: unit.inventoryNumber ?? '—', mono: true },
 	{ label: 'Площадка', value: unit.siteName || '—' },
 	{ label: 'Локация', value: unit.location ?? '—' },
+	{ label: 'Магазин', value: unit.shop || '—' },
+	{ label: 'Номер заказа', value: unit.orderNumber ?? '—', mono: true },
 	...(unit.isKit
 		? []
 		: [
 				{ label: 'Дата покупки', value: fmtDate(unit.purchaseDate) },
 				{ label: 'Гарантия до', value: fmtDate(unit.warrantyUntil) },
 			]),
+	...Object.entries(unit.specs ?? {}).map(([label, value]) => ({ label, value: String(value ?? '') || '—' })),
 ]
 
 type Props = {

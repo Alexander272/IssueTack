@@ -1,5 +1,6 @@
 import { useState, type FC, type ReactNode } from 'react'
 import {
+	Autocomplete,
 	Box,
 	Button,
 	Dialog,
@@ -18,7 +19,7 @@ import {
 import { Controller, useForm } from 'react-hook-form'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import dayjs from 'dayjs'
-import { CheckIcon, Trash2Icon, WarehouseIcon, XIcon } from 'lucide-mui'
+import { CheckIcon, ChevronDownIcon, Trash2Icon, WarehouseIcon, XIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
@@ -28,12 +29,15 @@ import type { IEquipment, IEquipmentDTO } from '../../types/equipment'
 import {
 	useCreateEquipmentMutation,
 	useDeleteEquipmentMutation,
+	useGetAllEquipmentShopsQuery,
 	useGetAllEquipmentTypesQuery,
 	useUpdateEquipmentMutation,
 } from '../../equipmentApiSlice'
 import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
 import { Field } from './UnitForm/Field'
 import { inputProps } from './UnitForm/consts'
+import { SpecsEditor } from './UnitForm/SpecsEditor'
+import { pairsToSpecs, specsToPairs, type ISpecPair } from './UnitForm/specs'
 import { PermRules } from '@/features/access/constants/permissions'
 import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
 
@@ -47,10 +51,11 @@ type Props = {
 }
 
 // Значения формы: при редактировании — из единицы, при создании — пустые.
-// Скрытые поля (vendor, model, specs, parentId, holderUserId, holderName,
-// isKit) по-прежнему заполняются из единицы и уходят в payload — правка не
-// должна молча стирать их, даже если соответствующих инпутов в форме нет.
-// В частности, без specs репозиторный UPDATE сбросил бы характеристики в {}.
+// Скрытые поля (vendor, model, parentId, holderUserId, holderName, isKit)
+// по-прежнему заполняются из единицы и уходят в payload — правка не должна
+// молча стирать их, даже если соответствующих инпутов в форме нет.
+// Характеристики (specs) правятся списком пар, поэтому в форме живут массивом
+// (см. SpecsEditor); в объект их собирает saveHandler при отправке.
 const toDefault = (unit?: IEquipment | null): IEquipmentDTO => ({
 	id: unit?.id,
 	typeId: unit?.typeId ?? '',
@@ -59,8 +64,9 @@ const toDefault = (unit?: IEquipment | null): IEquipmentDTO => ({
 	model: unit?.model ?? '',
 	serialNumber: unit?.serialNumber ?? '',
 	inventoryNumber: unit?.inventoryNumber ?? '',
-	specs: unit?.specs,
 	status: unit?.status ?? 'in_stock',
+	shop: unit?.shop ?? '',
+	orderNumber: unit?.orderNumber ?? '',
 	parentId: unit?.parentId ?? null,
 	siteId: unit?.siteId ?? null,
 	holderUserId: unit?.holderUserId ?? null,
@@ -94,6 +100,8 @@ const SectionLabel: FC<{ children: ReactNode }> = ({ children }) => (
 // между секциями — разделители. «Комплект», «Часть комплекта», «Производитель»
 // и «Модель» из формы убраны: комплекты ведутся в своей модалке, а имя/модель
 // живут в наименовании. Их значения по-прежнему сохраняются молча.
+// В «Дополнительно» — реквизиты закупки (магазин, номер заказа) и свободные
+// характеристики (SpecsEditor, список пар).
 // Комплекты сюда не попадают: создание и правка комплекта — EquipmentKitDialog
 // (одна и та же форма в обоих режимах), DetailHeader выбирает диалог по isKit.
 export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) => {
@@ -104,8 +112,12 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 
 	const { data: typesData } = useGetAllEquipmentTypesQuery()
 	const { data: sitesData } = useGetAllSitesQuery()
+	const { data: shopsData } = useGetAllEquipmentShopsQuery()
 	const types = typesData?.data ?? []
 	const sites = sitesData?.data ?? []
+	// Подсказки для поля «Магазин»: справочник реалма, а не уникальные значения
+	// из единиц — список переживает удаление единицы и не «загрязняется».
+	const shops = (shopsData?.data ?? []).map(s => s.name)
 
 	const canDelete = useCheckPermissions({ anyOf: [PermRules.Equipment.Delete] })
 	const [deleteOpen, setDeleteOpen] = useState(false)
@@ -119,17 +131,25 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 	})
 	const { control, handleSubmit, formState } = methods
 
+	// Характеристики держим вне RHF: список пар — динамическая структура, и
+	// объект specs не пережил бы ввод пустого ключа (две строки с одним ключом).
+	const [specsPairs, setSpecsPairs] = useState<ISpecPair[]>(() => specsToPairs(unit?.specs))
+
 	const isLoading = isCreating || isUpdating || isDeleting
 
 	const saveHandler = handleSubmit(async (form: IEquipmentDTO) => {
 		const payload: IEquipmentDTO = {
 			...form,
+			// specs собираем из пар: пустые строки отбрасываются, ключи подрезаны.
+			specs: pairsToSpecs(specsPairs),
 			// Не шлём пустую строку вместо UUID: тип обязателен у единицы,
 			// а форма комплект сюда больше не попадает.
 			typeId: form.typeId || undefined,
 			serialNumber: form.serialNumber || null,
 			inventoryNumber: form.inventoryNumber || null,
 			holderName: form.holderName || null,
+			shop: form.shop || null,
+			orderNumber: form.orderNumber || null,
 			location: form.location || null,
 			purchaseDate: form.purchaseDate || null,
 			warrantyUntil: form.warrantyUntil || null,
@@ -361,10 +381,52 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 
 						<Divider />
 
-						{/* Дополнительно: даты, примечание и (на правке) статус */}
+						{/* Дополнительно: закупка, даты, характеристики и примечание */}
 						<Box>
 							<SectionLabel>Дополнительно</SectionLabel>
 							<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+								<Box sx={grid}>
+									<Field label='Магазин'>
+										<Controller
+											control={control}
+											name='shop'
+											render={({ field }) => (
+												/* freeSolo: магазин выбирают из справочника или
+												   вписывают новое название руками. Новое значение
+												   уйдёт в справочник тем же сохранением
+												   (EnsureShop на бэкенде в транзакции единицы). */
+												<Autocomplete
+													freeSolo
+													options={shops}
+													value={field.value || null}
+													onChange={(_e, value) => field.onChange(value ?? '')}
+													// Стрелка-маркер списка: у freeSolo можно и вписать
+													// руками, поэтому индикатор не MUI-шный по умолчанию,
+													// а явный — иначе поле выглядит как обычный ввод.
+													popupIcon={<ChevronDownIcon sx={{ fontSize: 18, color: 'text.secondary' }} />}
+													renderInput={params => (
+														<TextField
+															{...params}
+															{...inputProps}
+															placeholder='Выберите или укажите магазин'
+														/>
+													)}
+												/>
+											)}
+										/>
+									</Field>
+
+									<Field label='Номер заказа'>
+										<Controller
+											control={control}
+											name='orderNumber'
+											render={({ field }) => (
+												<TextField {...field} {...inputProps} placeholder='Номер заказа/накладной' />
+											)}
+										/>
+									</Field>
+								</Box>
+
 								<Box sx={grid}>
 									<Field label='Дата покупки'>
 										<Controller
@@ -403,6 +465,10 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 								    Поле «Статус» убрано вместе с селектом. Сохранённое значение
 								    всё равно уходит в payload (из toDefault), поэтому правка
 								    статус не сбрасывает. */}
+
+								<Field label='Характеристики'>
+									<SpecsEditor pairs={specsPairs} onChange={setSpecsPairs} />
+								</Field>
 
 								<Field label='Примечание'>
 									<Controller
