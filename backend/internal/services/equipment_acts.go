@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
-	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
+	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/goccy/go-json"
 	"github.com/google/uuid"
@@ -50,7 +50,7 @@ func (s *EquipmentService) CreateAct(ctx context.Context, dto *models.EquipmentA
 	}
 
 	var actID uuid.UUID
-	err := s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+	err := s.tm.WithinTransaction(ctx, func(tx repository.Tx) error {
 		act, err := s.buildAct(ctx, tx, dto, affected)
 		if err != nil {
 			return err
@@ -65,13 +65,13 @@ func (s *EquipmentService) CreateAct(ctx context.Context, dto *models.EquipmentA
 }
 
 // createActTx формирует акт выдачи в существующей транзакции.
-func (s *EquipmentService) createActTx(ctx context.Context, tx postgres.Tx, dto *models.EquipmentActDTO, affected []*models.Equipment) error {
+func (s *EquipmentService) createActTx(ctx context.Context, tx repository.Tx, dto *models.EquipmentActDTO, affected []*models.Equipment) error {
 	_, err := s.buildAct(ctx, tx, dto, affected)
 	return err
 }
 
 // buildAct собирает и сохраняет акт со снимком состава.
-func (s *EquipmentService) buildAct(ctx context.Context, tx postgres.Tx, dto *models.EquipmentActDTO, affected []*models.Equipment) (*models.EquipmentAct, error) {
+func (s *EquipmentService) buildAct(ctx context.Context, tx repository.Tx, dto *models.EquipmentActDTO, affected []*models.Equipment) (*models.EquipmentAct, error) {
 	content, err := actContent(affected)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build act content. error: %w", err)
@@ -171,7 +171,7 @@ func (s *EquipmentService) SignAct(ctx context.Context, dto *models.SignEquipmen
 	}
 	dto.FilePath = absPath
 
-	if err := s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+	if err := s.tm.WithinTransaction(ctx, func(tx repository.Tx) error {
 		return s.repo.SetActSignedFile(ctx, tx, dto)
 	}); err != nil {
 		// Записи в БД нет — оставленный файл был бы сиротой.

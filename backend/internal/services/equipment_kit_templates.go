@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
-	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
+	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/google/uuid"
 )
 
@@ -31,7 +31,7 @@ func (s *EquipmentService) GetKitTemplateByID(ctx context.Context, req *models.G
 func (s *EquipmentService) CreateKitTemplate(ctx context.Context, dto *models.EquipmentKitTemplateDTO) error {
 	normalizeKitTemplateDTO(dto)
 
-	return s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+	return s.tm.WithinTransaction(ctx, func(tx repository.Tx) error {
 		if err := s.repo.CreateKitTemplate(ctx, tx, dto); err != nil {
 			return fmt.Errorf("failed to create kit template. error: %w", err)
 		}
@@ -46,7 +46,7 @@ func (s *EquipmentService) UpdateKitTemplate(ctx context.Context, dto *models.Eq
 	}
 	normalizeKitTemplateDTO(dto)
 
-	return s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+	return s.tm.WithinTransaction(ctx, func(tx repository.Tx) error {
 		if err := s.repo.UpdateKitTemplate(ctx, tx, dto); err != nil {
 			return fmt.Errorf("failed to update kit template. error: %w", err)
 		}

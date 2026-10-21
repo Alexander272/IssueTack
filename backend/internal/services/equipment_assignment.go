@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
-	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
+	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/goccy/go-json"
 	"github.com/google/uuid"
 )
@@ -78,7 +78,7 @@ func (s *EquipmentService) Assign(ctx context.Context, dto *models.AssignEquipme
 		}
 	}
 
-	err = s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+	err = s.tm.WithinTransaction(ctx, func(tx repository.Tx) error {
 		opID := uuid.New()
 		// Реальное время переоформления: им закрывается прежняя открытая выдача.
 		// Новая запись получает assignedAt (момент из формы). При переоформлении
@@ -213,7 +213,7 @@ func (s *EquipmentService) Unassign(ctx context.Context, dto *models.UnassignEqu
 		return err
 	}
 
-	err = s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+	err = s.tm.WithinTransaction(ctx, func(tx repository.Tx) error {
 		opID := uuid.New()
 		now := time.Now()
 		actorID := actorID(dto.Actor)
@@ -305,7 +305,7 @@ func (s *EquipmentService) ChangeStatus(ctx context.Context, dto *models.ChangeS
 		return nil, models.ErrEquipmentWrittenOff
 	}
 
-	err = s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+	err = s.tm.WithinTransaction(ctx, func(tx repository.Tx) error {
 		if err := s.repo.SetStatus(ctx, tx, dto.RealmID, dto.ID, dto.Status); err != nil {
 			return fmt.Errorf("failed to set status. error: %w", err)
 		}
@@ -362,7 +362,7 @@ func (s *EquipmentService) AddDefect(ctx context.Context, dto *models.AddDefectD
 		}
 	}
 
-	err = s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+	err = s.tm.WithinTransaction(ctx, func(tx repository.Tx) error {
 		if err := s.repo.SetStatus(ctx, tx, dto.RealmID, dto.ID, models.EquipmentStatusDefective); err != nil {
 			return fmt.Errorf("failed to set status. error: %w", err)
 		}
@@ -395,7 +395,7 @@ func (s *EquipmentService) WriteOff(ctx context.Context, dto *models.WriteOffEqu
 		return nil, err
 	}
 
-	err = s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+	err = s.tm.WithinTransaction(ctx, func(tx repository.Tx) error {
 		if err := s.repo.SetStatus(ctx, tx, dto.RealmID, dto.ID, models.EquipmentStatusWrittenOff); err != nil {
 			return fmt.Errorf("failed to set status. error: %w", err)
 		}

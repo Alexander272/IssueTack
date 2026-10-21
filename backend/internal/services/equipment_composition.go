@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
-	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
+	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/goccy/go-json"
 	"github.com/google/uuid"
 )
@@ -54,7 +54,7 @@ func (s *EquipmentService) AddComponents(ctx context.Context, dto *models.KitCom
 		return models.ErrInvalidInput
 	}
 
-	return s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+	return s.tm.WithinTransaction(ctx, func(tx repository.Tx) error {
 		return s.openComponents(ctx, tx, &models.OpenComponentsDTO{
 			RealmID: dto.RealmID, KitID: dto.ID, Components: dto.Components,
 			Reason: dto.Reason, Actor: dto.Actor,
@@ -65,7 +65,7 @@ func (s *EquipmentService) AddComponents(ctx context.Context, dto *models.KitCom
 // openComponents открывает членство компонентов в комплекте и пишет событие
 // журнала на каждый — в переданной транзакции. Один набор правил на два входа:
 // AddComponents и Create (стартовый состав нового комплекта).
-func (s *EquipmentService) openComponents(ctx context.Context, tx postgres.Tx, dto *models.OpenComponentsDTO) error {
+func (s *EquipmentService) openComponents(ctx context.Context, tx repository.Tx, dto *models.OpenComponentsDTO) error {
 	opID := uuid.New()
 	now := time.Now()
 	actor := actorID(dto.Actor)
@@ -126,7 +126,7 @@ func (s *EquipmentService) RemoveComponents(ctx context.Context, dto *models.Kit
 		return models.ErrInvalidInput
 	}
 
-	return s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+	return s.tm.WithinTransaction(ctx, func(tx repository.Tx) error {
 		opID := uuid.New()
 		actorID := actorID(dto.Actor)
 

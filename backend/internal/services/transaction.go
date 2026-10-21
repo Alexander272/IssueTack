@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
-	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 )
 
@@ -22,11 +21,11 @@ func NewTransactionManager(repo repository.Transaction) *TransactionManagerServi
 // TransactionManager — интерфейс выполнения функции внутри транзакции БД.
 type TransactionManager interface {
 	// WithinTransaction выполняет функцию внутри транзакции.
-	WithinTransaction(ctx context.Context, fn func(tx postgres.Tx) error) error
+	WithinTransaction(ctx context.Context, fn func(tx repository.Tx) error) error
 }
 
 // WithinTransaction выполняет функцию внутри транзакции, откатывая её при ошибке или панике и коммитя при успехе.
-func (tm *TransactionManagerService) WithinTransaction(ctx context.Context, fn func(tx postgres.Tx) error) error {
+func (tm *TransactionManagerService) WithinTransaction(ctx context.Context, fn func(tx repository.Tx) error) error {
 	tx, err := tm.repo.BeginTx(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)

@@ -8,7 +8,6 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/config"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
-	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
 	"github.com/google/uuid"
 )
 
@@ -209,9 +208,37 @@ func (s *EquipmentService) GetStats(ctx context.Context, realmID uuid.UUID) (*mo
 // можно сразу передать стартовый состав — он открывается в той же транзакции,
 // поэтому «комплект без состава» при частичном сбое не остаётся.
 func (s *EquipmentService) Create(ctx context.Context, dto *models.CreateEquipmentDTO) (*models.Equipment, error) {
-	eq := &dto.EquipmentDTO
-	normalizeEquipmentDTO(eq)
-	deriveHolderStatus(eq)
+	eq, err := s.prepareCreate(ctx, dto)
+	if err != nil {
+		return nil, err
+	}
+
+	var data *models.Equipment
+	err = s.tm.WithinTransaction(ctx, func(tx repository.Tx) error {
+		created, err := s.createInTx(ctx, tx, eq, dto.Components)
+		if err != nil {
+			return err
+		}
+		data = created
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// prepareCreate готовит единицу к вставке: подчищает опциональные поля, выводит
+// статус из держателя, проверяет тип, состав и родителя.
+//
+// Работает с копией DTO: тело запроса принадлежит вызывающему, и сервисные
+// правки (нормализованные строки, выведенный статус, сгенерированный номер)
+// не должны в него попадать — иначе повторное использование того же DTO вело бы
+// себя иначе, чем ожидает вызывающий.
+func (s *EquipmentService) prepareCreate(ctx context.Context, dto *models.CreateEquipmentDTO) (*models.EquipmentDTO, error) {
+	eq := dto.EquipmentDTO
+	normalizeEquipmentDTO(&eq)
+	deriveHolderStatus(&eq)
 
 	// У комплекта типа нет: присланный игнорируем. Единице тип обязателен —
 	// колонка nullable только потому, что одно поле обслуживает оба случая.
@@ -225,46 +252,49 @@ func (s *EquipmentService) Create(ctx context.Context, dto *models.CreateEquipme
 		return nil, models.ErrEquipmentNotKit
 	}
 
-	if err := s.ensureParentCanBePart(ctx, eq); err != nil {
+	if err := s.ensureParentCanBePart(ctx, &eq); err != nil {
 		return nil, err
 	}
-	if err := s.ensureParentCanHost(ctx, eq); err != nil {
+	if err := s.ensureParentCanHost(ctx, &eq); err != nil {
 		return nil, err
 	}
+	return &eq, nil
+}
 
-	var data *models.Equipment
-	err := s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
-		if eq.InventoryNumber == nil {
-			number, err := s.nextInventoryNumber(ctx, tx, eq.RealmID, inventorySeries(eq.IsKit))
-			if err != nil {
-				return err
-			}
-			eq.InventoryNumber = &number
-		}
-
-		created, err := s.repo.Create(ctx, tx, eq)
+// createInTx вставляет единицу и пишет событие журнала «создано» в одной
+// транзакции. Стартовый состав комплекта открывается тут же — «комплект без
+// состава» при частичном сбое не остаётся.
+func (s *EquipmentService) createInTx(ctx context.Context, tx repository.Tx, eq *models.EquipmentDTO, components []models.ComponentOpItem) (*models.Equipment, error) {
+	if eq.InventoryNumber == nil {
+		number, err := s.nextInventoryNumber(ctx, tx, eq.RealmID, inventorySeries(eq.IsKit))
 		if err != nil {
-			return fmt.Errorf("failed to create equipment. error: %w", err)
+			return nil, err
 		}
-		data = created
-		if err := s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
-			EquipmentID: created.ID, EventType: models.EquipmentEventCreated, OperationID: uuid.New(),
-			NewValue: equipmentCreatedJSON(created), UserID: actorID(eq.Actor),
-		}); err != nil {
-			return err
-		}
-		if len(dto.Components) == 0 {
-			return nil
-		}
-		return s.openComponents(ctx, tx, &models.OpenComponentsDTO{
-			RealmID: eq.RealmID, KitID: created.ID, Components: dto.Components,
-			Reason: "Создание комплекта", Actor: eq.Actor,
-		})
-	})
+		eq.InventoryNumber = &number
+	}
+
+	created, err := s.repo.Create(ctx, tx, eq)
 	if err != nil {
+		return nil, fmt.Errorf("failed to create equipment. error: %w", err)
+	}
+
+	if err := s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
+		EquipmentID: created.ID, EventType: models.EquipmentEventCreated, OperationID: uuid.New(),
+		NewValue: equipmentCreatedJSON(created), UserID: actorID(eq.Actor),
+	}); err != nil {
 		return nil, err
 	}
-	return data, nil
+
+	if len(components) == 0 {
+		return created, nil
+	}
+	if err := s.openComponents(ctx, tx, &models.OpenComponentsDTO{
+		RealmID: eq.RealmID, KitID: created.ID, Components: components,
+		Reason: "Создание комплекта", Actor: eq.Actor,
+	}); err != nil {
+		return nil, err
+	}
+	return created, nil
 }
 
 // Update обновляет единицу оборудования. Смена родителя проверяется на цикл:
@@ -272,87 +302,117 @@ func (s *EquipmentService) Create(ctx context.Context, dto *models.CreateEquipme
 // Изменение площадки или локации отдельной записью попадает в журнал как
 // «перемещено» — иначе перемещение было бы видно только в выдаче/возврате.
 func (s *EquipmentService) Update(ctx context.Context, dto *models.EquipmentDTO) (*models.Equipment, error) {
-	if dto.ID == nil {
-		return nil, models.ErrInvalidInput
-	}
-	normalizeEquipmentDTO(dto)
-
-	// Состояние до правки нужно и для статуса, и чтобы отличить перемещение от
-	// обычного сохранения формы (она присылает все поля целиком). Читаем раньше
-	// держателя-статуса: сохранённый ручной статус важнее присланного из тела.
-	previous, err := s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: *dto.ID, RealmID: dto.RealmID})
+	eq, previous, err := s.prepareUpdate(ctx, dto)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get equipment. error: %w", err)
+		return nil, err
+	}
+
+	var data *models.Equipment
+	err = s.tm.WithinTransaction(ctx, func(tx repository.Tx) error {
+		updated, err := s.updateInTx(ctx, tx, eq, previous)
+		if err != nil {
+			return err
+		}
+		data = updated
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// prepareUpdate готовит единицу к правке и возвращает её состояние до правки:
+// оно нужно и для статуса, и чтобы отличить перемещение от обычного сохранения
+// формы (она присылает все поля целиком).
+//
+// Работает с копией DTO — по тем же причинам, что и prepareCreate.
+func (s *EquipmentService) prepareUpdate(ctx context.Context, dto *models.EquipmentDTO) (*models.EquipmentDTO, *models.Equipment, error) {
+	if dto.ID == nil {
+		return nil, nil, models.ErrInvalidInput
+	}
+
+	eq := *dto
+	normalizeEquipmentDTO(&eq)
+
+	// Состояние до правки читаем раньше держателя-статуса: сохранённый ручной
+	// статус важнее присланного из тела.
+	previous, err := s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: *eq.ID, RealmID: eq.RealmID})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get equipment. error: %w", err)
 	}
 
 	// Выдачу/возврат статус выводится из держателя (in_stock/in_use), а ручные
 	// значения (дефект, списание, ремонт, резерв) правкой не меняются: форма их
 	// не присылает, а API не должен позволять переписать статус в обход UI. Так
 	// что если сохранённый статус — ручной, берём его, а не присланный.
-	dto.Status = previous.Status
-	deriveHolderStatus(dto)
+	eq.Status = previous.Status
+	deriveHolderStatus(&eq)
 
 	// У комплекта типа нет — правка формы не должна его ему навязывать.
-	if dto.IsKit {
-		dto.TypeID = nil
-	} else if dto.TypeID == nil {
-		return nil, models.ErrInvalidInput
+	if eq.IsKit {
+		eq.TypeID = nil
+	} else if eq.TypeID == nil {
+		return nil, nil, models.ErrInvalidInput
 	}
 
-	if err := s.ensureParentCanBePart(ctx, dto); err != nil {
-		return nil, err
+	if err := s.ensureParentCanBePart(ctx, &eq); err != nil {
+		return nil, nil, err
 	}
-	if err := s.ensureParentCanHost(ctx, dto); err != nil {
-		return nil, err
+	if err := s.ensureParentCanHost(ctx, &eq); err != nil {
+		return nil, nil, err
 	}
 
-	if dto.ParentID != nil {
-		if *dto.ParentID == *dto.ID {
-			return nil, models.ErrEquipmentCycle
+	if eq.ParentID != nil {
+		if *eq.ParentID == *eq.ID {
+			return nil, nil, models.ErrEquipmentCycle
 		}
-		ancestors, err := s.repo.GetAncestors(ctx, dto.RealmID, *dto.ParentID)
+		ancestors, err := s.repo.GetAncestors(ctx, eq.RealmID, *eq.ParentID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get equipment ancestors. error: %w", err)
+			return nil, nil, fmt.Errorf("failed to get equipment ancestors. error: %w", err)
 		}
 		for _, ancestor := range ancestors {
-			if ancestor == *dto.ID {
-				return nil, models.ErrEquipmentCycle
+			if ancestor == *eq.ID {
+				return nil, nil, models.ErrEquipmentCycle
 			}
 		}
 	}
 
-	var data *models.Equipment
-	err = s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
-		if dto.InventoryNumber == nil {
-			// Серию берём из состояния до правки: `is_kit` репозиторий не
-			// перезаписывает, то есть комплект комплектом и остаётся, а форма
-			// могла не прислать флаг.
-			number, err := s.nextInventoryNumber(ctx, tx, dto.RealmID, inventorySeries(previous.IsKit))
-			if err != nil {
-				return err
-			}
-			dto.InventoryNumber = &number
-		}
+	return &eq, previous, nil
+}
 
-		updated, err := s.repo.Update(ctx, tx, dto)
+// updateInTx сохраняет единицу и пишет событие журнала «перемещено», если
+// изменилось место (площадка/локация). Перемещение отдельной записью — иначе оно
+// было бы видно только в выдаче/возврате.
+func (s *EquipmentService) updateInTx(ctx context.Context, tx repository.Tx, eq *models.EquipmentDTO, previous *models.Equipment) (*models.Equipment, error) {
+	if eq.InventoryNumber == nil {
+		// Серию берём из состояния до правки: `is_kit` репозиторий не
+		// перезаписывает, то есть комплект комплектом и остаётся, а форма
+		// могла не прислать флаг.
+		number, err := s.nextInventoryNumber(ctx, tx, eq.RealmID, inventorySeries(previous.IsKit))
 		if err != nil {
-			return fmt.Errorf("failed to update equipment. error: %w", err)
+			return nil, err
 		}
-		data = updated
-		if !equipmentRelocated(previous, updated) {
-			return nil
-		}
-		return s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
-			EquipmentID: updated.ID, EventType: models.EquipmentEventMoved, OperationID: uuid.New(),
-			OldValue: relocationJSON(previous),
-			NewValue: relocationJSON(updated),
-			UserID:   actorID(dto.Actor),
-		})
-	})
+		eq.InventoryNumber = &number
+	}
+
+	updated, err := s.repo.Update(ctx, tx, eq)
 	if err != nil {
+		return nil, fmt.Errorf("failed to update equipment. error: %w", err)
+	}
+
+	if !equipmentRelocated(previous, updated) {
+		return updated, nil
+	}
+	if err := s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
+		EquipmentID: updated.ID, EventType: models.EquipmentEventMoved, OperationID: uuid.New(),
+		OldValue: relocationJSON(previous),
+		NewValue: relocationJSON(updated),
+		UserID:   actorID(eq.Actor),
+	}); err != nil {
 		return nil, err
 	}
-	return data, nil
+	return updated, nil
 }
 
 // Delete удаляет единицу оборудования. Потомки (если были) автоматически
@@ -434,7 +494,7 @@ func inventorySeries(isKit bool) models.EquipmentInventorySeries {
 // Проверка — обычный SELECT, а не попытка вставки: упавший statement абортит
 // транзакцию, и повторить в ней вставку уже нельзя. Лимит попыток — предохранитель
 // от зацикливания, на практике не достигается.
-func (s *EquipmentService) nextInventoryNumber(ctx context.Context, tx postgres.Tx, realmID uuid.UUID, series models.EquipmentInventorySeries) (string, error) {
+func (s *EquipmentService) nextInventoryNumber(ctx context.Context, tx repository.Tx, realmID uuid.UUID, series models.EquipmentInventorySeries) (string, error) {
 	const maxAttempts = 50
 
 	for i := 0; i < maxAttempts; i++ {

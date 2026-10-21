@@ -8,6 +8,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// Tx — транзакция БД. Алиас, а не отдельный интерфейс: реализация транзакции
+// живёт в postgres, а сервисы знают только узкий срез repository.Tx — иначе
+// каждый файл сервисов тянет в импорты конкретный драйвер.
+type Tx = postgres.Tx
+
 type Transaction interface {
 	postgres.Transaction
 }
