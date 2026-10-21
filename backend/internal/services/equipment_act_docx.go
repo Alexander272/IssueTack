@@ -8,14 +8,15 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/gomutex/godocx"
 	docs "github.com/gomutex/godocx/docx"
+	"github.com/gomutex/godocx/wml/ctypes"
 	"github.com/gomutex/godocx/wml/stypes"
 )
 
-// actDocParties — подписи сторон и площадки для документа акта.
+// actDocParties — подписи сторон для документа акта. Площадки здесь нет: место
+// в акте не печатают (реквизит единицы, а не передачи), поэтому и не резолвим.
 type actDocParties struct {
 	Issuer    string
 	Recipient string
-	Site      string
 }
 
 // Таблица состава акта: колонки те же, что в снимке (см. actPosition), плюс
@@ -35,6 +36,7 @@ func buildActDocx(act *models.EquipmentAct, positions []actPosition, parties act
 	if err != nil {
 		return nil, err
 	}
+	actDocArial(doc)
 
 	actDocCentered(doc, "АКТ приёма-передачи оборудования", 14)
 	actDocCentered(doc, "№ "+act.Number, 14)
@@ -43,17 +45,6 @@ func buildActDocx(act *models.EquipmentAct, positions []actPosition, parties act
 	actDocLine(doc, "Дата составления:", act.IssuedAt.Format("02.01.2006"))
 	actDocLine(doc, "Выдал:", actDocOrDash(parties.Issuer))
 	actDocLine(doc, "Получил:", actDocOrDash(parties.Recipient))
-
-	place := parties.Site
-	if act.Location != nil && *act.Location != "" {
-		if place != "" {
-			place += ", "
-		}
-		place += *act.Location
-	}
-	if place != "" {
-		actDocLine(doc, "Место:", place)
-	}
 
 	doc.AddEmptyParagraph()
 	actDocLine(doc, "Состав передаваемого оборудования:", "")
@@ -74,6 +65,29 @@ func buildActDocx(act *models.EquipmentAct, positions []actPosition, parties act
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// actDocArial ставит Arial шрифтом по умолчанию для всего документа. Шаблон
+// godocx задаёт шрифт через тему (docDefaults → rFonts с *Theme=minorHAnsi),
+// поэтому одной подмены имени мало: тематические ссылки нужно снять, иначе XML
+// выведет и ascii, и asciiTheme, а тема в Word имеет приоритет. Стили заголовков
+// (Heading*/Title) акт не использует, а TableGrid наследует обычный текст, так
+// что правки docDefaults достаточно.
+func actDocArial(doc *docs.RootDoc) {
+	styles := doc.DocStyles
+	if styles == nil || styles.DocDefaults == nil || styles.DocDefaults.RunProp == nil {
+		return
+	}
+	runProp := styles.DocDefaults.RunProp.RunProp
+	if runProp == nil {
+		return
+	}
+	if runProp.Fonts == nil {
+		runProp.Fonts = &ctypes.RunFonts{}
+	}
+	fonts := runProp.Fonts
+	fonts.Ascii, fonts.HAnsi, fonts.CS = "Arial", "Arial", "Arial"
+	fonts.AsciiTheme, fonts.HAnsiTheme, fonts.CSTheme, fonts.EastAsiaTheme = "", "", "", ""
 }
 
 // actDocCentered добавляет абзац по центру.

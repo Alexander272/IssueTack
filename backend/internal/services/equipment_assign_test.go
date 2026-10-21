@@ -26,7 +26,9 @@ type fakeAssignRepo struct {
 	createdAssignment *models.EquipmentAssignment
 	closedIDs         []uuid.UUID
 	events            []*models.EquipmentEvent
-	holder            struct {
+	// createdAct — акт, сформированный выдачей (createActTx); nil при SkipAct.
+	createdAct *models.EquipmentAct
+	holder     struct {
 		userID, siteID *uuid.UUID
 		location       *string
 	}
@@ -78,6 +80,59 @@ func (f *fakeAssignRepo) SetHolderAndStatus(
 func (f *fakeAssignRepo) CreateEvent(_ context.Context, _ postgres.Tx, e *models.EquipmentEvent) error {
 	f.events = append(f.events, e)
 	return nil
+}
+
+func (f *fakeAssignRepo) NextActSeq(_ context.Context, _ postgres.Tx, _ uuid.UUID) (int, error) {
+	return 1, nil
+}
+
+func (f *fakeAssignRepo) CreateAct(_ context.Context, _ postgres.Tx, a *models.EquipmentAct) error {
+	f.createdAct = a
+	return nil
+}
+
+// TestEquipmentService_Assign_ActCarriesRecipientName закрепляет причину прочерка
+// в акте: при выборе сотрудника из справочника holderName пуст (ФИО приходит
+// отдельным полем recipientName), и раньше в акт уходило именно пустое holderName —
+// в карточке и docx получатель показывался прочерком. Теперь снимок имени берётся
+// из recipientName, а без него — из свободного ФИО.
+func TestEquipmentService_Assign_ActCarriesRecipientName(t *testing.T) {
+	ctx := context.Background()
+	siteID, userID := uuid.New(), uuid.New()
+	recipient := "Мартынов Александр"
+
+	cases := []struct {
+		name     string
+		dto      models.AssignEquipmentDTO
+		wantName string
+	}{
+		{
+			name: "сотрудник из справочника",
+			dto:  models.AssignEquipmentDTO{UserID: &userID, RecipientName: &recipient},
+			// holderName пуст — акт обязан взять ФИО из recipientName.
+			wantName: recipient,
+		},
+		{
+			name:     "свободное ФИО внешнего",
+			dto:      models.AssignEquipmentDTO{HolderName: &recipient, RecipientName: &recipient},
+			wantName: recipient,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &fakeAssignRepo{unit: &models.Equipment{SiteID: &siteID}}
+			svc := NewEquipmentService(repo, &mockTransactionManager{}, testEquipmentConf(t))
+
+			dto := tt.dto
+			dto.ID, dto.RealmID = uuid.New(), uuid.New()
+
+			require.NoError(t, svc.Assign(ctx, &dto))
+			require.NotNil(t, repo.createdAct)
+			require.NotNil(t, repo.createdAct.RecipientName)
+			assert.Equal(t, tt.wantName, *repo.createdAct.RecipientName)
+		})
+	}
 }
 
 // TestEquipmentService_Assign_KeepsPlaceWhenNotProvided закрепляет: пустые

@@ -66,6 +66,16 @@ func TestBuildActDocx(t *testing.T) {
 	for _, want := range []string{"АКТ-2026-0007", "15.10.2026", "HP LaserJet", "SN-001", "Иванов И.И.", "Петров П.П.", comment} {
 		require.True(t, strings.Contains(document, want), "в документе нет %q", want)
 	}
+
+	// Место в акте не печатается: это реквизит единицы, а не передачи.
+	require.NotContains(t, document, "Место:")
+
+	// Шрифт по умолчанию — Arial из docDefaults, а тематические ссылки сняты
+	// (иначе тема перебила бы ascii-имя).
+	styles := parts["word/styles.xml"]
+	require.Contains(t, styles, `w:ascii="Arial"`)
+	require.Contains(t, styles, `w:hAnsi="Arial"`)
+	require.NotContains(t, styles, `w:asciiTheme="minorHAnsi"`)
 }
 
 // TestBuildActDocx_NoPositions — акт без позиций: таблица остаётся с шапкой, а

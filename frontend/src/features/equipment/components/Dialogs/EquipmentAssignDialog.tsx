@@ -46,6 +46,10 @@ type Props = {
 type AssignForm = {
 	userId: string | null
 	holderName: string
+	// recipientName — снимок ФИО получателя для акта (без username): ФИО
+	// выбранного сотрудника либо свободный текст. Отдельным полем, потому что
+	// holderName пуст при выборе из справочника, а акту нужна подпись.
+	recipientName: string
 	siteId: string | null
 	location: string
 	comment: string
@@ -58,6 +62,14 @@ type AssignForm = {
 const userLabel = (u: { lastName: string; firstName: string; username: string }) => {
 	const full = `${u.lastName} ${u.firstName}`.trim()
 	return full ? `${full} (${u.username})` : u.username
+}
+
+// recipientLabel — ФИО получателя для акта: без username, как в снимке имени на
+// сервере (last_name + first_name, fallback — username). Так подпись в акте
+// совпадает с той, что выводится в остальных местах.
+const recipientLabel = (u: { lastName: string; firstName: string; username: string }) => {
+	const full = `${u.lastName} ${u.firstName}`.trim()
+	return full || u.username
 }
 
 // Вариант freeSolo — либо сотрудник из справочника, либо набранная строка.
@@ -88,6 +100,7 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 		defaultValues: {
 			userId: null,
 			holderName: '',
+			recipientName: '',
 			siteId: unit.siteId ?? null,
 			location: unit.location ?? '',
 			comment: '',
@@ -117,6 +130,7 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 		const payload: IAssignEquipmentDTO = {
 			userId: form.userId || null,
 			holderName: form.holderName || null,
+			recipientName: form.recipientName || form.holderName || null,
 			siteId: form.siteId || null,
 			location: form.location || null,
 			comment: form.comment,
@@ -251,11 +265,15 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 											if (value && typeof value === 'object') {
 												field.onChange(value.id)
 												methods.setValue('holderName', '')
+												// Акт берёт подпись получателя отсюда: при
+												// выборе из справочника holderName пуст.
+												methods.setValue('recipientName', recipientLabel(value))
 												return
 											}
 											const text = typeof value === 'string' ? value : ''
 											field.onChange(null)
 											methods.setValue('holderName', text)
+											methods.setValue('recipientName', text)
 										}}
 										renderInput={params => (
 											<TextField

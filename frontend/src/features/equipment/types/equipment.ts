@@ -300,6 +300,10 @@ export interface IKitComposition {
 export interface IAssignEquipmentDTO {
 	userId?: string | null
 	holderName?: string | null
+	// recipientName — снимок ФИО получателя для акта: выбранный сотрудник или
+	// свободное ФИО внешнего. У формы он уже есть, поэтому уходит с запросом —
+	// серверу не нужно резолвить имя отдельной выборкой.
+	recipientName?: string | null
 	siteId?: string | null
 	location?: string | null
 	comment?: string

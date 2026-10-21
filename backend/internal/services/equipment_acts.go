@@ -90,6 +90,10 @@ func (s *EquipmentService) buildAct(ctx context.Context, tx postgres.Tx, dto *mo
 		issuedAt = *dto.IssuedAt
 	}
 
+	// Снимок ФИО получателя приходит из формы: и выдача, и ручное формирование
+	// акта кладут в recipientName выбранного сотрудника или свободное ФИО
+	// внешнего. Резолвить имя по recipientUserId не нужно — это лишний запрос к
+	// БД, когда подпись уже есть в теле запроса.
 	act := &models.EquipmentAct{
 		RealmID:         dto.RealmID,
 		Number:          number,
@@ -203,17 +207,18 @@ func (s *EquipmentService) GetActSignedFile(ctx context.Context, req *models.Get
 	return act, f, nil
 }
 
-// actDocParties — подписи сторон и площадки для документа. Резолвятся джойном по
-// ссылкам акта: снимка имён в акте нет, а FK объявлены ON DELETE SET NULL.
-// Ошибка резолва не срывает документ — акт остаётся выгружаемым, но без подписи,
-// о сбое сообщает Warn-лог.
+// actDocParties — подписи сторон для документа. Recipient берётся из снимка имени
+// акта (recipient_name), а по recipient_user_id резолвится только как fallback:
+// у старых актов снимка нет. Выдавший резолвится по ссылке issued_by — у акта нет
+// снимка его имени, а FK объявлен ON DELETE SET NULL. Ошибка резолва не срывает
+// документ — акт остаётся выгружаемым, но без подписи, о сбое сообщает Warn-лог.
 func (s *EquipmentService) actDocParties(ctx context.Context, act *models.EquipmentAct) actDocParties {
 	parties := actDocParties{}
 	if act.RecipientName != nil {
 		parties.Recipient = *act.RecipientName
 	}
 
-	if act.RecipientUserID != nil {
+	if act.RecipientUserID != nil && parties.Recipient == "" {
 		if name, err := s.repo.GetUserFullName(ctx, *act.RecipientUserID); err != nil {
 			logger.Warn("failed to resolve act recipient", logger.StringAttr("act_id", act.ID.String()), logger.ErrAttr(err))
 		} else if name != "" {
@@ -225,13 +230,6 @@ func (s *EquipmentService) actDocParties(ctx context.Context, act *models.Equipm
 			logger.Warn("failed to resolve act issuer", logger.StringAttr("act_id", act.ID.String()), logger.ErrAttr(err))
 		} else {
 			parties.Issuer = name
-		}
-	}
-	if act.SiteID != nil {
-		if name, err := s.repo.GetSiteName(ctx, *act.SiteID); err != nil {
-			logger.Warn("failed to resolve act site", logger.StringAttr("act_id", act.ID.String()), logger.ErrAttr(err))
-		} else {
-			parties.Site = name
 		}
 	}
 	return parties

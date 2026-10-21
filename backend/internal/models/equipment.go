@@ -511,6 +511,10 @@ type AssignEquipmentDTO struct {
 	RealmID    uuid.UUID  `json:"realmId"`
 	UserID     *uuid.UUID `json:"userId"`
 	HolderName *string    `json:"holderName"`
+	// RecipientName — снимок ФИО получателя для акта: выбранный из справочника
+	// сотрудник или свободное ФИО внешнего. Приходит из формы (у клиента ФИО
+	// получателя уже есть), чтобы акт не резолвил имя отдельным запросом.
+	RecipientName *string `json:"recipientName"`
 	// SiteID и Location — место единицы. Пусто в обоих полях = «единица не
 	// переезжает»: место берётся у самой единицы. Указанное место важнее и
 	// записывается как есть (выдача сразу на другой объект).

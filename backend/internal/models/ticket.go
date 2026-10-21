@@ -37,9 +37,9 @@ type Ticket struct {
 	CreatedAt  time.Time  `json:"createdAt" db:"created_at"`
 	UpdatedAt  time.Time  `json:"updatedAt" db:"updated_at"`
 
-	Subtasks    []*Subtask    `json:"subtasks,omitempty"`
-	Attachments []*Attachment `json:"attachments,omitempty"`
-	Access      *AccessFlags  `json:"access,omitempty"`
+	Subtasks    []*Subtask      `json:"subtasks,omitempty"`
+	Attachments []*Attachment   `json:"attachments,omitempty"`
+	Access      *AccessFlags    `json:"access,omitempty"`
 	Equipment   *EquipmentShort `json:"equipment,omitempty"`
 }
 

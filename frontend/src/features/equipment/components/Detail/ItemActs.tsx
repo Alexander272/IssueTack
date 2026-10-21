@@ -63,6 +63,14 @@ const customerLabel = (u: { lastName: string; firstName: string; username: strin
 	return full ? `${full} (${u.username})` : u.username
 }
 
+// recipientLabel — ФИО получателя для акта: без username, как снимок имени на
+// сервере. Подпись уходит в recipientName при формировании акта, поэтому
+// совпадает с той, что выводится в карточке и docx.
+const recipientLabel = (u: { lastName: string; firstName: string; username: string }) => {
+	const full = `${u.lastName} ${u.firstName}`.trim()
+	return full || u.username
+}
+
 // ActStatusChip — чип состояния акта (как чип «Подписан» в макете).
 const ActStatusChip: FC<{ status: EquipmentActStatus }> = ({ status }) => {
 	const meta = ACT_STATUS_META[status] ?? ACT_STATUS_META.formed
@@ -249,8 +257,7 @@ export const ItemActs: FC<Props> = ({ unit }) => {
 	// состава, поэтому имя файла берём из номера акта.
 	const downloadDocument = async (act: IEquipmentAct) => {
 		try {
-			const blob = await getDocument(act.id).unwrap()
-			saveAs(blob, `${act.number}.docx`)
+			await getDocument({ id: act.id, filename: `${act.number}.docx` }).unwrap()
 		} catch {
 			toast.error('Не удалось получить акт', { autoClose: false })
 		}
@@ -291,26 +298,27 @@ export const ItemActs: FC<Props> = ({ unit }) => {
 		}
 	}
 
-	const action = unit.isKit && canWrite ? (
-		<Button
-			size='small'
-			variant='contained'
-			disableElevation
-			startIcon={<PlusIcon sx={{ fontSize: 14 }} />}
-			onClick={() => setCreateOpen(true)}
-			sx={{
-				borderRadius: '10px',
-				textTransform: 'none',
-				fontSize: 12,
-				fontWeight: 600,
-				px: 1.5,
-				py: 0.5,
-				minWidth: 0,
-			}}
-		>
-			Сформировать акт
-		</Button>
-	) : undefined
+	const action =
+		unit.isKit && canWrite ? (
+			<Button
+				size='small'
+				variant='contained'
+				disableElevation
+				startIcon={<PlusIcon sx={{ fontSize: 14 }} />}
+				onClick={() => setCreateOpen(true)}
+				sx={{
+					borderRadius: '10px',
+					textTransform: 'none',
+					fontSize: 12,
+					fontWeight: 600,
+					px: 1.5,
+					py: 0.5,
+					minWidth: 0,
+				}}
+			>
+				Сформировать акт
+			</Button>
+		) : undefined
 
 	return (
 		<>
@@ -475,7 +483,9 @@ const ActDetailDialog: FC<DetailProps> = ({
 							<Typography sx={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', mb: 0.5 }}>
 								КОММЕНТАРИЙ
 							</Typography>
-							<Typography sx={{ fontSize: 14, color: '#334155', whiteSpace: 'pre-wrap' }}>{act.comment}</Typography>
+							<Typography sx={{ fontSize: 14, color: '#334155', whiteSpace: 'pre-wrap' }}>
+								{act.comment}
+							</Typography>
 						</Box>
 					)}
 				</Stack>
@@ -555,7 +565,9 @@ const SignedActPreview: FC<{ act: IEquipmentAct }> = ({ act }) => {
 				}}
 			>
 				<FileSignatureIcon sx={{ fontSize: 24, color: '#2563eb' }} />
-				<Typography sx={{ fontSize: 14, color: '#0f172a' }}>{act.signedFileName || 'Подписанный акт'}</Typography>
+				<Typography sx={{ fontSize: 14, color: '#0f172a' }}>
+					{act.signedFileName || 'Подписанный акт'}
+				</Typography>
 			</Box>
 		)
 	}
@@ -598,6 +610,7 @@ const CreateActDialog: FC<CreateProps> = ({ open, unit, onClose }) => {
 	const sites = sitesData?.data ?? []
 
 	const [userId, setUserId] = useState<string | null>(null)
+	const [recipientName, setRecipientName] = useState('')
 	const [siteId, setSiteId] = useState<string | null>(null)
 	const [location, setLocation] = useState('')
 	const [comment, setComment] = useState('')
@@ -607,6 +620,7 @@ const CreateActDialog: FC<CreateProps> = ({ open, unit, onClose }) => {
 			const created = await create({
 				kitEquipmentId: unit.id,
 				recipientUserId: userId,
+				recipientName: recipientName || null,
 				siteId,
 				location: location || null,
 				comment,
@@ -618,8 +632,7 @@ const CreateActDialog: FC<CreateProps> = ({ open, unit, onClose }) => {
 			// Акт рождается «сформированным», и его docx сразу отдаём пользователю.
 			// Номер нужен для имени файла, но в ответе на создание его нет — берём акт.
 			const act = await getAct(created.id).unwrap()
-			const blob = await getDocument(created.id).unwrap()
-			saveAs(blob, `${act.data.number}.docx`)
+			await getDocument({ id: created.id, filename: `${act.data.number}.docx` }).unwrap()
 		} catch {
 			// Ошибку создания показывает onQueryStarted мутации; сбой выгрузки docx —
 			// не повод считать акт несозданным, он уже в списке и скачивается оттуда.
@@ -638,7 +651,10 @@ const CreateActDialog: FC<CreateProps> = ({ open, unit, onClose }) => {
 						options={users}
 						getOptionLabel={customerLabel}
 						value={users.find(u => u.id === userId) ?? null}
-						onChange={(_e, value) => setUserId(value?.id ?? null)}
+						onChange={(_e, value) => {
+							setUserId(value?.id ?? null)
+							setRecipientName(value ? recipientLabel(value) : '')
+						}}
 						renderInput={params => <TextField {...params} size='small' label='Получатель' />}
 					/>
 					<Autocomplete

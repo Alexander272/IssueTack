@@ -126,11 +126,18 @@ func (s *EquipmentService) Assign(ctx context.Context, dto *models.AssignEquipme
 		if dto.SkipAct {
 			return nil
 		}
+		// Снимок получателя для акта: приходит из формы (recipientName) — у неё
+		// уже есть ФИО. Fallback на свободное holderName оставлен для клиентов,
+		// которые ещё не шлют recipientName.
+		recipientName := dto.RecipientName
+		if recipientName == nil {
+			recipientName = dto.HolderName
+		}
 		return s.createActTx(ctx, tx, &models.EquipmentActDTO{
 			RealmID:         dto.RealmID,
 			KitEquipmentID:  &dto.ID,
 			RecipientUserID: dto.UserID,
-			RecipientName:   dto.HolderName,
+			RecipientName:   recipientName,
 			SiteID:          dto.SiteID,
 			Location:        dto.Location,
 			Comment:         dto.Comment,

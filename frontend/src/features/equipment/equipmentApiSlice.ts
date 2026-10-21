@@ -30,13 +30,15 @@ import type {
 } from './types/equipment'
 import { apiSlice, baseQueryWithReAuth } from '@/app/apiSlice'
 import { API } from '@/app/api'
+import { saveAs } from '@/utils/saveAs'
 
 // signedFileUrls — blob-URL подписанных актов по id акта. Держим их здесь (а не в
 // состоянии компонента), чтобы карточка и кнопка скачивания делили один URL, а
 // отзыв шёл по удалению записи из кэша RTK Query.
 const signedFileUrls = new Map<string, string>()
 
-const equipmentApiSlice = apiSlice.injectEndpoints({	overrideExisting: false,
+const equipmentApiSlice = apiSlice.injectEndpoints({
+	overrideExisting: false,
 	endpoints: builder => ({
 		getAllEquipment: builder.query<IEquipmentList, IEquipmentFilter | void>({
 			query: filter => ({
@@ -185,9 +187,13 @@ const equipmentApiSlice = apiSlice.injectEndpoints({	overrideExisting: false,
 				method: 'POST',
 				body,
 			}),
+			// Выдача может сформировать акт (createAct), поэтому список актов тоже
+			// устаревает: без этого тега новый акт появился бы на вкладке только
+			// после перезагрузки страницы.
 			invalidatesTags: (_result, _err, { id }) => [
 				{ type: 'Equipment', id: 'ALL' },
 				{ type: 'Equipment', id },
+				{ type: 'EquipmentActs', id: 'ALL' },
 			],
 			onQueryStarted: async (_arg, api) => {
 				try {
@@ -199,7 +205,10 @@ const equipmentApiSlice = apiSlice.injectEndpoints({	overrideExisting: false,
 			},
 		}),
 
-		unassignEquipment: builder.mutation<{ id: string; message: string }, { id: string; body: IUnassignEquipmentDTO }>({
+		unassignEquipment: builder.mutation<
+			{ id: string; message: string },
+			{ id: string; body: IUnassignEquipmentDTO }
+		>({
 			query: ({ id, body }) => ({
 				url: API.equipment.unassign(id),
 				method: 'POST',
@@ -297,22 +306,24 @@ const equipmentApiSlice = apiSlice.injectEndpoints({	overrideExisting: false,
 			},
 		}),
 
-		getEquipmentEvents: builder.query<{ data: IEquipmentEvent[] }, { id: string; limit?: number; offset?: number }>({
-			query: ({ id, ...params }) => ({
-				url: API.equipment.events(id),
-				method: 'GET',
-				params,
-			}),
-			providesTags: (_result, _err, { id }) => [{ type: 'Equipment', id: `events-${id}` }],
-			onQueryStarted: async (_arg, api) => {
-				try {
-					await api.queryFulfilled
-				} catch (error) {
-					const fetchError = (error as IBaseFetchError).error
-					toast.error(fetchError.data?.message, { autoClose: false })
-				}
+		getEquipmentEvents: builder.query<{ data: IEquipmentEvent[] }, { id: string; limit?: number; offset?: number }>(
+			{
+				query: ({ id, ...params }) => ({
+					url: API.equipment.events(id),
+					method: 'GET',
+					params,
+				}),
+				providesTags: (_result, _err, { id }) => [{ type: 'Equipment', id: `events-${id}` }],
+				onQueryStarted: async (_arg, api) => {
+					try {
+						await api.queryFulfilled
+					} catch (error) {
+						const fetchError = (error as IBaseFetchError).error
+						toast.error(fetchError.data?.message, { autoClose: false })
+					}
+				},
 			},
-		}),
+		),
 
 		getEquipmentComposition: builder.query<{ data: IEquipment[] }, string>({
 			query: id => ({
@@ -346,7 +357,10 @@ const equipmentApiSlice = apiSlice.injectEndpoints({	overrideExisting: false,
 			},
 		}),
 
-		addEquipmentComponents: builder.mutation<{ id: string; message: string }, { id: string; body: ICompositionOpDTO }>({
+		addEquipmentComponents: builder.mutation<
+			{ id: string; message: string },
+			{ id: string; body: ICompositionOpDTO }
+		>({
 			query: ({ id, body }) => ({
 				url: API.equipment.composition(id),
 				method: 'POST',
@@ -368,7 +382,10 @@ const equipmentApiSlice = apiSlice.injectEndpoints({	overrideExisting: false,
 			},
 		}),
 
-		removeEquipmentComponents: builder.mutation<{ id: string; message: string }, { id: string; body: ICompositionOpDTO }>({
+		removeEquipmentComponents: builder.mutation<
+			{ id: string; message: string },
+			{ id: string; body: ICompositionOpDTO }
+		>({
 			query: ({ id, body }) => ({
 				url: API.equipment.composition(id),
 				method: 'DELETE',
@@ -442,22 +459,30 @@ const equipmentApiSlice = apiSlice.injectEndpoints({	overrideExisting: false,
 
 		// Документ акта и подписанный файл — бинарные ответы, поэтому их читает
 		// queryFn с blob-обработчиком (как вложения заявок): так срабатывает
-		// обновление токена, а наружу уходит готовый Blob.
-		getEquipmentActDocument: builder.query<Blob, string>({
-			queryFn: async (id, api, extraOptions) => {
+		// обновление токена, скачивание инициируется здесь же
+		getEquipmentActDocument: builder.query<null, { id: string; filename: string }>({
+			queryFn: async ({ id, filename }, api, extraOptions) => {
 				const res = await baseQueryWithReAuth(
 					{
 						url: API.equipment.actDocument(id),
 						responseHandler: (response: Response) => response.blob(),
+						cache: 'no-cache',
 					},
 					api,
 					extraOptions,
 				)
 				if (res.error) return { error: res.error }
-				return { data: res.data as Blob }
+
+				if (res.data instanceof Blob) {
+					saveAs(res.data, filename)
+				}
+				return { data: null }
 			},
 		}),
 
+		// Подписанный акт нужен и для предпросмотра (img src), поэтому в отличие от
+		// документа он возвращает blob-URL, а не запускает скачивание: Blob при этом
+		// в Redux не попадает — в кэш уходит только строка URL.
 		getEquipmentActSignedFile: builder.query<{ url: string; size: number }, string>({
 			queryFn: async (id, api, extraOptions) => {
 				const res = await baseQueryWithReAuth(
@@ -474,8 +499,8 @@ const equipmentApiSlice = apiSlice.injectEndpoints({	overrideExisting: false,
 				const url = URL.createObjectURL(blob)
 				const prev = signedFileUrls.get(id)
 				signedFileUrls.set(id, url)
-				// Старый URL отзываем на следующем тике: живой рендер (превью скана)
-				// должен успеть переключиться на новый blob-URL.
+				// Отзываем старый URL на следующем тике, чтобы живой рендер (превью)
+				// успел переключиться на новый blob-URL; мгновенный revoke оборвал бы его.
 				if (prev) setTimeout(() => URL.revokeObjectURL(prev), 0)
 				return { data: { url, size: blob.size } }
 			},

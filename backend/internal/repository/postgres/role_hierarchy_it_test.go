@@ -255,8 +255,8 @@ func TestRoleHierarchyRepo_LoadPolicy_IT(t *testing.T) {
 		}
 	}
 	assert.Equal(t, map[string]string{
-		f.slug(realmID, "user"):   f.slug(realmID, "chief"),
-		f.slug(realmID, "chief"):  f.slug(realmID, "admin"),
+		f.slug(realmID, "user"):  f.slug(realmID, "chief"),
+		f.slug(realmID, "chief"): f.slug(realmID, "admin"),
 	}, got)
 
 	// Неактивная родительская роль выпадает из политики (Casbin её не получит).
