@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"mime"
 	"net/http"
 	"path"
 	"runtime/debug"
@@ -126,85 +125,118 @@ const (
 	assetsPrefix = "assets/"
 )
 
-var allowedStaticExts = map[string]bool{
-	".html": true, ".js": true, ".css": true, ".png": true, ".jpg": true,
-	".jpeg": true, ".svg": true, ".gif": true, ".ico": true, ".webp": true,
-	".woff": true, ".woff2": true, ".ttf": true, ".eot": true, ".map": true,
-	".webmanifest": true,
+// staticFS — встроенный фронтенд (backend/web/frontend) отдельным FS с корнем в
+// этой папке: путь запроса не нужно префиксовать вручную.
+var staticFS = mustSub(web.Frontend, frontendRoot)
+
+// mustSub — fs.Sub для константного пути: ошибка означает ошибку сборки.
+func mustSub(fsys fs.FS, dir string) fs.FS {
+	sub, err := fs.Sub(fsys, dir)
+	if err != nil {
+		panic("static fs: " + err.Error())
+	}
+	return sub
 }
 
 func (h *Handler) initStatic(router *gin.Engine, conf *config.Config) {
+	static := &staticHandler{fsys: staticFS}
 	router.NoRoute(limiter.Limit(conf.StaticLimiter.RPS, conf.StaticLimiter.Burst, conf.StaticLimiter.TTL), func(c *gin.Context) {
 		if strings.HasPrefix(c.Request.URL.Path, "/api") {
 			c.Status(http.StatusNotFound)
 			return
 		}
-
-		filePath := strings.TrimPrefix(c.Request.URL.Path, "/")
-		if filePath == "" {
-			filePath = indexFile
-		}
-		filePath = path.Clean(filePath)
-
-		// 🔒 Блокируем скрытые файлы/директории (начинаются с точки)
-		if strings.HasPrefix(filePath, ".") || strings.Contains(filePath, "/.") {
-			c.Status(http.StatusNotFound)
-			return
-		}
-
-		if ext := path.Ext(filePath); filePath != indexFile && ext != "" && !allowedStaticExts[ext] {
-			c.Status(http.StatusNotFound)
-			return
-		}
-
-		var f fs.File
-		var err error
-		openPath := frontendRoot + "/" + filePath
-		encoding := accept_encoding.Negotiate(c.Request.Header.Get("Accept-Encoding"))
-
-		if encoding == "br" {
-			f, err = web.Frontend.Open(openPath + ".br")
-			if err == nil {
-				c.Header("Content-Encoding", "br")
-			}
-		}
-		if f == nil && encoding == "gzip" {
-			f, err = web.Frontend.Open(openPath + ".gz")
-			if err == nil {
-				c.Header("Content-Encoding", "gzip")
-			}
-		}
-		if f == nil {
-			f, err = web.Frontend.Open(openPath)
-			if err != nil {
-				f, err = web.Frontend.Open(frontendRoot + "/" + indexFile)
-				if err != nil {
-					c.Status(http.StatusNotFound)
-					return
-				}
-				filePath = indexFile
-			}
-		}
-		defer f.Close()
-
-		c.Header("Vary", "Accept-Encoding")
-
-		if strings.HasPrefix(filePath, assetsPrefix) {
-			c.Header("Cache-Control", "public, max-age=31536000, immutable")
-		} else {
-			c.Header("Cache-Control", "no-cache")
-		}
-
-		if ctype := mime.TypeByExtension(path.Ext(filePath)); ctype != "" {
-			c.Header("Content-Type", ctype)
-		}
-
-		if rs, ok := f.(io.ReadSeeker); ok {
-			http.ServeContent(c.Writer, c.Request, path.Base(filePath), appStartTime, rs)
-		} else {
-			if _, err := io.Copy(c.Writer, f); err != nil {
-				logger.Error("failed to stream file", logger.StringAttr("path", filePath), logger.ErrAttr(err))
-			}
-		}
+		static.serve(c)
 	})
+}
+
+// staticHandler раздаёт встроенный фронтенд: файлы сборки и оболочку SPA для
+// маршрутов клиента.
+type staticHandler struct {
+	fsys fs.FS
+}
+
+// serve отдаёт файл статики, а для путей, которых в сборке нет, — оболочку SPA.
+func (s *staticHandler) serve(c *gin.Context) {
+	filePath := staticPath(c.Request.URL.Path)
+	encoding := accept_encoding.Negotiate(c.Request.Header.Get("Accept-Encoding"))
+
+	f, enc, err := openStatic(s.fsys, filePath, encoding)
+	if err != nil {
+		// Файла нет: путь без расширения — маршрут SPA (отдаём оболочку), с
+		// расширением — запрос файла (404: HTML вместо картинки не подсовываем).
+		if path.Ext(filePath) != "" {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		f, enc, err = openStatic(s.fsys, indexFile, encoding)
+		if err != nil {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		filePath = indexFile
+	}
+	defer f.Close()
+
+	// Каталог не отдаём: embed отдаёт для него «папку», а читать её нельзя.
+	if info, statErr := f.Stat(); statErr == nil && info.IsDir() {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	rs, ok := f.(io.ReadSeeker)
+	if !ok {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+
+	// Содержимое зависит от Accept-Encoding (сжатый вариант или обычный) — кэш
+	// обязан это учитывать.
+	c.Header("Vary", "Accept-Encoding")
+	if enc != "" {
+		c.Header("Content-Encoding", enc)
+	}
+	if strings.HasPrefix(filePath, assetsPrefix) {
+		// Имена ассетов — с хешем: содержимое не меняется, кэшируем надолго.
+		c.Header("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		c.Header("Cache-Control", "no-cache")
+	}
+
+	http.ServeContent(c.Writer, c.Request, path.Base(filePath), appStartTime, rs)
+}
+
+// staticPath превращает путь запроса в относительный путь внутри FS: без
+// ведущего слэша, без «..». Дальше путь проверяет сам FS: embed.FS отбрасывает
+// невалидные пути (fs.ValidPath), поэтому выйти за пределы сборки нельзя.
+func staticPath(urlPath string) string {
+	p := strings.TrimPrefix(path.Clean("/"+urlPath), "/")
+	if p == "" || p == "." {
+		return indexFile
+	}
+	return p
+}
+
+// openStatic открывает файл статики с учётом Accept-Encoding: если рядом есть
+// заранее сжатый вариант (.br/.gz) и клиент его принимает — отдаём его с
+// соответствующим Content-Encoding. Сжатые варианты делает сборка образа
+// (Dockerfile: gzip -9 + brotli -q 11).
+func openStatic(fsys fs.FS, filePath, acceptEncoding string) (fs.File, string, error) {
+	if suffix := compressedSuffix(acceptEncoding); suffix != "" {
+		if f, err := fsys.Open(filePath + suffix); err == nil {
+			return f, acceptEncoding, nil
+		}
+	}
+	f, err := fsys.Open(filePath)
+	return f, "", err
+}
+
+// compressedSuffix — расширение заранее сжатого варианта файла для кодирования
+// («gzip» кодируется файлом «.gz»).
+func compressedSuffix(encoding string) string {
+	switch encoding {
+	case "br":
+		return ".br"
+	case "gzip":
+		return ".gz"
+	}
+	return ""
 }

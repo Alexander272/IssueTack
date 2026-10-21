@@ -464,8 +464,8 @@ type EquipmentEvent struct {
 	// UserName — ФИО актора, резолвит SQL по user_id (см. GetEvents). Журнал
 	// иммутабелен, но актор — это ссылка на живого пользователя: подпись читается
 	// на момент чтения, а не пишется снимком.
-	UserName  string    `json:"userName" db:"user_name"`
-	Comment   string    `json:"comment" db:"comment"`
+	UserName string `json:"userName" db:"user_name"`
+	Comment  string `json:"comment" db:"comment"`
 	// CreatedAt — момент записи события в журнал (аудит). Момент самой операции
 	// у выдачи и возврата лежит в строке выдачи (assigned_at) и в снимке
 	// события: журнал иммутабелен и не переписывается задним числом.

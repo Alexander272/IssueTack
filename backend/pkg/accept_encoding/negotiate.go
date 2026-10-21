@@ -1,5 +1,8 @@
-// Package acceptencoding парсит заголовок Accept-Encoding (RFC 7231, Section 5.3.4)
+// Package acceptencoding парсит заголовок Accept-Encoding (RFC 9110, 12.5.3)
 // и возвращает предпочтительный encoding из поддерживаемых сервером (br, gzip).
+//
+// Сервер отдаёт заранее сжатые варианты файлов (.br/.gz, их делает сборка
+// образа), поэтому нужно только выбрать, какой из них клиент понимает.
 package accept_encoding
 
 import (
@@ -7,89 +10,73 @@ import (
 	"strings"
 )
 
-// Negotiate возвращает лучший поддерживаемый encoding из заголовка Accept-Encoding.
-// Возвращает "" (без компрессии), если клиент не принимает br или gzip.
+// Negotiate возвращает лучший поддерживаемый encoding из заголовка
+// Accept-Encoding: "br", "gzip" или "" (сжатие не применяется).
+//
+// Учитываются веса (q=) и запреты (q=0): кодирование, которое клиент запретил,
+// не предлагается даже через «*».
 func Negotiate(header string) string {
-	if header == "" {
-		return ""
-	}
-
-	type item struct {
-		name    string
-		quality float64
-	}
-	var preferred []item
 	excluded := map[string]bool{}
+	best, bestQ := "", 0.0
 
 	for _, field := range strings.Split(header, ",") {
-		enc, q := parseField(field)
-		if enc == "" {
+		name, q := parseField(field)
+		if name == "" {
 			continue
 		}
-		if q == 0 {
-			if enc == "identity" || enc == "*" {
-				return ""
+		if q <= 0 {
+			excluded[name] = true
+			continue
+		}
+		switch name {
+		case "br", "gzip":
+		case "*":
+			// «*» — любое не названное явно кодирование; при равном весе
+			// предпочитаем br (он меньше gzip).
+			name = firstAllowed(excluded)
+			if name == "" {
+				continue
 			}
-			excluded[enc] = true
+		default:
 			continue
 		}
-		if enc == "br" || enc == "gzip" || enc == "*" {
-			preferred = append(preferred, item{enc, q})
-		}
-	}
-
-	bestQ := 0.0
-	best := ""
-	for _, it := range preferred {
-		enc := resolve(it.name, excluded)
-		if enc == "" {
-			continue
-		}
-		if it.quality > bestQ || (it.quality == bestQ && enc == "br" && best != "br") {
-			best, bestQ = enc, it.quality
+		if q > bestQ || (q == bestQ && name == "br" && best != "br") {
+			best, bestQ = name, q
 		}
 	}
 	return best
 }
 
-func parseField(field string) (name string, quality float64) {
+// firstAllowed — кодирование по умолчанию для «*»: br меньше gzip, а
+// запрещённые клиентом (q=0) не предлагаются.
+func firstAllowed(excluded map[string]bool) string {
+	for _, enc := range []string{"br", "gzip"} {
+		if !excluded[enc] {
+			return enc
+		}
+	}
+	return ""
+}
+
+// parseField разбирает поле заголовка «name;q=0.5»: имя кодирования и его вес.
+// Имя приводится к нижнему регистру (кодирования нечувствительны к регистру),
+// отсутствие q — вес 1.
+func parseField(field string) (name string, q float64) {
 	field = strings.TrimSpace(field)
 	if field == "" {
 		return "", 0
 	}
-	quality = 1.0
-
-	idx := strings.IndexByte(field, ';')
-	if idx == -1 {
-		return field, quality
-	}
-
-	name = strings.TrimSpace(field[:idx])
-	rest := field[idx+1:]
-	if qi := strings.Index(rest, "q="); qi != -1 {
-		qStr := strings.TrimSpace(rest[qi+2:])
-		if end := strings.IndexByte(qStr, ';'); end != -1 {
-			qStr = strings.TrimSpace(qStr[:end])
+	name, params, _ := strings.Cut(field, ";")
+	name = strings.ToLower(strings.TrimSpace(name))
+	q = 1
+	for _, p := range strings.Split(params, ";") {
+		p = strings.TrimSpace(p)
+		if !strings.HasPrefix(p, "q=") {
+			continue
 		}
-		if parsed, err := strconv.ParseFloat(qStr, 64); err == nil {
-			quality = parsed
+		if parsed, err := strconv.ParseFloat(strings.TrimSpace(p[2:]), 64); err == nil {
+			q = parsed
 		}
 	}
-	return name, quality
-}
-
-func resolve(name string, excluded map[string]bool) string {
-	if name == "*" {
-		if !excluded["gzip"] {
-			return "gzip"
-		}
-		if !excluded["br"] {
-			return "br"
-		}
-		return ""
-	}
-	if excluded[name] {
-		return ""
-	}
-	return name
+	return name, q
 }
