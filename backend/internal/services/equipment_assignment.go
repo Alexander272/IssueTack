@@ -297,6 +297,106 @@ func (s *EquipmentService) ChangeStatus(ctx context.Context, dto *models.ChangeS
 	return s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: dto.ID, RealmID: dto.RealmID})
 }
 
+// AddDefect фиксирует дефект единицы: переводит её в «дефектное» и пишет в журнал
+// событие с описанием неисправности и датой обнаружения. Доступно только для
+// активных единиц (на складе или в эксплуатации) и не для комплектов: у
+// комплекта нет собственного состояния — дефект заводят на конкретной единице.
+// Списание — отдельное действие (WriteOff), поэтому повторный дефект невозможен.
+func (s *EquipmentService) AddDefect(ctx context.Context, dto *models.AddDefectDTO) (*models.Equipment, error) {
+	root, err := s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: dto.ID, RealmID: dto.RealmID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get equipment. error: %w", err)
+	}
+
+	if root.IsKit {
+		return nil, models.ErrEquipmentDefectNotAllowed
+	}
+	if root.Status != models.EquipmentStatusInStock && root.Status != models.EquipmentStatusInUse {
+		// Уже дефектная, списанная, в ремонте или в резерве — дефект не заводят
+		// повторно: сначала должна быть смена статуса (её пока нет, это будущий
+		// функционал). Так гарантированно одна запись «что сломалось и когда».
+		return nil, models.ErrEquipmentDefectNotAllowed
+	}
+
+	// Дефект хранит только дату обнаружения: время никто не фиксирует с точностью
+	// до минуты, и «когда обнаружили» — это день, а не момент. Приводим к началу
+	// суток UTC, чтобы снимок не нёс случайные часы с клиента. Сравнение «в
+	// будущем» — тоже по дню: сегодняшняя дата с любым временем допустима.
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	foundAt := today
+	if dto.FoundAt != nil {
+		foundAt = dto.FoundAt.UTC().Truncate(24 * time.Hour)
+		if foundAt.After(today) {
+			return nil, models.ErrEquipmentDefectDateInFuture
+		}
+	}
+
+	err = s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+		if err := s.repo.SetStatus(ctx, tx, dto.RealmID, dto.ID, models.EquipmentStatusDefective); err != nil {
+			return fmt.Errorf("failed to set status. error: %w", err)
+		}
+		return s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
+			EquipmentID: dto.ID, EventType: models.EquipmentEventDefective, OperationID: uuid.New(),
+			OldValue: statusJSON(root.Status), NewValue: defectJSON(dto.Description, foundAt),
+			UserID: actorID(dto.Actor),
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: dto.ID, RealmID: dto.RealmID})
+}
+
+// WriteOff списывает единицу. Списывать можно только дефектную единицу, и только
+// начальнику области (realm supervisor): списание необратимо, поэтому это не
+// рядовая операция. Статус становится «списано» — единица уходит из общего списка
+// в архив (см. EquipmentFilter.IncludeWrittenOff).
+func (s *EquipmentService) WriteOff(ctx context.Context, dto *models.WriteOffEquipmentDTO) (*models.Equipment, error) {
+	root, err := s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: dto.ID, RealmID: dto.RealmID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get equipment. error: %w", err)
+	}
+	if root.Status != models.EquipmentStatusDefective {
+		return nil, models.ErrEquipmentWriteOffNotDefective
+	}
+
+	if err := s.ensureWriteOffAllowed(ctx, dto); err != nil {
+		return nil, err
+	}
+
+	err = s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+		if err := s.repo.SetStatus(ctx, tx, dto.RealmID, dto.ID, models.EquipmentStatusWrittenOff); err != nil {
+			return fmt.Errorf("failed to set status. error: %w", err)
+		}
+		return s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
+			EquipmentID: dto.ID, EventType: models.EquipmentEventWrittenOff, OperationID: uuid.New(),
+			OldValue: statusJSON(root.Status), NewValue: statusJSON(models.EquipmentStatusWrittenOff),
+			UserID: actorID(dto.Actor), Comment: dto.Comment,
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: dto.ID, RealmID: dto.RealmID})
+}
+
+// ensureWriteOffAllowed проверяет, что списывает начальник области. Проверка идёт
+// до транзакции: это отказ по правам, а не по состоянию данных. Актор без записан
+// на проверку не идёт — без него списать нельзя (анонимных операций нет).
+func (s *EquipmentService) ensureWriteOffAllowed(ctx context.Context, dto *models.WriteOffEquipmentDTO) error {
+	if dto.Actor == nil || dto.Actor.ID == uuid.Nil || s.access == nil {
+		return models.ErrEquipmentWriteOffForbidden
+	}
+	supervisor, err := s.access.IsRealmSupervisor(ctx, dto.Actor.ID, dto.RealmID.String())
+	if err != nil {
+		return fmt.Errorf("policy check failed: %w", err)
+	}
+	if !supervisor {
+		return models.ErrEquipmentWriteOffForbidden
+	}
+	return nil
+}
+
 // GetAssignmentHistory возвращает историю выдач единицы.
 func (s *EquipmentService) GetAssignmentHistory(ctx context.Context, realmID, equipmentID uuid.UUID) ([]*models.EquipmentAssignment, error) {
 	data, err := s.repo.GetAssignmentHistory(ctx, realmID, equipmentID)
@@ -391,6 +491,22 @@ func assignmentJSON(dto *models.AssignEquipmentDTO, holderFullName, siteName str
 // statusJSON сериализует статус для old/new_value события.
 func statusJSON(status models.EquipmentStatus) []byte {
 	data, err := json.Marshal(map[string]any{"status": status})
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
+// defectJSON сериализует дефект для new_value события: описание неисправности и
+// дату обнаружения. Лента истории читает их оттуда — дефект это факт с данными,
+// а не только смена статуса, поэтому отдельное событие, а не status_changed.
+// Дата — только день (YYYY-MM-DD), без времени: момент обнаружения никто не
+// фиксирует, а «12 октября» читается и в UI, и в SQL-выборках по jsonb.
+func defectJSON(description string, foundAt time.Time) []byte {
+	data, err := json.Marshal(map[string]any{
+		"description": description,
+		"foundAt":     foundAt.UTC().Format("2006-01-02"),
+	})
 	if err != nil {
 		return nil
 	}

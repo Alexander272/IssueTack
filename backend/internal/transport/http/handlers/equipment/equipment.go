@@ -59,6 +59,8 @@ func Register(api *gin.RouterGroup, service services.Equipment, maxSize int64, m
 		equipment.POST("/:id/assign", handlers.assign)
 		equipment.POST("/:id/unassign", handlers.unassign)
 		equipment.POST("/:id/status", handlers.changeStatus)
+		equipment.POST("/:id/defect", handlers.addDefect)
+		equipment.POST("/:id/write-off", handlers.writeOff)
 		equipment.POST("/:id/composition", handlers.addComponents)
 		equipment.DELETE("/:id/composition", handlers.removeComponents)
 		equipment.POST("/types", handlers.createType)
@@ -551,6 +553,72 @@ func (h *Handler) changeStatus(c *gin.Context) {
 	dto.Actor = actor
 
 	data, err := h.service.ChangeStatus(c, dto)
+	if err != nil {
+		response.SendError(c, err, dto)
+		return
+	}
+	response.SendData(c, data)
+}
+
+func (h *Handler) addDefect(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	dto := &models.AddDefectDTO{}
+	if err := c.BindJSON(dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+	dto.ID = id
+	dto.RealmID = realmID
+	dto.Actor = actor
+
+	data, err := h.service.AddDefect(c, dto)
+	if err != nil {
+		response.SendError(c, err, dto)
+		return
+	}
+	response.SendData(c, data)
+}
+
+func (h *Handler) writeOff(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	dto := &models.WriteOffEquipmentDTO{}
+	if err := c.BindJSON(dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+	dto.ID = id
+	dto.RealmID = realmID
+	dto.Actor = actor
+
+	data, err := h.service.WriteOff(c, dto)
 	if err != nil {
 		response.SendError(c, err, dto)
 		return

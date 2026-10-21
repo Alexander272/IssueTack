@@ -11,10 +11,11 @@
 -- до появления `kind` комплект хранился в физсоставе — мышь и сумка были вложены
 -- в ноутбук через `parent_id`, а `is_kit` не выставлялся.
 --
--- Демонстрирует все категории типов (device/component/periphery/consumable),
--- физический состав (parent_id: комплектующие в системном блоке, расходник в
--- принтере), логический комплект (is_kit + kit_compositions: ноутбук + мышь +
--- сумка) и выдачу единицы с пропагацией на её состав.
+-- Демонстрирует распространённый офисный набор типов во всех категориях
+-- (device/component/periphery/consumable), физический состав (parent_id:
+-- комплектующие в системном блоке, расходник в принтере), логический комплект
+-- (is_kit + kit_compositions: ноутбук + мышь + сумка) и выдачу единицы с
+-- пропагацией на её состав.
 --
 -- Журнал (`equipment_events`) и акты (`equipment_acts`) не эмулируются: это
 -- append-only история, которую пишут сервисы. Сид заполняет то, что читается
@@ -78,14 +79,29 @@ BEGIN
         (r_id, 'Ноутбук', 'device', 10),
         (r_id, 'Системный блок', 'device', 20),
         (r_id, 'Монитор', 'device', 30),
-        (r_id, 'Память (RAM)', 'component', 40),
-        (r_id, 'Накопитель (SSD/HDD)', 'component', 50),
-        (r_id, 'Принтер/МФУ', 'device', 60),
-        (r_id, 'Телефон', 'device', 70),
-        (r_id, 'Мышь', 'periphery', 80),
-        (r_id, 'Сумка', 'periphery', 90),
-        (r_id, 'Картридж', 'consumable', 100),
-        (r_id, 'Патч-корд (кабель)', 'consumable', 110)
+        (r_id, 'Принтер/МФУ', 'device', 40),
+        (r_id, 'Сканер', 'device', 50),
+        (r_id, 'Телефон', 'device', 60),
+        (r_id, 'Сервер', 'device', 70),
+        (r_id, 'Роутер/коммутатор', 'device', 80),
+        (r_id, 'Память (RAM)', 'component', 110),
+        (r_id, 'Накопитель (SSD/HDD)', 'component', 120),
+        (r_id, 'Процессор', 'component', 130),
+        (r_id, 'Кулер', 'component', 140),
+        (r_id, 'Материнская плата', 'component', 150),
+        (r_id, 'Видеокарта', 'component', 160),
+        (r_id, 'Блок питания', 'component', 170),
+        (r_id, 'Корпус', 'component', 180),
+        (r_id, 'USB-контроллер', 'component', 190),
+        (r_id, 'Клавиатура', 'periphery', 210),
+        (r_id, 'Мышь', 'periphery', 220),
+        (r_id, 'Наушники', 'periphery', 230),
+        (r_id, 'Веб-камера', 'periphery', 240),
+        (r_id, 'ИБП', 'periphery', 250),
+        (r_id, 'Сумка', 'periphery', 260),
+        (r_id, 'Картридж', 'consumable', 310),
+        (r_id, 'Патч-корд (кабель)', 'consumable', 320),
+        (r_id, 'Батарея/аккумулятор', 'consumable', 330)
     ON CONFLICT (realm_id, name) DO UPDATE SET kind = EXCLUDED.kind, sort_order = EXCLUDED.sort_order;
 
     SELECT id INTO t_desktop   FROM equipment_types WHERE realm_id = r_id AND name = 'Системный блок';

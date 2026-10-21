@@ -86,6 +86,7 @@ export const sidebarRules: SidebarRule[] = [
 				AppRoutes.Tasks,
 				AppRoutes.Sites,
 				AppRoutes.Equipment,
+				AppRoutes.EquipmentSettings,
 				AppRoutes.Groups,
 				AppRoutes.Categories,
 				AppRoutes.Statistics,

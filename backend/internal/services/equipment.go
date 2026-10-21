@@ -26,6 +26,17 @@ type EquipmentService struct {
 	// тикеты не зависят от оборудования, а вот оборудование — от них, поэтому
 	// цикл разрывается сеттером. nil допустим: тогда ERP-заявка не создаётся.
 	tickets TicketCreator
+	// access — проверка «начальник области» (realm supervisor) для списания.
+	// Приходит позднее тем же сеттером, что и tickets: оборудование не должно
+	// зависеть от сервиса тикетов на этапе сборки. nil — списание запрещено.
+	access EquipmentAccessChecker
+}
+
+// EquipmentAccessChecker — узкий срез модели доступа: оборудованию нужна одна
+// проверка (кто может списывать), а не весь TicketAccessChecker. Реализуется
+// TicketAccessService — единым держателем Casbin-политик в домене.
+type EquipmentAccessChecker interface {
+	IsRealmSupervisor(ctx context.Context, userID uuid.UUID, realm string) (bool, error)
 }
 
 // TicketCreator — минимальный интерфейс создания заявки: оборудованию нужен один
@@ -53,6 +64,14 @@ func (s *EquipmentService) SetERPConfig(conf config.EquipmentConfig) {
 // TicketService — так разрывается цикл equipment → tickets.
 func (s *EquipmentService) SetTicketCreator(tc TicketCreator) {
 	s.tickets = tc
+}
+
+// SetAccessChecker подключает проверку «начальник области» для списания. Тем же
+// поздним связыванием, что и TicketCreator: сервис доступа — часть кластера
+// тикетов, который собирается раньше оборудования, но оборудования сам по себе
+// от него не зависит.
+func (s *EquipmentService) SetAccessChecker(ac EquipmentAccessChecker) {
+	s.access = ac
 }
 
 // Equipment — интерфейс работы с оборудованием.
@@ -92,6 +111,11 @@ type Equipment interface {
 	Unassign(ctx context.Context, dto *models.UnassignEquipmentDTO) error
 	// ChangeStatus меняет статус единицы оборудования.
 	ChangeStatus(ctx context.Context, dto *models.ChangeStatusDTO) (*models.Equipment, error)
+	// AddDefect фиксирует дефект единицы (описание + дата обнаружения) и переводит
+	// её в «дефектное».
+	AddDefect(ctx context.Context, dto *models.AddDefectDTO) (*models.Equipment, error)
+	// WriteOff списывает дефектную единицу (только начальник области).
+	WriteOff(ctx context.Context, dto *models.WriteOffEquipmentDTO) (*models.Equipment, error)
 	// GetAssignmentHistory возвращает историю выдач единицы.
 	GetAssignmentHistory(ctx context.Context, realmID, equipmentID uuid.UUID) ([]*models.EquipmentAssignment, error)
 	// GetEvents возвращает журнал событий единицы.
@@ -248,6 +272,20 @@ func (s *EquipmentService) Update(ctx context.Context, dto *models.EquipmentDTO)
 		return nil, models.ErrInvalidInput
 	}
 	normalizeEquipmentDTO(dto)
+
+	// Состояние до правки нужно и для статуса, и чтобы отличить перемещение от
+	// обычного сохранения формы (она присылает все поля целиком). Читаем раньше
+	// держателя-статуса: сохранённый ручной статус важнее присланного из тела.
+	previous, err := s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: *dto.ID, RealmID: dto.RealmID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get equipment. error: %w", err)
+	}
+
+	// Выдачу/возврат статус выводится из держателя (in_stock/in_use), а ручные
+	// значения (дефект, списание, ремонт, резерв) правкой не меняются: форма их
+	// не присылает, а API не должен позволять переписать статус в обход UI. Так
+	// что если сохранённый статус — ручной, берём его, а не присланный.
+	dto.Status = previous.Status
 	deriveHolderStatus(dto)
 
 	// У комплекта типа нет — правка формы не должна его ему навязывать.
@@ -277,13 +315,6 @@ func (s *EquipmentService) Update(ctx context.Context, dto *models.EquipmentDTO)
 				return nil, models.ErrEquipmentCycle
 			}
 		}
-	}
-
-	// Состояние до правки нужно, чтобы отличить перемещение от обычного
-	// сохранения формы: она присылает все поля целиком.
-	previous, err := s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: *dto.ID, RealmID: dto.RealmID})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get equipment. error: %w", err)
 	}
 
 	var data *models.Equipment

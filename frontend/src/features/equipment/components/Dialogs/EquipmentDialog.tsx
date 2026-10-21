@@ -25,7 +25,6 @@ import type { IFetchError } from '@/app/types/error'
 import { DateTextField } from '@/components/DatePicker/DatePicker'
 import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
 import type { IEquipment, IEquipmentDTO } from '../../types/equipment'
-import { EQUIPMENT_STATUS_OPTIONS, HOLDER_DERIVED_STATUSES } from '../../types/equipment'
 import {
 	useCreateEquipmentMutation,
 	useDeleteEquipmentMutation,
@@ -398,30 +397,12 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 									</Field>
 								</Box>
 
-								{/* Статус при создании всегда «На складе» — его выводит бэкенд
-								    из держателя. Поле показываем только на правке, где можно
-								    выбрать ручной статус (ремонт, дефект, списание). */}
-								{isEdit && (
-									<Field label='Статус'>
-										<Controller
-											control={control}
-											name='status'
-											render={({ field }) => (
-												<TextField {...field} select {...inputProps}>
-													{EQUIPMENT_STATUS_OPTIONS.map(s => (
-														<MenuItem
-															key={s.value}
-															value={s.value}
-															disabled={HOLDER_DERIVED_STATUSES.includes(s.value)}
-														>
-															{s.label}
-														</MenuItem>
-													))}
-												</TextField>
-											)}
-										/>
-									</Field>
-								)}
+								{/* Статус в форме не выбирается: его выводят операции (выдача →
+								    «в эксплуатации», возврат → «на складе»), а остальные
+								    значения (дефект, списание) — будущий отдельный механизм.
+								    Поле «Статус» убрано вместе с селектом. Сохранённое значение
+								    всё равно уходит в payload (из toDefault), поэтому правка
+								    статус не сбрасывает. */}
 
 								<Field label='Примечание'>
 									<Controller

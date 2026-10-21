@@ -1,36 +1,71 @@
 import { useState, type FC } from 'react'
-import { Box, Button, IconButton, Stack, Typography } from '@mui/material'
-import { PencilIcon, XIcon } from 'lucide-mui'
+import { Box, Button, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Stack, Typography } from '@mui/material'
+import { AlertTriangleIcon, MoreVerticalIcon, PencilIcon, WrenchIcon, XIcon } from 'lucide-mui'
+import { useSelector } from 'react-redux'
+import { toast } from 'react-toastify'
 
+import type { IFetchError } from '@/app/types/error'
 import type { IEquipment } from '../../types/equipment'
 import { HOLDER_DERIVED_STATUSES, getEquipmentStatus } from '../../types/equipment'
 import { equipmentAccent } from '../../utils/typeKind'
-import { EquipmentDialog, EquipmentKitDialog } from '../Dialogs'
+import { EquipmentDefectDialog, EquipmentDialog, EquipmentKitDialog } from '../Dialogs'
 import { EquipmentTypeIcon } from '../EquipmentTypeIcon'
+import { useWriteOffEquipmentMutation } from '../../equipmentApiSlice'
+import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
 import { PermRules } from '@/features/access/constants/permissions'
 import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
+import { getCurrentCapabilities } from '@/features/user/userSlice'
 
 type Props = {
 	unit: IEquipment
 	onClose: () => void
 }
 
-// Шапка модалки единицы: иконка типа и название со статусом, действие
-// (редактировать) и кнопка закрытия. Выдача и возврат живут в блоке «Держатель»
-// на вкладке «Обзор» — там видно, у кого единица сейчас, — а удаление переехало
-// в форму редактирования, рядом с сохранением. Диалог открывается здесь же,
-// рядом со своей кнопкой, поэтому наружу уходят только единица и закрытие
-// модалки — мостиков-колбэков в контейнер нет. Прав на запись нужны только
-// здесь, поэтому компонент берёт их сам.
+// Шапка модалки единицы: иконка типа и название со статусом, меню действий
+// (редактировать, добавить дефект, списать) и кнопка закрытия. Выдача и возврат
+// живут в блоке «Держатель» на вкладке «Обзор» — там видно, у кого единица
+// сейчас, — а удаление переехало в форму редактирования, рядом с сохранением.
+// Диалоги открываются здесь же, рядом с меню, поэтому наружу уходят только
+// единица и закрытие модалки — мостиков-колбэков в контейнер нет. Прав на запись
+// нужны только здесь, поэтому компонент берёт их сам.
 export const DetailHeader: FC<Props> = ({ unit, onClose }) => {
 	const canWrite = useCheckPermissions({ anyOf: [PermRules.Equipment.Write] })
+	// Списание необратимо, поэтому доступно только начальнику области — та же
+	// формула, что на бэкенде (IsRealmSupervisor), иначе кнопка обещала бы то,
+	// чего сервис не разрешит.
+	const isRealmAdmin = useSelector(getCurrentCapabilities).isRealmAdmin
+	const [writeOff, { isLoading: isWritingOff }] = useWriteOffEquipmentMutation()
+
 	const [editOpen, setEditOpen] = useState(false)
+	const [defectOpen, setDefectOpen] = useState(false)
+	const [writeOffOpen, setWriteOffOpen] = useState(false)
+	const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null)
+
+	// Дефект заводят только на активной единице и не на комплекте: у комплекта нет
+	// своего состояния, а у уже дефектной/списанной/в ремонте дефект уже есть —
+	// вторая запись «что сломалось» только запутала бы историю.
+	const canAddDefect = !unit.isKit && (unit.status === 'in_stock' || unit.status === 'in_use')
+	// Списывать можно только дефектную и только начальнику области.
+	const canWriteOff = isRealmAdmin && unit.status === 'defective'
 
 	const accent = equipmentAccent(unit)
 	// Чипы в шапке — про исключение, а не пересказ карточки: «на складе»/«в
 	// эксплуатации» видно в блоке «Держатель» ниже, а ремонт, дефект, резерв и
 	// списание больше нигде в карточке не видны — их оставляем.
 	const status = HOLDER_DERIVED_STATUSES.includes(unit.status) ? null : getEquipmentStatus(unit.status)
+
+	const writeOffHandler = async () => {
+		try {
+			await writeOff({ id: unit.id, body: {} }).unwrap()
+			toast.success('Оборудование списано')
+			setWriteOffOpen(false)
+		} catch (error) {
+			const fetchError = error as IFetchError
+			toast.error(fetchError.data?.message || 'Ошибка при списании', { autoClose: false })
+		}
+	}
+
+	const closeMenu = () => setMenuAnchor(null)
 
 	return (
 		<>
@@ -93,15 +128,64 @@ export const DetailHeader: FC<Props> = ({ unit, onClose }) => {
 							flexBasis: { xs: '100%', sm: 'auto' },
 						}}
 					>
+						{/* Действия собраны в меню под тремя точками: «Редактировать»
+						    рядом с «Добавить дефект» и «Списать» — это операции над
+						    одной единицей, и держать их в одном месте логичнее, чем
+						    растить ряд кнопок в шапке. На телефоне кнопка занимает
+						    строку целиком (как раньше «Редактировать»). */}
 						<Button
 							variant='outlined'
 							size='small'
+							onClick={e => setMenuAnchor(e.currentTarget)}
 							sx={{ borderRadius: '8px', textTransform: 'none', gap: 0.5 }}
-							onClick={() => setEditOpen(true)}
 						>
-							<PencilIcon sx={{ fontSize: 16 }} />
-							Редактировать
+							<MoreVerticalIcon sx={{ fontSize: 16 }} />
+							Действия
 						</Button>
+						<Menu
+							anchorEl={menuAnchor}
+							open={Boolean(menuAnchor)}
+							onClose={closeMenu}
+							slotProps={{ paper: { sx: { minWidth: 200 } } }}
+						>
+							<MenuItem
+								onClick={() => {
+									closeMenu()
+									setEditOpen(true)
+								}}
+							>
+								<ListItemIcon>
+									<PencilIcon sx={{ fontSize: 18 }} />
+								</ListItemIcon>
+								<ListItemText>Редактировать</ListItemText>
+							</MenuItem>
+							{canAddDefect && (
+								<MenuItem
+									onClick={() => {
+										closeMenu()
+										setDefectOpen(true)
+									}}
+								>
+									<ListItemIcon>
+										<WrenchIcon sx={{ fontSize: 18, color: 'warning.main' }} />
+									</ListItemIcon>
+									<ListItemText>Добавить дефект</ListItemText>
+								</MenuItem>
+							)}
+							{canWriteOff && (
+								<MenuItem
+									onClick={() => {
+										closeMenu()
+										setWriteOffOpen(true)
+									}}
+								>
+									<ListItemIcon>
+										<AlertTriangleIcon sx={{ fontSize: 18, color: 'error.main' }} />
+									</ListItemIcon>
+									<ListItemText sx={{ color: 'error.main' }}>Списать</ListItemText>
+								</MenuItem>
+							)}
+						</Menu>
 					</Stack>
 				)}
 				<IconButton
@@ -123,6 +207,22 @@ export const DetailHeader: FC<Props> = ({ unit, onClose }) => {
 				) : (
 					<EquipmentDialog open onClose={() => setEditOpen(false)} onDeleted={onClose} unit={unit} />
 				))}
+
+			{/* Условный рендер дефекта: форма монтируется заново при каждом
+			    открытии, чтобы не показывать описание предыдущей единицы. */}
+			{defectOpen && <EquipmentDefectDialog open onClose={() => setDefectOpen(false)} unit={unit} />}
+
+			<ConfirmDialog
+				open={writeOffOpen}
+				title='Списать оборудование'
+				message={`«${unit.name}» будет списано. Действие необратимо, единица уйдёт из общего списка.`}
+				confirmLabel='Списать'
+				confirmColor='error'
+				loading={isWritingOff}
+				loadingLabel='Списание...'
+				onConfirm={writeOffHandler}
+				onCancel={() => setWriteOffOpen(false)}
+			/>
 		</>
 	)
 }

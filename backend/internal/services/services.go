@@ -155,6 +155,9 @@ func NewServices(deps *Deps) *Services {
 	// Оборудование заводит заявку в 1C:ERP при выдаче/возврате, а заявку создаёт
 	// TicketService — цикл equipment → tickets разрывается поздним связыванием.
 	equipment.SetTicketCreator(tickets)
+	// Списание оборудования разрешает только начальник области, а эта проверка
+	// живёт в сервисе доступа — тем же поздним связыванием.
+	equipment.SetAccessChecker(access)
 
 	// Цикл tickets → attachments разорван: уведомление о вложении рассылает сам
 	// TicketService (UploadAttachment), поэтому attachments не зависят от тикетов

@@ -72,6 +72,11 @@ const (
 	EquipmentEventComponentReplaced EquipmentEventType = "component_replaced"
 	EquipmentEventRepaired          EquipmentEventType = "repaired"
 	EquipmentEventWrittenOff        EquipmentEventType = "written_off"
+	// EquipmentEventDefective — зафиксирован дефект единицы: описание и дата
+	// обнаружения лежат в new_value события. Отдельный тип, а не status_changed,
+	// потому что дефект — это факт с данными (что сломалось и когда), а не просто
+	// смена состояния: лента истории печатает по нему описание дефекта.
+	EquipmentEventDefective EquipmentEventType = "defective"
 )
 
 // IsValid проверяет, что тип события принадлежит перечислению (для enum-валидатора).
@@ -80,7 +85,7 @@ func (e EquipmentEventType) IsValid() bool {
 	case EquipmentEventCreated, EquipmentEventUpdated, EquipmentEventAssigned, EquipmentEventUnassigned,
 		EquipmentEventMoved, EquipmentEventStatusChanged, EquipmentEventComponentAdded,
 		EquipmentEventComponentRemoved, EquipmentEventComponentReplaced, EquipmentEventRepaired,
-		EquipmentEventWrittenOff:
+		EquipmentEventWrittenOff, EquipmentEventDefective:
 		return true
 	}
 	return false
@@ -210,8 +215,12 @@ type EquipmentFilter struct {
 	Serial    *string          `form:"serial" json:"serial"`
 	Inventory *string          `form:"inventory" json:"inventory"`
 	Search    *string          `form:"search" json:"search"`
-	Limit     int              `form:"limit" json:"limit"`
-	Offset    int              `form:"offset" json:"offset"`
+	// IncludeWrittenOff: списанное по умолчанию не показывается в общем списке
+	// (это «архив»), а отдельный фильтр статуса возвращает его. Флаг, а не
+	// хардкод в репозитории: список должен уметь показать всё, если попросят.
+	IncludeWrittenOff bool `form:"includeWrittenOff" json:"includeWrittenOff"`
+	Limit             int  `form:"limit" json:"limit"`
+	Offset            int  `form:"offset" json:"offset"`
 }
 
 // GetEquipmentTreeDTO — параметры ленивого дерева: ParentID == nil — корни реалма,
@@ -224,9 +233,12 @@ type GetEquipmentTreeDTO struct {
 	ParentID *uuid.UUID       `form:"parentId,parser=encoding.TextUnmarshaler" json:"parentId" db:"parent_id"`
 	Status   *EquipmentStatus `form:"status" json:"status" binding:"omitempty,enum"`
 	// IsKit: nil — все корни, true — комплекты, false — единицы.
-	IsKit  *bool `form:"isKit" json:"isKit" db:"is_kit"`
-	Limit  int   `form:"limit" json:"limit"`
-	Offset int   `form:"offset" json:"offset"`
+	IsKit *bool `form:"isKit" json:"isKit" db:"is_kit"`
+	// IncludeWrittenOff — как в EquipmentFilter: списанное скрыто, пока флаг не
+	// выставлен (или пока явно не выбран статус written_off).
+	IncludeWrittenOff bool `form:"includeWrittenOff" json:"includeWrittenOff"`
+	Limit             int  `form:"limit" json:"limit"`
+	Offset            int  `form:"offset" json:"offset"`
 }
 
 // EquipmentStats — счётчики единиц реалма для подписи в шапке страницы.
@@ -512,6 +524,30 @@ type ChangeStatusDTO struct {
 	Status  EquipmentStatus `json:"status" binding:"required,enum"`
 	Comment string          `json:"comment"`
 	Actor   *Actor          `json:"-"`
+}
+
+// AddDefectDTO — фиксация дефекта единицы: описание неисправности и дата
+// обнаружения. Статус переводится в «дефектное», списание — отдельное действие
+// (WriteOff) и доступно только начальнику области.
+type AddDefectDTO struct {
+	ID      uuid.UUID `json:"id"`
+	RealmID uuid.UUID `json:"realmId"`
+	// Description — что именно сломалось. Обязательна: ради неё дефект и заводят.
+	Description string `json:"description" binding:"required"`
+	// FoundAt — когда дефект обнаружен (RFC3339). nil = сейчас. Хранится только
+	// дата: время обнаружения никто не фиксирует, а момент записи даёт createdAt
+	// самого события. Будущая дата отклоняется (EQ023).
+	FoundAt *time.Time `json:"foundAt"`
+	Actor   *Actor     `json:"-"`
+}
+
+// WriteOffEquipmentDTO — списание дефектной единицы. Доступно только начальнику
+// области (realm supervisor).
+type WriteOffEquipmentDTO struct {
+	ID      uuid.UUID `json:"id"`
+	RealmID uuid.UUID `json:"realmId"`
+	Comment string    `json:"comment"`
+	Actor   *Actor    `json:"-"`
 }
 
 // ComponentOpItem — элемент операции с составом комплекта.

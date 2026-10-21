@@ -2,6 +2,7 @@ import { toast } from 'react-toastify'
 
 import type { IBaseFetchError } from '@/app/types/error'
 import type {
+	IAddDefectDTO,
 	IAssignEquipmentDTO,
 	IChangeStatusDTO,
 	ICompositionOpDTO,
@@ -24,6 +25,7 @@ import type {
 	IEquipmentTypeDTO,
 	IKitComposition,
 	IUnassignEquipmentDTO,
+	IWriteOffEquipmentDTO,
 } from './types/equipment'
 import { apiSlice, baseQueryWithReAuth } from '@/app/apiSlice'
 import { API } from '@/app/api'
@@ -225,6 +227,48 @@ const equipmentApiSlice = apiSlice.injectEndpoints({	overrideExisting: false,
 			invalidatesTags: (_result, _err, { id }) => [
 				{ type: 'Equipment', id: 'ALL' },
 				{ type: 'Equipment', id },
+			],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		addEquipmentDefect: builder.mutation<IEquipment, { id: string; body: IAddDefectDTO }>({
+			query: ({ id, body }) => ({
+				url: API.equipment.defect(id),
+				method: 'POST',
+				body,
+			}),
+			invalidatesTags: (_result, _err, { id }) => [
+				{ type: 'Equipment', id: 'ALL' },
+				{ type: 'Equipment', id },
+				{ type: 'Equipment', id: `events-${id}` },
+			],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		writeOffEquipment: builder.mutation<IEquipment, { id: string; body: IWriteOffEquipmentDTO }>({
+			query: ({ id, body }) => ({
+				url: API.equipment.writeOff(id),
+				method: 'POST',
+				body,
+			}),
+			invalidatesTags: (_result, _err, { id }) => [
+				{ type: 'Equipment', id: 'ALL' },
+				{ type: 'Equipment', id },
+				{ type: 'Equipment', id: `events-${id}` },
 			],
 			onQueryStarted: async (_arg, api) => {
 				try {
@@ -639,6 +683,8 @@ export const {
 	useAssignEquipmentMutation,
 	useUnassignEquipmentMutation,
 	useChangeEquipmentStatusMutation,
+	useAddEquipmentDefectMutation,
+	useWriteOffEquipmentMutation,
 	useGetEquipmentAssignmentsQuery,
 	useGetEquipmentEventsQuery,
 	useGetEquipmentCompositionQuery,

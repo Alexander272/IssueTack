@@ -24,6 +24,16 @@ type fakeEquipmentRepo struct {
 	events   []*models.EquipmentEvent
 	invSeq   map[models.EquipmentInventorySeries]int
 	invTaken map[string]bool
+	// statuses — статус, выставленный SetStatus: дефект/списание проверяют
+	// переход состояния, а вернуть его нужно отдельным методом репозитория.
+	statuses []models.EquipmentStatus
+}
+
+// SetStatus запоминает выставленный статус: AddDefect/WriteOff меняют состояние
+// не через Update, а отдельным вызовом репозитория.
+func (f *fakeEquipmentRepo) SetStatus(_ context.Context, _ postgres.Tx, _, _ uuid.UUID, status models.EquipmentStatus) error {
+	f.statuses = append(f.statuses, status)
+	return nil
 }
 
 // NextInventoryNumber/InventoryNumberExists — счётчик инвентарных номеров
@@ -47,9 +57,14 @@ func (f *fakeEquipmentRepo) GetTypeByID(_ context.Context, _ *models.GetEquipmen
 
 // GetByID отдаёт заданного родителя; по умолчанию — устройство, чтобы проверка
 // «родитель способен содержать состав» не мешала кейсам про тип ребёнка.
+// Статус по умолчанию — «на складе»: правка берёт сохранённый статус из этого
+// состояния, а не из тела запроса (см. TestEquipmentService_UpdateKeepsStatus).
 func (f *fakeEquipmentRepo) GetByID(_ context.Context, req *models.GetEquipmentByIdDTO) (*models.Equipment, error) {
 	if f.parent == nil {
-		return &models.Equipment{ID: req.ID, RealmID: req.RealmID, TypeKind: models.EquipmentTypeDevice}, nil
+		return &models.Equipment{
+			ID: req.ID, RealmID: req.RealmID, TypeKind: models.EquipmentTypeDevice,
+			Status: models.EquipmentStatusInStock,
+		}, nil
 	}
 	return f.parent, nil
 }

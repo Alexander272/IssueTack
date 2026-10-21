@@ -7,10 +7,12 @@ export const EQUIPMENT_TYPE_KIND_LABELS: Record<EquipmentTypeKind, string> = {
 	consumable: 'Расходник',
 }
 
-export const EQUIPMENT_TYPE_KIND_OPTIONS = (Object.keys(EQUIPMENT_TYPE_KIND_LABELS) as EquipmentTypeKind[]).map(value => ({
-	value,
-	label: EQUIPMENT_TYPE_KIND_LABELS[value],
-}))
+export const EQUIPMENT_TYPE_KIND_OPTIONS = (Object.keys(EQUIPMENT_TYPE_KIND_LABELS) as EquipmentTypeKind[]).map(
+	value => ({
+		value,
+		label: EQUIPMENT_TYPE_KIND_LABELS[value],
+	}),
+)
 
 // canBePart сообщает, можно ли единицу такого типа включить в физический состав
 // (parent_id): комплектующее или расходник.
@@ -37,19 +39,13 @@ export interface IEquipmentTypeDTO {
 	sortOrder: number
 }
 
-export type EquipmentStatus =
-	| 'in_stock'
-	| 'in_use'
-	| 'repair'
-	| 'defective'
-	| 'reserved'
-	| 'written_off'
+export type EquipmentStatus = 'in_stock' | 'in_use' | 'repair' | 'defective' | 'reserved' | 'written_off'
 
 const EQUIPMENT_STATUS_MAP: Record<EquipmentStatus, { label: string; color: string }> = {
 	in_stock: { label: 'На складе', color: '#6b7280' },
 	in_use: { label: 'В эксплуатации', color: '#16a34a' },
 	repair: { label: 'В ремонте', color: '#ea580c' },
-	defective: { label: 'Дефектная', color: '#ca8a04' },
+	defective: { label: 'Дефектное', color: '#ca8a04' },
 	reserved: { label: 'Зарезервировано', color: '#2563eb' },
 	written_off: { label: 'Списано', color: '#dc2626' },
 }
@@ -57,10 +53,19 @@ const EQUIPMENT_STATUS_MAP: Record<EquipmentStatus, { label: string; color: stri
 export const getEquipmentStatus = (status: EquipmentStatus) =>
 	EQUIPMENT_STATUS_MAP[status] ?? { label: status, color: '#6b7280' }
 
-export const EQUIPMENT_STATUS_OPTIONS = Object.entries(EQUIPMENT_STATUS_MAP).map(([value, { label }]) => ({
-	value: value as EquipmentStatus,
-	label,
-}))
+// Статусы, скрытые из селектов до появления своего функционала: «в ремонте» и
+// «зарезервировано» пока нечем управлять (нет ни ремонтных работ, ни брони), а
+// ручная установка из формы только путала бы. Из мапы и из типа они не убраны:
+// значение остаётся в БД и в истории, а карточка/лента показывают его как раньше
+// (иначе уже отправленные в ремонт единицы отобразились бы сырым кодом).
+export const EQUIPMENT_STATUS_HIDDEN: EquipmentStatus[] = ['repair', 'reserved']
+
+export const EQUIPMENT_STATUS_OPTIONS = Object.entries(EQUIPMENT_STATUS_MAP)
+	.filter(([value]) => !EQUIPMENT_STATUS_HIDDEN.includes(value as EquipmentStatus))
+	.map(([value, { label }]) => ({
+		value: value as EquipmentStatus,
+		label,
+	}))
 
 // Статусы, которые выводятся из держателя, а не выбираются вручную: «в
 // эксплуатации» ставит выдача, «на складе» — возврат (бэкенд делает это в
@@ -143,6 +148,9 @@ export interface IEquipmentFilter {
 	serial?: string
 	inventory?: string
 	search?: string
+	// includeWrittenOff — показывать списанное в общем списке. По умолчанию
+	// (или при явном статусе) списанные скрыты: это архив, а не рабочий список.
+	includeWrittenOff?: boolean
 	limit?: number
 	offset?: number
 }
@@ -218,6 +226,7 @@ export type EquipmentEventType =
 	| 'component_replaced'
 	| 'repaired'
 	| 'written_off'
+	| 'defective'
 
 const EQUIPMENT_EVENT_LABELS: Record<EquipmentEventType, string> = {
 	created: 'Создано',
@@ -231,6 +240,7 @@ const EQUIPMENT_EVENT_LABELS: Record<EquipmentEventType, string> = {
 	component_replaced: 'Замена компонента',
 	repaired: 'Ремонт',
 	written_off: 'Списание',
+	defective: 'Обнаружен дефект',
 }
 
 export const getEquipmentEventLabel = (type: EquipmentEventType) => EQUIPMENT_EVENT_LABELS[type] ?? type
@@ -290,6 +300,17 @@ export interface IUnassignEquipmentDTO {
 
 export interface IChangeStatusDTO {
 	status: EquipmentStatus
+	comment?: string
+}
+
+// IAddDefectDTO — фиксация дефекта: описание неисправности (обязательно) и дата
+// обнаружения (не передана — сервер поставит текущую; будущее отклоняется).
+export interface IAddDefectDTO {
+	description: string
+	foundAt?: string
+}
+
+export interface IWriteOffEquipmentDTO {
 	comment?: string
 }
 

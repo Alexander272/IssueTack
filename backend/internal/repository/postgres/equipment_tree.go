@@ -47,6 +47,11 @@ func (r *EquipmentRepo) GetTree(ctx context.Context, dto *models.GetEquipmentTre
 		// дети раскрытого узла показываются целиком (как было на клиенте).
 		eq(w, "e.status", dto.Status)
 		eq(w, "e.is_kit", dto.IsKit)
+		// Списанное скрыто в общем дереве: архив показывается явным фильтром
+		// статуса или флагом includeWrittenOff (см. EquipmentFilter).
+		if dto.Status == nil && !dto.IncludeWrittenOff {
+			w.add("e.status <> 'written_off'")
+		}
 		w.add(`NOT EXISTS (SELECT 1 FROM ` + Tables.Equipment + ` p WHERE p.id = e.parent_id AND p.realm_id = $1)`)
 		w.add(`NOT EXISTS (SELECT 1 FROM ` + Tables.KitCompositions + ` kc WHERE kc.component_id = e.id AND kc.ended_at IS NULL)`)
 	} else {

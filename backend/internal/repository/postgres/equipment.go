@@ -176,6 +176,13 @@ func (r *EquipmentRepo) Get(ctx context.Context, filter *models.EquipmentFilter)
 	eq(w, "e.site_id", filter.SiteID)
 	eq(w, "e.holder_user_id", filter.HolderID)
 
+	// Списанное — «архив»: в общем списке его нет. Явный фильтр статуса (в т.ч.
+	// written_off) или флаг includeWrittenOff возвращают записи. Условие добавляем,
+	// только когда статус не задан: при явном статусе фильтр по нему уже есть.
+	if filter.Status == nil && !filter.IncludeWrittenOff {
+		w.add("e.status <> 'written_off'")
+	}
+
 	like := func(column string, val *string) {
 		if val == nil || *val == "" {
 			return

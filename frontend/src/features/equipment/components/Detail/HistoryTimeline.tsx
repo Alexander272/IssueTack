@@ -2,6 +2,7 @@ import { type ElementType, type FC, useMemo, useState } from 'react'
 import { Box, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
 import dayjs from 'dayjs'
 import {
+	AlertTriangleIcon,
 	ArchiveRestoreIcon,
 	ArrowRightIcon,
 	ClockIcon,
@@ -69,6 +70,7 @@ const EVENT_META: Record<EquipmentEventType, { Icon: ElementType; color: string;
 	component_replaced: { Icon: Undo2Icon, color: '#7c3aed', group: 'composition' },
 	repaired: { Icon: WrenchIcon, color: '#ea580c', group: 'status' },
 	written_off: { Icon: Trash2Icon, color: '#dc2626', group: 'status' },
+	defective: { Icon: AlertTriangleIcon, color: '#ca8a04', group: 'status' },
 }
 
 // Легаси-записи (выдачи и состав) дублируют события: обе сущности пишутся в одной
@@ -183,6 +185,21 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 					return { ...base, action: 'Отправлено в ремонт', from: statusOf(e.oldValue), to: statusOf(e.newValue), note: comment }
 				case 'written_off':
 					return { ...base, action: 'Списано', from: statusOf(e.oldValue), to: statusOf(e.newValue), note: comment }
+				case 'defective': {
+					// Дефект — факт с данными: описание лежит в снимке события, а
+					// дата обнаружения — отдельным чипом, потому что её часто
+					// ставят раньше момента записи.
+					const description = str(e.newValue?.description)
+					const foundAt = str(e.newValue?.foundAt)
+					return {
+						...base,
+						action: 'Обнаружен дефект',
+						note: [description, comment].filter(Boolean).join(' · ') || undefined,
+						to: foundAt
+							? { label: dayjs(foundAt).locale('ru').format('D MMMM YYYY'), color: '#ca8a04' }
+							: undefined,
+					}
+				}
 				case 'component_added':
 					return { ...base, action: 'Компонент добавлен в комплект', to: componentOf(e.newValue, e.componentId), note: comment }
 				case 'component_removed':
