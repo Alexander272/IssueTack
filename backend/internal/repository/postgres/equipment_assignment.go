@@ -177,11 +177,11 @@ func (r *EquipmentRepo) CreateEvent(ctx context.Context, tx Tx, e *models.Equipm
 	if e.ID == uuid.Nil {
 		e.ID = uuid.New()
 	}
-	query := fmt.Sprintf(`INSERT INTO %s (id, equipment_id, event_type, operation_id, component_id, old_value, new_value, user_id, comment)
-		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9)`, Tables.EquipmentEvents)
+	query := fmt.Sprintf(`INSERT INTO %s (id, equipment_id, event_type, operation_id, component_id, old_value, new_value, user_id, comment, assignment_id, closed_assignment_id)
+		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10, $11)`, Tables.EquipmentEvents)
 
 	_, err := r.getExec(tx).Exec(ctx, query, e.ID, e.EquipmentID, e.EventType, e.OperationID, e.ComponentID,
-		nullableJSON(e.OldValue), nullableJSON(e.NewValue), e.UserID, e.Comment)
+		nullableJSON(e.OldValue), nullableJSON(e.NewValue), e.UserID, e.Comment, e.AssignmentID, e.ClosedAssignmentID)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -191,6 +191,7 @@ func (r *EquipmentRepo) CreateEvent(ctx context.Context, tx Tx, e *models.Equipm
 func (r *EquipmentRepo) GetEvents(ctx context.Context, realmID, equipmentID uuid.UUID, limit, offset int) ([]*models.EquipmentEvent, error) {
 	query := fmt.Sprintf(`SELECT ev.id, ev.equipment_id, ev.event_type, ev.operation_id, ev.component_id,
 			ev.old_value, ev.new_value, ev.user_id, ev.comment, ev.created_at,
+			ev.assignment_id, ev.closed_assignment_id,
 			%s AS user_name
 		FROM %s ev JOIN %s e ON e.id = ev.equipment_id
 		LEFT JOIN %s u ON u.id = ev.user_id
@@ -218,7 +219,8 @@ func (r *EquipmentRepo) GetEvents(ctx context.Context, realmID, equipmentID uuid
 		item := &models.EquipmentEvent{}
 		var userName *string
 		if err := rows.Scan(&item.ID, &item.EquipmentID, &item.EventType, &item.OperationID, &item.ComponentID,
-			&item.OldValue, &item.NewValue, &item.UserID, &item.Comment, &item.CreatedAt, &userName); err != nil {
+			&item.OldValue, &item.NewValue, &item.UserID, &item.Comment, &item.CreatedAt,
+			&item.AssignmentID, &item.ClosedAssignmentID, &userName); err != nil {
 			return nil, MapError(fmt.Errorf("scan row error: %w", err))
 		}
 		if userName != nil {

@@ -69,6 +69,10 @@ func (f *fakeAssignRepo) CreateAssignment(_ context.Context, _ postgres.Tx, a *m
 	return nil
 }
 
+func (f *fakeAssignRepo) GetLastStoredPlace(_ context.Context, _ uuid.UUID) (*uuid.UUID, *string, error) {
+	return nil, nil, models.ErrNotFound
+}
+
 func (f *fakeAssignRepo) SetHolderAndStatus(
 	_ context.Context, _ postgres.Tx, _ uuid.UUID,
 	userID *uuid.UUID, _ *string, siteID *uuid.UUID, location *string, _ models.EquipmentStatus,
@@ -286,4 +290,86 @@ func TestEquipmentService_Assign_RequiresHolderOrPlace(t *testing.T) {
 	assert.ErrorIs(t, err, models.ErrEquipmentNoHoldersOrLocation)
 	assert.Empty(t, repo.createdAssignment)
 	assert.Empty(t, repo.events)
+}
+
+// TestEquipmentService_Assign_EventLinksRow: событие выдачи называет строку выдачи
+// явно (assignment_id) и прежнюю открытую строку, которую эта же операция закрыла
+// (closed_assignment_id). Лента истории соединяет строку и журнал по этим
+// ссылкам: момент выдачи приходит из формы (её оформляют задним числом), а
+// момент записи в журнал — другое, и по времени их не отличить.
+func TestEquipmentService_Assign_EventLinksRow(t *testing.T) {
+	ctx := context.Background()
+	siteID, userID, openID := uuid.New(), uuid.New(), uuid.New()
+
+	repo := &fakeAssignRepo{
+		unit:           &models.Equipment{SiteID: &siteID},
+		openAssignment: &models.EquipmentAssignment{ID: openID},
+	}
+	svc := NewEquipmentService(repo, &mockTransactionManager{}, testEquipmentConf(t))
+
+	err := svc.Assign(ctx, &models.AssignEquipmentDTO{
+		ID: uuid.New(), RealmID: uuid.New(), UserID: &userID, SkipAct: true,
+	})
+	require.NoError(t, err)
+
+	require.Len(t, repo.events, 1)
+	ev := repo.events[0]
+	require.NotNil(t, repo.createdAssignment)
+
+	// Событие открыло новую строку выдачи.
+	require.NotNil(t, ev.AssignmentID)
+	assert.Equal(t, repo.createdAssignment.ID, *ev.AssignmentID)
+	// И закрыло прежнюю открытую.
+	require.NotNil(t, ev.ClosedAssignmentID)
+	assert.Equal(t, openID, *ev.ClosedAssignmentID)
+}
+
+// TestEquipmentService_Assign_EventWithoutPreviousRow: первой выдаче нечего
+// закрывать — ссылка на закрытую строку пуста, а не указывает на случайную.
+func TestEquipmentService_Assign_EventWithoutPreviousRow(t *testing.T) {
+	ctx := context.Background()
+	siteID, userID := uuid.New(), uuid.New()
+
+	repo := &fakeAssignRepo{unit: &models.Equipment{SiteID: &siteID}}
+	svc := NewEquipmentService(repo, &mockTransactionManager{}, testEquipmentConf(t))
+
+	err := svc.Assign(ctx, &models.AssignEquipmentDTO{
+		ID: uuid.New(), RealmID: uuid.New(), UserID: &userID, SkipAct: true,
+	})
+	require.NoError(t, err)
+
+	require.Len(t, repo.events, 1)
+	ev := repo.events[0]
+	require.NotNil(t, ev.AssignmentID)
+	require.NotNil(t, repo.createdAssignment)
+	assert.Equal(t, repo.createdAssignment.ID, *ev.AssignmentID)
+	assert.Nil(t, ev.ClosedAssignmentID)
+}
+
+// TestEquipmentService_Unassign_EventLinksRows: возврат меняет две строки —
+// закрывает выдачу и открывает строку «на складе», — и событие называет обе:
+// прежняя выдача в closed_assignment_id, складская строка в assignment_id.
+func TestEquipmentService_Unassign_EventLinksRows(t *testing.T) {
+	ctx := context.Background()
+	siteID, openID := uuid.New(), uuid.New()
+
+	repo := &fakeAssignRepo{
+		unit:           &models.Equipment{SiteID: &siteID},
+		openAssignment: &models.EquipmentAssignment{ID: openID},
+	}
+	svc := NewEquipmentService(repo, &mockTransactionManager{}, testEquipmentConf(t))
+
+	err := svc.Unassign(ctx, &models.UnassignEquipmentDTO{
+		ID: uuid.New(), RealmID: uuid.New(), SiteID: &siteID,
+	})
+	require.NoError(t, err)
+
+	require.Len(t, repo.events, 1)
+	ev := repo.events[0]
+	require.NotNil(t, repo.createdAssignment)
+
+	require.NotNil(t, ev.AssignmentID)
+	assert.Equal(t, repo.createdAssignment.ID, *ev.AssignmentID)
+	require.NotNil(t, ev.ClosedAssignmentID)
+	assert.Equal(t, openID, *ev.ClosedAssignmentID)
 }

@@ -92,13 +92,20 @@ func (s *EquipmentService) Assign(ctx context.Context, dto *models.AssignEquipme
 			if err != nil && !errors.Is(err, models.ErrNotFound) {
 				return fmt.Errorf("failed to get open assignment. error: %w", err)
 			}
+			// Прежняя открытая выдача закрывается этой же операцией — событие
+			// ссылается на неё (closed_assignment_id), поэтому лента истории
+			// знает, что прежний период закрыт именно этой выдачей, а не
+			// отдельной операцией.
+			var closedID *uuid.UUID
 			if err == nil {
+				closedID = &open.ID
 				if err := s.repo.CloseAssignment(ctx, tx, open.ID, now, ""); err != nil {
 					return fmt.Errorf("failed to close assignment. error: %w", err)
 				}
 			}
 
-			if err := s.repo.CreateAssignment(ctx, tx, &models.EquipmentAssignment{
+			assignment := &models.EquipmentAssignment{
+				ID:          uuid.New(),
 				EquipmentID: eq.ID,
 				UserID:      dto.UserID,
 				HolderName:  dto.HolderName,
@@ -108,7 +115,8 @@ func (s *EquipmentService) Assign(ctx context.Context, dto *models.AssignEquipme
 				ReturnDueAt: dto.ReturnDueAt,
 				AssignedBy:  actorID,
 				Comment:     dto.Comment,
-			}); err != nil {
+			}
+			if err := s.repo.CreateAssignment(ctx, tx, assignment); err != nil {
 				return fmt.Errorf("failed to create assignment. error: %w", err)
 			}
 
@@ -118,6 +126,12 @@ func (s *EquipmentService) Assign(ctx context.Context, dto *models.AssignEquipme
 			if err := s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
 				EquipmentID: eq.ID, EventType: models.EquipmentEventAssigned, OperationID: opID,
 				NewValue: assignmentJSON(dto, holderFullName, siteName), UserID: actorID, Comment: dto.Comment,
+				// Явная связь со строкой выдачи: событие открыло её (assignment_id)
+				// и, если была прежняя выдача, закрыло её (closed_assignment_id).
+				// Лента истории соединяет их по этим ссылкам — момент выдачи из
+				// формы и момент записи в журнал не обязаны совпадать.
+				AssignmentID:       &assignment.ID,
+				ClosedAssignmentID: closedID,
 			}); err != nil {
 				return fmt.Errorf("failed to create event. error: %w", err)
 			}
@@ -209,20 +223,26 @@ func (s *EquipmentService) Unassign(ctx context.Context, dto *models.UnassignEqu
 			if err != nil && !errors.Is(err, models.ErrNotFound) {
 				return fmt.Errorf("failed to get open assignment. error: %w", err)
 			}
+			// Возврат закрывает выдачу и открывает строку «на складе» — операция
+			// меняет две строки, и обе ссылки событие хранит явно.
+			var closedID *uuid.UUID
 			if err == nil {
+				closedID = &open.ID
 				if err := s.repo.CloseAssignment(ctx, tx, open.ID, now, dto.Comment); err != nil {
 					return fmt.Errorf("failed to close assignment. error: %w", err)
 				}
 			}
 
-			if err := s.repo.CreateAssignment(ctx, tx, &models.EquipmentAssignment{
+			stored := &models.EquipmentAssignment{
+				ID:          uuid.New(),
 				EquipmentID: eq.ID,
 				SiteID:      siteID,
 				Location:    location,
 				AssignedAt:  now,
 				AssignedBy:  actorID,
 				Comment:     dto.Comment,
-			}); err != nil {
+			}
+			if err := s.repo.CreateAssignment(ctx, tx, stored); err != nil {
 				return fmt.Errorf("failed to create assignment. error: %w", err)
 			}
 
@@ -233,6 +253,10 @@ func (s *EquipmentService) Unassign(ctx context.Context, dto *models.UnassignEqu
 				EquipmentID: eq.ID, EventType: models.EquipmentEventUnassigned, OperationID: opID,
 				NewValue: assignmentJSON(&models.AssignEquipmentDTO{SiteID: siteID, Location: location}, "", siteName),
 				UserID:   actorID, Comment: dto.Comment,
+				// Строка «на складе» — открыта этой операцией; прежняя выдача —
+				// закрыта ею же.
+				AssignmentID:       &stored.ID,
+				ClosedAssignmentID: closedID,
 			}); err != nil {
 				return fmt.Errorf("failed to create event. error: %w", err)
 			}

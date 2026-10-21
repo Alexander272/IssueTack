@@ -466,7 +466,18 @@ type EquipmentEvent struct {
 	// на момент чтения, а не пишется снимком.
 	UserName  string    `json:"userName" db:"user_name"`
 	Comment   string    `json:"comment" db:"comment"`
+	// CreatedAt — момент записи события в журнал (аудит). Момент самой операции
+	// у выдачи и возврата лежит в строке выдачи (assigned_at) и в снимке
+	// события: журнал иммутабелен и не переписывается задним числом.
 	CreatedAt time.Time `json:"createdAt" db:"created_at"`
+	// AssignmentID — строка выдачи, которую операция открыла (выдача создаёт
+	// строку с получателем, возврат — строку «на складе»). ClosedAssignmentID —
+	// строка, которую операция закрыла (прежняя выдача при переоформлении или
+	// возврат). Обе ссылки явные: лента истории соединяет строку и событие по
+	// ним, а не по близости моментов — момент выдачи из формы и момент записи
+	// в журнал разные факты (см. миграцию equipment_events_assignment_link).
+	AssignmentID       *uuid.UUID `json:"assignmentId" db:"assignment_id"`
+	ClosedAssignmentID *uuid.UUID `json:"closedAssignmentId" db:"closed_assignment_id"`
 }
 
 // EquipmentActStatus — состояние акта. Акт рождается «сформированным» (docx

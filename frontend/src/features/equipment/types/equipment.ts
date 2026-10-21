@@ -279,6 +279,13 @@ export interface IEquipmentEvent {
 	userName: string
 	comment: string
 	createdAt: string
+	// Явная связь операции и строк выдачи: событие открыло строку
+	// (assignmentId — выдача или возврат на склад) и/или закрыло её
+	// (closedAssignmentId — прежняя выдача). Лента истории соединяет строку и
+	// событие по этим ссылкам, а не по близости моментов: момент выдачи из
+	// формы и момент записи в журнал — разные факты.
+	assignmentId: string | null
+	closedAssignmentId: string | null
 }
 
 export interface IKitComposition {

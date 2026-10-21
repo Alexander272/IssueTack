@@ -73,10 +73,19 @@ const EVENT_META: Record<EquipmentEventType, { Icon: ElementType; color: string;
 	defective: { Icon: AlertTriangleIcon, color: '#ca8a04', group: 'status' },
 }
 
-// Легаси-записи (выдачи и состав) дублируют события: обе сущности пишутся в одной
-// транзакции. Запись справочника показываем, только если журнал её не покрыл —
-// иначе в ленте будет по два одинаковых пункта на каждую операцию.
-const EVENT_WINDOW_MS = 5000
+// Строка выдачи и событие журнала — два вида одной операции: обе сущности
+// пишутся в одной транзакции при выдаче и возврате. Лента обязана показать
+// операцию один раз, и связь между ними явная: событие называет строку, которую
+// открыло (assignmentId), и строку, которую закрыло (closedAssignmentId).
+// Сопоставлять по времени нельзя: момент выдачи приходит из формы (её
+// оформляют задним числом, вплоть до полуночи), а момент записи в журнал —
+// другое, разные факты; близость моментов ничего не значит (см. миграцию
+// equipment_events_assignment_link).
+//
+// Состав комплекта — другое дело: там и строка, и событие пишутся серверным
+// временем в одной транзакции, расхождение — доли секунды, и связь по
+// компоненту (componentId) однозначна. Поэтому для состава окно остаётся.
+const COMPOSITION_WINDOW_MS = 5000
 
 const time = (d: string) => dayjs(d).valueOf()
 
@@ -99,19 +108,34 @@ type Props = {
 	unit: IEquipment
 }
 
-// Лента истории единицы: события журнала плюс легаси-записи выдач и состава (см.
-// EVENT_WINDOW_MS). Показывается днём: у каждого дня липкий заголовок, у записи —
-// кружок с иконкой по типу и строка «было → стало» для изменений статуса,
+// Лента истории единицы: события журнала плюс легаси-записи выдач и состава.
+// Показывается днём: у каждого дня липкий заголовок, у записи — кружок с
+// иконкой по типу и строка «было → стало» для изменений статуса,
 // перемещений и состава.
 export const HistoryTimeline: FC<Props> = ({ unit }) => {
 	const [group, setGroup] = useState<Group | 'all'>('all')
 
 	const { data: assignmentsData } = useGetEquipmentAssignmentsQuery(unit.id)
-	const { data: eventsData } = useGetEquipmentEventsQuery({ id: unit.id, limit: 100 })
+	// Журнал берём с запасом: обрезанный журнал не ломает ленту (не хватающая
+	// операция покажется записью строки выдачи), но лишние записи лучше не
+	// терять.
+	const { data: eventsData } = useGetEquipmentEventsQuery({ id: unit.id, limit: 500 })
 	const { data: compositionData } = useGetEquipmentCompositionHistoryQuery(unit.id, { skip: !unit.isKit })
 
 	const entries = useMemo<Entry[]>(() => {
 		const events = (eventsData?.data ?? [])
+		const rows = assignmentsData?.data ?? []
+
+		// Явная связь операции и строк выдачи. Событие называет строку, которую
+		// открыло, и строку, которую закрыло: по этим ссылкам лента и понимает,
+		// что строка и событие — один и тот же факт, и рисует его один раз.
+		const rowsById = new Map(rows.map(r => [r.id, r]))
+		const openedBy = new Map<string, IEquipmentEvent>() // строка → событие, открывшее её
+		const closedBy = new Map<string, IEquipmentEvent>() // строка → событие, закрывшее её
+		events.forEach(e => {
+			if (e.assignmentId) openedBy.set(e.assignmentId, e)
+			if (e.closedAssignmentId) closedBy.set(e.closedAssignmentId, e)
+		})
 
 		// placeLabel собирает подпись места из пары «площадка + локация».
 		const placeLabel = (siteName: string | null, location: string | null) =>
@@ -125,12 +149,31 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 			return label ? { label, color } : undefined
 		}
 
+		// placeText — подпись места строкой (для примечания к записи).
+		const placeText = (v: Record<string, unknown> | null) =>
+			v ? placeLabel(str(v.siteName), str(v.location)) : ''
+
 		// holderOf: снимок несёт и ФИО сотрудника, и свободный текст держателя.
 		const holderOf = (v: Record<string, unknown> | null): Value | undefined => {
 			if (!v) return undefined
 			const label = str(v.userName) ?? str(v.holderName)
 			return label ? { label, color: '#16a34a' } : undefined
 		}
+
+		// holderOfRow — держатель по строке выдачи (слепок ФИО резолвит бэкенд).
+		const holderOfRow = (a: IEquipmentAssignment): Value | undefined => {
+			const label = a.holderFullName || a.holderName
+			return label ? { label, color: '#16a34a' } : undefined
+		}
+
+		// dueNote — срок возврата строки выдачи. У закрытой строки он уже
+		// неактуален и только засорял бы ленту.
+		const dueNote = (a?: IEquipmentAssignment) =>
+			a?.returnDueAt && !a.unassignedAt
+				? `${
+						dayjs(a.returnDueAt).isBefore(dayjs(), 'day') ? 'Возврат просрочен с ' : 'Вернуть до '
+					}${dayjs(a.returnDueAt).format('DD.MM.YYYY')}`
+				: ''
 
 		const statusOf = (v: Record<string, unknown> | null): Value | undefined => {
 			const status = v ? str(v.status) : null
@@ -159,32 +202,56 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 				group: meta.group,
 				actor: e.userName || undefined,
 			}
-			const comment = e.comment || undefined
+			const eventComment = e.comment || undefined
 
 			switch (e.eventType) {
 				case 'assigned': {
-					const holder = holderOf(e.newValue)
+					// Строка, которую открыло событие, — та же операция: она
+					// дополняет запись журнала (место, срок возврата, комментарий),
+					// но отдельной записью не рисуется.
+					const row = e.assignmentId ? rowsById.get(e.assignmentId) : undefined
+					const holder = holderOf(e.newValue) ?? (row ? holderOfRow(row) : undefined)
 					// Выдал себе — не печатаем одно и то же имя дважды: актор и
 					// получатель совпадают, получателя показывает чип.
 					const actor = holder && holder.label === base.actor ? undefined : base.actor
-					return { ...base, actor, action: 'Выдано', to: holder, note: comment }
+					const place = placeText(e.newValue) || (row ? placeLabel(row.siteName, row.location) : '')
+					const noteComment = row?.comment || eventComment
+					return {
+						...base,
+						actor,
+						action: 'Выдано',
+						to: holder,
+						note: [place, dueNote(row), noteComment].filter(Boolean).join(' · ') || undefined,
+					}
 				}
-				case 'unassigned':
-					return { ...base, action: 'Возвращено на склад', to: placeOf(e.newValue, '#2563eb'), note: comment }
+				case 'unassigned': {
+					// Возврат закрывает прежнюю выдачу и открывает строку «на складе» —
+					// обе строки названы событием явно.
+					const opened = e.assignmentId ? rowsById.get(e.assignmentId) : undefined
+					const closed = e.closedAssignmentId ? rowsById.get(e.closedAssignmentId) : undefined
+					const place = placeText(e.newValue) || (opened ? placeLabel(opened.siteName, opened.location) : '')
+					const noteComment = closed?.comment || opened?.comment || eventComment
+					return {
+						...base,
+						action: 'Возвращено на склад',
+						to: place ? { label: place, color: '#2563eb' } : undefined,
+						note: [dueNote(opened), noteComment].filter(Boolean).join(' · ') || undefined,
+					}
+				}
 				case 'moved':
 					return {
 						...base,
 						action: 'Перемещено',
 						from: placeOf(e.oldValue, '#94a3b8'),
 						to: placeOf(e.newValue, '#2563eb'),
-						note: comment,
+						note: eventComment,
 					}
 				case 'status_changed':
-					return { ...base, action: 'Изменён статус', from: statusOf(e.oldValue), to: statusOf(e.newValue), note: comment }
+					return { ...base, action: 'Изменён статус', from: statusOf(e.oldValue), to: statusOf(e.newValue), note: eventComment }
 				case 'repaired':
-					return { ...base, action: 'Отправлено в ремонт', from: statusOf(e.oldValue), to: statusOf(e.newValue), note: comment }
+					return { ...base, action: 'Отправлено в ремонт', from: statusOf(e.oldValue), to: statusOf(e.newValue), note: eventComment }
 				case 'written_off':
-					return { ...base, action: 'Списано', from: statusOf(e.oldValue), to: statusOf(e.newValue), note: comment }
+					return { ...base, action: 'Списано', from: statusOf(e.oldValue), to: statusOf(e.newValue), note: eventComment }
 				case 'defective': {
 					// Дефект — факт с данными: описание лежит в снимке события, а
 					// дата обнаружения — отдельным чипом, потому что её часто
@@ -194,23 +261,23 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 					return {
 						...base,
 						action: 'Обнаружен дефект',
-						note: [description, comment].filter(Boolean).join(' · ') || undefined,
+						note: [description, eventComment].filter(Boolean).join(' · ') || undefined,
 						to: foundAt
 							? { label: dayjs(foundAt).locale('ru').format('D MMMM YYYY'), color: '#ca8a04' }
 							: undefined,
 					}
 				}
 				case 'component_added':
-					return { ...base, action: 'Компонент добавлен в комплект', to: componentOf(e.newValue, e.componentId), note: comment }
+					return { ...base, action: 'Компонент добавлен в комплект', to: componentOf(e.newValue, e.componentId), note: eventComment }
 				case 'component_removed':
-					return { ...base, action: 'Компонент исключён из комплекта', from: componentOf(e.oldValue, e.componentId), note: comment }
+					return { ...base, action: 'Компонент исключён из комплекта', from: componentOf(e.oldValue, e.componentId), note: eventComment }
 				case 'component_replaced':
 					return {
 						...base,
 						action: 'Компонент заменён',
 						from: componentOf(e.oldValue, e.componentId),
 						to: componentOf(e.newValue, e.componentId),
-						note: comment,
+						note: eventComment,
 					}
 				default: {
 					// «Создано»: опознавательные поля снимка — в примечании, чтобы не
@@ -224,7 +291,7 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 					return {
 						...base,
 						action: e.eventType === 'created' ? 'Добавлено оборудование' : getEquipmentEventLabel(e.eventType),
-						note: [comment, details].filter(Boolean).join(' · ') || undefined,
+						note: [eventComment, details].filter(Boolean).join(' · ') || undefined,
 					}
 				}
 			}
@@ -235,48 +302,33 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 			events.some(
 				e =>
 					e.eventType === type &&
-					Math.abs(time(e.createdAt) - time(date)) < EVENT_WINDOW_MS &&
+					Math.abs(time(e.createdAt) - time(date)) < COMPOSITION_WINDOW_MS &&
 					(!componentId || !e.componentId || e.componentId === componentId),
-			)
-
-		// transferEventAt — событие журнала, покрывающее строку справочника выдач:
-		// и выдача, и возврат. Тип события говорит, чем была операция.
-		const transferEventAt = (date: string) =>
-			events.find(
-				e =>
-					(e.eventType === 'assigned' || e.eventType === 'unassigned') &&
-					Math.abs(time(e.createdAt) - time(date)) < EVENT_WINDOW_MS,
 			)
 
 		const fromAssignment = (a: IEquipmentAssignment): Entry[] => {
 			const list: Entry[] = []
-			// Строка справочника дублирует событие журнала: обе сущности пишутся
-			// одной транзакцией и делят метку времени, поэтому журнал её покрывает и
-			// отдельный пункт не нужен. Вид операции берём у события: строка возврата
-			// (держателя нет) по полям не отличается от выдачи в одну площадку.
-			if (transferEventAt(a.assignedAt)) return list
+			// Начало периода строки журнал уже показал (событие открыло её) —
+			// отдельной записью не рисуем. Сюда попадают только выдачи, сделанные
+			// до появления журнала: их операций в журнале нет вовсе.
+			if (openedBy.has(a.id)) return list
 
 			const holder = a.holderFullName || a.holderName
 			const place = placeLabel(a.siteName, a.location)
-			// Срок возврата показываем у открытой выдачи (возврата ещё не было):
-			// у закрытой строки он уже неактуален и только засорял бы ленту.
-			const dueNote =
-				a.returnDueAt && !a.unassignedAt
-					? `${
-							dayjs(a.returnDueAt).isBefore(dayjs(), 'day') ? 'Возврат просрочен с ' : 'Вернуть до '
-						}${dayjs(a.returnDueAt).format('DD.MM.YYYY')}`
-					: null
+			const due = dueNote(a)
 			if (holder) {
+				// Выдал себе — не печатаем одно и то же имя дважды.
+				const actor = a.assignedByName === holder ? undefined : a.assignedByName || undefined
 				list.push({
 					id: `assign-${a.id}`,
 					date: a.assignedAt,
 					Icon: UserPlusIcon,
 					color: '#16a34a',
 					group: 'transfer',
-					actor: a.assignedByName || undefined,
+					actor,
 					action: 'Выдано',
 					to: { label: holder, color: '#16a34a' },
-					note: [place, dueNote, a.comment].filter(Boolean).join(' · ') || undefined,
+					note: [place, due, a.comment].filter(Boolean).join(' · ') || undefined,
 				})
 			} else if (place) {
 				// Строка без держателя — единица стоит на площадке: это либо возврат
@@ -294,7 +346,10 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 					note: a.comment || undefined,
 				})
 			}
-			if (a.unassignedAt && !covered('unassigned', a.unassignedAt)) {
+			// Конец периода: если закрытие уже показал журнал (возврат или
+			// переоформление выдачи), отдельную запись «Возвращено на склад» рисуем
+			// только когда закрытия в журнале нет вовсе.
+			if (a.unassignedAt && !closedBy.has(a.id)) {
 				list.push({
 					id: `unassign-${a.id}`,
 					date: a.unassignedAt,
@@ -342,7 +397,7 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 
 		const list: Entry[] = [
 			...events.map(fromEvent).filter((e): e is Entry => e !== null),
-			...(assignmentsData?.data ?? []).flatMap(fromAssignment),
+			...(rows ?? []).flatMap(fromAssignment),
 			...(compositionData?.data ?? []).flatMap(fromComposition),
 		]
 
