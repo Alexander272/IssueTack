@@ -8,6 +8,7 @@ import (
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -115,12 +116,21 @@ type Equipment interface {
 // equipmentSelectBase — выборка единицы со справочными полями (тип, площадка,
 // ФИО держателя), именем контейнера (физический родитель или логический комплект)
 // и COUNT(*) OVER() для тотала страницы.
+//
+// Вычисляемые колонки получают явные алиасы: чтение идёт по именам (db-теги
+// models.Equipment), и без алиаса COALESCE(...) отдался бы колонкой «coalesce»,
+// а полю модели соответствует «type_name».
 func equipmentSelectBase() string {
 	return fmt.Sprintf(`SELECT 
-			e.id, e.realm_id, e.type_id, COALESCE(et.name, ''), COALESCE(et.kind::text, ''), COALESCE(et.icon, ''), e.name, e.vendor, e.model,
-			e.serial_number, e.inventory_number, e.specs, e.shop, e.order_number, e.status, e.parent_id, e.site_id, s.name,
+			e.id, e.realm_id, e.type_id,
+			COALESCE(et.name, '') AS type_name,
+			COALESCE(et.kind::text, '') AS type_kind,
+			COALESCE(et.icon, '') AS type_icon,
+			e.name, e.vendor, e.model,
+			e.serial_number, e.inventory_number, e.specs, e.shop, e.order_number, e.status,
+			e.parent_id, e.site_id, COALESCE(s.name, '') AS site_name,
 			e.holder_user_id, e.holder_name,
-			%s,
+			COALESCE(%s, '') AS holder_user_full_name,
 			(SELECT a.return_due_at FROM %s a
 				WHERE a.equipment_id = e.id AND a.unassigned_at IS NULL
 				ORDER BY a.assigned_at DESC LIMIT 1) AS return_due_at,
@@ -140,35 +150,47 @@ func equipmentSelectBase() string {
 		Tables.Equipment, Tables.Equipment, Tables.Equipment, Tables.EquipmentTypes, Tables.Sites, Tables.Users)
 }
 
-// scanEquipmentRow читает одну строку выдачи equipmentSelectBase.
-func scanEquipmentRow(row rowScanner) (*models.Equipment, int, error) {
-	item := &models.Equipment{}
-	var siteName *string
-	var holderFullName *string
-	var total int
+// equipmentRow — строка выборки единицы: сама единица и тотал страницы
+// (COUNT(*) OVER()), который в модель не входит.
+type equipmentRow struct {
+	models.Equipment
+	TotalCount int `db:"total_count"`
+}
 
-	if err := row.Scan(
-		&item.ID, &item.RealmID, &item.TypeID, &item.TypeName, &item.TypeKind, &item.TypeIcon,
-		&item.Name, &item.Vendor, &item.Model,
-		&item.SerialNumber, &item.InventoryNumber, &item.Specs, &item.Shop, &item.OrderNumber, &item.Status,
-		&item.ParentID, &item.SiteID, &siteName,
-		&item.HolderUserID, &item.HolderName, &holderFullName,
-		&item.ReturnDueAt,
-		&item.Location, &item.PurchaseDate, &item.WarrantyUntil, &item.Notes,
-		&item.IsKit, &item.KitID, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &item.ContainerName, &total,
-	); err != nil {
+// scanEquipmentRow читает одну строку equipmentSelectBase по именам колонок
+// (db-теги models.Equipment). Порядок колонок в запросе не важен, а несовпадение
+// «колонка ↔ поле» даёт ошибку, а не тихую подмену значений: при позиционном
+// сканировании вставка колонки в середину SELECT сдвигала бы значения в чужие
+// поля (две uuid-колонки — без единого признака).
+func scanEquipmentRow(row pgx.CollectableRow) (*models.Equipment, int, error) {
+	scanned, err := pgx.RowToStructByName[equipmentRow](row)
+	if err != nil {
 		return nil, 0, err
 	}
-	if siteName != nil {
-		item.SiteName = *siteName
-	}
-	if holderFullName != nil {
-		item.HolderFullName = *holderFullName
-	}
+	item := scanned.Equipment
 	if len(item.Specs) == 0 {
 		item.Specs = []byte("{}")
 	}
-	return item, total, nil
+	return &item, scanned.TotalCount, nil
+}
+
+// scanEquipmentRows читает все строки выборки единиц. Второе значение — тотал
+// страницы из COUNT(*) OVER() (0, если строк нет).
+func scanEquipmentRows(rows pgx.Rows) ([]*models.Equipment, int, error) {
+	data := []*models.Equipment{}
+	total := 0
+	for rows.Next() {
+		item, rowTotal, err := scanEquipmentRow(rows)
+		if err != nil {
+			return nil, 0, MapError(fmt.Errorf("scan row error: %w", err))
+		}
+		total = rowTotal
+		data = append(data, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
+	return data, total, nil
 }
 
 // addEquipmentSearch добавляет подстрочный поиск по реквизитам единицы. Одна
@@ -242,18 +264,9 @@ func (r *EquipmentRepo) Get(ctx context.Context, filter *models.EquipmentFilter)
 	}
 	defer rows.Close()
 
-	data := []*models.Equipment{}
-	total := 0
-	for rows.Next() {
-		item, rowTotal, err := scanEquipmentRow(rows)
-		if err != nil {
-			return nil, 0, MapError(fmt.Errorf("scan row error: %w", err))
-		}
-		total = rowTotal
-		data = append(data, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, MapError(fmt.Errorf("rows iteration error: %w", err))
+	data, total, err := scanEquipmentRows(rows)
+	if err != nil {
+		return nil, 0, err
 	}
 	return data, total, nil
 }
@@ -265,15 +278,27 @@ func (r *EquipmentRepo) GetByID(ctx context.Context, req *models.GetEquipmentByI
 // getByID — общая реализация чтения единицы. Внутри транзакции читать нужно через
 // неё же (tx), иначе пул не увидит ещё не закоммиченную строку: так Create/Update
 // возвращают состояние, записанное в той же транзакции.
+//
+// Чтение идёт через Query, а не QueryRow: сопоставление строки с моделью по
+// именам колонок (pgx.RowToStructByName) требует описания полей, а его знает
+// только набор строк — у одиночной строки pgx.Row их не отдаёт.
 func (r *EquipmentRepo) getByID(ctx context.Context, tx Tx, req *models.GetEquipmentByIdDTO) (*models.Equipment, error) {
 	query := equipmentSelectBase() + ` WHERE e.id = $1 AND e.realm_id = $2`
 
-	row := r.getExec(tx).QueryRow(ctx, query, req.ID, req.RealmID)
-	item, _, err := scanEquipmentRow(row)
+	rows, err := r.getExec(tx).Query(ctx, query, req.ID, req.RealmID)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
-	return item, nil
+	defer rows.Close()
+
+	data, _, err := scanEquipmentRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, models.ErrNotFound
+	}
+	return data[0], nil
 }
 
 // GetStats возвращает счётчики единиц реалма (всего не-комплектов, комплектов и

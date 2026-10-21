@@ -18,16 +18,9 @@ func (r *EquipmentRepo) GetChildren(ctx context.Context, realmID, parentID uuid.
 	}
 	defer rows.Close()
 
-	data := []*models.Equipment{}
-	for rows.Next() {
-		item, _, err := scanEquipmentRow(rows)
-		if err != nil {
-			return nil, MapError(fmt.Errorf("scan row error: %w", err))
-		}
-		data = append(data, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+	data, _, err := scanEquipmentRows(rows)
+	if err != nil {
+		return nil, err
 	}
 	return data, nil
 }
@@ -88,18 +81,9 @@ func (r *EquipmentRepo) GetTree(ctx context.Context, dto *models.GetEquipmentTre
 	}
 	defer rows.Close()
 
-	data := []*models.Equipment{}
-	total := 0
-	for rows.Next() {
-		item, rowTotal, err := scanEquipmentRow(rows)
-		if err != nil {
-			return nil, 0, MapError(fmt.Errorf("scan row error: %w", err))
-		}
-		total = rowTotal
-		data = append(data, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, 0, MapError(fmt.Errorf("rows iteration error: %w", err))
+	data, total, err := scanEquipmentRows(rows)
+	if err != nil {
+		return nil, 0, err
 	}
 	if len(data) == 0 {
 		return []*models.EquipmentTreeNode{}, 0, nil

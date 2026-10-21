@@ -20,16 +20,9 @@ func (r *EquipmentRepo) GetOpenComposition(ctx context.Context, kitID uuid.UUID)
 	}
 	defer rows.Close()
 
-	data := []*models.Equipment{}
-	for rows.Next() {
-		item, _, err := scanEquipmentRow(rows)
-		if err != nil {
-			return nil, MapError(fmt.Errorf("scan row error: %w", err))
-		}
-		data = append(data, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+	data, _, err := scanEquipmentRows(rows)
+	if err != nil {
+		return nil, err
 	}
 	return data, nil
 }

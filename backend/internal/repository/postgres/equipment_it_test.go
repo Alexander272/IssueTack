@@ -410,3 +410,55 @@ func TestEquipmentRepo_SearchByOrderNumber(t *testing.T) {
 	require.Len(t, onlyName, 1)
 	assert.Equal(t, "Ноутбук", onlyName[0].Name)
 }
+
+// TestEquipmentRepo_RowMapping проверяет чтение единицы по именам колонок:
+// подписи справочников (тип, площадка, ФИО держателя) попадают в свои поля, а
+// отсутствие связи даёт пустую строку, а не NULL. Здесь же — тотал страницы:
+// COUNT(*) OVER() едет вместе со строкой.
+func TestEquipmentRepo_RowMapping(t *testing.T) {
+	pool := itPool(t)
+	f := newEqFixture(t, pool)
+	ctx := context.Background()
+
+	repo := NewEquipmentRepo(pool, NewTransactionRepo(pool))
+
+	siteID := uuid.New()
+	_, err := pool.Exec(ctx, `INSERT INTO sites (id, name) VALUES ($1, $2)`, siteID, "Склад-2")
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM sites WHERE id = $1`, siteID) })
+
+	// Единица с площадкой и держателем: подписи справочников заполнены.
+	withRefs := newEquipmentDTO(f, &f.typeID, "С терминалом")
+	withRefs.SiteID = &siteID
+	withRefs.HolderUserID = &f.userID
+	created, err := repo.Create(ctx, nil, withRefs)
+	require.NoError(t, err)
+
+	assert.Equal(t, "Ноутбук", created.TypeName)
+	assert.Equal(t, models.EquipmentTypeDevice, created.TypeKind)
+	assert.Equal(t, "Склад-2", created.SiteName)
+	assert.Equal(t, "Тестов Тест", created.HolderFullName)
+	assert.Equal(t, "{}", string(created.Specs))
+
+	// Единица без площадки и держателя: пустые строки, а не NULL.
+	plain := newEquipmentDTO(f, &f.kitType, "Модуль")
+	createdPlain, err := repo.Create(ctx, nil, plain)
+	require.NoError(t, err)
+	assert.Equal(t, "RAM", createdPlain.TypeName)
+	assert.Equal(t, models.EquipmentTypeComponent, createdPlain.TypeKind)
+	assert.Empty(t, createdPlain.SiteName)
+	assert.Empty(t, createdPlain.HolderFullName)
+
+	// У комплекта типа нет: type_id — NULL, подписи типа — пустые.
+	kit, err := repo.Create(ctx, nil, newEquipmentDTO(f, nil, "Комплект"))
+	require.NoError(t, err)
+	assert.Nil(t, kit.TypeID)
+	assert.Empty(t, kit.TypeName)
+	assert.Empty(t, kit.TypeKind)
+
+	// Тотал страницы едет вместе со строкой (COUNT(*) OVER()).
+	items, total, err := repo.Get(ctx, &models.EquipmentFilter{RealmID: f.realmID, Limit: 50})
+	require.NoError(t, err)
+	assert.Len(t, items, 3)
+	assert.Equal(t, 3, total)
+}
