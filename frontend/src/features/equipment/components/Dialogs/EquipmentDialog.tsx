@@ -247,34 +247,21 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 									name='typeId'
 									rules={{ required: 'Выберите тип' }}
 									render={({ field, fieldState }) => (
-										<TextField
+										<Autocomplete
 											{...field}
-											select
-											{...inputProps}
-											// Заглушка: у MUI Select пустое значение без displayEmpty
-											// не подставляет пункт с value='', а renderValue для
-											// пустого не вызывается вовсе — нужны оба.
-											slotProps={{
-												select: {
-													displayEmpty: true,
-													renderValue: value =>
-														value === '' || value == null
-															? '— Выберите тип —'
-															: (types.find(t => t.id === value)?.name ?? ''),
-												},
-											}}
-											error={Boolean(fieldState.error)}
-											helperText={fieldState.error?.message}
-										>
-											<MenuItem value='' disabled>
-												— Выберите тип —
-											</MenuItem>
-											{types.map(t => (
-												<MenuItem key={t.id} value={t.id}>
-													{t.name}
-												</MenuItem>
-											))}
-										</TextField>
+											options={types}
+											getOptionLabel={u => u.name}
+											value={types.find(t => t.id === field.value) ?? null}
+											onChange={(_e, value) => field.onChange(value?.id ?? '')}
+											renderInput={params => (
+												<TextField
+													{...params}
+													placeholder='— Выберите тип —'
+													error={Boolean(fieldState.error)}
+													helperText={fieldState.error?.message}
+												/>
+											)}
+										/>
 									)}
 								/>
 							</Field>
