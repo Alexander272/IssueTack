@@ -537,6 +537,10 @@ func (m *MockCategoriesRepo) Delete(ctx context.Context, dto *models.DelCategory
 	args := m.Called(ctx, dto)
 	return args.Error(0)
 }
+func (m *MockCategoriesRepo) Reorder(ctx context.Context, dto *models.ReorderCategoriesDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
 
 // CanSeeHidden добавлен, чтобы MockCategoriesRepo удовлетворял сервисному
 // интерфейсу Categories (TicketService в тестах принимает его как сервис).

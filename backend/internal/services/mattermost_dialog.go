@@ -259,13 +259,10 @@ func (s *MattermostService) HandleDialogOpen(ctx context.Context, input *models.
 	if len(categories) > 0 {
 		opts := make([]*model.PostActionOptions, 0, len(categories))
 		for _, c := range categories {
-			// У диалогов Mattermost нет группировки опций, поэтому раздел
-			// попадает в подпись: «Раздел · Категория».
-			text := c.Name
-			if c.CategoryGroup != nil {
-				text = fmt.Sprintf("%s · %s", c.CategoryGroup.Name, c.Name)
-			}
-			opts = append(opts, &model.PostActionOptions{Text: text, Value: c.ID.String()})
+			// У диалогов Mattermost нет группировки опций, поэтому подпись
+			// остаётся именем категории: без префикса раздела (в форме веба
+			// категории сгруппированы по разделам, здесь — плоский список).
+			opts = append(opts, &model.PostActionOptions{Text: c.Name, Value: c.ID.String()})
 		}
 		elements = append(elements, mattermost.DialogElement{
 			DisplayName: "Категория", Name: "categoryId", Type: "select", Options: opts,

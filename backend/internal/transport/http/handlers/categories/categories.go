@@ -34,6 +34,7 @@ func Register(api *gin.RouterGroup, service services.Categories, middleware *mid
 
 		categories.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceCategory).Write()))
 		categories.POST("", handlers.create)
+		categories.POST("/reorder", handlers.reorder)
 		categories.PUT("/:id", handlers.update)
 
 		categories.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceCategory).Delete()))
@@ -134,6 +135,28 @@ func (h *Handler) update(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, response.IdResponse{Message: "Категория обновлена"})
+}
+
+// reorder меняет глобальный порядок категорий реалма: тело — полный список
+// id в новом порядке. Порядок разделов выводится из него.
+func (h *Handler) reorder(c *gin.Context) {
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	dto := &models.ReorderCategoriesDTO{}
+	if err := c.BindJSON(dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	dto.RealmID = realmID
+
+	if err := h.service.Reorder(c, dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func (h *Handler) delete(c *gin.Context) {

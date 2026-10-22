@@ -111,19 +111,28 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 
 	const categories = (context.categories || []).filter((c: PluginCategory) => c.isActive !== false)
 	// Категории группируются по разделам (таксономия) — нативные optgroup.
+	// Категория без раздела — отдельный блок из одного пункта (без группы
+	// «Без раздела»), поэтому несколько таких категорий могут стоять в разных
+	// местах между разделами.
 	const categorySections = useMemo(() => {
-		const sections = new Map<string, {name: string; items: PluginCategory[]}>();
+		const sections = new Map<string, { name: string | null; items: PluginCategory[] }>()
 		categories.forEach(c => {
-			const name = c.categoryGroup?.name || 'Без раздела';
-			const bucket = sections.get(name);
-			if (bucket) {
-				bucket.items.push(c);
-			} else {
-				sections.set(name, {name, items: [c]});
+			if (c.categoryGroupId) {
+				const key = `section:${c.categoryGroupId}`
+				const name = c.categoryGroup?.name || ''
+				const bucket = sections.get(key)
+				if (bucket) {
+					bucket.items.push(c)
+				} else {
+					sections.set(key, { name, items: [c] })
+				}
+				return
 			}
-		});
-		return [...sections.values()];
-	}, [categories]);
+			const key = `root:${c.id}`
+			sections.set(key, { name: null, items: [c] })
+		})
+		return [...sections.values()]
+	}, [categories])
 	const sites = context.sites || []
 	const selectedSite = sites.find(s => s.id === siteId) || null
 
@@ -345,15 +354,24 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 								}}
 							>
 								<option value=''>— Выберите категорию —</option>
-								{categorySections.map(section => (
-									<optgroup key={section.name} label={section.name}>
-										{section.items.map(c => (
+								{categorySections.map(section =>
+									section.name === null ? (
+										// Категория без раздела — обычный пункт списка, вне групп.
+										section.items.map(c => (
 											<option key={c.id} value={c.id}>
 												{c.name}
 											</option>
-										))}
-									</optgroup>
-								))}
+										))
+									) : (
+										<optgroup key={section.name} label={section.name}>
+											{section.items.map(c => (
+												<option key={c.id} value={c.id}>
+													{c.name}
+												</option>
+											))}
+										</optgroup>
+									)
+								)}
 							</select>
 							{fieldErrors.categoryId ? (
 								<span className='it-f__err'>{fieldErrors.categoryId}</span>

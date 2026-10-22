@@ -43,6 +43,7 @@ export const API = {
 	categories: {
 		base: '/categories' as const,
 		byId: (id: string) => `/categories/${id}` as const,
+		reorder: '/categories/reorder' as const,
 	},
 	categoryGroups: {
 		base: '/category-groups' as const,

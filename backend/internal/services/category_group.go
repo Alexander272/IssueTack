@@ -24,7 +24,8 @@ func NewCategoryGroupService(repo repository.CategoryGroups, visibility *Categor
 
 // CategoryGroups — интерфейс работы с разделами категорий.
 type CategoryGroups interface {
-	// Get возвращает список разделов реалма, отсортированный по sort_order.
+	// Get возвращает список разделов реалма (по имени — порядок разделов
+	// задаётся глобальным порядком категорий, см. models.Category.SortOrder).
 	Get(ctx context.Context, req *models.GetCategoryGroupsDTO) ([]*models.CategoryGroup, error)
 	// GetByID возвращает раздел по идентификатору.
 	GetByID(ctx context.Context, req *models.GetCategoryGroupByIdDTO) (*models.CategoryGroup, error)

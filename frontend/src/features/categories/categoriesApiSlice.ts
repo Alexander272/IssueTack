@@ -64,6 +64,19 @@ const categoriesApiSlice = apiSlice.injectEndpoints({
 			}),
 			invalidatesTags: [{ type: 'Categories', id: 'ALL' }],
 		}),
+
+		// reorderCategories сохраняет глобальный порядок категорий реалма:
+		// тело — полный список id в новом порядке (блоки разделов и категории
+		// без раздела идут вперемежку, как их расставил админ —
+		// см. CategoryOrderEditor).
+		reorderCategories: builder.mutation<void, { categoryIds: string[] }>({
+			query: body => ({
+				url: API.categories.reorder,
+				method: 'POST',
+				body,
+			}),
+			invalidatesTags: [{ type: 'Categories', id: 'ALL' }],
+		}),
 	}),
 })
 
@@ -73,4 +86,5 @@ export const {
 	useCreateCategoryMutation,
 	useUpdateCategoryMutation,
 	useDeleteCategoryMutation,
+	useReorderCategoriesMutation,
 } = categoriesApiSlice

@@ -38,7 +38,7 @@ export const CategoryGroupDialog: FC<Props> = ({ categoryGroup, open, onClose })
 	const [remove, { isLoading: isDeleting }] = useDeleteCategoryGroupMutation()
 
 	const { control, handleSubmit, formState } = useForm<ICategoryGroupDTO>({
-		values: categoryGroup ?? { id: null, name: '', description: '', sortOrder: 0, isHidden: false },
+		values: categoryGroup ?? { id: null, name: '', description: '', isHidden: false },
 		mode: 'onTouched',
 	})
 
@@ -127,25 +127,6 @@ export const CategoryGroupDialog: FC<Props> = ({ categoryGroup, open, onClose })
 							name='description'
 							render={({ field }) => (
 								<TextField {...field} fullWidth multiline minRows={3} value={field.value ?? ''} />
-							)}
-						/>
-					</Box>
-					<Box>
-						<Typography variant='caption' sx={{ fontWeight: 600, mb: 0.5, display: 'block' }}>
-							Порядок сортировки
-						</Typography>
-						<Controller
-							control={control}
-							name='sortOrder'
-							render={({ field }) => (
-								<TextField
-									{...field}
-									type='number'
-									fullWidth
-									value={field.value ?? 0}
-									onChange={e => field.onChange(Number(e.target.value) || 0)}
-									helperText='Чем меньше, тем выше раздел в списках'
-								/>
 							)}
 						/>
 					</Box>

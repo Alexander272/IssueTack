@@ -14,7 +14,6 @@ type CategoryGroup struct {
 	RealmID     uuid.UUID `json:"realmId" db:"realm_id"`
 	Name        string    `json:"name" db:"name"`
 	Description string    `json:"description" db:"description"`
-	SortOrder   int       `json:"sortOrder" db:"sort_order"`
 	IsHidden    bool      `json:"isHidden" db:"is_hidden"`
 	CreatedAt   time.Time `json:"createdAt" db:"created_at"`
 	UpdatedAt   time.Time `json:"updatedAt" db:"updated_at"`
@@ -31,7 +30,6 @@ type CategoryGroupDTO struct {
 	RealmID     uuid.UUID  `json:"realmId" db:"realm_id"`
 	Name        string     `json:"name" db:"name"`
 	Description string     `json:"description" db:"description"`
-	SortOrder   int        `json:"sortOrder" db:"sort_order"`
 	IsHidden    bool       `json:"isHidden" db:"is_hidden"`
 }
 

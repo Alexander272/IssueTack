@@ -35,6 +35,8 @@ type Categories interface {
 	Update(ctx context.Context, dto *models.CategoryDTO) error
 	// Delete удаляет категорию.
 	Delete(ctx context.Context, dto *models.DelCategoryDTO) error
+	// Reorder меняет глобальный порядок категорий реалма.
+	Reorder(ctx context.Context, dto *models.ReorderCategoriesDTO) error
 	// CanSeeHidden сообщает, видит ли пользователь скрытые категории/разделы
 	// (менеджеры и исполнители — да, безгрупповой заказчик — нет). Списочные
 	// обработчики кладут результат в GetCategoriesDTO.IncludeHidden.
@@ -110,6 +112,46 @@ func (s *CategoryService) Delete(ctx context.Context, dto *models.DelCategoryDTO
 
 	if err := s.repo.Delete(ctx, dto); err != nil {
 		return fmt.Errorf("failed to delete category. error: %w", err)
+	}
+	return nil
+}
+
+// Reorder меняет глобальный порядок категорий реалма: категории из запроса
+// идут в указанном порядке, остальные дописываются следом в текущем —
+// последовательность остаётся сплошной (1..N), без дыр и дубликатов.
+func (s *CategoryService) Reorder(ctx context.Context, dto *models.ReorderCategoriesDTO) error {
+	// Скрытые категории тоже участвуют в порядке — иначе они «всплыли» бы
+	// в начало при первой же перестановке видимых.
+	all, err := s.repo.Get(ctx, &models.GetCategoriesDTO{RealmID: dto.RealmID, IncludeHidden: true})
+	if err != nil {
+		return fmt.Errorf("failed to get categories for reorder. error: %w", err)
+	}
+
+	known := make(map[uuid.UUID]struct{}, len(all))
+	for _, category := range all {
+		known[category.ID] = struct{}{}
+	}
+
+	ordered := make([]uuid.UUID, 0, len(all))
+	seen := make(map[uuid.UUID]struct{}, len(dto.CategoryIDs))
+	for _, id := range dto.CategoryIDs {
+		if _, ok := known[id]; !ok {
+			return fmt.Errorf("%w: категория %s не найдена в реалме", models.ErrInvalidInput, id)
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		ordered = append(ordered, id)
+	}
+	for _, category := range all {
+		if _, ok := seen[category.ID]; !ok {
+			ordered = append(ordered, category.ID)
+		}
+	}
+
+	if err := s.repo.Reorder(ctx, &models.ReorderCategoriesDTO{RealmID: dto.RealmID, CategoryIDs: ordered}); err != nil {
+		return fmt.Errorf("failed to reorder categories. error: %w", err)
 	}
 	return nil
 }
