@@ -148,6 +148,11 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 	if action != "" {
 		// «Задача №12 обновлена: title» — действие идёт после номера.
 		text := fmt.Sprintf("**%s%s %s: %s**", prefix, number, action, title)
+		if ticket.Owner != nil {
+			if label := userShortLabel(ticket.Owner); label != "" {
+				text += "\nЗаказчик: " + label
+			}
+		}
 		if notif.Type == string(models.NotificationTicketOverdue) && ticket.DueDate != nil {
 			text += fmt.Sprintf("\nДедлайн: %s", ticket.DueDate.Format("02.01.2006 15:04"))
 		}
@@ -170,13 +175,17 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 		} else {
 			text += "\n" + title
 		}
+		if ticket.Owner != nil {
+			if label := userShortLabel(ticket.Owner); label != "" {
+				text += "\nЗаказчик: " + label
+			}
+		}
 	} else {
 		text = fmt.Sprintf("**%s%s: %s**", prefix, number, title)
-	}
-
-	if notif.Type == string(models.NotificationTicketCreated) && ticket.Owner != nil {
-		if label := userShortLabel(ticket.Owner); label != "" {
-			text += "\nЗаказчик: " + label
+		if ticket.Owner != nil {
+			if label := userShortLabel(ticket.Owner); label != "" {
+				text += "\nЗаказчик: " + label
+			}
 		}
 	}
 
