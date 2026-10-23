@@ -106,6 +106,8 @@ export const API = {
 		types: '/equipment/types' as const,
 		typeById: (id: string) => `/equipment/types/${id}` as const,
 		shops: '/equipment/shops' as const,
+		import: '/equipment/import' as const,
+		importTemplate: '/equipment/import/template' as const,
 		templates: '/equipment/templates' as const,
 		templateById: (id: string) => `/equipment/templates/${id}` as const,
 		acts: '/equipment/acts' as const,

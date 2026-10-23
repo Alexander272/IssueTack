@@ -24,17 +24,19 @@ import (
 
 type Handler struct {
 	service services.Equipment
+	// importer — импорт единиц оборудования из файла (xlsx/csv).
+	importer EquipmentImporter
 	// maxSize — предел размера подписанного акта: multipart отбрасывается еще на
 	// парсинге тела, иначе большой файл успел бы лечь в память/на диск.
 	maxSize int64
 }
 
-func NewHandler(service services.Equipment, maxSize int64) *Handler {
-	return &Handler{service: service, maxSize: maxSize}
+func NewHandler(service services.Equipment, importer EquipmentImporter, maxSize int64) *Handler {
+	return &Handler{service: service, importer: importer, maxSize: maxSize}
 }
 
-func Register(api *gin.RouterGroup, service services.Equipment, maxSize int64, middleware *middleware.Middleware) {
-	handlers := NewHandler(service, maxSize)
+func Register(api *gin.RouterGroup, service services.Equipment, importer EquipmentImporter, maxSize int64, middleware *middleware.Middleware) {
+	handlers := NewHandler(service, importer, maxSize)
 
 	equipment := api.Group("/equipment", middleware.CheckPermissions(access.Reg.R(access.ResourceEquipment).Read()))
 	{
@@ -56,6 +58,7 @@ func Register(api *gin.RouterGroup, service services.Equipment, maxSize int64, m
 		equipment.GET("/acts/:id", handlers.getActByID)
 		equipment.GET("/acts/:id/document", handlers.getActDocument)
 		equipment.GET("/acts/:id/signed", handlers.getActSignedFile)
+		equipment.GET("/import/template", handlers.importTemplate)
 
 		equipment.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceEquipment).Write()))
 		equipment.POST("", handlers.create)
@@ -73,6 +76,7 @@ func Register(api *gin.RouterGroup, service services.Equipment, maxSize int64, m
 		equipment.PUT("/templates/:id", handlers.updateTemplate)
 		equipment.POST("/acts", handlers.createAct)
 		equipment.POST("/acts/:id/signed", handlers.uploadActSigned)
+		equipment.POST("/import", handlers.importEquipment)
 
 		equipment.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceEquipment).Delete()))
 		equipment.DELETE("/:id", handlers.delete)

@@ -15,6 +15,7 @@ import type {
 	IEquipmentDTO,
 	IEquipmentEvent,
 	IEquipmentFilter,
+	IEquipmentImportResult,
 	IEquipmentKitTemplate,
 	IEquipmentKitTemplateDTO,
 	IEquipmentList,
@@ -533,6 +534,53 @@ const equipmentApiSlice = apiSlice.injectEndpoints({
 			},
 		}),
 
+		// Импорт единиц из файла (xlsx/csv). Отчёт по строкам возвращается вместе
+		// с ответом: импорт разовый, и сразу видно, какие строки не прошли и почему.
+		// Список и счётчики шапки обновляются — созданные единицы должны появиться
+		// без перезагрузки страницы.
+		importEquipment: builder.mutation<{ data: IEquipmentImportResult; total: number }, File>({
+			query: file => {
+				const formData = new FormData()
+				formData.append('file', file)
+				return {
+					url: API.equipment.import,
+					method: 'POST',
+					body: formData,
+				}
+			},
+			invalidatesTags: [{ type: 'Equipment', id: 'ALL' }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		// Шаблон файла импорта — csv с шапкой и примером строки: скачивание
+		// запускается здесь же, поэтому в кэш уходит только null (как у документа акта).
+		getEquipmentImportTemplate: builder.query<null, void>({
+			queryFn: async (_arg, api, extraOptions) => {
+				const res = await baseQueryWithReAuth(
+					{
+						url: API.equipment.importTemplate,
+						responseHandler: (response: Response) => response.blob(),
+						cache: 'no-cache',
+					},
+					api,
+					extraOptions,
+				)
+				if (res.error) return { error: res.error }
+
+				if (res.data instanceof Blob) {
+					saveAs(res.data, 'equipment-import-template.csv')
+				}
+				return { data: null }
+			},
+		}),
+
 		getAllEquipmentTypes: builder.query<{ data: IEquipmentType[] }, void>({
 			query: () => ({
 				url: API.equipment.types,
@@ -741,6 +789,8 @@ export const {
 	useLazyGetEquipmentActDocumentQuery,
 	useLazyGetEquipmentActSignedFileQuery,
 	useUploadEquipmentActSignedMutation,
+	useImportEquipmentMutation,
+	useLazyGetEquipmentImportTemplateQuery,
 	useGetAllEquipmentTypesQuery,
 	useGetAllEquipmentShopsQuery,
 	useGetEquipmentTypeQuery,

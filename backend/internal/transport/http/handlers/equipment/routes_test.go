@@ -23,7 +23,7 @@ func TestRegister_Routes(t *testing.T) {
 	api := engine.Group("/api")
 
 	require.NotPanics(t, func() {
-		Register(api, nil, 1024, &middleware.Middleware{})
+		Register(api, nil, nil, 1024, &middleware.Middleware{})
 	})
 }
 

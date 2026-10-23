@@ -446,3 +446,33 @@ export interface IEquipmentKitTemplateDTO {
 	sortOrder?: number
 	items: IEquipmentKitTemplateItemDTO[]
 }
+
+// ===== Импорт из файла =====
+
+// IEquipmentImportRow — результат импорта одной строки файла. status: created —
+// единица создана, failed — строка не прошла, причина в error.
+export interface IEquipmentImportRow {
+	// row — номер строки в файле, как в Excel (первая строка данных — 2).
+	row: number
+	name: string
+	status: 'created' | 'failed'
+	error: string
+	// note — предупреждение: единица создана, но что-то пришлось поправить
+	// (например, получатель не найден среди пользователей).
+	note: string
+	equipmentId: string | null
+	inventoryNumber: string | null
+	// holder — получатель из файла.
+	holder: string
+	// holderFound — получатель найден среди пользователей; false — записан
+	// свободным значением.
+	holderFound: boolean
+}
+
+// IEquipmentImportResult — итог импорта: счётчики и отчёт по строкам.
+export interface IEquipmentImportResult {
+	total: number
+	created: number
+	failed: number
+	rows: IEquipmentImportRow[]
+}

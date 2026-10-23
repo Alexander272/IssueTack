@@ -3,7 +3,7 @@ import { useMatch, useNavigate } from 'react-router'
 import { Box } from '@mui/material'
 
 import { AppRoutes } from '@/pages/router/routes'
-import { EquipmentDialog, EquipmentKitDialog } from '../components/Dialogs'
+import { EquipmentDialog, EquipmentImportDialog, EquipmentKitDialog } from '../components/Dialogs'
 import { DetailModal } from '../components/Detail'
 import { EquipmentList } from '../components/List'
 import { Header } from '../components/Header'
@@ -32,6 +32,9 @@ export const EquipmentPage: FC = () => {
 	const [dialogOpen, setDialogOpen] = useState(false)
 	const [dialogKit, setDialogKit] = useState(false)
 	const [dialogSeq, setDialogSeq] = useState(0)
+	// Импорт — отдельный диалог: он не создаёт единицу по форме, а читает файл
+	// и показывает отчёт по строкам.
+	const [importOpen, setImportOpen] = useState(false)
 
 	const openCreate = (kit: boolean) => {
 		setDialogKit(kit)
@@ -41,7 +44,7 @@ export const EquipmentPage: FC = () => {
 
 	return (
 		<Box sx={{ p: { xs: 2, sm: 3 } }}>
-			<Header onCreate={openCreate} />
+			<Header onCreate={openCreate} onImport={() => setImportOpen(true)} />
 
 			<EquipmentList onOpen={setPickedId} />
 
@@ -69,6 +72,8 @@ export const EquipmentPage: FC = () => {
 				onClose={closeDetail}
 				onOpenUnit={setPickedId}
 			/>
+
+			<EquipmentImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
 		</Box>
 	)
 }

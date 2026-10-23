@@ -24,9 +24,10 @@ import { SettingIcon } from '@/components/Icons/SettingIcon'
 
 type Props = {
 	onCreate: (kit: boolean) => void
+	onImport: () => void
 }
 
-export const Header: FC<Props> = ({ onCreate }) => {
+export const Header: FC<Props> = ({ onCreate, onImport }) => {
 	const navigate = useNavigate()
 	const canWrite = useCheckPermissions({ anyOf: [PermRules.Equipment.Write] })
 	const { palette } = useTheme()
@@ -186,7 +187,12 @@ export const Header: FC<Props> = ({ onCreate }) => {
 						</ListItemIcon>
 						Комплект
 					</MenuItem>
-					<MenuItem disabled>
+					<MenuItem
+						onClick={() => {
+							setAnchor(null)
+							onImport()
+						}}
+					>
 						<ListItemIcon>
 							<FileUpIcon sx={{ fontSize: 16, color: '#0e0e0e' }} />
 						</ListItemIcon>

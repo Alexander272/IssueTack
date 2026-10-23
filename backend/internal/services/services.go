@@ -41,6 +41,10 @@ type Services struct {
 	ActivityLog
 	UserRealms
 	Equipment
+	// EquipmentImport — импорт единиц оборудования из файла. Отдельный сервис,
+	// а не метод сервиса оборудования: импорту нужны справочники площадок и
+	// пользователей, которых у оборудования нет.
+	EquipmentImport *EquipmentImportService
 	// Интеграции
 	Scheduler
 	Mattermost
@@ -115,6 +119,9 @@ func NewServices(deps *Deps) *Services {
 	sites := NewSiteService(deps.Repo.Sites)
 	equipment := NewEquipmentService(deps.Repo.Equipment, transaction, &deps.Conf.FileServer)
 	equipment.SetERPConfig(deps.Conf.Equipment)
+	// Импорт оборудования: создаёт единицы через сервис оборудования, а
+	// разрешает площадки и получателей по справочникам.
+	equipmentImport := NewEquipmentImportService(equipment, deps.Repo.Sites, deps.Repo.Users)
 	logs := NewActivityLogService(deps.Repo.ActivityLog, transaction)
 	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs, access)
 	statistics := NewStatisticsService(deps.Repo.Statistics, groups, access)
@@ -226,6 +233,7 @@ func NewServices(deps *Deps) *Services {
 		ActivityLog:     logs,
 		UserRealms:      userRealms,
 		Equipment:       equipment,
+		EquipmentImport: equipmentImport,
 
 		// Интеграции
 		Scheduler:  scheduler,
