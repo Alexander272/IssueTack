@@ -8,7 +8,7 @@ import type {
     PluginStore,
     PluginTicketDetail,
     PluginTicketLinkContext,
-    PluginTicketShort,
+    PluginTicketListResult,
 } from './types';
 
 let storeRef: PluginStore | null = null;
@@ -233,8 +233,38 @@ export async function requestGreeting(scope: PluginScope): Promise<void> {
     });
 }
 
-export async function getMyTickets(scope: PluginScope): Promise<PluginTicketShort[]> {
-    return request<PluginTicketShort[]>(`/plugins/issuetrack/api/tickets?${scopeQuery(scope).toString()}`);
+export interface PluginTicketListParams {
+    archived?: boolean;
+    limit?: number;
+    offset?: number;
+    search?: string;
+    closedAtFrom?: string;
+    closedAtTo?: string;
+}
+
+export async function getMyTickets(scope: PluginScope, params?: PluginTicketListParams): Promise<PluginTicketListResult> {
+    const qs = scopeQuery(scope);
+    if (params) {
+        if (params.archived) {
+            qs.set('archived', '1');
+        }
+        if (params.limit != null) {
+            qs.set('limit', String(params.limit));
+        }
+        if (params.offset != null) {
+            qs.set('offset', String(params.offset));
+        }
+        if (params.search) {
+            qs.set('search', params.search);
+        }
+        if (params.closedAtFrom) {
+            qs.set('closedAtFrom', params.closedAtFrom);
+        }
+        if (params.closedAtTo) {
+            qs.set('closedAtTo', params.closedAtTo);
+        }
+    }
+    return request<PluginTicketListResult>(`/plugins/issuetrack/api/tickets?${qs.toString()}`);
 }
 
 export async function getTicket(scope: PluginScope, ticketId: string): Promise<PluginTicketDetail> {

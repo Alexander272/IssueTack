@@ -115,6 +115,23 @@ type PluginCreateTicketResult struct {
 	DeepLink string    `json:"deepLink"`
 }
 
+// PluginTicketListResult — постраничный список заявок плагина с общим количеством.
+type PluginTicketListResult struct {
+	Items []PluginTicketShort `json:"items"`
+	Total int                 `json:"total"`
+}
+
+// PluginTicketListQuery — параметры списка заявок плагина («Мои заявки»).
+type PluginTicketListQuery struct {
+	PluginScope
+	Archived     bool
+	Limit        int
+	Offset       int
+	Search       string
+	ClosedAtFrom *time.Time
+	ClosedAtTo   *time.Time
+}
+
 // PluginTicketShort — строка списка «Мои активные заявки» для плагина.
 type PluginTicketShort struct {
 	ID          uuid.UUID      `json:"id"`

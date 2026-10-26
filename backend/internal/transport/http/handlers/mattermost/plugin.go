@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -161,13 +162,77 @@ func (h *Handler) handlePluginListMine(c *gin.Context) {
 		return
 	}
 
-	list, err := h.service.PluginListMine(c, scope)
+	query := &models.PluginTicketListQuery{
+		PluginScope: scope,
+		Archived:    pluginBoolQuery(c.Query("archived")),
+		Search:      strings.TrimSpace(c.Query("search")),
+	}
+
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			response.SendError(c, models.ErrInvalidInput)
+			return
+		}
+		query.Limit = n
+	}
+	if raw := strings.TrimSpace(c.Query("offset")); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			response.SendError(c, models.ErrInvalidInput)
+			return
+		}
+		query.Offset = n
+	}
+	if raw := strings.TrimSpace(c.Query("closedAtFrom")); raw != "" {
+		from, err := parsePluginDate(raw, false)
+		if err != nil {
+			response.SendError(c, models.ErrInvalidInput)
+			return
+		}
+		query.ClosedAtFrom = from
+	}
+	if raw := strings.TrimSpace(c.Query("closedAtTo")); raw != "" {
+		to, err := parsePluginDate(raw, true)
+		if err != nil {
+			response.SendError(c, models.ErrInvalidInput)
+			return
+		}
+		query.ClosedAtTo = to
+	}
+
+	result, err := h.service.PluginListMine(c, query)
 	if err != nil {
 		response.SendError(c, err)
 		return
 	}
 
-	response.SendData(c, list)
+	response.SendData(c, result)
+}
+
+// pluginBoolQuery разбирает необязательный булев query-параметр плагина
+// (archived): понимает 1/true/yes и 0/false/no, отсутствие — false.
+func pluginBoolQuery(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes":
+		return true
+	}
+	return false
+}
+
+// parsePluginDate разбирает дату фильтра плагина (YYYY-MM-DD) в локальном
+// поясе сервера: closed_at хранится в UTC, а пользователь выбирает день по
+// своим часам. endOfDay=true сдвигает дату на начало следующего дня, чтобы
+// фильтр «по» включал выбранный день целиком (в SQL — строгое <).
+func parsePluginDate(raw string, endOfDay bool) (*time.Time, error) {
+	t, err := time.ParseInLocation("2006-01-02", raw, time.Local)
+	if err != nil {
+		return nil, fmt.Errorf("invalid date: %w", err)
+	}
+	if endOfDay {
+		t = t.AddDate(0, 0, 1)
+	}
+	return &t, nil
 }
 
 func (h *Handler) handlePluginGetTicket(c *gin.Context) {

@@ -154,6 +154,117 @@
     overflow-y: auto;
 }
 
+.it-my-tickets {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.it-my-tickets__tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.12);
+}
+
+.it-my-tickets__tab {
+    padding: 6px 12px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    cursor: pointer;
+    font-size: 13px;
+    color: rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.64);
+}
+
+.it-my-tickets__tab:hover {
+    color: var(--center-channel-color, #3d3c40);
+}
+
+.it-my-tickets__tab--active {
+    border-bottom-color: var(--button-bg, #166de0);
+    color: var(--button-bg, #166de0);
+    font-weight: 600;
+}
+
+.it-archive-filters {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    background: rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.04);
+    border: 1px solid rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.08);
+    border-radius: 8px;
+}
+
+.it-archive-filters__row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.it-archive-filters__input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    border: 1px solid rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.16);
+    border-radius: 4px;
+    background: var(--center-channel-bg, #fff);
+    color: var(--center-channel-color, #3d3c40);
+    font-size: 13px;
+    font-family: inherit;
+}
+
+.it-archive-more {
+    display: flex;
+    justify-content: center;
+    padding-top: 12px;
+}
+
+.it-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.16);
+    border-radius: 4px;
+    background: var(--center-channel-bg, #fff);
+    color: var(--center-channel-color, #3d3c40);
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    line-height: 1.2;
+}
+
+.it-btn:hover {
+    background: rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.04);
+}
+
+.it-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.it-btn--sm {
+    padding: 4px 10px;
+    font-size: 12px;
+}
+
+.it-btn--primary {
+    background: var(--button-bg, #166de0);
+    color: var(--button-color, #fff);
+    border-color: transparent;
+}
+
+.it-btn--primary:hover {
+    filter: brightness(0.94);
+}
+
+.it-btn--primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .it-ticket-form {
     position: relative;
     display: flex;

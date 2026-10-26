@@ -126,6 +126,20 @@ func (w *whereBuilder) dueDate(from, to *time.Time) {
 	}
 }
 
+func (w *whereBuilder) closedAt(from, to *time.Time) {
+	if from != nil {
+		w.idx++
+		w.add(fmt.Sprintf("t.closed_at >= $%d", w.idx))
+		w.args = append(w.args, *from)
+	}
+	// ClosedAtTo — эксклюзивная граница (начало следующего дня), поэтому <.
+	if to != nil {
+		w.idx++
+		w.add(fmt.Sprintf("t.closed_at < $%d", w.idx))
+		w.args = append(w.args, *to)
+	}
+}
+
 func (w *whereBuilder) priorities(ps []models.Priority) {
 	inList(w, "t.priority", ps)
 }

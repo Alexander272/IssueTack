@@ -156,6 +156,7 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 	eq(w, "t.realm_id", req.RealmID)
 	w.search(req.Search)
 	w.dueDate(req.DueDateFrom, req.DueDateTo)
+	w.closedAt(req.ClosedAtFrom, req.ClosedAtTo)
 	w.priorities(req.Priorities)
 	// Избранные пользователя не режутся по статусам вкладки: звезда ставится на любой
 	// статус (включая закрытые), пин — только на активные (проверка в сервисе

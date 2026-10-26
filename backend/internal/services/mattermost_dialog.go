@@ -160,6 +160,7 @@ func (s *MattermostService) ownerSelectElement(ctx context.Context, realmID uuid
 		Type:        "select",
 		Placeholder: "Выберите заказчика",
 		Options:     opts,
+		Optional:    true,
 	}
 }
 

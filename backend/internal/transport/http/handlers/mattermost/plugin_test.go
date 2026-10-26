@@ -210,6 +210,55 @@ func TestPluginContextPassesBotUserID(t *testing.T) {
 	assert.Equal(t, models.PluginScope{ChannelID: "dm1", MmUserID: "u1", BotUserID: "bot1"}, stub.got)
 }
 
+// stubListMattermost захватывает query списка заявок плагина.
+type stubListMattermost struct {
+	services.Mattermost
+	got *models.PluginTicketListQuery
+}
+
+func (s *stubListMattermost) PluginListMine(_ context.Context, query *models.PluginTicketListQuery) (*models.PluginTicketListResult, error) {
+	s.got = query
+	return &models.PluginTicketListResult{Items: []models.PluginTicketShort{}, Total: 0}, nil
+}
+
+func TestPluginListMineParsesArchiveQuery(t *testing.T) {
+	engine := gin.New()
+	stub := &stubListMattermost{}
+	h := &Handler{service: stub}
+	h.registerPluginRoutes(engine.Group("/api/v1"), config.MattermostConfig{
+		PluginToken:      "secret",
+		AllowedServerIPs: []string{"192.0.2.0/24"},
+	})
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/plugin/tickets?channelId=ch1&userId=mm1&archived=1&limit=500&offset=25&search=%2042%20&closedAtFrom=2026-10-01&closedAtTo=2026-10-20", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.NotNil(t, stub.got)
+	assert.Equal(t, models.PluginScope{ChannelID: "ch1", MmUserID: "mm1"}, stub.got.PluginScope)
+	assert.True(t, stub.got.Archived)
+	assert.Equal(t, 500, stub.got.Limit)
+	assert.Equal(t, 25, stub.got.Offset)
+	assert.Equal(t, "42", stub.got.Search)
+	require.NotNil(t, stub.got.ClosedAtFrom)
+	require.NotNil(t, stub.got.ClosedAtTo)
+	assert.Equal(t, 1, stub.got.ClosedAtFrom.Day())
+	assert.Equal(t, 21, stub.got.ClosedAtTo.Day(), "closedAtTo сдвигается на начало следующего дня")
+}
+
+func TestPluginBoolQuery(t *testing.T) {
+	tests := map[string]bool{
+		"1": true, "true": true, "yes": true, "TRUE": true,
+		"0": false, "false": false, "": false, "no": false,
+	}
+	for raw, want := range tests {
+		assert.Equal(t, want, pluginBoolQuery(raw), "raw=%q", raw)
+	}
+}
+
 // stubCaptureCreate захватывает input, дошедший до сервиса.
 type stubCaptureCreate struct {
 	services.Mattermost

@@ -94,6 +94,11 @@ export interface PluginTicketShort {
     link?: string;
 }
 
+export interface PluginTicketListResult {
+    items: PluginTicketShort[];
+    total: number;
+}
+
 export interface PluginUserShort {
     id: string;
     username: string;

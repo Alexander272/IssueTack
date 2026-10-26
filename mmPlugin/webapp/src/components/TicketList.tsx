@@ -4,31 +4,97 @@ import type { PluginTicketShort } from '../types'
 import { formatDate, statusMeta } from '../labels'
 import { EyeIcon } from './icons'
 
+interface ArchiveFilters {
+    search: string
+    closedAtFrom: string
+    closedAtTo: string
+}
+
 interface TicketListProps {
     tickets: PluginTicketShort[] | null
     error: string | null
     onOpen: (id: string) => void
     onRefresh: () => void
+    emptyText?: string
+    mode?: 'active' | 'archive'
+    filters?: ArchiveFilters
+    onFiltersChange?: (patch: Partial<ArchiveFilters>) => void
+    total?: number
+    hasMore?: boolean
+    loadingMore?: boolean
+    onLoadMore?: () => void
 }
 
-export default function TicketList({ tickets, error, onOpen, onRefresh }: TicketListProps) {
+export default function TicketList({
+    tickets,
+    error,
+    onOpen,
+    onRefresh,
+    emptyText = 'Заявок пока нет.',
+    mode = 'active',
+    filters,
+    onFiltersChange,
+    total = 0,
+    hasMore = false,
+    loadingMore = false,
+    onLoadMore,
+}: TicketListProps) {
     const sorted = (tickets || []).slice().sort((a, b) => {
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     })
 
+    const isArchive = mode === 'archive'
+
     return (
         <div className='it-ticket-list'>
             <div className='it-ticket-list__toolbar'>
-                <span className='it-ticket-list__count'>{tickets ? `Мои заявки: ${tickets.length}` : 'Загрузка…'}</span>
+                <span className='it-ticket-list__count'>
+                    {tickets ? (isArchive ? `Архив: показано ${tickets.length} из ${total}` : `Мои заявки: ${tickets.length}`) : 'Загрузка…'}
+                </span>
                 <button type='button' className='it-btn it-btn--sm' onClick={onRefresh}>
                     Обновить
                 </button>
             </div>
 
+            {isArchive && filters && onFiltersChange ? (
+                <div className='it-archive-filters'>
+                    <input
+                        className='it-archive-filters__input'
+                        type='text'
+                        placeholder='Поиск по заголовку и номеру'
+                        value={filters.search}
+                        onChange={e => onFiltersChange({ search: e.target.value })}
+                    />
+                    <div className='it-archive-filters__row'>
+                        <input
+                            className='it-archive-filters__input'
+                            type='date'
+                            value={filters.closedAtFrom}
+                            onChange={e => onFiltersChange({ closedAtFrom: e.target.value })}
+                        />
+                        <input
+                            className='it-archive-filters__input'
+                            type='date'
+                            value={filters.closedAtTo}
+                            onChange={e => onFiltersChange({ closedAtTo: e.target.value })}
+                        />
+                    </div>
+                    {(filters.search || filters.closedAtFrom || filters.closedAtTo) ? (
+                        <button
+                            type='button'
+                            className='it-btn it-btn--sm'
+                            onClick={() => onFiltersChange({ search: '', closedAtFrom: '', closedAtTo: '' })}
+                        >
+                            Сбросить фильтры
+                        </button>
+                    ) : null}
+                </div>
+            ) : null}
+
             {error ? <div className='it-ticket-error'>{error}</div> : null}
 
             {!error && tickets && sorted.length === 0 ? (
-                <div className='it-ticket-list__empty'>Заявок пока нет.</div>
+                <div className='it-ticket-list__empty'>{emptyText}</div>
             ) : null}
 
             {tickets ? (
@@ -85,6 +151,14 @@ export default function TicketList({ tickets, error, onOpen, onRefresh }: Ticket
                         )
                     })}
                 </ul>
+            ) : null}
+
+            {isArchive && hasMore && onLoadMore ? (
+                <div className='it-archive-more'>
+                    <button type='button' className='it-btn' disabled={loadingMore} onClick={onLoadMore}>
+                        {loadingMore ? 'Загрузка…' : 'Показать ещё'}
+                    </button>
+                </div>
             ) : null}
         </div>
     )

@@ -94,8 +94,11 @@ type TicketFilter struct {
 	FavoritesByUser     *uuid.UUID    `json:"-"`
 	FavoriteType        *FavoriteType `json:"-"`
 	MyWork              *MyWorkFilter `json:"-"`
-	Limit               int           `json:"limit" db:"limit"`
-	Offset              int           `json:"offset" db:"offset"`
+	// Фильтр по дате закрытия (используется, напр. в архиве плагина)
+	ClosedAtFrom *time.Time `form:"closedAtFrom" json:"closedAtFrom" time_format:"2006-01-02"`
+	ClosedAtTo   *time.Time `form:"closedAtTo"   json:"closedAtTo"   time_format:"2006-01-02"`
+	Limit        int        `json:"limit" db:"limit"`
+	Offset       int        `json:"offset" db:"offset"`
 }
 
 // MyWorkFilter описывает фильтр «Мои задачи»: тикеты, где пользователь является
