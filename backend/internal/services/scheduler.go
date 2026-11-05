@@ -118,25 +118,27 @@ func (s *SchedulerService) Start(conf *config.TicketConfig) error {
 	if conf.NotifyHighPriorityInterval > 0 {
 		_, err := s.cron.NewJob(
 			gocron.DurationJob(conf.NotifyHighPriorityInterval),
-			gocron.NewTask(s.notifyHighPriorityJob, conf.NotifyHighPriorityInterval),
+			gocron.NewTask(s.notifyHighPriorityJob, conf.NotifyHighPriorityInterval, conf.NotifyPriorityReminderBefore),
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create high-priority-reminder job. error: %w", err)
 		}
 		registered = true
-		logger.Info("high-priority-reminder scheduler started, interval: " + conf.NotifyHighPriorityInterval.String())
+		logger.Info(fmt.Sprintf("high-priority-reminder scheduler started, interval: %s, due window: %s",
+			conf.NotifyHighPriorityInterval, priorityReminderWindow(conf.NotifyPriorityReminderBefore)))
 	}
 
 	if conf.NotifyUrgentPriorityInterval > 0 {
 		_, err := s.cron.NewJob(
 			gocron.DurationJob(conf.NotifyUrgentPriorityInterval),
-			gocron.NewTask(s.notifyUrgentPriorityJob, conf.NotifyUrgentPriorityInterval),
+			gocron.NewTask(s.notifyUrgentPriorityJob, conf.NotifyUrgentPriorityInterval, conf.NotifyPriorityReminderBefore),
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create urgent-priority-reminder job. error: %w", err)
 		}
 		registered = true
-		logger.Info("urgent-priority-reminder scheduler started, interval: " + conf.NotifyUrgentPriorityInterval.String())
+		logger.Info(fmt.Sprintf("urgent-priority-reminder scheduler started, interval: %s, due window: %s",
+			conf.NotifyUrgentPriorityInterval, priorityReminderWindow(conf.NotifyPriorityReminderBefore)))
 	}
 
 	if registered {
@@ -237,12 +239,20 @@ func (s *SchedulerService) favoriteCleanupJob(ctx context.Context) {
 	}
 }
 
-func (s *SchedulerService) notifyHighPriorityJob(ctx context.Context, interval time.Duration) {
+// priorityReminderWindow форматирует окно до срока для стартового лога.
+func priorityReminderWindow(before time.Duration) string {
+	if before <= 0 {
+		return "unlimited"
+	}
+	return before.String()
+}
+
+func (s *SchedulerService) notifyHighPriorityJob(ctx context.Context, interval, before time.Duration) {
 	if !s.workingHours.allows(time.Now()) {
 		logger.Debug("high-priority-reminder skipped: outside working hours")
 		return
 	}
-	ids, err := s.notifications.GetActiveByPriorityGlobal(ctx, models.PriorityHigh)
+	ids, err := s.notifications.GetActiveByPriorityGlobal(ctx, models.PriorityHigh, before)
 	if err != nil {
 		logger.Error("failed to get high-priority tickets:", logger.ErrAttr(err))
 		return
@@ -262,12 +272,12 @@ func (s *SchedulerService) notifyHighPriorityJob(ctx context.Context, interval t
 	}
 }
 
-func (s *SchedulerService) notifyUrgentPriorityJob(ctx context.Context, interval time.Duration) {
+func (s *SchedulerService) notifyUrgentPriorityJob(ctx context.Context, interval, before time.Duration) {
 	if !s.workingHours.allows(time.Now()) {
 		logger.Debug("urgent-priority-reminder skipped: outside working hours")
 		return
 	}
-	ids, err := s.notifications.GetActiveByPriorityGlobal(ctx, models.PriorityUrgent)
+	ids, err := s.notifications.GetActiveByPriorityGlobal(ctx, models.PriorityUrgent, before)
 	if err != nil {
 		logger.Error("failed to get critical-priority tickets:", logger.ErrAttr(err))
 		return

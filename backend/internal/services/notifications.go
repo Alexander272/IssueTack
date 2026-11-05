@@ -72,8 +72,10 @@ type Notifications interface {
 	NotifyOverdue(ctx context.Context, ticket *models.Ticket) error
 	// GetOverdueTicketIDs возвращает ID активных тикетов с просроченным сроком.
 	GetOverdueTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error)
-	// GetActiveByPriorityGlobal возвращает ID активных непросроченных тикетов заданного приоритета.
-	GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority) ([]uuid.UUID, error)
+	// GetActiveByPriorityGlobal возвращает ID активных непросроченных тикетов заданного
+	// приоритета; before > 0 ограничивает по сроку только заявки с due_date, заявки без
+	// срока попадают в выборку всегда.
+	GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority, before time.Duration) ([]uuid.UUID, error)
 	// NotifyReminderHigh оповещает о задаче с высоким приоритетом (периодическое напоминание).
 	// interval — настроенная частота напоминаний; из неё выводится минимальный интервал дедупа.
 	NotifyReminderHigh(ctx context.Context, ticket *models.Ticket, interval time.Duration) error
@@ -659,9 +661,11 @@ func (s *NotificationService) GetOverdueTicketIDs(ctx context.Context, now time.
 	return s.repo.GetOverdueTicketIDs(ctx, now)
 }
 
-// GetActiveByPriorityGlobal возвращает ID активных непросроченных тикетов заданного приоритета.
-func (s *NotificationService) GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority) ([]uuid.UUID, error) {
-	return s.repo.GetActiveByPriorityGlobal(ctx, priority)
+// GetActiveByPriorityGlobal возвращает ID активных непросроченных тикетов заданного
+// приоритета; before > 0 ограничивает по сроку только заявки с due_date, заявки без
+// срока попадают в выборку всегда.
+func (s *NotificationService) GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority, before time.Duration) ([]uuid.UUID, error) {
+	return s.repo.GetActiveByPriorityGlobal(ctx, priority, before)
 }
 
 // NotifyDeadlineSoon оповещает исполнителя тикета о приближении срока (ticket.deadline_soon).

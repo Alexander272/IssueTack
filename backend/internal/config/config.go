@@ -37,6 +37,10 @@ type (
 		NotifyHighPriorityInterval time.Duration `yaml:"notify_high_priority_interval" env:"TICKETS_NOTIFY_HIGH_PRIORITY_INTERVAL" env-default:"3h"`
 		// Частота напоминаний по активным заявкам с приоритетом "критичный" (0 — отключено)
 		NotifyUrgentPriorityInterval time.Duration `yaml:"notify_urgent_priority_interval" env:"TICKETS_NOTIFY_URGENT_PRIORITY_INTERVAL" env-default:"1h"`
+		// За сколько до срока начинать периодические напоминания по высокому/критичному
+		// приоритету (по умолчанию 72h). Заявки без срока напоминаются в обычном режиме,
+		// окно к ним не применяется.
+		NotifyPriorityReminderBefore time.Duration `yaml:"notify_priority_reminder_before" env:"TICKETS_NOTIFY_PRIORITY_REMINDER_BEFORE" env-default:"72h"`
 		// Расписание напоминаний исполнителям о приближении срока ("@hourly", "" — отключено)
 		DeadlineSoonSchedule string `yaml:"deadline_soon_schedule" env:"TICKETS_DEADLINE_SOON_SCHEDULE" env-default:"@hourly"`
 		// Расписание очистки «закреплённых» (temporary) избранных ("@daily", "" — отключено)

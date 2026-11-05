@@ -44,7 +44,10 @@ type Notifications interface {
 	SaveSettings(ctx context.Context, tx Tx, userID uuid.UUID, settings json.RawMessage) error
 	// GetOverdueTicketIDs возвращает ID «активных» тикетов с просроченным сроком (due_date < now).
 	GetOverdueTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error)
-	GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority) ([]uuid.UUID, error)
+	// GetActiveByPriorityGlobal возвращает ID активных непросроченных тикетов заданного
+	// приоритета; before > 0 ограничивает по сроку только заявки с due_date, заявки без
+	// срока попадают в выборку всегда.
+	GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority, before time.Duration) ([]uuid.UUID, error)
 	// GetUpcomingDeadlineTicketIDs возвращает ID «активных» тикетов с будущим сроком (due_date > now)
 	// и исполнителем — кандидатов на напоминание «скоро срок».
 	GetUpcomingDeadlineTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error)
@@ -278,16 +281,23 @@ func (r *notificationRepository) GetOverdueTicketIDs(ctx context.Context, now ti
 	return data, nil
 }
 
-func (r *notificationRepository) GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority) ([]uuid.UUID, error) {
+func (r *notificationRepository) GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority, before time.Duration) ([]uuid.UUID, error) {
+	args := []any{priority}
+	dueWindow := ""
+	if before > 0 {
+		args = append(args, before.Seconds())
+		dueWindow = " AND (t.due_date IS NULL OR t.due_date <= NOW() + make_interval(secs => $2))"
+	}
+
 	query := fmt.Sprintf(`
 		SELECT t.id
 		FROM %s t
 		WHERE t.priority = $1
 			AND t.status IN ('open','in_progress','pending','on_hold')
-			AND (t.due_date IS NULL OR t.due_date >= NOW())
-		ORDER BY t.created_at`, Tables.Tickets)
+			AND (t.due_date IS NULL OR t.due_date >= NOW())%s
+		ORDER BY t.created_at`, Tables.Tickets, dueWindow)
 
-	rows, err := r.db.Query(ctx, query, priority)
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to get active priority ticket ids: %w", err))
 	}

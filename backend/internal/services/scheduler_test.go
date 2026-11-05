@@ -70,7 +70,8 @@ func TestSchedulerService_Start_PriorityReminders(t *testing.T) {
 }
 
 // TestSchedulerService_NotifyUrgentPriorityJob проверяет, что задача берёт активные
-// заявки с критичным приоритетом и отправляет по каждой напоминание через сервис.
+// заявки с критичным приоритетом в окне до срока и отправляет по каждой напоминание
+// через сервис.
 func TestSchedulerService_NotifyUrgentPriorityJob(t *testing.T) {
 	mockTickets := new(MockTicketsService)
 	mockNotifications := new(MockNotificationService)
@@ -78,12 +79,34 @@ func TestSchedulerService_NotifyUrgentPriorityJob(t *testing.T) {
 
 	ticketID := uuid.New()
 	ticket := &models.Ticket{ID: ticketID, Priority: models.PriorityUrgent}
+	before := 72 * time.Hour
 
-	mockNotifications.On("GetActiveByPriorityGlobal", mock.Anything, models.PriorityUrgent).Return([]uuid.UUID{ticketID}, nil).Once()
+	mockNotifications.On("GetActiveByPriorityGlobal", mock.Anything, models.PriorityUrgent, before).Return([]uuid.UUID{ticketID}, nil).Once()
 	mockTickets.On("GetSummary", mock.Anything, ticketID).Return(ticket, nil).Once()
 	mockNotifications.On("NotifyReminderUrgent", mock.Anything, ticket, mock.AnythingOfType("time.Duration")).Return(nil).Once()
 
-	svc.notifyUrgentPriorityJob(t.Context(), time.Hour)
+	svc.notifyUrgentPriorityJob(t.Context(), time.Hour, before)
+
+	mockNotifications.AssertExpectations(t)
+	mockTickets.AssertExpectations(t)
+}
+
+// TestSchedulerService_NotifyHighPriorityJob проверяет проброс окна до срока для
+// высокого приоритета: оно уходит в выборку, а не теряется в планировщике.
+func TestSchedulerService_NotifyHighPriorityJob(t *testing.T) {
+	mockTickets := new(MockTicketsService)
+	mockNotifications := new(MockNotificationService)
+	svc := NewSchedulerService(&SchedulerDeps{Tickets: mockTickets, Notifications: mockNotifications})
+
+	ticketID := uuid.New()
+	ticket := &models.Ticket{ID: ticketID, Priority: models.PriorityHigh}
+	before := 72 * time.Hour
+
+	mockNotifications.On("GetActiveByPriorityGlobal", mock.Anything, models.PriorityHigh, before).Return([]uuid.UUID{ticketID}, nil).Once()
+	mockTickets.On("GetSummary", mock.Anything, ticketID).Return(ticket, nil).Once()
+	mockNotifications.On("NotifyReminderHigh", mock.Anything, ticket, mock.AnythingOfType("time.Duration")).Return(nil).Once()
+
+	svc.notifyHighPriorityJob(t.Context(), 3*time.Hour, before)
 
 	mockNotifications.AssertExpectations(t)
 	mockTickets.AssertExpectations(t)
@@ -126,10 +149,10 @@ func TestSchedulerService_Jobs_SkippedOutsideWorkingHours(t *testing.T) {
 		svc := NewSchedulerService(&SchedulerDeps{Tickets: new(MockTicketsService), Notifications: mockNotifications})
 		svc.workingHours = window
 
-		svc.notifyUrgentPriorityJob(t.Context(), time.Hour)
-		svc.notifyHighPriorityJob(t.Context(), 3*time.Hour)
+		svc.notifyUrgentPriorityJob(t.Context(), time.Hour, 72*time.Hour)
+		svc.notifyHighPriorityJob(t.Context(), 3*time.Hour, 72*time.Hour)
 
-		mockNotifications.AssertNotCalled(t, "GetActiveByPriorityGlobal", mock.Anything, mock.Anything)
+		mockNotifications.AssertNotCalled(t, "GetActiveByPriorityGlobal", mock.Anything, mock.Anything, mock.Anything)
 	})
 
 	t.Run("overdue", func(t *testing.T) {

@@ -837,8 +837,8 @@ func (m *MockNotificationService) GetOverdueTicketIDs(ctx context.Context, now t
 	}
 	return args.Get(0).([]uuid.UUID), args.Error(1)
 }
-func (m *MockNotificationService) GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority) ([]uuid.UUID, error) {
-	args := m.Called(ctx, priority)
+func (m *MockNotificationService) GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority, before time.Duration) ([]uuid.UUID, error) {
+	args := m.Called(ctx, priority, before)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -1356,8 +1356,8 @@ func (m *MockNotificationsRepo) GetOverdueTicketIDs(ctx context.Context, now tim
 	}
 	return args.Get(0).([]uuid.UUID), args.Error(1)
 }
-func (m *MockNotificationsRepo) GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority) ([]uuid.UUID, error) {
-	args := m.Called(ctx, priority)
+func (m *MockNotificationsRepo) GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority, before time.Duration) ([]uuid.UUID, error) {
+	args := m.Called(ctx, priority, before)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -1554,6 +1554,7 @@ func (m *MockUserRealmsRepo) GetRealmSupervisors(ctx context.Context, realmID uu
 	}
 	return args.Get(0).([]uuid.UUID), args.Error(1)
 }
+
 type MockAppSettings struct {
 	mock.Mock
 }
