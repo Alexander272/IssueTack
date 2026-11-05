@@ -436,7 +436,7 @@ func (s *MattermostService) PluginContext(ctx context.Context, scope models.Plug
 	}
 
 	executors := s.pluginMembers(ctx, settings.RealmID, models.MembershipExecutors)
-	customers := s.pluginMembers(ctx, settings.RealmID, models.MembershipCustomers)
+	customers := s.pluginMembers(ctx, settings.RealmID, models.MembershipAll)
 
 	return &models.PluginContextResult{
 		Bound:          true,

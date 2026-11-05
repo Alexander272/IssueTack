@@ -438,7 +438,7 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 
 	if !ok {
 		// Исполнитель (участник хотя бы одной группы) может создать заявку
-		// с ограничениями: обязателен заказчик, а приоритет/группа/исполнитель/срок
+		// с ограничениями: обязателен заказчик, а приоритет/группа/исполнитель
 		// принудительно определяются системой.
 		member, err := s.groups.GetMemberGroups(ctx, dto.Actor.ID, dto.RealmID)
 		if err != nil {
@@ -464,42 +464,47 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		return fmt.Errorf("auto-assign: %w", err)
 	}
 
-	// Срок выполнения при создании может ставить только менеджер группы тикета
-	// или админ реалма (realm supervisor). Политика Casbin write права на срок
-	// не даёт — участник с realm-wide write не может выставить dueDate.
-	if dto.DueDate != nil {
-		isManager, err := s.isManagerOfGroup(ctx, &models.GroupShort{ID: *dto.GroupID}, dto.Actor.ID)
+	canSetDueDate := false
+
+	isManager, err := s.isManagerOfGroup(ctx, &models.GroupShort{ID: *dto.GroupID}, dto.Actor.ID)
+	if err != nil {
+		return fmt.Errorf("failed to check manager access: %w", err)
+	}
+
+	supervisor, err := s.access.IsRealmSupervisor(ctx, dto.Actor.ID, realmStr)
+	if err != nil {
+		return fmt.Errorf("failed to check supervisor access: %w", err)
+	}
+
+	if isManager || supervisor {
+		canSetDueDate = true
+	} else {
+		// Проверяем, является ли пользователь "исполнителем" (участником хотя бы одной группы в реалме)
+		// Мы делаем этот запрос только если пользователь не менеджер и не супервизор, чтобы сэкономить ресурсы
+		memberGroups, err := s.groups.GetMemberGroups(ctx, dto.Actor.ID, dto.RealmID)
 		if err != nil {
-			return fmt.Errorf("failed to check manager access: %w", err)
+			return fmt.Errorf("failed to get member groups for due date check: %w", err)
 		}
-		supervisor, err := s.access.IsRealmSupervisor(ctx, dto.Actor.ID, realmStr)
-		if err != nil {
-			return fmt.Errorf("failed to check supervisor access: %w", err)
+		if len(memberGroups) > 0 {
+			canSetDueDate = true
 		}
-		if !isManager && !supervisor {
-			return models.ErrPermissionDenied
-		}
-	} else if ok && dto.CategoryID != uuid.Nil {
-		// Автоматический срок из категории: проставляем только тем, кто вправе
-		// задать срок вручную (менеджер группы / админ реалма), иначе не навязываем.
-		// Ветка исполнителя (ok=false) исключена: срок ей всё равно недоступен.
+	}
+
+	// 1. Если пользователь пытается вручную установить срок, но не имеет прав — блокируем
+	if dto.DueDate != nil && !canSetDueDate {
+		return models.ErrPermissionDenied
+	}
+
+	// 2. Если срок не указан вручную, но пользователь имеет право его устанавливать,
+	// и у категории есть срок по умолчанию — применяем его автоматически.
+	if dto.DueDate == nil && canSetDueDate && dto.CategoryID != uuid.Nil {
 		category, err := s.categories.GetByID(ctx, &models.GetCategoryByIdDTO{ID: dto.CategoryID, RealmID: *dto.RealmID})
 		if err != nil {
 			return fmt.Errorf("failed to get category: %w", err)
 		}
 		if category.DefaultDueDays != nil && *category.DefaultDueDays > 0 {
-			isManager, err := s.isManagerOfGroup(ctx, &models.GroupShort{ID: *dto.GroupID}, dto.Actor.ID)
-			if err != nil {
-				return fmt.Errorf("failed to check manager access: %w", err)
-			}
-			supervisor, err := s.access.IsRealmSupervisor(ctx, dto.Actor.ID, realmStr)
-			if err != nil {
-				return fmt.Errorf("failed to check supervisor access: %w", err)
-			}
-			if isManager || supervisor {
-				dd := time.Now().UTC().AddDate(0, 0, *category.DefaultDueDays)
-				dto.DueDate = &dd
-			}
+			dd := time.Now().UTC().AddDate(0, 0, *category.DefaultDueDays)
+			dto.DueDate = &dd
 		}
 	}
 
@@ -551,7 +556,7 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 
 // applyExecutorCreateRestrictions применяет ограничения при создании заявки исполнителем
 // (участником группы, не имеющим полных прав). Заказчик обязателен; группа и приоритет
-// принудительно берутся из категории, срок отсутствует. Исполнителем исполнитель может
+// принудительно берутся из категории. Исполнителем исполнитель может
 // назначить только себя (явно — на любую группу, включая чужую; чужой id из тела
 // отбрасывается). Если категория принадлежит одной из групп исполнителя, заявку и без
 // явного выбора назначают на него, иначе исполнитель подбирается системой по умолчанию.
@@ -573,7 +578,6 @@ func (s *TicketService) applyExecutorCreateRestrictions(ctx context.Context, dto
 
 	dto.GroupID = &category.GroupID
 	dto.Priority = category.Priority
-	dto.DueDate = nil
 
 	// Исполнитель может назначить исполнителем только себя — на любую группу, в т.ч. чужую
 	// (берёт заявку на себя). Чужой id из тела доверять нельзя: без этой отбраковки он

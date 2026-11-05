@@ -192,9 +192,7 @@ export const AdvancedSettingsSection = ({
 										)
 									}
 									disabled={!canEditDueDate}
-									slots={{
-										textField: DateTextField,
-									}}
+									slots={{ textField: DateTextField }}
 									slotProps={{ textField: { fullWidth: true, size: 'small' } }}
 								/>
 							)}

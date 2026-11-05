@@ -183,17 +183,50 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 			ownerId,
 			dueDate,
 		})
-	}, [context.realmId, context.user.id, title, description, categoryId, siteId, priority, groupId, assigneeId, ownerId, dueDate])
+	}, [
+		context.realmId,
+		context.user.id,
+		title,
+		description,
+		categoryId,
+		siteId,
+		priority,
+		groupId,
+		assigneeId,
+		ownerId,
+		dueDate,
+	])
 
 	useEffect(() => {
 		// Дефолтная площадка пользователя сама по себе не считается черновиком.
 		const hasContent = Boolean(
-			title.trim() || description.trim() || categoryId || files.length > 0 || (siteId && siteId !== userSiteId) ||
-			priority || groupId || assigneeId || ownerId || dueDate,
+			title.trim() ||
+			description.trim() ||
+			categoryId ||
+			files.length > 0 ||
+			(siteId && siteId !== userSiteId) ||
+			priority ||
+			groupId ||
+			assigneeId ||
+			ownerId ||
+			dueDate,
 		)
 		setHasDraft(hasContent)
 		onDraftChange?.(hasContent)
-	}, [title, description, categoryId, siteId, files, userSiteId, onDraftChange, priority, groupId, assigneeId, ownerId, dueDate])
+	}, [
+		title,
+		description,
+		categoryId,
+		siteId,
+		files,
+		userSiteId,
+		onDraftChange,
+		priority,
+		groupId,
+		assigneeId,
+		ownerId,
+		dueDate,
+	])
 
 	const reset = () => {
 		clearDraft(context.realmId, context.user.id)
@@ -370,7 +403,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 												</option>
 											))}
 										</optgroup>
-									)
+									),
 								)}
 							</select>
 							{fieldErrors.categoryId ? (
@@ -486,8 +519,11 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 					<div className='it-ticket-section__head'>
 						<div className='it-ticket-section__num'>3</div>
 						<div>
-							<div className='it-ticket-section__title'>Заказчик</div>
-							<div className='it-ticket-section__subtitle'>Выберите заказчика, для которого создаётся заявка</div>
+							<div className='it-ticket-section__title'>Заказчик и сроки</div>
+							<div className='it-ticket-section__subtitle'>
+								Укажите заказчика и желаемый срок выполнения. При необходимости назначьте себя
+								исполнителем
+							</div>
 						</div>
 					</div>
 					<div className='it-ticket-section__body'>
@@ -512,6 +548,16 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 							</select>
 							{fieldErrors.ownerId ? <span className='it-f__err'>{fieldErrors.ownerId}</span> : null}
 							{customers.length === 0 ? <span className='it-f-label__hint'>Нет заказчиков</span> : null}
+						</label>
+
+						<label className='it-f-label'>
+							<span className='it-f-label__text'>Срок выполнения</span>
+							<input
+								className='it-f'
+								type='datetime-local'
+								value={dueDate}
+								onChange={e => setDueDate(e.target.value)}
+							/>
 						</label>
 
 						<label className='it-f-label it-f-check'>
@@ -558,7 +604,10 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 										}}
 									>
 										<span className='it-f-priority-card__head'>
-											<span className='it-f-priority-card__dot' style={{ background: PRIORITY_COLORS[value] }} />
+											<span
+												className='it-f-priority-card__dot'
+												style={{ background: PRIORITY_COLORS[value] }}
+											/>
 											<span className='it-f-priority-card__label'>{PRIORITY_LABELS[value]}</span>
 										</span>
 										<span className='it-f-priority-card__desc'>{PRIORITY_DESCRIPTIONS[value]}</span>
@@ -571,11 +620,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 						<div className='it-ticket-grid'>
 							<label className='it-f-label'>
 								<span className='it-f-label__text'>Заявитель</span>
-								<select
-									className='it-f'
-									value={ownerId}
-									onChange={e => setOwnerId(e.target.value)}
-								>
+								<select className='it-f' value={ownerId} onChange={e => setOwnerId(e.target.value)}>
 									<option value=''>— Заявитель: создатель —</option>
 									{customers.map(u => (
 										<option key={u.id} value={u.id}>
@@ -599,7 +644,11 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 
 							<label className='it-f-label'>
 								<span className='it-f-label__text'>Исполнитель</span>
-								<select className='it-f' value={assigneeId} onChange={e => setAssigneeId(e.target.value)}>
+								<select
+									className='it-f'
+									value={assigneeId}
+									onChange={e => setAssigneeId(e.target.value)}
+								>
 									<option value=''>— Авто (по группе) —</option>
 									{executors.map(u => (
 										<option key={u.id} value={u.id}>
@@ -647,7 +696,11 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 						<div className='it-confirm__title'>Очистить черновик?</div>
 						<div className='it-confirm__text'>Заполненные данные и вложения будут потеряны.</div>
 						<div className='it-confirm__actions'>
-							<button type='button' className='it-btn it-btn--sm' onClick={() => setConfirmingClear(false)}>
+							<button
+								type='button'
+								className='it-btn it-btn--sm'
+								onClick={() => setConfirmingClear(false)}
+							>
 								Нет
 							</button>
 							<button

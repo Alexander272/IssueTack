@@ -261,16 +261,18 @@ func (r *userRepo) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.Us
 // Оба списка селектов («Заявитель»/«Заказчик»/«Исполнитель») идут по порядку SQL:
 // по фамилии, затем имени и username; пользователь без фамилии — в конец списка.
 func (r *userRepo) GetByMembership(ctx context.Context, realmID uuid.UUID, membership models.MembershipFilter) ([]*models.UserData, error) {
-	var membershipClause string
+	// 1. Динамически формируем условие фильтрации по группам
+	var groupCondition string
 	switch membership {
 	case models.MembershipCustomers:
-		membershipClause = "NOT EXISTS"
+		groupCondition = fmt.Sprintf("AND NOT EXISTS (SELECT 1 FROM %s gm JOIN %s g ON gm.group_id = g.id WHERE gm.user_id = u.id AND g.realm_id = $1)", Tables.GroupMembers, Tables.Groups)
 	case models.MembershipExecutors:
-		membershipClause = "EXISTS"
+		groupCondition = fmt.Sprintf("AND EXISTS (SELECT 1 FROM %s gm JOIN %s g ON gm.group_id = g.id WHERE gm.user_id = u.id AND g.realm_id = $1)", Tables.GroupMembers, Tables.Groups)
 	default:
-		membershipClause = "NOT EXISTS"
+		groupCondition = ""
 	}
 
+	// 2. Вставляем сформированное условие в запрос
 	query := fmt.Sprintf(`SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.created_at,
 			u.mattermost_id,
 			u.is_active AS user_is_active,
@@ -289,13 +291,9 @@ func (r *userRepo) GetByMembership(ctx context.Context, realmID uuid.UUID, membe
 		LEFT JOIN %s r ON ur.role_id = r.id
 		LEFT JOIN %s rl ON ur.realm_id = rl.id
 		WHERE ur.realm_id = $1
-			AND %s (
-				SELECT 1 FROM %s gm
-				JOIN %s g ON gm.group_id = g.id
-				WHERE gm.user_id = u.id AND g.realm_id = $1
-			)
+		%s
 		ORDER BY NULLIF(u.last_name, ''), u.first_name, u.username`,
-		Tables.Users, Tables.UserRealms, Tables.Roles, Tables.Realms, membershipClause, Tables.GroupMembers, Tables.Groups,
+		Tables.Users, Tables.UserRealms, Tables.Roles, Tables.Realms, groupCondition,
 	)
 
 	rows, err := r.db.Query(ctx, query, realmID)
