@@ -46,7 +46,7 @@ type Checklists interface {
 	// Delete удаляет шаблон чек-листа (владелец или checklist:delete).
 	Delete(ctx context.Context, dto *models.DelChecklistTemplateDTO, actorID uuid.UUID, realmID uuid.UUID) error
 	// SetItems заменяет набор пунктов шаблона чек-листа (владелец или checklist:write).
-	SetItems(ctx context.Context, tx postgres.Tx, templateID uuid.UUID, items []*models.ChecklistTemplateItemDTO, actorID uuid.UUID, realmID uuid.UUID) error
+	SetItems(ctx context.Context, tx postgres.Tx, dto *models.SetChecklistItemsDTO) error
 	// GetItems возвращает пункты шаблона чек-листа.
 	GetItems(ctx context.Context, templateID uuid.UUID, actorID uuid.UUID, realmID uuid.UUID) ([]*models.ChecklistTemplateItem, error)
 	// ApplyTemplate создаёт подзадачи тикета по шаблону чек-листа.
@@ -212,12 +212,12 @@ func (s *ChecklistService) Delete(ctx context.Context, dto *models.DelChecklistT
 }
 
 // SetItems заменяет набор пунктов шаблона чек-листа. Доступно владельцу или обладателю checklist:write.
-func (s *ChecklistService) SetItems(ctx context.Context, tx postgres.Tx, templateID uuid.UUID, items []*models.ChecklistTemplateItemDTO, actorID uuid.UUID, realmID uuid.UUID) error {
-	tpl, err := s.repo.GetByID(ctx, &models.GetChecklistTemplateDTO{ID: templateID, RealmID: realmID})
+func (s *ChecklistService) SetItems(ctx context.Context, tx postgres.Tx, dto *models.SetChecklistItemsDTO) error {
+	tpl, err := s.repo.GetByID(ctx, &models.GetChecklistTemplateDTO{ID: dto.TemplateID, RealmID: dto.RealmID})
 	if err != nil {
 		return fmt.Errorf("failed to get checklist template: %w", err)
 	}
-	ok, err := s.canManageTemplate(tpl, actorID, realmID, string(access.Write))
+	ok, err := s.canManageTemplate(tpl, dto.ActorID, dto.RealmID, string(access.Write))
 	if err != nil {
 		return fmt.Errorf("failed to check template edit access: %w", err)
 	}
@@ -225,7 +225,7 @@ func (s *ChecklistService) SetItems(ctx context.Context, tx postgres.Tx, templat
 		return models.ErrPermissionDenied
 	}
 
-	if err := s.repo.SetItems(ctx, tx, templateID, items); err != nil {
+	if err := s.repo.SetItems(ctx, tx, dto.TemplateID, dto.Items); err != nil {
 		return fmt.Errorf("failed to set template items: %w", err)
 	}
 	return nil

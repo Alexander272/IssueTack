@@ -44,6 +44,28 @@ type InteractiveActionDTO struct {
 	Context   map[string]string `json:"context"`
 }
 
+// RealmMembershipDTO — параметры гарантии членства пользователя в realm
+// (MattermostService.ensureRealmMembership). Три uuid подряд (userID, realmID,
+// actorID) позиционно неразличимы, поэтому передаются по именам.
+type RealmMembershipDTO struct {
+	RealmID   uuid.UUID
+	UserID    uuid.UUID
+	ActorID   uuid.UUID
+	ActorName string
+}
+
+// TicketDialogDTO — параметры диалога подтверждения по заявке из карточки
+// «Мои заявки»: настройки бота, заявка, реалм, смещение среза списка и нажатая
+// кнопка. Причину возврата в работу диалог спрашивает сам, поэтому отдельного
+// поля для неё нет.
+type TicketDialogDTO struct {
+	Settings *RealmMattermost
+	TicketID uuid.UUID
+	RealmID  uuid.UUID
+	From     int
+	Input    *InteractiveActionDTO
+}
+
 // HandleDMInput — входящее личное сообщение от пользователя Mattermost
 // (уже распарсенное обработчиком) вместе с загруженными файлами.
 type HandleDMInput struct {

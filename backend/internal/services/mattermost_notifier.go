@@ -11,6 +11,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	json "github.com/goccy/go-json"
+	"github.com/goodsign/monday"
 	"github.com/google/uuid"
 )
 
@@ -102,7 +103,9 @@ func (n *mattermostNotifier) Notify(ctx context.Context, userID uuid.UUID, notif
 // format собирает текст DM для конкретного события. События «Задача …» («просрочена»,
 // «обновлена», «удалена») и «Скоро срок» выводят номер сразу после слова «Задача»/
 // «Скоро срок» («Задача №12 обновлена: …»), прочие типы — номер после префикса
-// («Новая задача №12: …»). Для overdue и deadline_soon при заданном дедлайне
+// («Новая задача №12: …»). Напоминания по приоритету («Важная задача»/
+// «Срочная задача!») набраны в две строки: заголовок жирной строкой, номер и
+// тема заявки — под ним обычным текстом. Для overdue и deadline_soon при заданном дедлайне
 // добавляется строка «Дедлайн: …». Блок ссылок общий для всех типов и добавляется
 // один раз (links), чтобы правило показа веб-ссылки жило в одном месте.
 func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, ticket *models.Ticket, notif *models.CreateNotificationDTO) string {
@@ -122,6 +125,10 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 		prefix = "Новый комментарий"
 	case string(models.NotificationTicketAttachment):
 		prefix = "Новое вложение"
+	case string(models.NotificationTicketReminderHigh):
+		prefix = "Важная задача"
+	case string(models.NotificationTicketReminderUrgent):
+		prefix = "Срочная задача!"
 	default:
 		prefix = "Уведомление"
 	}
@@ -141,6 +148,11 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 	if action != "" {
 		// «Задача №12 обновлена: title» — действие идёт после номера.
 		text := fmt.Sprintf("**%s%s %s: %s**", prefix, number, action, title)
+		if ticket.Owner != nil {
+			if label := userShortLabel(ticket.Owner); label != "" {
+				text += "\nЗаказчик: " + label
+			}
+		}
 		if notif.Type == string(models.NotificationTicketOverdue) && ticket.DueDate != nil {
 			text += fmt.Sprintf("\nДедлайн: %s", ticket.DueDate.Format("02.01.2006 15:04"))
 		}
@@ -152,11 +164,28 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 		return text + links
 	}
 
-	text := fmt.Sprintf("**%s%s: %s**", prefix, number, title)
-
-	if notif.Type == string(models.NotificationTicketCreated) && ticket.Owner != nil {
-		if label := userShortLabel(ticket.Owner); label != "" {
-			text += "\nЗаказчик: " + label
+	var text string
+	// Напоминания по приоритету: заголовок отдельной жирной строкой, номер и тема
+	// заявки под ним. Номер ведёт себя как самостоятельная строка, поэтому ведущий
+	// пробел из number убирается; без номера — только тема, без висячего двоеточия.
+	if notif.Type == string(models.NotificationTicketReminderHigh) || notif.Type == string(models.NotificationTicketReminderUrgent) {
+		text = fmt.Sprintf("**%s**", prefix)
+		if number != "" {
+			text += fmt.Sprintf("\n%s: %s", strings.TrimPrefix(number, " "), title)
+		} else {
+			text += "\n" + title
+		}
+		if ticket.Owner != nil {
+			if label := userShortLabel(ticket.Owner); label != "" {
+				text += "\nЗаказчик: " + label
+			}
+		}
+	} else {
+		text = fmt.Sprintf("**%s%s: %s**", prefix, number, title)
+		if ticket.Owner != nil {
+			if label := userShortLabel(ticket.Owner); label != "" {
+				text += "\nЗаказчик: " + label
+			}
 		}
 	}
 
@@ -247,7 +276,7 @@ func (n *mattermostNotifier) links(ctx context.Context, user *models.UserData, t
 		)
 		return links
 	}
-	return fmt.Sprintf("\nОткрыть: %s/tasks/%s", n.baseURL, ticket.ID.String()) + links
+	return fmt.Sprintf("\nОткрыть в браузере: %s/tasks/%s", n.baseURL, ticket.ID.String()) + links
 }
 
 // pluginLink возвращает вторую ссылку в DM — на заявку внутри Mattermost.
@@ -260,7 +289,7 @@ func (n *mattermostNotifier) links(ctx context.Context, user *models.UserData, t
 // на URL со схемой (http://, mailto:), поэтому site-relative путь в виде обычного
 // текста остаётся некликабельным.
 func (n *mattermostNotifier) pluginLink(ticketID uuid.UUID) string {
-	return fmt.Sprintf("\n[Открыть в плагине](%s)", pluginDeepLink(ticketID))
+	return fmt.Sprintf("\n[Открыть](%s)", pluginDeepLink(ticketID))
 }
 
 // changeTagLabels — русские подписи полей в сводке изменений тикета. Значения
@@ -383,16 +412,19 @@ func ruPriority(v string) string {
 	return v
 }
 
-// ruTime форматирует «сырое» время изменения (строковое представление *time.Time)
-// в читаемый «02.01.2006 15:04». Неразобранное значение возвращается как есть.
+// ruTime форматирует время изменения из RFC3339 в русское читаемое представление.
+// Формат: "02 января 2006 15:04" (без дня недели, родительный падеж месяца).
+// Сырой Go-формат (time.Time.String()) сюда не приходит: новые значения пишет
+// formatFieldValue (RFC3339), а старые приведены к нему миграцией-бэкфиллом.
 func ruTime(v string) string {
 	if v == "" || v == "none" {
 		return "—"
 	}
-	if t, err := time.Parse("2006-01-02 15:04:05 -0700 MST", v); err == nil {
-		return t.Format("02.01.2006 15:04")
+	t, err := time.Parse(time.RFC3339, v)
+	if err != nil {
+		return v
 	}
-	return v
+	return monday.Format(t, "2 January 2006 15:04", monday.LocaleRuRU)
 }
 
 func prettyVal(v string) string {

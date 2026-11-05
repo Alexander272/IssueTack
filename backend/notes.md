@@ -1,3 +1,6 @@
+# goose CLI умеет только SQL-миграции: на Go-миграции (напр. 20261013000001_backfill_activity_log_values.go)
+# он падает "Go functions must be registered and built into a custom binary". Миграции применять
+# запуском приложения (cd backend && go run ./cmd/app). CLI ниже — для SQL.
 goose -dir internal/migrate/postgres/migrations postgres "postgresql://postgres:postgres@127.0.0.1:5436/issue_track?sslmode=disable" down
 goose -dir internal/migrate/postgres/migrations create new_table sql
 scp -r ./dist administrator@route:/home/administrator/apps/issue_track

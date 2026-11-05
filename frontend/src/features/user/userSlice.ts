@@ -81,6 +81,15 @@ export const getIsManager = createSelector(
 	caps => caps.isRealmAdmin || caps.managedGroupIds.length > 0,
 )
 
+// getHasNoGroups — «обычный пользователь» без групп: не начальник области и не
+// участник ни одной группы. У таких пользователей нет рабочих сценариев, поэтому
+// во фронтенде скрываются разделы «Задачи»/«Статистика»/«Избранное» и поля
+// «Срок»/«Приоритет». Равенство !getIsManager && memberGroupIds.length === 0.
+export const getHasNoGroups = createSelector(
+	[getCurrentCapabilities],
+	caps => !caps.isRealmAdmin && caps.managedGroupIds.length === 0 && caps.memberGroupIds.length === 0,
+)
+
 export const hasCapabilities = createSelector([getUserCapabilities], caps => Object.keys(caps).length > 0)
 
 export const userPath = userSlice.name

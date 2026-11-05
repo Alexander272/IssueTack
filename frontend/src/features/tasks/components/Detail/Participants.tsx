@@ -4,6 +4,8 @@ import type { ReactNode } from 'react'
 
 import { Avatar } from '@/components/Avatar'
 import { getAvatarColor, getInitials } from '@/utils/avatar'
+import { useAppSelector } from '@/hooks/redux'
+import { getHasNoGroups } from '@/features/user/userSlice'
 
 import type { ITask } from '../../types/task'
 
@@ -11,7 +13,19 @@ interface Props {
 	task: ITask
 }
 
-const UserRow = ({ label, icon, name, sub, userId }: { label: string; icon: ReactNode; name: string; sub?: string; userId?: string }) => (
+const UserRow = ({
+	label,
+	icon,
+	name,
+	sub,
+	userId,
+}: {
+	label: string
+	icon: ReactNode
+	name: string
+	sub?: string
+	userId?: string
+}) => (
 	<Box>
 		<Typography
 			sx={{ fontSize: '0.75rem', color: '#9ca3af', mb: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}
@@ -63,6 +77,10 @@ const getUserName = (user: { firstName: string; lastName: string } | null | unde
 }
 
 export const Participants = ({ task }: Props) => {
+	// «Обычный пользователь» без групп: группа заявки ему ничего не говорит —
+	// не показываем ни бейдж «Группа», ни её название подписью под исполнителем.
+	const hasNoGroups = useAppSelector(getHasNoGroups)
+
 	return (
 		<Box sx={{ bgcolor: 'white', borderRadius: '12px', border: '1px solid #e5e7eb', overflow: 'hidden' }}>
 			<Box sx={{ px: 2.5, py: 1.5, borderBottom: '1px solid #e5e7eb', bgcolor: '#f9fafb' }}>
@@ -101,7 +119,7 @@ export const Participants = ({ task }: Props) => {
 						userId={task.owner.id}
 					/>
 				)}
-				{task.group && (
+				{task.group && !hasNoGroups && (
 					<Box>
 						<Typography
 							sx={{
@@ -138,11 +156,11 @@ export const Participants = ({ task }: Props) => {
 						label='Исполнитель'
 						icon={<Wrench sx={{ fontSize: 14 }} />}
 						name={getUserName(task.assignee)}
-						sub={task.group?.name}
+						sub={hasNoGroups ? undefined : task.group?.name}
 						userId={task.assignee.id}
 					/>
 				)}
-				{task.manager && (
+				{task.manager && !hasNoGroups && (
 					<UserRow
 						label='Руководитель'
 						icon={<Briefcase sx={{ fontSize: 14 }} />}

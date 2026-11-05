@@ -201,6 +201,26 @@ export function requestOpen(ticketId: string): void {
     openListeners.forEach(listener => listener(ticketId));
 }
 
+// Открытие модалки без конкретной заявки — сигнал от иконки в App Bar. Иконка
+// живёт вне компонента шапки, поэтому «открой модалку» передаётся шиной
+// подписчиков хосту модалки (ChannelHeaderIcon смонтирован в шапке каждого
+// канала, так что подписчик есть в любом из них). Никакой навигации: хост сам
+// резолвит DM-канал бота и открывает модалку на месте.
+type VoidListener = () => void;
+
+const pluginOpenListeners = new Set<VoidListener>();
+
+export function subscribePluginOpen(listener: VoidListener): () => void {
+    pluginOpenListeners.add(listener);
+    return () => {
+        pluginOpenListeners.delete(listener);
+    };
+}
+
+export function requestPluginOpen(): void {
+    pluginOpenListeners.forEach(listener => listener());
+}
+
 // installDeepLinkClickHandler перехватывает клик по ссылке на заявку, когда
 // модалка уже смонтирована, и показывает заявку поверх чата вместо перехода на
 // маршрут плагина. Никакой навигации: смена вида и перезагрузка MM исчезают

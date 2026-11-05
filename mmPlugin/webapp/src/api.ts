@@ -3,11 +3,12 @@ import type {
     PluginComment,
     PluginContextResult,
     PluginCreateResult,
+    PluginDMScope,
     PluginScope,
     PluginStore,
     PluginTicketDetail,
     PluginTicketLinkContext,
-    PluginTicketShort,
+    PluginTicketListResult,
 } from './types';
 
 let storeRef: PluginStore | null = null;
@@ -40,6 +41,35 @@ export function getCurrentTeamName(): string | null {
     }
     const current = teams.currentTeamId ? teams.teams[teams.currentTeamId] : undefined;
     return current && current.name ? current.name : null;
+}
+
+// getDmScope возвращает личный диалог пользователя с ботом реалма: по нему
+// иконка в App Bar открывает модалку из любого канала. id бота клиент не знает
+// (в отличие от id пользователя), поэтому диалог резолвит бэкенд — реалм
+// определяется по боту, а не по пользователю: у свежего сотрудника системной
+// учётки ещё нет. Диалог неизменен, поэтому кэшируем на пользователя.
+let dmScopeCache: {userId: string; scope: PluginScope} | null = null;
+
+export async function getDmScope(): Promise<PluginScope | null> {
+    const userId = getCurrentUserId();
+    if (!userId) {
+        return null;
+    }
+    if (dmScopeCache && dmScopeCache.userId === userId) {
+        return dmScopeCache.scope;
+    }
+    try {
+        const qs = new URLSearchParams({userId});
+        const data = await request<PluginDMScope>(`/plugins/issuetrack/api/dm?${qs.toString()}`);
+        if (!data || !data.channelId || !data.botUserId) {
+            return null;
+        }
+        const scope: PluginScope = {channelId: data.channelId, userId, botUserId: data.botUserId};
+        dmScopeCache = {userId, scope};
+        return scope;
+    } catch (e) {
+        return null;
+    }
 }
 
 export function subscribeCurrentUser(listener: (userId: string | null) => void): () => void {
@@ -192,8 +222,49 @@ export async function getContextFresh(scope: PluginScope): Promise<PluginContext
     return getContext(scope);
 }
 
-export async function getMyTickets(scope: PluginScope): Promise<PluginTicketShort[]> {
-    return request<PluginTicketShort[]>(`/plugins/issuetrack/api/tickets?${scopeQuery(scope).toString()}`);
+// requestGreeting сообщает бэкенду, что пользователь открыл личный диалог с ботом.
+// Бэкенд отправляет приветствие один раз за пользователя (отметка в БД), поэтому
+// повторные вызовы безопасны. Ошибку гасит вызывающий: приветствие не критично.
+export async function requestGreeting(scope: PluginScope): Promise<void> {
+    await request(`/plugins/issuetrack/api/greeting`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({channelId: scope.channelId, userId: scope.userId, botUserId: scope.botUserId || ''}),
+    });
+}
+
+export interface PluginTicketListParams {
+    archived?: boolean;
+    limit?: number;
+    offset?: number;
+    search?: string;
+    closedAtFrom?: string;
+    closedAtTo?: string;
+}
+
+export async function getMyTickets(scope: PluginScope, params?: PluginTicketListParams): Promise<PluginTicketListResult> {
+    const qs = scopeQuery(scope);
+    if (params) {
+        if (params.archived) {
+            qs.set('archived', '1');
+        }
+        if (params.limit != null) {
+            qs.set('limit', String(params.limit));
+        }
+        if (params.offset != null) {
+            qs.set('offset', String(params.offset));
+        }
+        if (params.search) {
+            qs.set('search', params.search);
+        }
+        if (params.closedAtFrom) {
+            qs.set('closedAtFrom', params.closedAtFrom);
+        }
+        if (params.closedAtTo) {
+            qs.set('closedAtTo', params.closedAtTo);
+        }
+    }
+    return request<PluginTicketListResult>(`/plugins/issuetrack/api/tickets?${qs.toString()}`);
 }
 
 export async function getTicket(scope: PluginScope, ticketId: string): Promise<PluginTicketDetail> {

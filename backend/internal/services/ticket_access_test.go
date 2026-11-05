@@ -239,3 +239,178 @@ func TestTicketAccessService_CanAdministerTickets_UsesTicketRealm(t *testing.T) 
 	assert.False(t, ok)
 	mockPolicies.AssertExpectations(t)
 }
+
+// TestTicketAccessService_IsCustomer — «заказчик»: нет ни управляемых, ни членских
+// групп и не начальник области. Любая из ролей (участник, менеджер, supervisor)
+// делает пользователя «рабочим».
+func TestTicketAccessService_IsCustomer(t *testing.T) {
+	userID := uuid.New()
+	realmID := uuid.New()
+	groupID := uuid.New()
+
+	newSvc := func() (*MockTicketsRepo, *MockGroupsRepo, *MockAccessPolicies, *TicketAccessService) {
+		mockRepo := new(MockTicketsRepo)
+		mockGroups := new(MockGroupsRepo)
+		mockPolicies := new(MockAccessPolicies)
+		return mockRepo, mockGroups, mockPolicies, NewTicketAccessService(mockRepo, mockGroups, mockPolicies)
+	}
+	denySupervisor := func(m *MockAccessPolicies) {
+		m.On("Enforce", userID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+		m.On("Enforce", userID.String(), realmID.String(), string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	}
+
+	t.Run("groupless is customer", func(t *testing.T) {
+		_, mockGroups, mockPolicies, svc := newSvc()
+		denySupervisor(mockPolicies)
+		mockGroups.On("GetManagedGroups", mock.Anything, userID, &realmID).Return([]uuid.UUID{}, nil)
+		mockGroups.On("GetMemberGroups", mock.Anything, userID, &realmID).Return([]uuid.UUID{}, nil)
+
+		ticket := &models.Ticket{ID: uuid.New(), RealmID: &realmID, Creator: models.UserShort{ID: userID}}
+		ok, err := svc.IsCustomer(context.Background(), ticket, userID)
+		assert.NoError(t, err)
+		assert.True(t, ok)
+	})
+
+	t.Run("member is not customer", func(t *testing.T) {
+		_, mockGroups, mockPolicies, svc := newSvc()
+		denySupervisor(mockPolicies)
+		mockGroups.On("GetManagedGroups", mock.Anything, userID, &realmID).Return([]uuid.UUID{}, nil)
+		mockGroups.On("GetMemberGroups", mock.Anything, userID, &realmID).Return([]uuid.UUID{groupID}, nil)
+
+		ticket := &models.Ticket{ID: uuid.New(), RealmID: &realmID, Creator: models.UserShort{ID: userID}}
+		ok, err := svc.IsCustomer(context.Background(), ticket, userID)
+		assert.NoError(t, err)
+		assert.False(t, ok)
+	})
+
+	t.Run("manager is not customer", func(t *testing.T) {
+		_, mockGroups, mockPolicies, svc := newSvc()
+		denySupervisor(mockPolicies)
+		mockGroups.On("GetManagedGroups", mock.Anything, userID, &realmID).Return([]uuid.UUID{groupID}, nil)
+
+		ticket := &models.Ticket{ID: uuid.New(), RealmID: &realmID, Creator: models.UserShort{ID: userID}}
+		ok, err := svc.IsCustomer(context.Background(), ticket, userID)
+		assert.NoError(t, err)
+		assert.False(t, ok)
+	})
+
+	t.Run("supervisor is not customer", func(t *testing.T) {
+		_, _, mockPolicies, svc := newSvc()
+		mockPolicies.On("Enforce", userID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(true, nil)
+
+		ticket := &models.Ticket{ID: uuid.New(), RealmID: &realmID, Creator: models.UserShort{ID: userID}}
+		ok, err := svc.IsCustomer(context.Background(), ticket, userID)
+		assert.NoError(t, err)
+		assert.False(t, ok)
+	})
+}
+
+// TestTicketAccessService_CanAttachToTicket — вложение к заявке: «рабочий» доступ
+// или роль заказчика (автор/владелец активной заявки). Замороженные заявки и чужие —
+// запрет.
+func TestTicketAccessService_CanAttachToTicket(t *testing.T) {
+	userID := uuid.New()
+	ticketID := uuid.New()
+
+	t.Run("customer creator allowed on active ticket", func(t *testing.T) {
+		mockRepo := new(MockTicketsRepo)
+		mockGroups := new(MockGroupsRepo)
+		mockPolicies := new(MockAccessPolicies)
+		svc := NewTicketAccessService(mockRepo, mockGroups, mockPolicies)
+
+		ticket := &models.Ticket{ID: ticketID, Status: models.StatusOpen, Creator: models.UserShort{ID: userID}}
+		mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(ticket, nil)
+		mockPolicies.On("Enforce", userID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+		mockPolicies.On("Enforce", userID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+		mockGroups.On("GetManagedGroups", mock.Anything, userID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+		mockGroups.On("GetMemberGroups", mock.Anything, userID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+
+		err := svc.CanAttachToTicket(context.Background(), &models.AccessCheckDTO{TicketID: ticketID, UserID: userID})
+		assert.NoError(t, err)
+	})
+
+	t.Run("owner allowed on active ticket", func(t *testing.T) {
+		mockRepo := new(MockTicketsRepo)
+		mockGroups := new(MockGroupsRepo)
+		mockPolicies := new(MockAccessPolicies)
+		svc := NewTicketAccessService(mockRepo, mockGroups, mockPolicies)
+
+		ticket := &models.Ticket{ID: ticketID, Status: models.StatusOpen, Creator: models.UserShort{ID: uuid.New()}, Owner: &models.UserShort{ID: userID}}
+		mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(ticket, nil)
+		mockPolicies.On("Enforce", userID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+		mockPolicies.On("Enforce", userID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+
+		err := svc.CanAttachToTicket(context.Background(), &models.AccessCheckDTO{TicketID: ticketID, UserID: userID})
+		assert.NoError(t, err)
+	})
+
+	t.Run("stranger denied", func(t *testing.T) {
+		mockRepo := new(MockTicketsRepo)
+		mockGroups := new(MockGroupsRepo)
+		mockPolicies := new(MockAccessPolicies)
+		svc := NewTicketAccessService(mockRepo, mockGroups, mockPolicies)
+
+		ticket := &models.Ticket{ID: ticketID, Status: models.StatusOpen, Creator: models.UserShort{ID: uuid.New()}}
+		mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(ticket, nil)
+		mockPolicies.On("Enforce", userID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+		mockPolicies.On("Enforce", userID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+
+		err := svc.CanAttachToTicket(context.Background(), &models.AccessCheckDTO{TicketID: ticketID, UserID: userID})
+		assert.ErrorIs(t, err, models.ErrPermissionDenied)
+	})
+
+	t.Run("frozen ticket denied even for creator", func(t *testing.T) {
+		mockRepo := new(MockTicketsRepo)
+		mockGroups := new(MockGroupsRepo)
+		mockPolicies := new(MockAccessPolicies)
+		svc := NewTicketAccessService(mockRepo, mockGroups, mockPolicies)
+
+		ticket := &models.Ticket{ID: ticketID, Status: models.StatusClosed, Creator: models.UserShort{ID: userID}}
+		mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(ticket, nil)
+
+		err := svc.CanAttachToTicket(context.Background(), &models.AccessCheckDTO{TicketID: ticketID, UserID: userID})
+		assert.ErrorIs(t, err, models.ErrTicketFrozen)
+	})
+}
+
+// TestTicketAccessService_CanCreateSubtask_CustomerDenied — автор без групп не создаёт
+// подзадачи, хотя и является создателем заявки. Парная проверка: групповой автор — создаёт.
+func TestTicketAccessService_CanCreateSubtask_CustomerDenied(t *testing.T) {
+	userID := uuid.New()
+	ticketID := uuid.New()
+
+	setup := func() (*MockTicketsRepo, *MockGroupsRepo, *MockAccessPolicies, *TicketAccessService) {
+		mockRepo := new(MockTicketsRepo)
+		mockGroups := new(MockGroupsRepo)
+		mockPolicies := new(MockAccessPolicies)
+		return mockRepo, mockGroups, mockPolicies, NewTicketAccessService(mockRepo, mockGroups, mockPolicies)
+	}
+
+	t.Run("groupless creator denied", func(t *testing.T) {
+		mockRepo, mockGroups, mockPolicies, svc := setup()
+		ticket := &models.Ticket{ID: ticketID, Status: models.StatusOpen, Creator: models.UserShort{ID: userID}}
+		mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(ticket, nil)
+		mockPolicies.On("Enforce", userID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+		mockPolicies.On("Enforce", userID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+		mockGroups.On("GetManagedGroups", mock.Anything, userID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+		mockGroups.On("GetMemberGroups", mock.Anything, userID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+
+		ok, err := svc.CanCreateSubtask(context.Background(), userID, ticketID)
+		assert.NoError(t, err)
+		assert.False(t, ok)
+	})
+
+	t.Run("grouped creator allowed", func(t *testing.T) {
+		mockRepo, mockGroups, mockPolicies, svc := setup()
+		ticket := &models.Ticket{ID: ticketID, Status: models.StatusOpen, Creator: models.UserShort{ID: userID}}
+		mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(ticket, nil)
+		mockPolicies.On("Enforce", userID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+		mockPolicies.On("Enforce", userID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+		mockGroups.On("GetManagedGroups", mock.Anything, userID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+		mockGroups.On("GetMemberGroups", mock.Anything, userID, (*uuid.UUID)(nil)).Return([]uuid.UUID{uuid.New()}, nil)
+
+		ok, err := svc.CanCreateSubtask(context.Background(), userID, ticketID)
+		assert.NoError(t, err)
+		assert.True(t, ok)
+	})
+}

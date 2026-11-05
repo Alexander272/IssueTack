@@ -1,16 +1,17 @@
 import { useState } from 'react'
 import { Box, IconButton, Tooltip, Typography, Menu, MenuItem, ListItemIcon } from '@mui/material'
 import { Star, MoreVertical, ArrowLeftIcon, Pin, Pencil, UserRound } from 'lucide-mui'
-import { useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 
 import type { ITask, TicketStatus } from '../../types/task'
+import { AppRoutes } from '@/pages/router/routes'
 import {
 	useGetFavoriteStateQuery,
 	useAddFavoriteMutation,
 	useRemoveFavoriteMutation,
 } from '@/features/favorites/favoritesApiSlice'
 import { useAppSelector } from '@/hooks/redux'
-import { getUserId } from '@/features/user/userSlice'
+import { getUserId, getHasNoGroups } from '@/features/user/userSlice'
 
 const INACTIVE_STATUSES: TicketStatus[] = ['resolved', 'closed', 'cancelled']
 
@@ -22,8 +23,11 @@ interface Props {
 
 export const Header = ({ task, onEdit, onTransfer }: Props) => {
 	const navigate = useNavigate()
+	const location = useLocation()
+
 	const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
 	const currentUserId = useAppSelector(getUserId)
+	const hasNoGroups = useAppSelector(getHasNoGroups)
 
 	const { data: favState } = useGetFavoriteStateQuery(task.id)
 	const [addFavorite] = useAddFavoriteMutation()
@@ -36,6 +40,22 @@ export const Header = ({ task, onEdit, onTransfer }: Props) => {
 	const canTransfer = !isInactive && isAssignee
 
 	const handleMenuClose = () => setAnchorEl(null)
+
+	const handleBack = () => {
+		// 1. Проверяем, что это не первая страница в текущей вкладке
+		// (window.history.state.idx > 0 означает, что сзади точно есть страница нашего приложения)
+		const canGoBack = window.history.state && window.history.state.idx > 0
+
+		// 2. Дополнительно страхуемся: если мы пришли с /auth, назад идти точно не нужно
+		const cameFromAuth = location.state?.from?.pathname === AppRoutes.Auth
+
+		if (canGoBack && !cameFromAuth) {
+			navigate(-1)
+		} else {
+			if (hasNoGroups) navigate(AppRoutes.Home, { replace: true })
+			else navigate(AppRoutes.Tasks, { replace: true })
+		}
+	}
 
 	const togglePin = () => {
 		if (pinned) {
@@ -54,6 +74,8 @@ export const Header = ({ task, onEdit, onTransfer }: Props) => {
 		}
 	}
 
+	const hasAnyAction = Boolean(onEdit) || (Boolean(onTransfer) && canTransfer) || !hasNoGroups
+
 	return (
 		<Box
 			sx={{
@@ -67,7 +89,7 @@ export const Header = ({ task, onEdit, onTransfer }: Props) => {
 			<Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1, minWidth: 0 }}>
 				<Tooltip title='К списку заявок'>
 					<IconButton
-						onClick={() => navigate(-1)}
+						onClick={handleBack}
 						sx={{ color: '#6b7280', '&:hover': { svg: { color: 'primary.main' } } }}
 					>
 						<ArrowLeftIcon sx={{ fontSize: 20 }} />
@@ -104,7 +126,7 @@ export const Header = ({ task, onEdit, onTransfer }: Props) => {
 			</Box>
 
 			<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
-				{!isInactive && (
+				{!isInactive && !hasNoGroups && (
 					<Tooltip title={pinned ? 'Открепить' : 'Закрепить'}>
 						<IconButton
 							onClick={togglePin}
@@ -118,48 +140,54 @@ export const Header = ({ task, onEdit, onTransfer }: Props) => {
 						</IconButton>
 					</Tooltip>
 				)}
-				<Tooltip title='Ещё'>
-					<IconButton
-						onClick={e => setAnchorEl(e.currentTarget)}
-						sx={{ color: '#9ca3af', '&:hover': { color: 'error.main' }, fontSize: 20 }}
-					>
-						<MoreVertical sx={{ fontSize: 20 }} />
-					</IconButton>
-				</Tooltip>
-				<Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
-					{onEdit && (
-						<MenuItem
-							onClick={() => {
-								handleMenuClose()
-								onEdit()
-							}}
-						>
-							<ListItemIcon>
-								<Pencil sx={{ fontSize: 18, color: '#9ca3af' }} />
-							</ListItemIcon>
-							Редактировать
-						</MenuItem>
-					)}
-					{onTransfer && canTransfer && (
-						<MenuItem
-							onClick={() => {
-								handleMenuClose()
-								onTransfer()
-							}}
-						>
-							<ListItemIcon>
-								<UserRound sx={{ fontSize: 18, color: '#9ca3af' }} />
-							</ListItemIcon>
-							Передать
-						</MenuItem>
-					)}
-					<MenuItem onClick={toggleStar}>
-						<ListItemIcon>
-							<Star sx={{ fontSize: 18, color: starred ? '#f59e0b' : '#9ca3af' }} />
-						</ListItemIcon>
-						{starred ? 'Убрать из избранного' : 'В избранное'}
-					</MenuItem>
-				</Menu>
+				{hasAnyAction && (
+					<>
+						<Tooltip title='Ещё'>
+							<IconButton
+								onClick={e => setAnchorEl(e.currentTarget)}
+								sx={{ color: '#9ca3af', '&:hover': { color: 'error.main' }, fontSize: 20 }}
+							>
+								<MoreVertical sx={{ fontSize: 20 }} />
+							</IconButton>
+						</Tooltip>
+						<Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
+							{onEdit && (
+								<MenuItem
+									onClick={() => {
+										handleMenuClose()
+										onEdit()
+									}}
+								>
+									<ListItemIcon>
+										<Pencil sx={{ fontSize: 18, color: '#9ca3af' }} />
+									</ListItemIcon>
+									Редактировать
+								</MenuItem>
+							)}
+							{onTransfer && canTransfer && (
+								<MenuItem
+									onClick={() => {
+										handleMenuClose()
+										onTransfer()
+									}}
+								>
+									<ListItemIcon>
+										<UserRound sx={{ fontSize: 18, color: '#9ca3af' }} />
+									</ListItemIcon>
+									Передать
+								</MenuItem>
+							)}
+							{!hasNoGroups && (
+								<MenuItem onClick={toggleStar}>
+									<ListItemIcon>
+										<Star sx={{ fontSize: 18, color: starred ? '#f59e0b' : '#9ca3af' }} />
+									</ListItemIcon>
+									{starred ? 'Убрать из избранного' : 'В избранное'}
+								</MenuItem>
+							)}
+						</Menu>
+					</>
+				)}
 			</Box>
 		</Box>
 	)

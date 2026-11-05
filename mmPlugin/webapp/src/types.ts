@@ -20,6 +20,9 @@ export interface PluginCategory {
     categoryGroupId?: string | null;
     categoryGroup?: {id: string; name: string};
     priority: Priority;
+    // Дефолтный срок в днях: если задан, форма создания подставляет его в
+    // поле «Срок выполнения» при выборе категории.
+    defaultDueDays?: number | null;
     isActive: boolean;
     realmId: string;
     createdAt: string;
@@ -52,6 +55,14 @@ export interface PluginScope {
     botUserId?: string;
 }
 
+// PluginDMScope — личный диалог пользователя с ботом реалма (ответ /plugin/dm).
+// По нему иконка в App Bar открывает модалку из любого канала: модалка работает
+// с DM-каналом бота, id которого клиент не знает.
+export interface PluginDMScope {
+    channelId: string;
+    botUserId: string;
+}
+
 export interface PluginContextResult {
     bound: boolean;
     realmId: string;
@@ -81,6 +92,11 @@ export interface PluginTicketShort {
     category?: {id: string; name: string};
     site?: {id: string; name: string};
     link?: string;
+}
+
+export interface PluginTicketListResult {
+    items: PluginTicketShort[];
+    total: number;
 }
 
 export interface PluginUserShort {
@@ -161,6 +177,15 @@ export interface PluginApiErrorBody {
     message?: string;
 }
 
+// PluginChannel — минимальный слепок канала из стора Mattermost. Приходит в
+// action иконки App Bar; сама кнопка аргументы не использует (модалку хостит
+// ChannelHeaderIcon, смонтированный в шапке каждого канала).
+export interface PluginChannel {
+    id: string;
+    type?: string;
+    name?: string;
+}
+
 export interface PluginStore {
     getState: () => {
         entities: {
@@ -180,6 +205,16 @@ export interface PluginStore {
 
 export interface PluginRegistry {
     registerChannelHeaderIcon(input: {component: ComponentType<{channel: {id: string}}>}): string;
+
+    // registerAppBarComponent добавляет иконку в правую колонку App Bar. action
+    // вызывается с текущим каналом и участником, но кнопка их не использует:
+    // она лишь просит хост (ChannelHeaderIcon) открыть модалку на месте. В
+    // старых версиях MM метода может не быть — тогда иконку не регистрируем.
+    registerAppBarComponent?(input: {
+        iconUrl: string;
+        tooltipText: string;
+        action: (channel: PluginChannel, member: unknown) => void;
+    }): string;
 
     // registerCustomRoute монтирует компонент по адресу
     // /plug/<pluginId>/<route>. Компонент не получает props (в том числе

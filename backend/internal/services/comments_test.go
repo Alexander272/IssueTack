@@ -112,6 +112,73 @@ func TestCommentService_Create_AuthorIsOwner_NoDM(t *testing.T) {
 	mockMMRepo.AssertNotCalled(t, "GetByRealm", mock.Anything, mock.Anything)
 }
 
+func TestCommentService_Create_OwnerWithoutWorkAccess_ExternalComment_Allowed(t *testing.T) {
+	mockRepo, mockAccess, mockTickets, _, _, _, svc := commentServiceFixtures()
+
+	ownerID := uuid.New()
+	authorID := uuid.New()
+	ticket := commentTicket(ownerID, authorID)
+
+	dto := &models.CreateCommentDTO{
+		Text:     "Уточните, пожалуйста, сроки",
+		TicketID: ticket.ID,
+		UserID:   ownerID,
+		Realm:    ticket.RealmID.String(),
+	}
+
+	mockTickets.On("GetSummary", mock.Anything, ticket.ID).Return(ticket, nil)
+	// Заказчик не имеет work-доступа (не автор/не исполнитель), но внешний комментарий ему разрешён.
+	mockAccess.On("CheckWorkAccess", mock.Anything, mock.Anything).Return(models.ErrPermissionDenied)
+	mockRepo.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(func(c *models.Comment) bool {
+		return c.UserID == ownerID && !c.IsInternal
+	})).Return(nil)
+
+	comment, err := svc.Create(context.Background(), nil, dto)
+	assert.NoError(t, err)
+	assert.Equal(t, dto.Text, comment.Text)
+}
+
+func TestCommentService_Create_OwnerWithoutWorkAccess_InternalComment_Denied(t *testing.T) {
+	_, mockAccess, mockTickets, _, _, _, svc := commentServiceFixtures()
+
+	ownerID := uuid.New()
+	ticket := commentTicket(ownerID, uuid.New())
+
+	dto := &models.CreateCommentDTO{
+		Text:       "внутренняя заметка",
+		TicketID:   ticket.ID,
+		UserID:     ownerID,
+		Realm:      ticket.RealmID.String(),
+		IsInternal: true,
+	}
+
+	mockTickets.On("GetSummary", mock.Anything, ticket.ID).Return(ticket, nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, mock.Anything).Return(models.ErrPermissionDenied)
+
+	_, err := svc.Create(context.Background(), nil, dto)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+}
+
+func TestCommentService_Create_NonOwnerWithoutWorkAccess_Denied(t *testing.T) {
+	_, mockAccess, mockTickets, _, _, _, svc := commentServiceFixtures()
+
+	ownerID := uuid.New()
+	ticket := commentTicket(ownerID, uuid.New())
+
+	dto := &models.CreateCommentDTO{
+		Text:     "чужой комментарий",
+		TicketID: ticket.ID,
+		UserID:   uuid.New(),
+		Realm:    ticket.RealmID.String(),
+	}
+
+	mockTickets.On("GetSummary", mock.Anything, ticket.ID).Return(ticket, nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, mock.Anything).Return(models.ErrPermissionDenied)
+
+	_, err := svc.Create(context.Background(), nil, dto)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+}
+
 func TestCommentService_Create_Internal_NoDM(t *testing.T) {
 	mockRepo, mockAccess, mockTickets, mockUsers, _, mockSender, svc := commentServiceFixtures()
 

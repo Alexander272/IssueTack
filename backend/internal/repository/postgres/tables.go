@@ -38,6 +38,7 @@ var Tables = struct {
 	NotificationSettings       string
 	TicketCounters             string
 	Mattermost                 string
+	MattermostGreetings        string
 	TicketSubscriptions        string
 	TicketFavorites            string
 	EquipmentTypes             string
@@ -50,6 +51,7 @@ var Tables = struct {
 	EquipmentKitTemplates      string
 	EquipmentKitTemplateItems  string
 	EquipmentInventoryCounters string
+	ReminderLastSent           string
 }{
 	Sites:                      "sites",
 	Realms:                     "realms",
@@ -76,6 +78,7 @@ var Tables = struct {
 	NotificationSettings:       "user_notification_settings",
 	TicketCounters:             "ticket_counters",
 	Mattermost:                 "realm_mattermost",
+	MattermostGreetings:        "mattermost_greetings",
 	TicketSubscriptions:        "ticket_subscriptions",
 	TicketFavorites:            "ticket_favorites",
 	EquipmentTypes:             "equipment_types",
@@ -88,4 +91,5 @@ var Tables = struct {
 	EquipmentKitTemplates:      "equipment_kit_templates",
 	EquipmentKitTemplateItems:  "equipment_kit_template_items",
 	EquipmentInventoryCounters: "equipment_inventory_counters",
+	ReminderLastSent:           "reminder_last_sent",
 }

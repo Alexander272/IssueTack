@@ -428,8 +428,15 @@ func (s *MattermostService) PluginContext(ctx context.Context, scope models.Plug
 		isManager = true
 	}
 
+	// Список категорий в контексте кэшируется на реалм целиком (вместе со
+	// скрытыми). Безгрупповому заказчику сужаем его здесь: скрытые категории и
+	// категории скрытых разделов ему не показываем.
+	if !isManager && len(memberGroups) == 0 {
+		categories = filterVisibleCategories(categories)
+	}
+
 	executors := s.pluginMembers(ctx, settings.RealmID, models.MembershipExecutors)
-	customers := s.pluginMembers(ctx, settings.RealmID, models.MembershipCustomers)
+	customers := s.pluginMembers(ctx, settings.RealmID, models.MembershipAll)
 
 	return &models.PluginContextResult{
 		Bound:          true,
@@ -444,6 +451,57 @@ func (s *MattermostService) PluginContext(ctx context.Context, scope models.Plug
 		Executors:      executors,
 		Customers:      customers,
 	}, nil
+}
+
+// PluginDM возвращает личный диалог Mattermost-пользователя с ботом реалма.
+// Нужен иконке в App Bar: её модалка открывается из любого канала, а работает с
+// DM-каналом бота, id которого клиент не знает (в отличие от id пользователя).
+//
+// Реалм определяется по боту, а не по пользователю: у свежего сотрудника
+// системной учётки ещё нет, и она появится только при следующем обращении к
+// /plugin/context (там её создаёт resolveOrCreateUser). DM-канал создаётся
+// идемпотентно (CreateDirectChannel возвращает существующий).
+func (s *MattermostService) PluginDM(ctx context.Context, mmUserID string) (*models.PluginDMResult, error) {
+	if mmUserID == "" {
+		return nil, models.ErrInvalidInput
+	}
+	if s.most == nil || s.most.Client == nil {
+		return nil, models.ErrChannelNotBound
+	}
+
+	settings, err := s.resolveDMIntegration(ctx, mmUserID)
+	if err != nil {
+		return nil, err
+	}
+
+	channelID, err := s.most.Client.GetDMChannel(settings.BotToken, settings.BotUserID, mmUserID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dm channel: %w", err)
+	}
+
+	return &models.PluginDMResult{ChannelID: channelID, BotUserID: settings.BotUserID}, nil
+}
+
+// resolveDMIntegration выбирает интеграцию, к боту которой относится диалог.
+// Сначала — реалм известного пользователя (мультиреалм). Затем — единственная
+// активная интеграция: у свежего пользователя системной учётки нет, и реалм
+// берётся по боту. Несколько активных интеграций при неизвестном пользователе
+// неоднозначны — считаем канал непривязанным.
+func (s *MattermostService) resolveDMIntegration(ctx context.Context, mmUserID string) (*models.RealmMattermost, error) {
+	if user, err := s.users.GetByMattermostID(ctx, mmUserID); err == nil {
+		if settings, err := s.repo.GetByUserID(ctx, user.ID); err == nil && settings.IsActive {
+			return settings, nil
+		}
+	}
+
+	active, err := s.repo.GetActive(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get active integrations: %w", err)
+	}
+	if len(active) != 1 {
+		return nil, models.ErrChannelNotBound
+	}
+	return active[0], nil
 }
 
 // pluginMembers возвращает пользователей реалма по членству для селектов формы
@@ -486,7 +544,7 @@ func (s *MattermostService) pluginRealmData(ctx context.Context, realmID uuid.UU
 		return "", nil, nil, nil, fmt.Errorf("failed to get realm: %w", err)
 	}
 
-	categories, err := s.categories.Get(ctx, &models.GetCategoriesDTO{RealmID: realmID})
+	categories, err := s.categories.Get(ctx, &models.GetCategoriesDTO{RealmID: realmID, IncludeHidden: true})
 	if err != nil {
 		return "", nil, nil, nil, fmt.Errorf("failed to get categories: %w", err)
 	}
@@ -644,14 +702,17 @@ func (s *MattermostService) PluginCreateTicket(ctx context.Context, input *model
 	return result, nil
 }
 
-// PluginListMine возвращает активные заявки пользователя в реалме канала —
-// созданные им и ещё не завершённые (open/in_progress/pending/on_hold).
-func (s *MattermostService) PluginListMine(ctx context.Context, scope models.PluginScope) ([]models.PluginTicketShort, error) {
-	settings, err := s.resolvePluginSettings(ctx, scope)
+// PluginListMine возвращает заявки пользователя в реалме канала: активные
+// (open/in_progress/pending/on_hold/resolved) либо архив (closed/cancelled).
+// Вкладка «Мои заявки» всегда ограничена заявками, где пользователь автор или
+// заказчик, — включая начальника области, иначе архив отдавал бы всю закрытую
+// историю реалма.
+func (s *MattermostService) PluginListMine(ctx context.Context, query *models.PluginTicketListQuery) (*models.PluginTicketListResult, error) {
+	settings, err := s.resolvePluginSettings(ctx, query.PluginScope)
 	if err != nil {
 		return nil, err
 	}
-	mmUserID := scope.MmUserID
+	mmUserID := query.PluginScope.MmUserID
 
 	user, err := s.resolveOrCreateUser(ctx, settings.RealmID, mmUserID, nil)
 	if err != nil {
@@ -667,14 +728,34 @@ func (s *MattermostService) PluginListMine(ctx context.Context, scope models.Plu
 		// или «вернуть в работу» прямо из плагина.
 		models.StatusResolved,
 	}
-	mode := "created_or_owned"
+	if query.Archived {
+		statuses = []models.TicketStatus{models.StatusClosed, models.StatusCancelled}
+	}
 
-	tickets, _, err := s.tickets.Get(ctx, &models.TicketFilter{
+	filter := &models.TicketFilter{
 		RealmID:  &settings.RealmID,
 		Statuses: statuses,
 		Actor:    &models.Actor{ID: user.ID, Name: user.Username},
-		Mode:     &mode,
-	})
+		// «Мои заявки» строго по атрибутам: mode=created_or_owned сервис не
+		// применяет к начальнику области, поэтому фильтр ставим явно.
+		CreatedOrOwnedBy: &user.ID,
+		ClosedAtFrom:     query.ClosedAtFrom,
+		ClosedAtTo:       query.ClosedAtTo,
+	}
+	if query.Archived {
+		archived := true
+		filter.Archived = &archived
+		filter.Limit = pluginPageLimit(query.Limit)
+		filter.Offset = query.Offset
+		if filter.Offset < 0 {
+			filter.Offset = 0
+		}
+	}
+	if search := strings.TrimSpace(query.Search); search != "" {
+		filter.Search = &search
+	}
+
+	tickets, total, err := s.tickets.Get(ctx, filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user tickets: %w", err)
 	}
@@ -701,5 +782,24 @@ func (s *MattermostService) PluginListMine(ctx context.Context, scope models.Plu
 		list = append(list, item)
 	}
 
-	return list, nil
+	return &models.PluginTicketListResult{Items: list, Total: total}, nil
+}
+
+const (
+	// pluginTicketPageSize — размер страницы архива по умолчанию.
+	pluginTicketPageSize = 10
+	// pluginTicketPageMax — верхняя граница limit из запроса.
+	pluginTicketPageMax = 50
+)
+
+// pluginPageLimit клампит размер страницы: 0/отрицательное — дефолт, больше
+// максимума — максимум.
+func pluginPageLimit(limit int) int {
+	if limit <= 0 {
+		return pluginTicketPageSize
+	}
+	if limit > pluginTicketPageMax {
+		return pluginTicketPageMax
+	}
+	return limit
 }

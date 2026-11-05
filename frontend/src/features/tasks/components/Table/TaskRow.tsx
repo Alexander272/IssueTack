@@ -3,6 +3,8 @@ import { TableRow, TableCell, Typography, Box, Tooltip, type SxProps, type Theme
 import type { ITask } from '../../types/task'
 import { ACTIVE_STATUSES, DUE_DATE_COLORS, DUE_DATE_ICONS, DUE_DATE_DEFAULT_ICON } from '../../constants/taskMaps'
 import { getDueDateTone, getShortDate } from '@/utils/date'
+import { useAppSelector } from '@/hooks/redux'
+import { getHasNoGroups } from '@/features/user/userSlice'
 import { TaskStatusBadge } from '../TaskStatusBadge'
 import { TaskPriorityBadge } from '../TaskPriorityBadge'
 import { TaskAssignmentChip } from '../TaskAssignmentChip'
@@ -15,6 +17,7 @@ interface Props {
 }
 
 export const TaskRow = ({ task, onClick, sx }: Props) => {
+	const hasNoGroups = useAppSelector(getHasNoGroups)
 	const displayId = task.ticketNumber || '—'
 	const dueTone = ACTIVE_STATUSES.includes(task.status) ? getDueDateTone(task.dueDate) : null
 	const DueDateIcon = dueTone ? DUE_DATE_ICONS[dueTone] : DUE_DATE_DEFAULT_ICON
@@ -111,38 +114,42 @@ export const TaskRow = ({ task, onClick, sx }: Props) => {
 					</Box>
 				</Tooltip>
 			</TableCell>
-			<TableCell>
-				<Box sx={{ display: 'flex', flexDirection: 'column' }}>
-					<Box
-						sx={{
-							display: 'inline-flex',
-							alignItems: 'center',
-							gap: 0.5,
-							color: dueDateColor,
-						}}
-					>
-						<DueDateIcon sx={{ fontSize: 14, color: dueDateColor }} />
-						<Typography
-							component='span'
+			{!hasNoGroups && (
+				<TableCell>
+					<Box sx={{ display: 'flex', flexDirection: 'column' }}>
+						<Box
 							sx={{
-								fontSize: '0.875rem',
-								fontWeight: dueTone && dueTone !== 'soon' ? 700 : 400,
-								lineHeight: 1,
+								display: 'inline-flex',
+								alignItems: 'center',
+								gap: 0.5,
+								color: dueDateColor,
 							}}
 						>
-							{getShortDate(task.dueDate)}
-						</Typography>
+							<DueDateIcon sx={{ fontSize: 14, color: dueDateColor }} />
+							<Typography
+								component='span'
+								sx={{
+									fontSize: '0.875rem',
+									fontWeight: dueTone && dueTone !== 'soon' ? 700 : 400,
+									lineHeight: 1,
+								}}
+							>
+								{getShortDate(task.dueDate)}
+							</Typography>
+						</Box>
+						{task.closedAt && (
+							<Typography sx={{ fontSize: '0.75rem', color: '#059669' }}>
+								Закрыта: {getShortDate(task.closedAt)}
+							</Typography>
+						)}
 					</Box>
-					{task.closedAt && (
-						<Typography sx={{ fontSize: '0.75rem', color: '#059669' }}>
-							Закрыта: {getShortDate(task.closedAt)}
-						</Typography>
-					)}
-				</Box>
-			</TableCell>
-			<TableCell sx={{ py: 1 }}>
-				<TaskPriorityBadge priority={task.priority} />
-			</TableCell>
+				</TableCell>
+			)}
+			{!hasNoGroups && (
+				<TableCell sx={{ py: 1 }}>
+					<TaskPriorityBadge priority={task.priority} />
+				</TableCell>
+			)}
 			<TableCell sx={{ py: 1 }}>
 				<TaskAssignmentChip assignee={task.assignee} />
 			</TableCell>

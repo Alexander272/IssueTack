@@ -60,6 +60,28 @@ func (s *ActivityLogService) Create(ctx context.Context, tx postgres.Tx, dto []*
 // переданной транзакции, так и внутри новой, открываемой методом Create, чтобы
 // не дублировать логику записи и обработки ошибок.
 func (s *ActivityLogService) executeCreate(ctx context.Context, tx postgres.Tx, dto []*models.ActivityLogDTO) error {
+	// Журнал обязан нести realm_id: GET /activity-log фильтрует по авторизованному
+	// реалму, «бесхозные» записи (NULL) не видит никто. Дозаполняем реалм по
+	// сущности (тикет/подзадача); записи, которым реалм уже задан, не трогаем.
+	for _, v := range dto {
+		if v == nil || v.RealmID != nil {
+			continue
+		}
+		realmID, realmName, ok, err := s.repo.GetRealmByEntity(ctx, tx, v.EntityType, v.EntityID)
+		if err != nil {
+			return fmt.Errorf("resolve realm for %s/%s: %w", v.EntityType, v.EntityID, err)
+		}
+		if !ok {
+			// Неизвестный тип или осиротевшая сущность: реалма нет, запись не
+			// попадёт ни в одну realm-выборку, но операцию журнала не роняем.
+			continue
+		}
+		v.RealmID = &realmID
+		if v.RealmName == "" {
+			v.RealmName = realmName
+		}
+	}
+
 	if err := s.repo.Create(ctx, tx, dto); err != nil {
 		return fmt.Errorf("failed to create activity log. error: %w", err)
 	}

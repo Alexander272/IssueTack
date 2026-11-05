@@ -210,7 +210,12 @@ func (h *Handler) setItems(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.SetItems(c, nil, id, items, actor.ID, realmID); err != nil {
+	if err := h.service.SetItems(c, nil, &models.SetChecklistItemsDTO{
+		TemplateID: id,
+		Items:      items,
+		ActorID:    actor.ID,
+		RealmID:    realmID,
+	}); err != nil {
 		response.SendError(c, err)
 		return
 	}

@@ -160,10 +160,12 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 	w.groups(req.GroupIDs, req.IncludeUngroupedAssignedTo)
 	eq(w, "t.creator_id", req.CreatorID)
 	w.creatorOrOwner(req.CreatedOrOwnedBy)
+	w.readableBy(req.ReadableBy)
 	eq(w, "t.ticket_number", req.Number)
 	eq(w, "t.realm_id", req.RealmID)
 	w.search(req.Search)
 	w.dueDate(req.DueDateFrom, req.DueDateTo)
+	w.closedAt(req.ClosedAtFrom, req.ClosedAtTo)
 	w.priorities(req.Priorities)
 	eq(w, "t.equipment_id", req.EquipmentID)
 	// Избранные пользователя не режутся по статусам вкладки: звезда ставится на любой

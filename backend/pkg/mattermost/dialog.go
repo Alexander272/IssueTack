@@ -24,6 +24,7 @@ type DialogElement struct {
 	MaxLength   int
 	Options     []*model.PostActionOptions
 	Placeholder string
+	Optional    bool
 }
 
 // OpenRequest carries everything needed to open a dialog for a button press.
@@ -47,6 +48,7 @@ func toModelElements(els []DialogElement) []model.DialogElement {
 			Type:        e.Type,
 			MaxLength:   e.MaxLength,
 			Placeholder: e.Placeholder,
+			Optional:    e.Optional,
 		}
 		if e.Options != nil {
 			d.Options = e.Options

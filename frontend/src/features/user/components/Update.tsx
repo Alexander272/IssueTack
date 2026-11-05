@@ -14,16 +14,16 @@ import {
 } from '@mui/material'
 import { Controller, FormProvider, useFieldArray, useForm, useFormContext, useWatch } from 'react-hook-form'
 import { toast } from 'react-toastify'
+import { XIcon } from 'lucide-mui'
 
 import type { IFetchError } from '@/app/types/error'
 import type { IUserData, IUserDataDTO, IUserRealm } from '@/features/user/types/user'
 import type { IRole } from '../types/role'
 import { useGetRolesQuery } from '@/features/user/roleApiSlice'
+import { useGetAllRealmsQuery } from '@/features/realms/realmsApiSlice'
 import { useUpdateUserMutation } from '../usersApiSlice'
-import { XIcon } from 'lucide-mui'
 import { Fallback } from '@/components/Fallback/Fallback'
 import { BoxFallback } from '@/components/Fallback/BoxFallback'
-import { useGetAllRealmsQuery } from '@/features/realms/realmsApiSlice'
 
 type Props = {
 	user: IUserData
@@ -51,7 +51,7 @@ export const UpdateModal: FC<Props> = ({ user, onClose }) => {
 					userId: user.id,
 					realmId: realm.id,
 					realm: realm,
-					roleId: userBinding?.roleId || '',
+					roleId: userBinding?.roleId || '00000000-0000-0000-0000-000000000000',
 					role: userBinding?.role,
 					isActive: userBinding?.isActive ?? true,
 					createdAt: userBinding?.createdAt || '',
@@ -217,7 +217,7 @@ const RealmRow: FC<RealmRowProps> = ({ field, index, rolesData }) => {
 					name={`realms.${index}.roleId`}
 					render={({ field: selectField }) => (
 						<Select {...selectField} fullWidth displayEmpty>
-							<MenuItem value=''>
+							<MenuItem value='00000000-0000-0000-0000-000000000000'>
 								<em>Нет роли</em>
 							</MenuItem>
 							{rolesData.map(role => (

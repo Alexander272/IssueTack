@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ApiError, createTicket } from '../api'
 import type { CreateTicketPayload } from '../api'
@@ -13,6 +13,7 @@ import type {
 } from '../types'
 import { formatBytes } from '../labels'
 import { clearDraft, loadDraft, saveDraft } from '../createDraft'
+import { useClipboardFiles } from '../useClipboardFiles'
 import { FileIcon } from './icons'
 
 // pluginUserLabel — подпись пользователя в селектах формы: «Фамилия Имя
@@ -65,6 +66,17 @@ function pluginUserLabel(u: PluginUserShort): string {
 	return u.username
 }
 
+// pluginDueDateFromCategory — значение для <input type="datetime-local">: срок
+// в днях от сегодняшнего дня на конец дня. Бэкенд (parsePluginDueDate) принимает
+// формат datetime-local, поэтому toISOString() не подходит.
+function pluginDueDateFromCategory(days: number): string {
+	const d = new Date()
+	d.setDate(d.getDate() + days)
+	d.setHours(23, 59, 0, 0)
+	const pad = (n: number) => String(n).padStart(2, '0')
+	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 export default function CreateTab({ scope, context, onCreated, onOpen, onDraftChange }: CreateTabProps) {
 	const userSiteId =
 		context.user?.siteId && (context.sites || []).some(s => s.id === context.user.siteId) ? context.user.siteId : ''
@@ -99,19 +111,28 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 
 	const categories = (context.categories || []).filter((c: PluginCategory) => c.isActive !== false)
 	// Категории группируются по разделам (таксономия) — нативные optgroup.
+	// Категория без раздела — отдельный блок из одного пункта (без группы
+	// «Без раздела»), поэтому несколько таких категорий могут стоять в разных
+	// местах между разделами.
 	const categorySections = useMemo(() => {
-		const sections = new Map<string, {name: string; items: PluginCategory[]}>();
+		const sections = new Map<string, { name: string | null; items: PluginCategory[] }>()
 		categories.forEach(c => {
-			const name = c.categoryGroup?.name || 'Без раздела';
-			const bucket = sections.get(name);
-			if (bucket) {
-				bucket.items.push(c);
-			} else {
-				sections.set(name, {name, items: [c]});
+			if (c.categoryGroupId) {
+				const key = `section:${c.categoryGroupId}`
+				const name = c.categoryGroup?.name || ''
+				const bucket = sections.get(key)
+				if (bucket) {
+					bucket.items.push(c)
+				} else {
+					sections.set(key, { name, items: [c] })
+				}
+				return
 			}
-		});
-		return [...sections.values()];
-	}, [categories]);
+			const key = `root:${c.id}`
+			sections.set(key, { name: null, items: [c] })
+		})
+		return [...sections.values()]
+	}, [categories])
 	const sites = context.sites || []
 	const selectedSite = sites.find(s => s.id === siteId) || null
 
@@ -132,6 +153,10 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		const cat = categories.find(c => c.id === categoryId)
 		setGroupId(cat?.groupId ?? '')
 		if (cat?.priority) setPriority(cat.priority)
+		// Автосрок из категории — зеркало веба: дефолт категории проставляется в
+		// поле срока, а категория без автосрока его сбрасывает, иначе в форме
+		// остался бы срок предыдущей категории.
+		setDueDate(cat?.defaultDueDays != null ? pluginDueDateFromCategory(cat.defaultDueDays) : '')
 	}, [categoryId, categories, isManager])
 
 	useEffect(() => {
@@ -158,17 +183,50 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 			ownerId,
 			dueDate,
 		})
-	}, [context.realmId, context.user.id, title, description, categoryId, siteId, priority, groupId, assigneeId, ownerId, dueDate])
+	}, [
+		context.realmId,
+		context.user.id,
+		title,
+		description,
+		categoryId,
+		siteId,
+		priority,
+		groupId,
+		assigneeId,
+		ownerId,
+		dueDate,
+	])
 
 	useEffect(() => {
 		// Дефолтная площадка пользователя сама по себе не считается черновиком.
 		const hasContent = Boolean(
-			title.trim() || description.trim() || categoryId || files.length > 0 || (siteId && siteId !== userSiteId) ||
-			priority || groupId || assigneeId || ownerId || dueDate,
+			title.trim() ||
+			description.trim() ||
+			categoryId ||
+			files.length > 0 ||
+			(siteId && siteId !== userSiteId) ||
+			priority ||
+			groupId ||
+			assigneeId ||
+			ownerId ||
+			dueDate,
 		)
 		setHasDraft(hasContent)
 		onDraftChange?.(hasContent)
-	}, [title, description, categoryId, siteId, files, userSiteId, onDraftChange, priority, groupId, assigneeId, ownerId, dueDate])
+	}, [
+		title,
+		description,
+		categoryId,
+		siteId,
+		files,
+		userSiteId,
+		onDraftChange,
+		priority,
+		groupId,
+		assigneeId,
+		ownerId,
+		dueDate,
+	])
 
 	const reset = () => {
 		clearDraft(context.realmId, context.user.id)
@@ -188,12 +246,20 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		setResult(null)
 	}
 
-	const onPickFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
-		const picked = Array.from(e.target.files || [])
+	// addFiles — общая точка для выбора файлов и вставки из буфера: вложения
+	// дедуплицируются по имени и размеру (как в вебе).
+	const addFiles = useCallback((picked: File[]) => {
+		if (picked.length === 0) return
 		setFiles(prev => {
 			const seen = new Set(prev.map(f => `${f.name}:${f.size}`))
 			return [...prev, ...picked.filter(f => !seen.has(`${f.name}:${f.size}`))]
 		})
+	}, [])
+
+	useClipboardFiles(addFiles)
+
+	const onPickFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+		addFiles(Array.from(e.target.files || []))
 		e.target.value = ''
 	}
 
@@ -321,15 +387,24 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 								}}
 							>
 								<option value=''>— Выберите категорию —</option>
-								{categorySections.map(section => (
-									<optgroup key={section.name} label={section.name}>
-										{section.items.map(c => (
+								{categorySections.map(section =>
+									section.name === null ? (
+										// Категория без раздела — обычный пункт списка, вне групп.
+										section.items.map(c => (
 											<option key={c.id} value={c.id}>
 												{c.name}
 											</option>
-										))}
-									</optgroup>
-								))}
+										))
+									) : (
+										<optgroup key={section.name} label={section.name}>
+											{section.items.map(c => (
+												<option key={c.id} value={c.id}>
+													{c.name}
+												</option>
+											))}
+										</optgroup>
+									),
+								)}
 							</select>
 							{fieldErrors.categoryId ? (
 								<span className='it-f__err'>{fieldErrors.categoryId}</span>
@@ -365,55 +440,9 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 				</div>
 			</section>
 
-			{isExecutor ? (
-				<section className='it-ticket-section'>
-					<div className='it-ticket-section__head'>
-						<div className='it-ticket-section__num'>2</div>
-						<div>
-							<div className='it-ticket-section__title'>Заказчик</div>
-							<div className='it-ticket-section__subtitle'>Выберите заказчика, для которого создаётся заявка</div>
-						</div>
-					</div>
-					<div className='it-ticket-section__body'>
-						<label className='it-f-label'>
-							<span className='it-f-label__text'>
-								Заказчик <span className='it-f-required'>*</span>
-							</span>
-							<select
-								className={`it-f${fieldErrors.ownerId ? ' it-f--error' : ''}`}
-								value={ownerId}
-								onChange={e => {
-									setOwnerId(e.target.value)
-									clearFieldError('ownerId')
-								}}
-							>
-								<option value=''>— Выберите заказчика —</option>
-								{customers.map(u => (
-									<option key={u.id} value={u.id}>
-										{pluginUserLabel(u)}
-									</option>
-								))}
-							</select>
-							{fieldErrors.ownerId ? <span className='it-f__err'>{fieldErrors.ownerId}</span> : null}
-							{customers.length === 0 ? <span className='it-f-label__hint'>Нет заказчиков</span> : null}
-						</label>
-
-						<label className='it-f-label it-f-check'>
-							<input
-								className='it-f-check__box'
-								type='checkbox'
-								checked={assigneeId === context.user.id}
-								onChange={e => setAssigneeId(e.target.checked ? context.user.id : '')}
-							/>
-							<span className='it-f-check__text'>Назначить меня исполнителем</span>
-						</label>
-					</div>
-				</section>
-			) : null}
-
 			<section className='it-ticket-section'>
 				<div className='it-ticket-section__head'>
-					<div className='it-ticket-section__num'>{isExecutor ? 3 : 2}</div>
+					<div className='it-ticket-section__num'>2</div>
 					<div>
 						<div className='it-ticket-section__title'>Описание проблемы</div>
 						<div className='it-ticket-section__subtitle'>
@@ -458,6 +487,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 					<div className='it-f-label'>
 						<span className='it-f-label__text'>Вложения</span>
 						<input className='it-f it-f--file' type='file' multiple onChange={onPickFiles} />
+						<div className='it-f-label__hint'>Можно вставить из буфера обмена (Ctrl+V)</div>
 						{files.length > 0 ? (
 							<ul className='it-ticket-files'>
 								{files.map(f => (
@@ -480,6 +510,68 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 					</div>
 				</div>
 			</section>
+
+			{/* Заказчик — отдельная секция только исполнителю; в веб-форме
+				CustomerSelectionSection идёт после «Описания», поэтому и здесь
+				она после него, чтобы порядок полей совпадал. */}
+			{isExecutor ? (
+				<section className='it-ticket-section'>
+					<div className='it-ticket-section__head'>
+						<div className='it-ticket-section__num'>3</div>
+						<div>
+							<div className='it-ticket-section__title'>Заказчик и сроки</div>
+							<div className='it-ticket-section__subtitle'>
+								Укажите заказчика и желаемый срок выполнения. При необходимости назначьте себя
+								исполнителем
+							</div>
+						</div>
+					</div>
+					<div className='it-ticket-section__body'>
+						<label className='it-f-label'>
+							<span className='it-f-label__text'>
+								Заказчик <span className='it-f-required'>*</span>
+							</span>
+							<select
+								className={`it-f${fieldErrors.ownerId ? ' it-f--error' : ''}`}
+								value={ownerId}
+								onChange={e => {
+									setOwnerId(e.target.value)
+									clearFieldError('ownerId')
+								}}
+							>
+								<option value=''>— Выберите заказчика —</option>
+								{customers.map(u => (
+									<option key={u.id} value={u.id}>
+										{pluginUserLabel(u)}
+									</option>
+								))}
+							</select>
+							{fieldErrors.ownerId ? <span className='it-f__err'>{fieldErrors.ownerId}</span> : null}
+							{customers.length === 0 ? <span className='it-f-label__hint'>Нет заказчиков</span> : null}
+						</label>
+
+						<label className='it-f-label'>
+							<span className='it-f-label__text'>Срок выполнения</span>
+							<input
+								className='it-f'
+								type='datetime-local'
+								value={dueDate}
+								onChange={e => setDueDate(e.target.value)}
+							/>
+						</label>
+
+						<label className='it-f-label it-f-check'>
+							<input
+								className='it-f-check__box'
+								type='checkbox'
+								checked={assigneeId === context.user.id}
+								onChange={e => setAssigneeId(e.target.checked ? context.user.id : '')}
+							/>
+							<span className='it-f-check__text'>Назначить меня исполнителем</span>
+						</label>
+					</div>
+				</section>
+			) : null}
 
 			{isManager ? (
 				<section className='it-ticket-section'>
@@ -512,7 +604,10 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 										}}
 									>
 										<span className='it-f-priority-card__head'>
-											<span className='it-f-priority-card__dot' style={{ background: PRIORITY_COLORS[value] }} />
+											<span
+												className='it-f-priority-card__dot'
+												style={{ background: PRIORITY_COLORS[value] }}
+											/>
 											<span className='it-f-priority-card__label'>{PRIORITY_LABELS[value]}</span>
 										</span>
 										<span className='it-f-priority-card__desc'>{PRIORITY_DESCRIPTIONS[value]}</span>
@@ -525,11 +620,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 						<div className='it-ticket-grid'>
 							<label className='it-f-label'>
 								<span className='it-f-label__text'>Заявитель</span>
-								<select
-									className='it-f'
-									value={ownerId}
-									onChange={e => setOwnerId(e.target.value)}
-								>
+								<select className='it-f' value={ownerId} onChange={e => setOwnerId(e.target.value)}>
 									<option value=''>— Заявитель: создатель —</option>
 									{customers.map(u => (
 										<option key={u.id} value={u.id}>
@@ -553,7 +644,11 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 
 							<label className='it-f-label'>
 								<span className='it-f-label__text'>Исполнитель</span>
-								<select className='it-f' value={assigneeId} onChange={e => setAssigneeId(e.target.value)}>
+								<select
+									className='it-f'
+									value={assigneeId}
+									onChange={e => setAssigneeId(e.target.value)}
+								>
 									<option value=''>— Авто (по группе) —</option>
 									{executors.map(u => (
 										<option key={u.id} value={u.id}>
@@ -601,7 +696,11 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 						<div className='it-confirm__title'>Очистить черновик?</div>
 						<div className='it-confirm__text'>Заполненные данные и вложения будут потеряны.</div>
 						<div className='it-confirm__actions'>
-							<button type='button' className='it-btn it-btn--sm' onClick={() => setConfirmingClear(false)}>
+							<button
+								type='button'
+								className='it-btn it-btn--sm'
+								onClick={() => setConfirmingClear(false)}
+							>
 								Нет
 							</button>
 							<button

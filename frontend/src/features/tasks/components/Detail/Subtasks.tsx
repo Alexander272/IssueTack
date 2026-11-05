@@ -13,6 +13,8 @@ import {
 } from '../../modules/subtasks/subtasksApiSlice'
 import { STATUS_MAP, DUE_DATE_COLORS, DUE_DATE_ICONS, DUE_DATE_DEFAULT_ICON } from '../../constants/taskMaps'
 import { getDueDateTone, getShortDate } from '@/utils/date'
+import { useAppSelector } from '@/hooks/redux'
+import { getHasNoGroups } from '@/features/user/userSlice'
 import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
 import { SubtaskDialog } from './SubtaskDialog'
 
@@ -61,6 +63,7 @@ export const Subtasks = ({
 	const [deleteTarget, setDeleteTarget] = useState<ISubtask | null>(null)
 	const [deleting, setDeleting] = useState(false)
 	const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+	const hasNoGroups = useAppSelector(getHasNoGroups)
 
 	const list = subtasks ?? []
 	const interactive = canWork && !inactive
@@ -308,7 +311,7 @@ export const Subtasks = ({
 												{sub.assignee.lastName} {sub.assignee.firstName}
 											</Typography>
 										)}
-										{!isDone && sub.dueDate && (
+										{!hasNoGroups && !isDone && sub.dueDate && (
 											<Box
 												sx={{
 													display: 'inline-flex',

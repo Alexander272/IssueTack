@@ -31,6 +31,12 @@ var statusCommands = regexp.MustCompile(`^(?:статус|status|мои|заяв
 var attachCommands = regexp.MustCompile(`^[#№]?(\d+)$`)
 var commentCommands = regexp.MustCompile(`^[#№]?(\d+)\s+(.+)$`)
 
+// readableMode — режим поиска заявки по номеру в боте (см. TicketService.Get):
+// возвращает заявки, доступные пользователю на чтение по атрибутам — он автор,
+// заказчик, исполнитель или участник/менеджер группы тикета. Обычный списочный
+// scope отсекал бы создателя, который сам в группу тикета не входит.
+const readableMode = "readable"
+
 // MattermostDeps — зависимости фасада Mattermost: сервисы, необходимые
 // для оркестрации, и capability-уровень Most для отправки сообщений.
 type MattermostDeps struct {
@@ -82,6 +88,7 @@ type MattermostService struct {
 	baseURL       string
 	wsClients     map[string]*mattermost.WSClient
 	wsMu          sync.Mutex
+	wsGuard       *inboundGuard
 	pendingFiles  sync.Map
 	recentTickets sync.Map
 	pluginCache   *pluginContextCache
@@ -107,6 +114,7 @@ func NewMattermostService(deps *MattermostDeps) *MattermostService {
 		most:        deps.Most,
 		baseURL:     deps.BaseURL,
 		wsClients:   make(map[string]*mattermost.WSClient),
+		wsGuard:     newInboundGuard(),
 		pluginCache: newPluginContextCache(),
 	}
 }
@@ -132,8 +140,12 @@ type Mattermost interface {
 	// Плагин MM (webapp + plugin-server → /api/v1/plugin/*).
 	// Scope несёт канал, Mattermost-пользователя и бота реалма для личного диалога.
 	PluginContext(ctx context.Context, scope models.PluginScope) (*models.PluginContextResult, error)
+	PluginGreeting(ctx context.Context, scope models.PluginScope) error
+	// PluginDM отдаёт личный диалог пользователя с ботом реалма — по нему иконка
+	// в App Bar открывает модалку из любого канала.
+	PluginDM(ctx context.Context, mmUserID string) (*models.PluginDMResult, error)
 	PluginCreateTicket(ctx context.Context, input *models.PluginCreateTicketInput) (*models.PluginCreateTicketResult, error)
-	PluginListMine(ctx context.Context, scope models.PluginScope) ([]models.PluginTicketShort, error)
+	PluginListMine(ctx context.Context, query *models.PluginTicketListQuery) (*models.PluginTicketListResult, error)
 	PluginGetTicket(ctx context.Context, scope models.PluginScope, ticketID string) (*models.PluginTicketDetail, error)
 	PluginGetTicketLinkContext(ctx context.Context, mmUserID, ticketID string) (*models.PluginTicketLinkContext, error)
 	PluginGetComments(ctx context.Context, scope models.PluginScope, ticketID string) ([]models.PluginComment, error)
@@ -216,6 +228,10 @@ func (s *MattermostService) SaveSettings(ctx context.Context, realmID uuid.UUID,
 		return fmt.Errorf("failed to save mattermost settings: %w", err)
 	}
 
+	// Перезапуск: StartWSForRealm идемпотентен, поэтому уже запущенный сокет
+	// продолжил бы работу со старым токеном до перезапуска приложения.
+	s.StopWSForRealm(realmID)
+
 	if err := s.StartWSForRealm(ctx, realmID); err != nil {
 		logger.Error("failed to start WS after save",
 			logger.StringAttr("realm_id", realmID.String()),
@@ -238,6 +254,15 @@ func (s *MattermostService) DeleteSettings(ctx context.Context, realmID uuid.UUI
 // HandleDM обрабатывает личное сообщение пользователя: диспетчеризует его
 // на создание заявки, статус, помощь или синхронизацию.
 func (s *MattermostService) HandleDM(ctx context.Context, input *models.HandleDMInput) error {
+	// Пустое сообщение без явного вызова команды — не вопрос боту. Раньше на
+	// такой пост (в т.ч. на системное сообщение Mattermost, доехавшее по
+	// HTTP-пути) бот отвечал справкой, то есть писал тому, кто ничего не писал.
+	// Пустой вызов команды (у slash-команды есть trigger_id) остаётся вопросом:
+	// человек осознанно её вызвал и ждёт ответа.
+	if strings.TrimSpace(input.Message) == "" && len(input.FileIDs) == 0 && input.TriggerID == "" {
+		return nil
+	}
+
 	var settings *models.RealmMattermost
 	var err error
 
@@ -248,6 +273,16 @@ func (s *MattermostService) HandleDM(ctx context.Context, input *models.HandleDM
 	}
 	if err != nil {
 		return fmt.Errorf("failed to find realm settings: %w", err)
+	}
+
+	// Автор — сам бот: на собственные сообщения бот не отвечает. Иначе при
+	// расхождении bot_user_id (остался от прежнего токена или правился руками в
+	// БД) каждое сообщение бота возвращалось как входящее и порождало новое —
+	// цикл «справка на справку». Веб-сокет отсеивает такие посты фильтром
+	// AcceptPost по id, авторитетному для токена; здесь — та же защита для
+	// HTTP-путей.
+	if input.MmUserID == settings.BotUserID {
+		return nil
 	}
 
 	msg := strings.TrimSpace(input.Message)
@@ -774,10 +809,12 @@ func (s *MattermostService) handleAttachFiles(ctx context.Context, ch *mmChannel
 	numberFromRecent := 0
 
 	if ticketNumber > 0 {
+		mode := readableMode
 		tickets, _, err := s.tickets.Get(ctx, &models.TicketFilter{
 			Number:  &ticketNumber,
 			RealmID: &ch.Settings.RealmID,
 			Actor:   &models.Actor{ID: user.ID},
+			Mode:    &mode,
 		})
 		if err != nil || len(tickets) == 0 {
 			s.sendDMBestEffort(ch, fmt.Sprintf("Заявка №%d не найдена", ticketNumber))
@@ -943,11 +980,12 @@ func (s *MattermostService) handleTextWithFiles(ctx context.Context, ch *mmChann
 // приоритет, участники, срок и действия владельца.
 //
 // Право на просмотр здесь обязательно и обеспечивается двумя шагами. Поиск по
-// номеру идёт через Tickets.Get, который без групп актора вернул бы заявку
-// любого реалма с таким номером, поэтому найденный ID досматривается через
-// ticketDetail → Tickets.GetByID — он гоняет атрибутную модель доступа и вернёт
-// ErrPermissionDenied на чужую заявку. Отказ показываем тем же «не найдена», что и
-// для несуществующего номера: сообщать о существовании чужой заявки нельзя.
+// номеру идёт через Tickets.Get в режиме readable (автор/заказчик/исполнитель/
+// группа тикета), поэтому чужая заявка в него не попадает; найденный ID всё
+// равно досматривается через ticketDetail → Tickets.GetByID — он гоняет
+// атрибутную модель доступа и вернёт ErrPermissionDenied на чужую заявку.
+// Отказ показываем тем же «не найдена», что и для несуществующего номера:
+// сообщать о существовании чужой заявки нельзя.
 func (s *MattermostService) handleTicketCard(ctx context.Context, ch *mmChannel, message string) error {
 	parts := attachCommands.FindStringSubmatch(message)
 	number, _ := strconv.Atoi(parts[1])
@@ -957,10 +995,12 @@ func (s *MattermostService) handleTicketCard(ctx context.Context, ch *mmChannel,
 		return fmt.Errorf("failed to resolve user: %w", err)
 	}
 
+	mode := readableMode
 	found, _, err := s.tickets.Get(ctx, &models.TicketFilter{
 		Number:  &number,
 		RealmID: &ch.Settings.RealmID,
 		Actor:   &models.Actor{ID: user.ID, Name: user.Username},
+		Mode:    &mode,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to find ticket by number: %w", err)
@@ -1137,10 +1177,12 @@ func (s *MattermostService) handleComment(ctx context.Context, ch *mmChannel, me
 		return fmt.Errorf("failed to resolve user: %w", err)
 	}
 
+	mode := readableMode
 	tickets, _, err := s.tickets.Get(ctx, &models.TicketFilter{
 		Number:  &number,
 		RealmID: &ch.Settings.RealmID,
 		Actor:   &models.Actor{ID: user.ID},
+		Mode:    &mode,
 	})
 	if err != nil || len(tickets) == 0 {
 		s.sendDMBestEffort(ch, fmt.Sprintf("Заявка №%d не найдена", number))

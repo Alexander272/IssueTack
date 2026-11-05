@@ -473,7 +473,7 @@ func TestNotificationService_TicketUpdated_PriorityDueDateChange_OwnerNotNotifie
 
 	changes := []*models.FieldChange{
 		{Tag: models.ActionPriorityChanged, OldVal: "low", NewVal: "urgent"},
-		{Tag: models.ActionDueDateChanged, OldVal: "none", NewVal: "2026-09-02 12:00:00 +0000 UTC"},
+		{Tag: models.ActionDueDateChanged, OldVal: "none", NewVal: "2026-09-02T12:00:00Z"},
 	}
 
 	err := svc.TicketUpdated(context.Background(), ticket, uuid.New(), changes)
@@ -537,7 +537,12 @@ func TestNotificationService_TicketCommented_NotifiesAssignee(t *testing.T) {
 
 	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID)
 
-	err := svc.TicketCommented(context.Background(), ticket, actorID, "уточните сроки", "Петров Иван")
+	err := svc.TicketCommented(context.Background(), &models.NotificationCommentDTO{
+		Ticket:      ticket,
+		ActorID:     actorID,
+		CommentText: "уточните сроки",
+		AuthorLabel: "Петров Иван",
+	})
 	assert.NoError(t, err)
 	mockRepo.AssertExpectations(t)
 	mockNotifier.AssertExpectations(t)
@@ -554,7 +559,12 @@ func TestNotificationService_TicketCommented_ActorExcluded(t *testing.T) {
 		Category: &models.CategoryShort{ID: uuid.New()},
 	}
 
-	err := svc.TicketCommented(context.Background(), ticket, actorID, "уточните сроки", "Петров Иван")
+	err := svc.TicketCommented(context.Background(), &models.NotificationCommentDTO{
+		Ticket:      ticket,
+		ActorID:     actorID,
+		CommentText: "уточните сроки",
+		AuthorLabel: "Петров Иван",
+	})
 	assert.NoError(t, err)
 	mockRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
 	mockNotifier.AssertNotCalled(t, "Notify", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
@@ -827,4 +837,64 @@ func mockGroupsForMembership(t *testing.T, userID, realmID uuid.UUID, groupIDs [
 	mockGroups.On("GetByID", mock.Anything, mock.Anything).Return(&models.Group{}, nil).Maybe()
 	mockGroups.On("GetMemberGroups", mock.Anything, userID, &realmID).Return(groupIDs, nil).Once()
 	return mockGroups
+}
+
+func TestNotificationService_NotifyReminderHigh_Success(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	assigneeID := uuid.New()
+	managerID := uuid.New()
+	ticket := &models.Ticket{
+		ID:       uuid.New(),
+		Title:    "High priority task",
+		Assignee: &models.UserShort{ID: assigneeID},
+		Manager:  &models.UserShort{ID: managerID},
+	}
+
+	mockRepo.On("CanSendReminder", mock.Anything, ticket.ID, models.EventReminderHigh, reminderDedupInterval(3*time.Hour)).Return(true, nil).Once()
+	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID, managerID)
+
+	err := svc.NotifyReminderHigh(context.Background(), ticket, 3*time.Hour)
+
+	require.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
+}
+
+func TestNotificationService_NotifyReminderHigh_NotYetTime(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	ticket := &models.Ticket{
+		ID:       uuid.New(),
+		Title:    "High priority task",
+		Assignee: &models.UserShort{ID: uuid.New()},
+	}
+
+	mockRepo.On("CanSendReminder", mock.Anything, ticket.ID, models.EventReminderHigh, reminderDedupInterval(3*time.Hour)).Return(false, nil).Once()
+
+	err := svc.NotifyReminderHigh(context.Background(), ticket, 3*time.Hour)
+
+	require.NoError(t, err)
+	mockRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
+	mockNotifier.AssertNotCalled(t, "Notify", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+func TestNotificationService_NotifyReminderUrgent_Success(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	assigneeID := uuid.New()
+	ticket := &models.Ticket{
+		ID:       uuid.New(),
+		Title:    "Urgent task",
+		Assignee: &models.UserShort{ID: assigneeID},
+	}
+
+	mockRepo.On("CanSendReminder", mock.Anything, ticket.ID, models.EventReminderUrgent, reminderDedupInterval(time.Hour)).Return(true, nil).Once()
+	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID)
+
+	err := svc.NotifyReminderUrgent(context.Background(), ticket, time.Hour)
+
+	require.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
 }

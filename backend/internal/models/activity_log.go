@@ -8,6 +8,12 @@ import (
 	"github.com/google/uuid"
 )
 
+// Типы сущностей журнала активности. Совпадают со значениями entity_type в БД.
+const (
+	EntityTypeTicket  = "ticket"
+	EntityTypeSubtask = "subtask"
+)
+
 type ActivityLog struct {
 	ID            uuid.UUID        `json:"id" db:"id"`
 	Action        string           `json:"action" db:"action"` // 'INSERT', 'UPDATE', 'DELETE'

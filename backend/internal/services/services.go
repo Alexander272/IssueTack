@@ -114,8 +114,9 @@ func NewServices(deps *Deps) *Services {
 
 	session := NewSessionService(deps.Keycloak, policies, userRealms, users, groups, access, cacheSvc)
 
-	categories := NewCategoryService(deps.Repo.Categories, deps.Repo.Tickets)
-	categoryGroups := NewCategoryGroupService(deps.Repo.CategoryGroups)
+	categoryVisibility := NewCategoryVisibility(access, groups)
+	categories := NewCategoryService(deps.Repo.Categories, deps.Repo.Tickets, categoryVisibility)
+	categoryGroups := NewCategoryGroupService(deps.Repo.CategoryGroups, categoryVisibility)
 	sites := NewSiteService(deps.Repo.Sites)
 	equipment := NewEquipmentService(deps.Repo.Equipment, transaction, &deps.Conf.FileServer)
 	equipment.SetERPConfig(deps.Conf.Equipment)
@@ -123,7 +124,7 @@ func NewServices(deps *Deps) *Services {
 	// разрешает площадки и получателей по справочникам.
 	equipmentImport := NewEquipmentImportService(equipment, deps.Repo.Sites, deps.Repo.Users)
 	logs := NewActivityLogService(deps.Repo.ActivityLog, transaction)
-	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs, access)
+	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs, users, access)
 	statistics := NewStatisticsService(deps.Repo.Statistics, groups, access)
 	subscriptionOps := NewTicketSubscriptionOpsService(deps.Repo.TicketSubscriptions)
 
@@ -157,6 +158,8 @@ func NewServices(deps *Deps) *Services {
 		Groups:        groups,
 		Categories:    categories,
 		Access:        access,
+		Users:         users,
+		Sites:         sites,
 	})
 
 	// Оборудование заводит заявку в 1C:ERP при выдаче/возврате, а заявку создаёт

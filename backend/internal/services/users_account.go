@@ -58,10 +58,6 @@ func (s *userService) UpdateAccount(ctx context.Context, dto *models.UpdateAccou
 		}
 	}
 
-	if err := s.ensureRealmMembership(ctx, dto.ID, dto.RealmID); err != nil {
-		return err
-	}
-
 	candidate, err := s.GetByID(ctx, dto.ID)
 	if err != nil {
 		return err
@@ -86,7 +82,7 @@ func (s *userService) UpdateAccount(ctx context.Context, dto *models.UpdateAccou
 			for _, r := range dto.Realms {
 				if r.CreatedAt == "" {
 					created = append(created, r)
-				} else if r.RoleID != nil {
+				} else if r.RoleID != nil && *r.RoleID != uuid.Nil {
 					updated = append(updated, r)
 				} else {
 					deleted = append(deleted, r)

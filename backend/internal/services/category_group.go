@@ -6,23 +6,26 @@ import (
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
+	"github.com/google/uuid"
 )
 
 // CategoryGroupService — сервис работы с разделами категорий (таксономия).
 // Раздел не влияет на права и маршрутизацию, в отличие от группы-владельца
 // категории (categories.group_id), и не связан с тикетами.
 type CategoryGroupService struct {
-	repo repository.CategoryGroups
+	repo       repository.CategoryGroups
+	visibility *CategoryVisibility
 }
 
 // NewCategoryGroupService создаёт CategoryGroupService.
-func NewCategoryGroupService(repo repository.CategoryGroups) *CategoryGroupService {
-	return &CategoryGroupService{repo: repo}
+func NewCategoryGroupService(repo repository.CategoryGroups, visibility *CategoryVisibility) *CategoryGroupService {
+	return &CategoryGroupService{repo: repo, visibility: visibility}
 }
 
 // CategoryGroups — интерфейс работы с разделами категорий.
 type CategoryGroups interface {
-	// Get возвращает список разделов реалма, отсортированный по sort_order.
+	// Get возвращает список разделов реалма (по имени — порядок разделов
+	// задаётся глобальным порядком категорий, см. models.Category.SortOrder).
 	Get(ctx context.Context, req *models.GetCategoryGroupsDTO) ([]*models.CategoryGroup, error)
 	// GetByID возвращает раздел по идентификатору.
 	GetByID(ctx context.Context, req *models.GetCategoryGroupByIdDTO) (*models.CategoryGroup, error)
@@ -32,6 +35,14 @@ type CategoryGroups interface {
 	Update(ctx context.Context, dto *models.CategoryGroupDTO) error
 	// Delete удаляет раздел, если в нём нет категорий.
 	Delete(ctx context.Context, dto *models.DelCategoryGroupDTO) error
+	// CanSeeHidden сообщает, видит ли пользователь скрытые разделы (менеджеры
+	// и исполнители — да, безгрупповой заказчик — нет).
+	CanSeeHidden(ctx context.Context, userID, realmID uuid.UUID) bool
+}
+
+// CanSeeHidden делегирует единому правилу видимости скрытых категорий.
+func (s *CategoryGroupService) CanSeeHidden(ctx context.Context, userID, realmID uuid.UUID) bool {
+	return s.visibility.CanSeeHidden(ctx, userID, realmID)
 }
 
 // Get возвращает список разделов.

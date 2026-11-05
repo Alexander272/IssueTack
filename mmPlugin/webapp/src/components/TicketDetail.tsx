@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, attachmentUrl, getComments, getTicket, postComment, setTicketStatus } from '../api'
 import type { PluginComment, PluginCommentAttachment, PluginScope, PluginTicketDetail, PluginUserShort } from '../types'
 import { formatBytes, formatDate, statusMeta } from '../labels'
+import { useClipboardFiles } from '../useClipboardFiles'
 import { OpenExternalIcon, TrashIcon } from './icons'
 
 const MAX_PLUGIN_FILES = 10
@@ -137,11 +138,24 @@ export default function TicketDetail({ scope, ticketId, onBack, onChanged, backL
             .finally(() => setSending(false))
     }, [scope, ticketId, commentText, commentFiles, loadComments])
 
-    const onPickFiles = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-        const picked = Array.from(e.target.files || [])
+    // addCommentFiles — общая точка для выбора файлов и вставки из буфера: к
+    // комментарию прикладывается не больше MAX_PLUGIN_FILES файлов.
+    const addCommentFiles = useCallback((picked: File[]) => {
+        if (picked.length === 0) {
+            return
+        }
         setCommentFiles(prev => prev.concat(picked).slice(0, MAX_PLUGIN_FILES))
-        e.target.value = ''
     }, [])
+
+    useClipboardFiles(addCommentFiles)
+
+    const onPickFiles = useCallback(
+        (e: React.ChangeEvent<HTMLInputElement>) => {
+            addCommentFiles(Array.from(e.target.files || []))
+            e.target.value = ''
+        },
+        [addCommentFiles],
+    )
 
     const removeFile = useCallback((index: number) => {
         setCommentFiles(prev => prev.filter((_, i) => i !== index))
@@ -341,53 +355,55 @@ export default function TicketDetail({ scope, ticketId, onBack, onChanged, backL
                 ) : null}
             </div>
 
-            <div className='it-comment-form'>
-                {sendError ? <div className='it-ticket-error'>{sendError}</div> : null}
-                <textarea
-                    className='it-comment-form__text'
-                    placeholder='Написать комментарий…'
-                    value={commentText}
-                    onChange={e => setCommentText(e.target.value)}
-                />
-                {commentFiles.length > 0 ? (
-                    <ul className='it-files-picked'>
-                        {commentFiles.map((f, i) => (
-                            <li key={`${f.name}-${i}`} className='it-files-picked__item'>
-                                <span className='it-files-picked__name'>{f.name}</span>
-                                <button
-                                    type='button'
-                                    className='it-files-picked__remove'
-                                    onClick={() => removeFile(i)}
-                                    title='Удалить'
-                                >
-                                    ×
-                                </button>
-                            </li>
-                        ))}
-                    </ul>
-                ) : null}
-                <div className='it-comment-form__actions'>
-                    <input
-                        ref={fileInputRef}
-                        type='file'
-                        multiple
-                        className='it-comment-form__file-input'
-                        onChange={onPickFiles}
+            {detail && detail.status !== 'closed' && detail.status !== 'cancelled' ? (
+                <div className='it-comment-form'>
+                    {sendError ? <div className='it-ticket-error'>{sendError}</div> : null}
+                    <textarea
+                        className='it-comment-form__text'
+                        placeholder='Написать комментарий…'
+                        value={commentText}
+                        onChange={e => setCommentText(e.target.value)}
                     />
-                    <button type='button' className='it-btn it-btn--sm' onClick={() => fileInputRef.current?.click()}>
-                        Прикрепить файл
-                    </button>
-                    <button
-                        type='button'
-                        className='it-btn it-btn--primary it-btn--sm'
-                        disabled={sending || (!commentText.trim() && commentFiles.length === 0)}
-                        onClick={sendComment}
-                    >
-                        {sending ? 'Отправка…' : 'Отправить'}
-                    </button>
+                    {commentFiles.length > 0 ? (
+                        <ul className='it-files-picked'>
+                            {commentFiles.map((f, i) => (
+                                <li key={`${f.name}-${i}`} className='it-files-picked__item'>
+                                    <span className='it-files-picked__name'>{f.name}</span>
+                                    <button
+                                        type='button'
+                                        className='it-files-picked__remove'
+                                        onClick={() => removeFile(i)}
+                                        title='Удалить'
+                                    >
+                                        ×
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : null}
+                    <div className='it-comment-form__actions'>
+                        <input
+                            ref={fileInputRef}
+                            type='file'
+                            multiple
+                            className='it-comment-form__file-input'
+                            onChange={onPickFiles}
+                        />
+                        <button type='button' className='it-btn it-btn--sm' onClick={() => fileInputRef.current?.click()}>
+                            Прикрепить файл
+                        </button>
+                        <button
+                            type='button'
+                            className='it-btn it-btn--primary it-btn--sm'
+                            disabled={sending || (!commentText.trim() && commentFiles.length === 0)}
+                            onClick={sendComment}
+                        >
+                            {sending ? 'Отправка…' : 'Отправить'}
+                        </button>
+                    </div>
+                    <div className='it-comment-form__hint'>До {MAX_PLUGIN_FILES} файлов · вставка из буфера: Ctrl+V</div>
                 </div>
-                <div className='it-comment-form__hint'>До {MAX_PLUGIN_FILES} файлов</div>
-            </div>
+            ) : null}
 
             {confirmingCancel && detail ? (
                 <div className='it-confirm' onClick={() => setConfirmingCancel(false)}>

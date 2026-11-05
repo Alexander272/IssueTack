@@ -65,6 +65,15 @@ type DelChecklistTemplateDTO struct {
 	RealmID uuid.UUID `json:"-"`
 }
 
+// SetChecklistItemsDTO — параметры замены набора пунктов шаблона чек-листа:
+// сам шаблон, новый набор пунктов и кто в каком реалме это делает.
+type SetChecklistItemsDTO struct {
+	TemplateID uuid.UUID
+	Items      []*ChecklistTemplateItemDTO
+	ActorID    uuid.UUID
+	RealmID    uuid.UUID
+}
+
 type ApplyTemplateDTO struct {
 	TicketID   uuid.UUID
 	TemplateID uuid.UUID

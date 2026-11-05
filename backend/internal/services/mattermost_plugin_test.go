@@ -121,10 +121,10 @@ func TestPluginListMine_HappyPath(t *testing.T) {
 
 	num := 7
 	tickets.On("Get", mock.Anything, mock.MatchedBy(func(f *models.TicketFilter) bool {
-		if f.Mode == nil || *f.Mode != "created_or_owned" {
+		if f.RealmID == nil || *f.RealmID != realmID {
 			return false
 		}
-		if f.RealmID == nil || *f.RealmID != realmID {
+		if f.CreatedOrOwnedBy == nil || *f.CreatedOrOwnedBy != userID {
 			return false
 		}
 		return len(f.Statuses) == 5
@@ -134,13 +134,14 @@ func TestPluginListMine_HappyPath(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
 
-	list, err := svc.PluginListMine(context.Background(), pluginScopeFixture("ch1"))
+	list, err := svc.PluginListMine(context.Background(), &models.PluginTicketListQuery{PluginScope: pluginScopeFixture("ch1")})
 	require.NoError(t, err)
-	require.Len(t, list, 1)
-	assert.Equal(t, num, list[0].Number)
-	assert.Equal(t, models.StatusOpen, list[0].Status)
-	assert.Equal(t, models.PriorityHigh, list[0].Priority)
-	assert.Empty(t, list[0].Link)
+	require.Len(t, list.Items, 1)
+	assert.Equal(t, 1, list.Total)
+	assert.Equal(t, num, list.Items[0].Number)
+	assert.Equal(t, models.StatusOpen, list.Items[0].Status)
+	assert.Equal(t, models.PriorityHigh, list.Items[0].Priority)
+	assert.Empty(t, list.Items[0].Link)
 }
 
 func TestPluginListMine_Statuses(t *testing.T) {
@@ -155,7 +156,7 @@ func TestPluginListMine_Statuses(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
 
-	_, err := svc.PluginListMine(context.Background(), pluginScopeFixture("ch1"))
+	_, err := svc.PluginListMine(context.Background(), &models.PluginTicketListQuery{PluginScope: pluginScopeFixture("ch1")})
 	require.NoError(t, err)
 
 	var filter *models.TicketFilter
@@ -176,12 +177,84 @@ func TestPluginListMine_Statuses(t *testing.T) {
 		assert.NotEqual(t, models.StatusClosed, s)
 		assert.NotEqual(t, models.StatusCancelled, s)
 	}
-	// «Автор ИЛИ заказчик»: плагин запрашивает mode=created_or_owned, который
-	// реальный TicketService переводит в фильтр (creator_id OR owner_id).
-	if filter.Mode != nil {
-		assert.Equal(t, "created_or_owned", *filter.Mode)
+	if filter.CreatedOrOwnedBy != nil {
+		assert.Equal(t, userID, *filter.CreatedOrOwnedBy)
 	}
 	assert.Nil(t, filter.CreatorID)
+}
+
+func TestPluginListMine_ArchiveQuery(t *testing.T) {
+	realmID := uuid.New()
+	userID := uuid.New()
+	repo, users, userRealms, tickets := pluginMocks()
+
+	repo.On("GetByChannelID", mock.Anything, "ch1").Return(&models.RealmMattermost{RealmID: realmID, IsActive: true}, nil)
+	expectExistingUser(users, userRealms, userID, realmID)
+
+	from := time.Now().AddDate(0, 0, -30)
+	to := time.Now()
+	search := "42"
+	num := 42
+
+	tickets.On("Get", mock.Anything, mock.MatchedBy(func(f *models.TicketFilter) bool {
+		if f.Archived == nil || !*f.Archived {
+			return false
+		}
+		if f.CreatedOrOwnedBy == nil || *f.CreatedOrOwnedBy != userID {
+			return false
+		}
+		if f.Limit != pluginTicketPageMax || f.Offset != 25 {
+			return false
+		}
+		if f.Search == nil || *f.Search != search {
+			return false
+		}
+		if f.ClosedAtFrom == nil || !f.ClosedAtFrom.Equal(from) {
+			return false
+		}
+		if f.ClosedAtTo == nil || !f.ClosedAtTo.Equal(to) {
+			return false
+		}
+		return len(f.Statuses) == 2 &&
+			f.Statuses[0] == models.StatusClosed && f.Statuses[1] == models.StatusCancelled
+	})).Return([]*models.Ticket{
+		{ID: uuid.New(), Title: "Закрытая заявка", Status: models.StatusClosed, TicketNumber: &num, CreatedAt: time.Now()},
+	}, 31, nil)
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
+
+	result, err := svc.PluginListMine(context.Background(), &models.PluginTicketListQuery{
+		PluginScope:  pluginScopeFixture("ch1"),
+		Archived:     true,
+		Limit:        500,
+		Offset:       25,
+		Search:       "  " + search + "  ",
+		ClosedAtFrom: &from,
+		ClosedAtTo:   &to,
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Items, 1)
+	assert.Equal(t, 31, result.Total)
+	assert.Equal(t, num, result.Items[0].Number)
+}
+
+func TestPluginPageLimit(t *testing.T) {
+	tests := []struct {
+		name  string
+		limit int
+		want  int
+	}{
+		{name: "zero is default", limit: 0, want: pluginTicketPageSize},
+		{name: "negative is default", limit: -5, want: pluginTicketPageSize},
+		{name: "below max is kept", limit: 25, want: 25},
+		{name: "above max is clamped", limit: 500, want: pluginTicketPageMax},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, pluginPageLimit(tt.limit))
+		})
+	}
 }
 
 func TestPluginContext_UnboundChannel(t *testing.T) {
@@ -1076,10 +1149,10 @@ func TestPluginListMine_DMWithBot(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets, Most: most})
 
-	list, err := svc.PluginListMine(context.Background(), dmScopeFixture())
+	list, err := svc.PluginListMine(context.Background(), &models.PluginTicketListQuery{PluginScope: dmScopeFixture()})
 	require.NoError(t, err)
-	require.Len(t, list, 1)
-	assert.Equal(t, num, list[0].Number)
+	require.Len(t, list.Items, 1)
+	assert.Equal(t, num, list.Items[0].Number)
 
 	var filter *models.TicketFilter
 	for _, call := range tickets.Calls {
@@ -1098,6 +1171,125 @@ func TestPluginListMine_DMNotADirectDialog(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets, Most: most})
 
-	_, err := svc.PluginListMine(context.Background(), dmScopeFixture())
+	_, err := svc.PluginListMine(context.Background(), &models.PluginTicketListQuery{PluginScope: dmScopeFixture()})
+	assert.ErrorIs(t, err, models.ErrChannelNotBound)
+}
+
+// dmChannelServer отвечает на CreateDirectChannel: POST /channels/direct с
+// телом-парой id. Возвращает канал личного диалога с заданным id.
+func dmChannelServer(t *testing.T, channelID string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Contains(t, r.URL.Path, "/channels/direct")
+
+		var ids []string
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&ids))
+		assert.ElementsMatch(t, []string{"bot1", "mm1"}, ids)
+
+		w.Header().Set("Content-Type", "application/json")
+		assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"id": channelID}))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// TestPluginDM_KnownUser: у пользователя уже есть системная учётка — реалм
+// берётся по его членству, fallback на единственную интеграцию не нужен.
+func TestPluginDM_KnownUser(t *testing.T) {
+	realmID := uuid.New()
+	userID := uuid.New()
+	repo, users, _, _ := pluginMocks()
+	srv := dmChannelServer(t, "dm1")
+
+	users.On("GetByMattermostID", mock.Anything, "mm1").Return(&models.UserData{ID: userID}, nil)
+	repo.On("GetByUserID", mock.Anything, userID).Return(dmSettings(realmID), nil)
+
+	svc := NewMattermostService(&MattermostDeps{
+		Repo: repo, Users: users,
+		Most: &mattermost.Most{Client: mattermost.NewClient(srv.URL)},
+	})
+
+	dm, err := svc.PluginDM(context.Background(), "mm1")
+	require.NoError(t, err)
+	require.NotNil(t, dm)
+	assert.Equal(t, "dm1", dm.ChannelID)
+	assert.Equal(t, "bot1", dm.BotUserID)
+	repo.AssertNotCalled(t, "GetActive", mock.Anything)
+}
+
+// TestPluginDM_FreshUser_SingleActiveIntegration: учётки ещё нет (свежий
+// сотрудник), но активная интеграция одна — реалм определяется по боту, и
+// модалка сможет открыться с первого клика (пользователя создаст /plugin/context).
+func TestPluginDM_FreshUser_SingleActiveIntegration(t *testing.T) {
+	realmID := uuid.New()
+	repo, users, _, _ := pluginMocks()
+	srv := dmChannelServer(t, "dm1")
+
+	users.On("GetByMattermostID", mock.Anything, "mm1").Return(nil, errors.New("no rows"))
+	repo.On("GetActive", mock.Anything).Return([]*models.RealmMattermost{dmSettings(realmID)}, nil)
+
+	svc := NewMattermostService(&MattermostDeps{
+		Repo: repo, Users: users,
+		Most: &mattermost.Most{Client: mattermost.NewClient(srv.URL)},
+	})
+
+	dm, err := svc.PluginDM(context.Background(), "mm1")
+	require.NoError(t, err)
+	require.NotNil(t, dm)
+	assert.Equal(t, "dm1", dm.ChannelID)
+	assert.Equal(t, "bot1", dm.BotUserID)
+}
+
+// TestPluginDM_FreshUser_MultipleActiveIntegrations: без учётки и при нескольких
+// активных интеграциях выбрать реалм не по чему — считаем канал непривязанным.
+func TestPluginDM_FreshUser_MultipleActiveIntegrations(t *testing.T) {
+	repo, users, _, _ := pluginMocks()
+	users.On("GetByMattermostID", mock.Anything, "mm1").Return(nil, errors.New("no rows"))
+	repo.On("GetActive", mock.Anything).Return([]*models.RealmMattermost{dmSettings(uuid.New()), dmSettings(uuid.New())}, nil)
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users})
+
+	_, err := svc.PluginDM(context.Background(), "mm1")
+	assert.ErrorIs(t, err, models.ErrChannelNotBound)
+}
+
+// TestPluginDM_KnownUser_NoIntegration: пользователь есть, но реалм с активной
+// интеграцией у него не нашёлся — тоже уходим в fallback на единственную.
+func TestPluginDM_KnownUser_FallsBackToSingleIntegration(t *testing.T) {
+	realmID := uuid.New()
+	userID := uuid.New()
+	repo, users, _, _ := pluginMocks()
+	srv := dmChannelServer(t, "dm1")
+
+	users.On("GetByMattermostID", mock.Anything, "mm1").Return(&models.UserData{ID: userID}, nil)
+	repo.On("GetByUserID", mock.Anything, userID).Return(nil, errors.New("no rows"))
+	repo.On("GetActive", mock.Anything).Return([]*models.RealmMattermost{dmSettings(realmID)}, nil)
+
+	svc := NewMattermostService(&MattermostDeps{
+		Repo: repo, Users: users,
+		Most: &mattermost.Most{Client: mattermost.NewClient(srv.URL)},
+	})
+
+	dm, err := svc.PluginDM(context.Background(), "mm1")
+	require.NoError(t, err)
+	require.NotNil(t, dm)
+	assert.Equal(t, "dm1", dm.ChannelID)
+}
+
+func TestPluginDM_EmptyUser(t *testing.T) {
+	svc := NewMattermostService(&MattermostDeps{})
+	_, err := svc.PluginDM(context.Background(), "")
+	assert.ErrorIs(t, err, models.ErrInvalidInput)
+}
+
+func TestPluginDM_WithoutMostClient(t *testing.T) {
+	repo, users, _, _ := pluginMocks()
+	users.On("GetByMattermostID", mock.Anything, "mm1").Return(&models.UserData{ID: uuid.New()}, nil)
+	repo.On("GetByUserID", mock.Anything, mock.Anything).Return(dmSettings(uuid.New()), nil)
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users})
+
+	_, err := svc.PluginDM(context.Background(), "mm1")
 	assert.ErrorIs(t, err, models.ErrChannelNotBound)
 }

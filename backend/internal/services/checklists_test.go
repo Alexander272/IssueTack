@@ -222,7 +222,12 @@ func TestChecklistService_SetItems_Owner(t *testing.T) {
 		&models.ChecklistTemplate{ID: templateID, RealmID: realmID, CreatedBy: &actorID}, nil)
 	mockRepo.On("SetItems", mock.Anything, nil, templateID, items).Return(nil)
 
-	err := svc.SetItems(context.Background(), nil, templateID, items, actorID, realmID)
+	err := svc.SetItems(context.Background(), nil, &models.SetChecklistItemsDTO{
+		TemplateID: templateID,
+		Items:      items,
+		ActorID:    actorID,
+		RealmID:    realmID,
+	})
 	assert.NoError(t, err)
 }
 

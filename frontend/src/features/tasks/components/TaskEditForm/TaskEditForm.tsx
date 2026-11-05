@@ -27,7 +27,7 @@ const EditDescriptionSection = ({ readOnly }: { readOnly: boolean }) => {
 	const { control } = useFormContext<FormValues>()
 
 	return (
-		<SectionCard number={1} title='Заголовок и описание'>
+		<SectionCard number={2} title='Заголовок и описание'>
 			<Box>
 				<Typography variant='caption' sx={fieldLabelSx}>
 					Заголовок{' '}
@@ -167,9 +167,8 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 			<FormProvider {...methods}>
 				<Box component='form' onSubmit={onSubmit}>
 					<Stack sx={{ gap: 1 }}>
+						<CategoryAndSiteSection number={1} categories={categories} sites={sites} />
 						<EditDescriptionSection readOnly={!canEditContent} />
-
-						<CategoryAndSiteSection number={2} categories={categories} sites={sites} />
 
 						{isManager && (
 							<AdvancedSettingsSection

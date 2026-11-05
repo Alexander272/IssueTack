@@ -4,8 +4,41 @@ import (
 	"testing"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
+
+// TestReadableBy фиксирует scope поиска заявки по номеру: заявка доступна, если
+// пользователь её автор, заказчик, исполнитель ИЛИ она в его группе. Именно
+// отсутствие ветки creator_id и ломало «№N текст» у заявителя вне группы тикета.
+func TestReadableBy(t *testing.T) {
+	userID, groupA, groupB := uuid.New(), uuid.New(), uuid.New()
+
+	t.Run("with groups", func(t *testing.T) {
+		w := &whereBuilder{}
+		w.readableBy(&models.MyWorkFilter{UserID: userID, GroupIDs: []uuid.UUID{groupA, groupB}})
+
+		assert.Len(t, w.clauses, 1)
+		assert.Equal(t, "(t.creator_id = $1 OR t.owner_id = $1 OR t.assignee_id = $1 OR t.group_id IN ($2,$3))", w.clauses[0])
+		assert.Equal(t, []any{userID, groupA, groupB}, w.args)
+	})
+
+	t.Run("without groups", func(t *testing.T) {
+		w := &whereBuilder{}
+		w.readableBy(&models.MyWorkFilter{UserID: userID})
+
+		assert.Len(t, w.clauses, 1)
+		assert.Equal(t, "(t.creator_id = $1 OR t.owner_id = $1 OR t.assignee_id = $1)", w.clauses[0])
+		assert.Equal(t, []any{userID}, w.args)
+	})
+
+	t.Run("nil filter adds nothing", func(t *testing.T) {
+		w := &whereBuilder{}
+		w.readableBy(nil)
+		assert.Empty(t, w.clauses)
+		assert.Empty(t, w.args)
+	})
+}
 
 // TestStatusMode фиксирует раскладку статусов по вкладкам. withResolved (страница
 // «Мои задачи», mode=assigned) переносит resolved в архив: на активной вкладке

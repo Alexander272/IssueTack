@@ -1,11 +1,15 @@
 import { useMemo } from 'react'
 import { Box, Checkbox, FormControlLabel, Typography } from '@mui/material'
+import { DateTimePicker } from '@mui/x-date-pickers'
 import { Controller, useFormContext } from 'react-hook-form'
+import dayjs from 'dayjs'
+
+import type { FormValues } from './types'
+import { fieldLabelSx } from './styles'
 import { useGetRealmUsersQuery } from '@/features/user/usersApiSlice'
+import { DateTextField } from '@/components/DatePicker/DatePicker'
 import { CustomerSelector } from './CustomerSelector'
 import { SectionCard } from './SectionCard'
-import { fieldLabelSx } from './styles'
-import type { FormValues } from './types'
 
 type Props = {
 	number?: number
@@ -13,15 +17,19 @@ type Props = {
 	currentUserId?: string | null
 }
 
-export const CustomerSelectionSection = ({ number = 4, currentUserId = null }: Props) => {
+export const CustomerAndDateSection = ({ number = 4, currentUserId = null }: Props) => {
 	const { control } = useFormContext<FormValues>()
-	const { data: customersData } = useGetRealmUsersQuery('customers')
+	const { data: customersData } = useGetRealmUsersQuery('all')
 	const customers = useMemo(() => customersData?.data ?? [], [customersData])
 
 	return (
-		<SectionCard number={number} title='Заказчик' subtitle='Выберите заказчика, для которого создаётся заявка'>
+		<SectionCard
+			number={number}
+			title='Заказчик и сроки'
+			subtitle='Укажите заказчика и желаемый срок выполнения. При необходимости назначьте себя исполнителем'
+		>
 			<Box>
-				<Typography component='div' sx={fieldLabelSx}>
+				<Typography sx={fieldLabelSx}>
 					Заказчик{' '}
 					<Typography component='span' color='error'>
 						*
@@ -45,8 +53,28 @@ export const CustomerSelectionSection = ({ number = 4, currentUserId = null }: P
 				/>
 			</Box>
 
+			<Box sx={{ mt: 1 }}>
+				<Typography variant='caption' sx={fieldLabelSx}>
+					Срок выполнения
+				</Typography>
+				<Controller
+					control={control}
+					name='dueDate'
+					render={({ field }) => (
+						<DateTimePicker
+							value={field.value ? dayjs(field.value) : null}
+							onChange={date =>
+								field.onChange(date ? (field.value ? date : date.endOf('day')).toISOString() : null)
+							}
+							slots={{ textField: DateTextField }}
+							slotProps={{ textField: { fullWidth: true } }}
+						/>
+					)}
+				/>
+			</Box>
+
 			{currentUserId && (
-				<Box sx={{ mt: 1.5 }}>
+				<Box sx={{ mt: 1 }}>
 					<Controller
 						control={control}
 						name='assigneeId'

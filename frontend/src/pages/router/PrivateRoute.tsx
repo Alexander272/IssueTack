@@ -11,7 +11,7 @@ export default function PrivateRoute() {
 	const perms = useAppSelector(getPermissions)
 	const location = useLocation()
 
-	if (!token) return <Navigate to={AppRoutes.Auth} state={{ from: location }} />
+	if (!token) return <Navigate to={AppRoutes.Auth} state={{ from: location }} replace />
 	if (!perms) return <Forbidden />
 
 	return <Outlet />

@@ -4,10 +4,12 @@ import { useNavigate } from 'react-router'
 import { Pin, Star } from 'lucide-mui'
 
 import type { GroupByField } from '@/features/tasks/constants/taskMaps'
-import { statusOptionsFor } from '@/features/tasks/constants/taskMaps'
+import { statusOptionsFor, groupByFieldHidden } from '@/features/tasks/constants/taskMaps'
 import type { FilterValues } from '@/features/tasks/components/filters'
 import type { ITask, ITaskFilter } from '@/features/tasks/types/task'
 import { AppRoutes } from '@/pages/router/routes'
+import { useAppSelector } from '@/hooks/redux'
+import { getHasNoGroups } from '@/features/user/userSlice'
 import { useGetTasksQuery } from '@/features/tasks/tasksApiSlice'
 import { TaskFilters } from '@/features/tasks/components/filters'
 import { TaskListView } from '@/features/tasks/components/Table'
@@ -33,6 +35,7 @@ const DEFAULT_FILTERS: FilterValues = {
 export const FavoritesPage = () => {
 	const navigate = useNavigate()
 	const rowsPerPage = 20
+	const hasNoGroups = useAppSelector(getHasNoGroups)
 
 	const STORAGE_KEY = '@issueTrack/favoritesFilters'
 
@@ -47,10 +50,33 @@ export const FavoritesPage = () => {
 		return { ...f, statuses }
 	}
 
+	// clampHiddenFields — «обычному пользователю» без групп срок и приоритет не показываются,
+	// поэтому сохранённые значения этих фильтров и группировки вычищаем (иначе невидимый
+	// фильтр продолжит резать список).
+	const clampHiddenFields = useCallback(
+		(f: FilterValues): FilterValues => {
+			if (!hasNoGroups) return f
+			const hasHidden =
+				f.dueDateFrom !== undefined ||
+				f.dueDateTo !== undefined ||
+				f.priorities !== undefined ||
+				groupByFieldHidden(f.groupBy, hasNoGroups)
+			if (!hasHidden) return f
+			return {
+				...f,
+				dueDateFrom: undefined,
+				dueDateTo: undefined,
+				priorities: undefined,
+				groupBy: groupByFieldHidden(f.groupBy, hasNoGroups) ? DEFAULT_FILTERS.groupBy : f.groupBy,
+			}
+		},
+		[hasNoGroups],
+	)
+
 	const loadFilters = (): FilterValues => {
 		try {
 			const saved = localStorage.getItem(STORAGE_KEY)
-			if (saved) return clampStatuses({ ...DEFAULT_FILTERS, ...JSON.parse(saved) }, false)
+			if (saved) return clampHiddenFields(clampStatuses({ ...DEFAULT_FILTERS, ...JSON.parse(saved) }, false))
 		} catch {
 			/* ignore */
 		}
@@ -61,9 +87,13 @@ export const FavoritesPage = () => {
 	const [page, setPage] = useState(0)
 	const [tab, setTab] = useState<FavoriteTab>('temporary')
 
+	// Роль могла стать «без групп» при смене реалма — скрытые фильтры не вычищаем
+	// из состояния (иначе setState в эффекте), а отдаём производное значение.
+	const effectiveFilters = useMemo(() => clampHiddenFields(filters), [filters, clampHiddenFields])
+
 	useEffect(() => {
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(filters))
-	}, [filters, STORAGE_KEY])
+		localStorage.setItem(STORAGE_KEY, JSON.stringify(effectiveFilters))
+	}, [effectiveFilters, STORAGE_KEY])
 
 	const isArchive = tab === 'permanent'
 
@@ -74,16 +104,16 @@ export const FavoritesPage = () => {
 
 	const queryFilter: ITaskFilter = useMemo(
 		() => ({
-			number: filters.ticketNumber ? Number(filters.ticketNumber) : undefined,
-			ownerId: filters.ownerId ?? undefined,
-			assigneeId: filters.assigneeId ?? undefined,
-			siteIds: filters.siteIds?.length ? filters.siteIds : undefined,
-			priorities: filters.priorities?.length ? filters.priorities : undefined,
-			statuses: filters.statuses?.length ? filters.statuses : undefined,
-			dueDateFrom: filters.dueDateFrom || undefined,
-			dueDateTo: filters.dueDateTo || undefined,
-			search: filters.search || undefined,
-			sort: filters.sort,
+			number: effectiveFilters.ticketNumber ? Number(effectiveFilters.ticketNumber) : undefined,
+			ownerId: effectiveFilters.ownerId ?? undefined,
+			assigneeId: effectiveFilters.assigneeId ?? undefined,
+			siteIds: effectiveFilters.siteIds?.length ? effectiveFilters.siteIds : undefined,
+			priorities: effectiveFilters.priorities?.length ? effectiveFilters.priorities : undefined,
+			statuses: effectiveFilters.statuses?.length ? effectiveFilters.statuses : undefined,
+			dueDateFrom: effectiveFilters.dueDateFrom || undefined,
+			dueDateTo: effectiveFilters.dueDateTo || undefined,
+			search: effectiveFilters.search || undefined,
+			sort: effectiveFilters.sort,
 			favoritesType: tab,
 			// archived для избранного — только триггер пагинации (бэкенд statusMode
 			// при FavoritesByUser не применяет, статусы не режутся по вкладке).
@@ -91,7 +121,7 @@ export const FavoritesPage = () => {
 			limit: isArchive ? rowsPerPage : undefined,
 			offset: isArchive ? page * rowsPerPage : undefined,
 		}),
-		[filters, tab, page, isArchive],
+		[effectiveFilters, tab, page, isArchive],
 	)
 
 	const { data, isFetching } = useGetTasksQuery(queryFilter)
@@ -151,7 +181,7 @@ export const FavoritesPage = () => {
 			</Tabs>
 
 			<TaskFilters
-				filters={filters}
+				filters={effectiveFilters}
 				onChange={handleFilterChange}
 				onReset={handleReset}
 				hideGrouping={isArchive}
@@ -163,10 +193,10 @@ export const FavoritesPage = () => {
 				isFetching={isFetching}
 				total={total}
 				isArchive={isArchive}
-				groupBy={filters.groupBy as GroupByField}
-				groupEnabled={!isArchive && filters.groupEnabled}
+				groupBy={effectiveFilters.groupBy as GroupByField}
+				groupEnabled={!isArchive && effectiveFilters.groupEnabled}
 				onTaskClick={handleTaskClick}
-				sort={filters.sort}
+				sort={effectiveFilters.sort}
 				onSortChange={sort => handleFilterChange({ sort })}
 				page={page}
 				totalPages={totalPages}

@@ -26,6 +26,8 @@ type TicketService struct {
 	groups        Groups
 	categories    Categories
 	access        TicketAccessChecker
+	users         Users
+	sites         Sites
 }
 
 // NewTicketService создаёт новый сервис тикетов на основе переданных зависимостей.
@@ -40,6 +42,8 @@ func NewTicketService(deps *TicketDeps) *TicketService {
 		groups:        deps.Groups,
 		categories:    deps.Categories,
 		access:        deps.Access,
+		users:         deps.Users,
+		sites:         deps.Sites,
 	}
 }
 
@@ -54,6 +58,8 @@ type TicketDeps struct {
 	Groups        Groups
 	Categories    Categories
 	Access        TicketAccessChecker
+	Users         Users
+	Sites         Sites
 }
 
 // Tickets — интерфейс сервиса тикетов: описывает чтение, создание,
@@ -157,6 +163,15 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 			// «Автор ИЛИ заказчик» (mode=created_or_owned, Mattermost-плагин):
 			// тикеты, где пользователь автор ИЛИ заказчик (owner), без ограничения группой.
 			req.CreatedOrOwnedBy = &req.Actor.ID
+		} else if req.Mode != nil && *req.Mode == "readable" {
+			// Поиск заявки по номеру (mode=readable, Mattermost-бот): заявки, доступные
+			// на чтение по атрибутам — автор, заказчик, исполнитель ИЛИ группа тикета.
+			// Обычный списочный scope ниже отсекал бы создателя вне группы тикета,
+			// и бот отвечал «заявка не найдена» на собственную заявку автора.
+			req.ReadableBy = &models.MyWorkFilter{
+				UserID:   req.Actor.ID,
+				GroupIDs: unionGroupIDs(managed, member),
+			}
 		} else {
 			// Обзор без mode: все заявки групп пользователя + внегрупповые, назначенные ему.
 			if groups := unionGroupIDs(managed, member); len(groups) > 0 {

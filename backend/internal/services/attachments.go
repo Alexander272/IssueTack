@@ -53,7 +53,12 @@ func (s *AttachmentService) checkEntityAccess(ctx context.Context, dto *models.E
 	switch dto.EntityType {
 	case "ticket":
 		if action == string(access.Write) {
-			return s.ticketAccess.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: dto.EntityID, UserID: dto.ActorID})
+			if err := s.ticketAccess.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: dto.EntityID, UserID: dto.ActorID}); err == nil {
+				return nil
+			}
+			// Заказчику (автор-без-групп или владелец) вложение к своей заявке
+			// доступно и без work-доступа — отдельная, более мягкая проверка.
+			return s.ticketAccess.CanAttachToTicket(ctx, &models.AccessCheckDTO{TicketID: dto.EntityID, UserID: dto.ActorID})
 		}
 		return s.ticketAccess.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: dto.EntityID, UserID: dto.ActorID, Action: action})
 	case "subtask":

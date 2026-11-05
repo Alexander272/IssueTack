@@ -27,6 +27,7 @@ type capturedPost struct {
 	channelID string
 	message   string
 	props     model.StringInterface
+	fileIDs   []string
 }
 
 // mmCapture перехватывает обращения бота к Mattermost: посты, открытие диалогов,
@@ -40,6 +41,13 @@ type mmCapture struct {
 	// teamUsers — на тот же запрос с фильтром in_team (синк по командам).
 	users     []*model.User
 	teamUsers map[string][]*model.User
+	// botID отдаётся на GET /api/v4/users/me: id бота, авторитетный для токена
+	// (см. resolveBotUserID). Пустая строка — заглушка отвечает ошибкой, как
+	// недоступный Mattermost.
+	botID string
+	// failPosts заставляет заглушку отвечать ошибкой на POST /api/v4/posts —
+	// для проверки отката пометки о приветствии.
+	failPosts bool
 }
 
 // mmServer поднимает Mattermost-заглушку: сохраняет отправленные посты и
@@ -58,13 +66,24 @@ func mmServer(t *testing.T, capture *mmCapture) *httptest.Server {
 			assert.Equal(t, http.MethodPost, r.Method)
 			var sent model.Post
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&sent))
+			if capture.failPosts {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"id":"api.post.create_post.app_error","message":"boom"}`))
+				return
+			}
 			*capture.posts = append(*capture.posts, capturedPost{
 				channelID: sent.ChannelId,
 				message:   sent.Message,
 				props:     sent.Props,
+				fileIDs:   sent.FileIds,
 			})
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"id":"p1","channel_id":"` + sent.ChannelId + `"}`))
+
+		case r.URL.Path == "/api/v4/files":
+			// Загрузка файла-вложения (скриншот приветствия): отдаём один file_info.
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"file_infos":[{"id":"f1","name":"header.png"}]}`))
 
 		case strings.HasPrefix(r.URL.Path, "/api/v4/posts/") && strings.HasSuffix(r.URL.Path, "/patch"):
 			assert.Equal(t, http.MethodPut, r.Method)
@@ -124,6 +143,16 @@ func mmServer(t *testing.T, capture *mmCapture) *httptest.Server {
 			name := strings.TrimPrefix(r.URL.Path, "/api/v4/teams/name/")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(mustJSON(t, &model.Team{Id: name, Name: name})))
+
+		case r.URL.Path == "/api/v4/users/me":
+			// Проверка bot-токена: GetMe отдаёт id бота, авторитетный для токена.
+			if capture.botID == "" {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"id":"api.context.unknown","message":"boom"}`))
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(mustJSON(t, &model.User{Id: capture.botID, Username: "issuetrack-bot"})))
 
 		default:
 			require.Failf(t, "unexpected mattermost call", "%s %s", r.Method, r.URL.Path)
@@ -323,6 +352,64 @@ func dmFixtureService(t *testing.T, capture *mmCapture, comments *MockCommentsSe
 		BaseURL:    testBaseURL,
 	})
 	return svc, repo, users, userRealms, tickets
+}
+
+// TestHandleDM_IgnoresEmptyMessage: пустое сообщение без явного вызова команды —
+// не вопрос боту, справкой на него отвечать нельзя (бот писал тому, кто ничего не
+// писал). Заодно это экономит поход в БД: настройки реалма не нужны.
+func TestHandleDM_IgnoresEmptyMessage(t *testing.T) {
+	var posts []capturedPost
+	svc, repo, _, _, _ := dmService(t, &posts)
+
+	require.NoError(t, svc.HandleDM(context.Background(), &models.HandleDMInput{
+		MmUserID:  "mm1",
+		ChannelID: "ch1",
+		Message:   "   ",
+	}))
+
+	assert.Empty(t, posts)
+	repo.AssertNotCalled(t, "GetByChannelID", mock.Anything, mock.Anything)
+}
+
+// TestHandleDM_EmptySlashCommandShowsHelp: пустой вызов команды — осознанное
+// действие (у slash-команды есть trigger_id), поэтому справку бот показывает.
+func TestHandleDM_EmptySlashCommandShowsHelp(t *testing.T) {
+	realmID := uuid.New()
+
+	var posts []capturedPost
+	svc, repo, users, _, _ := dmService(t, &posts)
+	repo.On("GetByChannelID", mock.Anything, "ch1").Return(realmSettings(realmID), nil)
+	// Пользователь без прав: isAdmin=false, до проверки реалма дело не доходит.
+	users.On("GetByMattermostID", mock.Anything, "mm1").Return(nil, assert.AnError)
+
+	require.NoError(t, svc.HandleDM(context.Background(), &models.HandleDMInput{
+		MmUserID:  "mm1",
+		ChannelID: "ch1",
+		TriggerID: "trigger-1",
+		Message:   "",
+	}))
+
+	require.Len(t, posts, 1)
+	assert.Contains(t, posts[0].message, "Можно не печатать команды")
+}
+
+// TestHandleDM_IgnoresOwnPost: автор — сам бот. Такое сообщение приходит по
+// HTTP-пути (веб-сокет отсеивает его фильтром AcceptPost), и без защиты бот
+// ответил бы сам себе, породив новый входящий пост и бесконечный цикл.
+func TestHandleDM_IgnoresOwnPost(t *testing.T) {
+	realmID := uuid.New()
+
+	var posts []capturedPost
+	svc, repo, _, _, _ := dmService(t, &posts)
+	repo.On("GetByChannelID", mock.Anything, "ch1").Return(realmSettings(realmID), nil)
+
+	require.NoError(t, svc.HandleDM(context.Background(), &models.HandleDMInput{
+		MmUserID:  "bot-id",
+		ChannelID: "ch1",
+		Message:   "привет",
+	}))
+
+	assert.Empty(t, posts, "на собственный пост бот не отвечает")
 }
 
 func TestMenuButtons(t *testing.T) {
@@ -1238,7 +1325,7 @@ func TestSendTicketCreatedDM_WebLinkBySource(t *testing.T) {
 				assert.Contains(t, posts[0].message, testBaseURL+"/tasks/"+ticketID.String())
 			} else {
 				assert.NotContains(t, posts[0].message, "/tasks/")
-				assert.Contains(t, posts[0].message, "[Открыть в плагине](/plug/issuetrack/ticket/"+ticketID.String()+")")
+				assert.Contains(t, posts[0].message, "[Открыть](/plug/issuetrack/ticket/"+ticketID.String()+")")
 			}
 		})
 	}
@@ -1253,12 +1340,13 @@ func cardChannel(realmID uuid.UUID) *mmChannel {
 	}
 }
 
-// expectNumberLookup готовит мок поиска заявки по номеру: Tickets.Get без
-// групп актора вернул бы заявку любого реалма с таким номером, поэтому дальше
-// обязателен GetByID с проверкой прав.
+// expectNumberLookup готовит мок поиска заявки по номеру: бот ищет в режиме
+// readable (автор/заказчик/исполнитель/группа тикета), а найденный ID дальше
+// досматривается GetByID с проверкой прав по атрибутной модели.
 func expectNumberLookup(tickets *MockTicketsService, number int, ticketID uuid.UUID) {
 	tickets.On("Get", mock.Anything, mock.MatchedBy(func(f *models.TicketFilter) bool {
-		return f.Number != nil && *f.Number == number
+		return f.Number != nil && *f.Number == number &&
+			f.Mode != nil && *f.Mode == readableMode
 	})).Return([]*models.Ticket{{ID: ticketID}}, 1, nil)
 }
 
@@ -1380,8 +1468,9 @@ func TestHandleTicketCard_NonOwner_NoButtons(t *testing.T) {
 	assert.Empty(t, cardActionsByName(t, card), "не-владелец не получает действий")
 }
 
-// Чужая заявка не должна ни показываться, ни подтверждать своё существование:
-// Get по номеру без групп актора находит её, но GetByID режет доступ.
+// Чужая заявка не должна ни показываться, ни подтверждать своё существование.
+// В реальности режим readable её и не вернёт, но защита обязана держать отказ и
+// на случай, если поиск по номеру её всё-таки отдал: GetByID режет доступ.
 func TestHandleTicketCard_ForeignTicket_Denied(t *testing.T) {
 	realmID, userID, ticketID := uuid.New(), uuid.New(), uuid.New()
 
@@ -1434,6 +1523,78 @@ func TestHandleTicketCard_LongDescriptionTruncated(t *testing.T) {
 	text, _ := postCards(t, posts[0].props)[0]["text"].(string)
 	assert.Len(t, []rune(text), cardDetailLimit+1, "описание обрезается с многоточием")
 	assert.True(t, strings.HasSuffix(text, "…"))
+}
+
+// «№N текст» создаёт комментарий: заявка ищется по номеру в режиме readable, а
+// найденное уходит в CommentService.Create без изменений. Это путь, который ломался
+// у заявителя вне группы тикета — мок намеренно принимает заявку только при
+// Mode=readable, иначе тест упал бы на «Заявка №42 не найдена».
+func TestHandleComment_AddsComment(t *testing.T) {
+	realmID, userID, ticketID := uuid.New(), uuid.New(), uuid.New()
+
+	capture := &mmCapture{posts: &[]capturedPost{}}
+	comments := new(MockCommentsService)
+	svc, _, users, userRealms, tickets := dmFixtureService(t, capture, comments)
+	expectExistingUser(users, userRealms, userID, realmID)
+
+	num := 42
+	tickets.On("Get", mock.Anything, mock.MatchedBy(func(f *models.TicketFilter) bool {
+		return f.Number != nil && *f.Number == num &&
+			f.RealmID != nil && *f.RealmID == realmID &&
+			f.Actor != nil && f.Actor.ID == userID &&
+			f.Mode != nil && *f.Mode == readableMode
+	})).Return([]*models.Ticket{{ID: ticketID}}, 1, nil)
+	comments.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(func(dto *models.CreateCommentDTO) bool {
+		return dto.TicketID == ticketID &&
+			dto.UserID == userID &&
+			dto.Realm == realmID.String() &&
+			!dto.IsInternal &&
+			dto.Text == "почините"
+	})).Return(&models.Comment{}, nil)
+
+	require.NoError(t, svc.handleComment(context.Background(), cardChannel(realmID), "№42 почините"))
+
+	tickets.AssertExpectations(t)
+	comments.AssertExpectations(t)
+	require.Len(t, *capture.posts, 1)
+	assert.Equal(t, "dm1", (*capture.posts)[0].channelID, "ответ приходит в личку, не в канал")
+	assert.Equal(t, "Комментарий добавлен к заявке №42", (*capture.posts)[0].message)
+}
+
+// Заявки нет в доступном пользователю scope (или он вообще не в реалме) — бот
+// отвечает «не найдена» и НЕ трогает CommentService: чужие номера не подтверждаем.
+func TestHandleComment_NotFound(t *testing.T) {
+	realmID, userID := uuid.New(), uuid.New()
+
+	capture := &mmCapture{posts: &[]capturedPost{}}
+	comments := new(MockCommentsService)
+	svc, _, users, userRealms, tickets := dmFixtureService(t, capture, comments)
+	expectExistingUser(users, userRealms, userID, realmID)
+	tickets.On("Get", mock.Anything, mock.Anything).Return([]*models.Ticket{}, 0, nil)
+
+	require.NoError(t, svc.handleComment(context.Background(), cardChannel(realmID), "№404 текст"))
+
+	comments.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
+	require.Len(t, *capture.posts, 1)
+	assert.Equal(t, "Заявка №404 не найдена", (*capture.posts)[0].message)
+}
+
+// Отказ доступа на уровне сервиса комментариев (заявка найдена, но work-доступа
+// нет) отдаётся отдельной фразой, а не «не найдена».
+func TestHandleComment_PermissionDenied(t *testing.T) {
+	realmID, userID, ticketID := uuid.New(), uuid.New(), uuid.New()
+
+	capture := &mmCapture{posts: &[]capturedPost{}}
+	comments := new(MockCommentsService)
+	svc, _, users, userRealms, tickets := dmFixtureService(t, capture, comments)
+	expectExistingUser(users, userRealms, userID, realmID)
+	tickets.On("Get", mock.Anything, mock.Anything).Return([]*models.Ticket{{ID: ticketID}}, 1, nil)
+	comments.On("Create", mock.Anything, mock.Anything, mock.Anything).Return(nil, models.ErrPermissionDenied)
+
+	require.NoError(t, svc.handleComment(context.Background(), cardChannel(realmID), "№7 текст"))
+
+	require.Len(t, *capture.posts, 1)
+	assert.Equal(t, "Нет прав комментировать заявку №7", (*capture.posts)[0].message)
 }
 
 func TestDetailText(t *testing.T) {

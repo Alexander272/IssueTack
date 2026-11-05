@@ -85,6 +85,26 @@ func (s *MattermostService) canPickOwner(ctx context.Context, userID, realmID uu
 	return isManager || isExecutor
 }
 
+// canSeeHiddenCategories — видимость скрытых категорий/разделов в диалоге
+// создания заявки: правило то же, что у выбора заказчика (canPickOwner) —
+// менеджеры (админ реалма, управляющие группами) и исполнители (участники групп)
+// видят скрытое, безгрупповой заказчик — нет.
+func (s *MattermostService) canSeeHiddenCategories(ctx context.Context, mmUserID string, realmID uuid.UUID) bool {
+	if mmUserID == "" {
+		return false
+	}
+	user, err := s.resolveOrCreateUser(ctx, realmID, mmUserID, nil)
+	if err != nil {
+		logger.Warn("failed to resolve user for category visibility",
+			logger.StringAttr("realm_id", realmID.String()),
+			logger.StringAttr("mm_user_id", mmUserID),
+			logger.ErrAttr(err),
+		)
+		return false
+	}
+	return s.canPickOwner(ctx, user.ID, realmID)
+}
+
 // ownerSelectElement строит select «Заказчик» для диалога создания заявки. Поле
 // доступно только тем, кто в веб-форме видит выбор заказчика (см. canPickOwner),
 // и только если в realm есть хотя бы один активный заказчик: иначе возвращает
@@ -140,6 +160,7 @@ func (s *MattermostService) ownerSelectElement(ctx context.Context, realmID uuid
 		Type:        "select",
 		Placeholder: "Выберите заказчика",
 		Options:     opts,
+		Optional:    true,
 	}
 }
 
@@ -217,7 +238,10 @@ func (s *MattermostService) HandleDialogOpen(ctx context.Context, input *models.
 		return fmt.Errorf("failed to get mattermost settings: %w", err)
 	}
 
-	categories, err := s.categories.Get(ctx, &models.GetCategoriesDTO{RealmID: realmID})
+	categories, err := s.categories.Get(ctx, &models.GetCategoriesDTO{
+		RealmID:       realmID,
+		IncludeHidden: s.canSeeHiddenCategories(ctx, input.UserID, realmID),
+	})
 	if err != nil {
 		logger.Warn("failed to load categories for dialog", logger.ErrAttr(err))
 	}
@@ -227,25 +251,19 @@ func (s *MattermostService) HandleDialogOpen(ctx context.Context, input *models.
 		logger.Warn("failed to load sites for dialog", logger.ErrAttr(err))
 	}
 
-	elements := []mattermost.DialogElement{
-		{DisplayName: "Заголовок", Name: "title", Type: "text", MaxLength: 150},
-		{DisplayName: "Описание", Name: "description", Type: "textarea", MaxLength: 3000},
-	}
-
-	if ownerEl := s.ownerSelectElement(ctx, realmID, input.UserID); ownerEl != nil {
-		elements = append(elements, *ownerEl)
-	}
+	// Порядок полей повторяет форму создания заявки (веб TaskCreateForm и
+	// плагин CreateTab): сначала «что и где» (категория, площадка), затем
+	// «описание», и в конце заказчик. Пользователи не путаются при переходе
+	// между диалогом бота и формой.
+	elements := make([]mattermost.DialogElement, 0, 5)
 
 	if len(categories) > 0 {
 		opts := make([]*model.PostActionOptions, 0, len(categories))
 		for _, c := range categories {
-			// У диалогов Mattermost нет группировки опций, поэтому раздел
-			// попадает в подпись: «Раздел · Категория».
-			text := c.Name
-			if c.CategoryGroup != nil {
-				text = fmt.Sprintf("%s · %s", c.CategoryGroup.Name, c.Name)
-			}
-			opts = append(opts, &model.PostActionOptions{Text: text, Value: c.ID.String()})
+			// У диалогов Mattermost нет группировки опций, поэтому подпись
+			// остаётся именем категории: без префикса раздела (в форме веба
+			// категории сгруппированы по разделам, здесь — плоский список).
+			opts = append(opts, &model.PostActionOptions{Text: c.Name, Value: c.ID.String()})
 		}
 		elements = append(elements, mattermost.DialogElement{
 			DisplayName: "Категория", Name: "categoryId", Type: "select", Options: opts,
@@ -260,6 +278,15 @@ func (s *MattermostService) HandleDialogOpen(ctx context.Context, input *models.
 		elements = append(elements, mattermost.DialogElement{
 			DisplayName: "Площадка", Name: "siteId", Type: "select", Options: opts,
 		})
+	}
+
+	elements = append(elements,
+		mattermost.DialogElement{DisplayName: "Заголовок", Name: "title", Type: "text", MaxLength: 150},
+		mattermost.DialogElement{DisplayName: "Описание", Name: "description", Type: "textarea", MaxLength: 3000},
+	)
+
+	if ownerEl := s.ownerSelectElement(ctx, realmID, input.UserID); ownerEl != nil {
+		elements = append(elements, *ownerEl)
 	}
 
 	if err := s.most.Dialog.Open(settings.BotToken, mattermost.OpenRequest{
@@ -440,10 +467,18 @@ func (s *MattermostService) handleTicketStatusAction(ctx context.Context, action
 		return nil, fmt.Errorf("failed to find realm settings: %w", err)
 	}
 
-	if action == actionReopen {
-		return s.openReopenDialog(ctx, settings, ticketID, realmID, from, input)
+	p := &models.TicketDialogDTO{
+		Settings: settings,
+		TicketID: ticketID,
+		RealmID:  realmID,
+		From:     from,
+		Input:    input,
 	}
-	return s.openCancelDialog(ctx, settings, action, ticketID, realmID, from, input)
+
+	if action == actionReopen {
+		return s.openReopenDialog(ctx, p)
+	}
+	return s.openCancelDialog(ctx, p, action)
 }
 
 // openCancelDialog просит подтвердить необратимый переход: отмену заявки или
@@ -451,33 +486,35 @@ func (s *MattermostService) handleTicketStatusAction(ctx context.Context, action
 // пару Submit/Cancel, поэтому подтверждение выглядит так же, как модалка в
 // веб-плагине. Смещение среза и id сообщения едут в State: ответ диалога не
 // умеет обновлять посты, карточку правит сам handleCancelSubmission.
-func (s *MattermostService) openCancelDialog(ctx context.Context, settings *models.RealmMattermost, action string, ticketID, realmID uuid.UUID, from int, input *models.InteractiveActionDTO) (*ActionResult, error) {
-	if input.TriggerID == "" {
+// Сам `action` (отмена/подтверждение) остаётся отдельным аргументом: диалог
+// возврата в работу его не использует.
+func (s *MattermostService) openCancelDialog(ctx context.Context, p *models.TicketDialogDTO, action string) (*ActionResult, error) {
+	if p.Input.TriggerID == "" {
 		return &ActionResult{Ephemeral: "Не удалось открыть диалог: Mattermost не передал trigger_id"}, nil
 	}
 
 	req := mattermost.OpenRequest{
-		TriggerID:   input.TriggerID,
-		RealmID:     realmID.String(),
+		TriggerID:   p.Input.TriggerID,
+		RealmID:     p.RealmID.String(),
 		Title:       "Отменить заявку",
 		SubmitLabel: "Отменить заявку",
-		State:       fmt.Sprintf(`{"from":%d,"post_id":%q}`, from, input.PostID),
+		State:       fmt.Sprintf(`{"from":%d,"post_id":%q}`, p.From, p.Input.PostID),
 	}
 	switch action {
 	case actionConfirm:
-		req.CallbackID = confirmCallbackPrefix + ticketID.String()
+		req.CallbackID = confirmCallbackPrefix + p.TicketID.String()
 		req.Title = "Подтвердить решение"
 		req.SubmitLabel = "Закрыть заявку"
 		req.Introduction = "Подтвердить решение и закрыть заявку? Действие необратимо."
 	default:
-		req.CallbackID = cancelCallbackPrefix + ticketID.String()
+		req.CallbackID = cancelCallbackPrefix + p.TicketID.String()
 		req.Introduction = "Отменить заявку? Действие необратимо."
 	}
-	if subject := s.ticketSubject(ctx, ticketID); subject != "" {
+	if subject := s.ticketSubject(ctx, p.TicketID); subject != "" {
 		req.Introduction = subject + ". " + req.Introduction
 	}
 
-	if err := s.most.Dialog.Open(settings.BotToken, req); err != nil {
+	if err := s.most.Dialog.Open(p.Settings.BotToken, req); err != nil {
 		logger.Warn("failed to open confirmation dialog",
 			logger.StringAttr("action", action),
 			logger.ErrAttr(err),
@@ -531,20 +568,20 @@ func (s *MattermostService) changeTicketStatus(ctx context.Context, user *models
 // openReopenDialog спрашивает причину возврата заявки в работу. Порядок как в
 // плагине: сначала меняем статус, потом пишем комментарий с причиной — на
 // «решённой» заявке внешний комментарий запрещён.
-func (s *MattermostService) openReopenDialog(ctx context.Context, settings *models.RealmMattermost, ticketID, realmID uuid.UUID, from int, input *models.InteractiveActionDTO) (*ActionResult, error) {
-	if input.TriggerID == "" {
+func (s *MattermostService) openReopenDialog(ctx context.Context, p *models.TicketDialogDTO) (*ActionResult, error) {
+	if p.Input.TriggerID == "" {
 		return &ActionResult{Ephemeral: "Не удалось открыть диалог: Mattermost не передал trigger_id"}, nil
 	}
 
 	intro := "Укажите причину возврата заявки в работу."
-	if subject := s.ticketSubject(ctx, ticketID); subject != "" {
+	if subject := s.ticketSubject(ctx, p.TicketID); subject != "" {
 		intro = subject + ". " + intro
 	}
 
-	err := s.most.Dialog.Open(settings.BotToken, mattermost.OpenRequest{
-		TriggerID:    input.TriggerID,
-		RealmID:      realmID.String(),
-		CallbackID:   reopenCallbackPrefix + ticketID.String(),
+	err := s.most.Dialog.Open(p.Settings.BotToken, mattermost.OpenRequest{
+		TriggerID:    p.Input.TriggerID,
+		RealmID:      p.RealmID.String(),
+		CallbackID:   reopenCallbackPrefix + p.TicketID.String(),
 		Title:        "Вернуть заявку в работу",
 		Introduction: intro,
 		SubmitLabel:  "Вернуть в работу",
@@ -557,7 +594,7 @@ func (s *MattermostService) openReopenDialog(ctx context.Context, settings *mode
 		}},
 		// post_id кладём в State: в SubmitDialogRequest его нет, а после
 		// возврата в работу карточку в списке надо перерисовать.
-		State: fmt.Sprintf(`{"from":%d,"post_id":%q}`, from, input.PostID),
+		State: fmt.Sprintf(`{"from":%d,"post_id":%q}`, p.From, p.Input.PostID),
 	})
 	if err != nil {
 		logger.Warn("failed to open reopen dialog", logger.ErrAttr(err))
@@ -804,9 +841,9 @@ func (s *MattermostService) sendTicketCreatedDM(settings *models.RealmMattermost
 	msg := fmt.Sprintf("Заявка №%d создана.\nЗаголовок: %s",
 		dto.TicketNumber, dto.Title)
 	if s.showWebLink(creator, dto.RealmID) {
-		msg += fmt.Sprintf("\nОткрыть: %s/tasks/%s", s.baseURL, dto.ID.String())
+		msg += fmt.Sprintf("\nОткрыть в браузере: %s/tasks/%s", s.baseURL, dto.ID.String())
 	} else {
-		msg += fmt.Sprintf("\n[Открыть в плагине](%s)", pluginDeepLink(*dto.ID))
+		msg += fmt.Sprintf("\n[Открыть](%s)", pluginDeepLink(*dto.ID))
 	}
 	msg += "\nОтправьте файлы следующим сообщением в течение 30 минут — они прикрепятся автоматически к этой заявке. Или можете указать номер заявки (например, №123) вместе с файлами."
 	if err := s.most.DM.Send(settings.BotToken, settings.BotUserID, mmUserID, msg); err != nil {

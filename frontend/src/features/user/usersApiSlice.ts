@@ -25,7 +25,7 @@ export const usersApiSlice = apiSlice.injectEndpoints({
 				}
 			},
 		}),
-			getUserByAccess: builder.query<{ data: IUserData[] }, void>({
+		getUserByAccess: builder.query<{ data: IUserData[] }, void>({
 			query: () => ({
 				url: `${API.users.access}`,
 				method: 'GET',

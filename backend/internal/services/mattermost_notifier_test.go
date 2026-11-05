@@ -98,13 +98,55 @@ func TestMattermostNotifier_SendsCreatedDM(t *testing.T) {
 	mockSender.On("Send", "bt", "bb", mmID, mock.MatchedBy(func(msg string) bool {
 		return assert.Contains(t, msg, "**Новая задача №12: Тестовая заявка**") &&
 			assert.Contains(t, msg, "http://localhost:9000/tasks/"+ticket.ID.String()) &&
-			assert.Contains(t, msg, "[Открыть в плагине](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
+			assert.Contains(t, msg, "[Открыть](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
 	})).Return(nil).Once()
 
 	delivered, err := svc.Notify(context.Background(), userID, dto, ticket)
 	assert.NoError(t, err)
 	assert.True(t, delivered)
 	mockSender.AssertExpectations(t)
+}
+
+// Напоминания по приоритету набраны в две строки: жирный заголовок отдельной
+// строкой, номер и тема заявки — под ним (без ведущего пробела у номера).
+func TestMattermostNotifier_SendsReminderDM_HeaderOnOwnLine(t *testing.T) {
+	cases := []struct {
+		name   string
+		ntype  models.NotificationType
+		header string
+	}{
+		{"high", models.NotificationTicketReminderHigh, "**Важная задача**"},
+		{"urgent", models.NotificationTicketReminderUrgent, "**Срочная задача!**"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockMMRepo, mockUsers, mockSender, svc := mattermostNotifierServiceFixtures()
+
+			userID := uuid.New()
+			mmID := "mm-user-reminders"
+			ticket := mmTicket()
+			realmID := *ticket.RealmID
+			dto := &models.CreateNotificationDTO{
+				Type:  string(tc.ntype),
+				Title: "Задача",
+				Body:  "Тестовая заявка",
+			}
+
+			mockMMRepo.On("GetByRealm", mock.Anything, realmID).Return(&models.RealmMattermost{RealmID: realmID, BotToken: "bt", BotUserID: "bb", IsActive: true}, nil)
+			mockUsers.On("GetByID", mock.Anything, userID).Return(&models.UserData{ID: userID, MattermostID: &mmID}, nil)
+			mockSender.On("Send", "bt", "bb", mmID, mock.MatchedBy(func(msg string) bool {
+				return assert.Contains(t, msg, tc.header+"\n№12: Тестовая заявка") &&
+					assert.NotContains(t, msg, tc.header+" №12") &&
+					assert.Contains(t, msg, "[Открыть](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
+			})).Return(nil).Once()
+
+			delivered, err := svc.Notify(context.Background(), userID, dto, ticket)
+			assert.NoError(t, err)
+			assert.True(t, delivered)
+			mockSender.AssertExpectations(t)
+		})
+	}
 }
 
 func TestMattermostNotifier_SendsUpdatedDMWithChanges(t *testing.T) {
@@ -139,7 +181,7 @@ func TestMattermostNotifier_SendsUpdatedDMWithChanges(t *testing.T) {
 			assert.Contains(t, msg, "• Статус: Новая → В работе") &&
 			assert.Contains(t, msg, "• Приоритет: — → Высокий") &&
 			// Ветка format с action != "" тоже содержит обе ссылки.
-			assert.Contains(t, msg, "[Открыть в плагине](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
+			assert.Contains(t, msg, "[Открыть](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
 	})).Return(nil).Once()
 
 	delivered, err := svc.Notify(context.Background(), userID, dto, ticket)
@@ -271,12 +313,12 @@ func TestMattermostNotifier_Links_WebLinkGatedByTicketRead(t *testing.T) {
 			assert.NoError(t, err)
 			assert.True(t, delivered)
 
-			webLink := "Открыть: http://localhost:9000/tasks/" + ticket.ID.String()
-			pluginLink := "[Открыть в плагине](/plug/issuetrack/ticket/" + ticket.ID.String() + ")"
+			webLink := "Открыть в браузере: http://localhost:9000/tasks/" + ticket.ID.String()
+			pluginLink := "[Открыть](/plug/issuetrack/ticket/" + ticket.ID.String() + ")"
 			if tt.wantWebLink {
 				assert.Contains(t, sent, webLink)
 			} else {
-				assert.NotContains(t, sent, "Открыть: ")
+				assert.NotContains(t, sent, "Открыть в браузере")
 				assert.NotContains(t, sent, "http://localhost:9000/tasks/")
 			}
 			assert.Contains(t, sent, pluginLink)
@@ -312,8 +354,8 @@ func TestMattermostNotifier_Links_WebLinkGatedOnUpdatedEvent(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, delivered)
 	assert.Contains(t, sent, "**Задача №12 обновлена: Тестовая заявка**")
-	assert.NotContains(t, sent, "Открыть: ")
-	assert.Contains(t, sent, "[Открыть в плагине](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
+	assert.NotContains(t, sent, "Открыть в браузере")
+	assert.Contains(t, sent, "[Открыть](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
 	mockSender.AssertExpectations(t)
 }
 
@@ -343,7 +385,7 @@ func TestMattermostNotifier_Links_EnforceUsesTicketRealm(t *testing.T) {
 	}, ticket)
 	assert.NoError(t, err)
 	assert.True(t, delivered)
-	assert.Contains(t, sent, "Открыть: http://localhost:9000/tasks/"+ticket.ID.String())
+	assert.Contains(t, sent, "Открыть в браузере: http://localhost:9000/tasks/"+ticket.ID.String())
 	mockPolicies.AssertExpectations(t)
 	mockSender.AssertExpectations(t)
 }
@@ -374,8 +416,8 @@ func TestMattermostNotifier_Links_NilPolicies_StillDelivers(t *testing.T) {
 	}, ticket)
 	assert.NoError(t, err)
 	assert.True(t, delivered)
-	assert.NotContains(t, sent, "Открыть: ")
-	assert.Contains(t, sent, "[Открыть в плагине](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
+	assert.NotContains(t, sent, "Открыть в браузере")
+	assert.Contains(t, sent, "[Открыть](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
 	mockSender.AssertExpectations(t)
 }
 
@@ -406,8 +448,8 @@ func TestMattermostNotifier_Links_MattermostSource_NoWebLink(t *testing.T) {
 	}, ticket)
 	assert.NoError(t, err)
 	assert.True(t, delivered)
-	assert.NotContains(t, sent, "Открыть: ")
-	assert.Contains(t, sent, "[Открыть в плагине](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
+	assert.NotContains(t, sent, "Открыть в браузере")
+	assert.Contains(t, sent, "[Открыть](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
 	mockPolicies.AssertNotCalled(t, "Enforce", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	mockSender.AssertExpectations(t)
 }
@@ -560,7 +602,8 @@ func TestMattermostNotifier_SendsUpdatedDM_AssignedOtherRecipient(t *testing.T) 
 }
 
 // Прочие id-поля (заказчик/начальник/группа/категория/площадка) и срок выводятся
-// без сырых uuid: подпись по-русски, срок — в формате «02.01.2006 15:04».
+// без сырых uuid: подпись по-русски, срок — в формате «2 сентября 2026 12:00»
+// (значение в журнале — RFC3339, сырой Go-формат приведён к нему бэкфиллом).
 func TestMattermostNotifier_SendsUpdatedDM_NoRawIDs(t *testing.T) {
 	mockMMRepo, mockUsers, mockSender, svc := mattermostNotifierServiceFixtures()
 
@@ -574,7 +617,7 @@ func TestMattermostNotifier_SendsUpdatedDM_NoRawIDs(t *testing.T) {
 		{Tag: models.ActionGroupChanged, OldVal: uuid.New().String(), NewVal: "none"},
 		{Tag: models.ActionSiteChanged, OldVal: uuid.New().String(), NewVal: uuid.New().String()},
 		{Tag: models.ActionCategoryChanged, OldVal: "none", NewVal: uuid.New().String()},
-		{Tag: models.ActionDueDateChanged, OldVal: "2026-09-02 12:00:00 +0000 UTC", NewVal: "none"},
+		{Tag: models.ActionDueDateChanged, OldVal: "2026-09-02T12:00:00Z", NewVal: "none"},
 	})
 	assert.NoError(t, err)
 	data, err := json.Marshal(map[string]any{
@@ -604,7 +647,7 @@ func TestMattermostNotifier_SendsUpdatedDM_NoRawIDs(t *testing.T) {
 	assert.Contains(t, sent, "Группа: изменена")
 	assert.Contains(t, sent, "Площадка: изменена")
 	assert.Contains(t, sent, "Категория: изменена")
-	assert.Contains(t, sent, "• Срок: 02.09.2026 12:00 → —")
+	assert.Contains(t, sent, "• Срок: 2 сентября 2026 12:00 → —")
 	assert.NotContains(t, sent, "uuid")
 	mockSender.AssertExpectations(t)
 }

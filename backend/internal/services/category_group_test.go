@@ -56,13 +56,13 @@ func TestCategoryGroupService_Delete_CountError(t *testing.T) {
 
 func TestCategoryGroupService_Get_And_Create(t *testing.T) {
 	mockRepo := new(MockCategoryGroupsRepo)
-	svc := NewCategoryGroupService(mockRepo)
+	svc := NewCategoryGroupService(mockRepo, nil)
 
 	realmID := uuid.New()
 	req := &models.GetCategoryGroupsDTO{RealmID: realmID}
 	expected := []*models.CategoryGroup{
-		{ID: uuid.New(), RealmID: realmID, Name: "Информационные системы", SortOrder: 0},
-		{ID: uuid.New(), RealmID: realmID, Name: "Почта", SortOrder: 1},
+		{ID: uuid.New(), RealmID: realmID, Name: "Информационные системы"},
+		{ID: uuid.New(), RealmID: realmID, Name: "Почта"},
 	}
 	mockRepo.On("Get", mock.Anything, req).Return(expected, nil)
 
@@ -71,7 +71,7 @@ func TestCategoryGroupService_Get_And_Create(t *testing.T) {
 	assert.Len(t, data, 2)
 	assert.Equal(t, "Почта", data[1].Name)
 
-	dto := &models.CategoryGroupDTO{Name: "Прочее", SortOrder: 5}
+	dto := &models.CategoryGroupDTO{Name: "Прочее"}
 	mockRepo.On("Create", mock.Anything, dto).Return(nil)
 	assert.NoError(t, svc.Create(context.Background(), dto))
 	mockRepo.AssertExpectations(t)

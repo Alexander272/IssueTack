@@ -28,6 +28,7 @@ export interface TaskFiltersProps {
 	// statusOptions — допустимые статусы текущей вкладки (см. statusOptionsFor);
 	// без него Popover предлагает все статусы, в том числе дающие пустой список.
 	statusOptions: TicketStatus[]
+	hideFilters?: boolean
 	// equipmentLabel — название единицы для чипа фильтра по оборудованию.
 	equipmentLabel?: string
 }

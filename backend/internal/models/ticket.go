@@ -1,7 +1,6 @@
 package models
 
 import (
-	"fmt"
 	"time"
 
 	json "github.com/goccy/go-json"
@@ -82,7 +81,13 @@ type TicketFilter struct {
 	// CreatedOrOwnedBy — внутренний фильтр «автор ИЛИ заказчик» (для Mattermost-плагина):
 	// тикеты, где пользователь является creator_id ИЛИ owner_id.
 	CreatedOrOwnedBy *uuid.UUID `json:"-"`
-	Archived         *bool      `form:"archived" json:"archived"`
+	// ReadableBy — внутренний фильтр поиска заявки по номеру (Mattermost-бот):
+	// тикеты, доступные пользователю на чтение по атрибутам — автор, заказчик,
+	// исполнитель ИЛИ группа тикета входит в GroupIDs. Обычный списочный scope
+	// «группы актора + внегрупповые назначенные ему» отсекал создателя, который
+	// сам в группу тикета не входит (заявка группы, автор — рядовой заявитель).
+	ReadableBy *MyWorkFilter `json:"-"`
+	Archived   *bool         `form:"archived" json:"archived"`
 	// ArchiveWithResolved — страница «Мои задачи» (mode=assigned): resolved считается
 	// архивным статусом. Активная вкладка его не показывает, архивная — включает.
 	// Ставится сервисом (зависит от режима страницы, из запроса не приходит).
@@ -90,9 +95,12 @@ type TicketFilter struct {
 	FavoritesByUser     *uuid.UUID    `json:"-"`
 	FavoriteType        *FavoriteType `json:"-"`
 	MyWork              *MyWorkFilter `json:"-"`
-	EquipmentID         *uuid.UUID    `form:"equipmentId,parser=encoding.TextUnmarshaler" json:"equipmentId"`
-	Limit               int           `json:"limit" db:"limit"`
-	Offset              int           `json:"offset" db:"offset"`
+	// Фильтр по дате закрытия (используется, напр. в архиве плагина)
+	ClosedAtFrom *time.Time `form:"closedAtFrom" json:"closedAtFrom" time_format:"2006-01-02"`
+	ClosedAtTo   *time.Time `form:"closedAtTo"   json:"closedAtTo"   time_format:"2006-01-02"`
+	EquipmentID  *uuid.UUID `form:"equipmentId,parser=encoding.TextUnmarshaler" json:"equipmentId"`
+	Limit        int        `json:"limit" db:"limit"`
+	Offset       int        `json:"offset" db:"offset"`
 }
 
 // MyWorkFilter описывает фильтр «Мои задачи»: тикеты, где пользователь является
@@ -216,10 +224,7 @@ func (dto *TicketDTO) GetChanges(old *Ticket) []*FieldChange {
 	var changes []*FieldChange
 
 	toStr := func(v any) string {
-		if v == nil {
-			return "none"
-		}
-		return fmt.Sprintf("%v", v)
+		return formatFieldValue(v)
 	}
 
 	if dto.HasField("title") && dto.Title != old.Title {

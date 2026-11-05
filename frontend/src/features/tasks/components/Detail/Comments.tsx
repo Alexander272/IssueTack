@@ -1,40 +1,33 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSelector } from 'react-redux'
-import {
-	Box,
-	Button,
-	CircularProgress,
-	IconButton,
-	Stack,
-	Switch,
-	TextField,
-	Tooltip,
-	Typography,
-} from '@mui/material'
+import { Box, Button, CircularProgress, IconButton, Stack, Switch, TextField, Tooltip, Typography } from '@mui/material'
 import { MessageSquare, Trash2, EyeOff, ArrowRightLeft, Paperclip, Download, ExternalLink } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
+import type { IFetchError } from '@/app/types/error'
+import type { IComment } from '../../types/comment'
+import type { IAttachment } from '../../types/task'
 import { useGetActivityLogsQuery } from '../../modules/activity/activityApiSlice'
-import { ActivityEntry } from '../../modules/activity/ActivityEntry'
+import { ActivityTimeline } from '../../modules/activity/ActivityTimeline'
 import {
 	useGetCommentsQuery,
 	useCreateCommentMutation,
 	useDeleteCommentMutation,
 } from '../../modules/comments/commentsApiSlice'
 import { useLazyGetAttachmentContentQuery } from '../../modules/attachments/attachmentsApiSlice'
+import { getUserId } from '@/features/user/userSlice'
+import { saveAs } from '@/utils/saveAs'
+import { getAvatarColor, getInitials, getDisplayName } from '@/utils/avatar'
 import { formatSize } from '../../utils/size'
 import { isImage, isPdf, isText, getFileIcon } from '../../utils/fileIcon'
 import { PreviewDialog } from './Preview'
-import { saveAs } from '@/utils/saveAs'
-import type { IFetchError } from '@/app/types/error'
-import { getUserId } from '@/features/user/userSlice'
-import { getAvatarColor, getInitials, getDisplayName } from '@/utils/avatar'
-import type { IComment } from '../../types/comment'
-import type { IAttachment } from '../../types/task'
 
 interface Props {
 	taskId: string
 	isInactive?: boolean
+	/** Есть ли у пользователя «рабочий» доступ (write или исполнитель). От него зависит
+	 *  возможность писать внутренние комментарии: заказчику (без групп) они недоступны. */
+	canWork?: boolean
 }
 
 type TabKey = 'comments' | 'history'
@@ -95,7 +88,15 @@ const CommentAttachments = ({ attachments }: { attachments: IAttachment[] }) => 
 							{isImage(file.mimeType) ? (
 								<IconComponent sx={{ fontSize: 20, color: info.color }} />
 							) : (
-								<Box sx={{ width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+								<Box
+									sx={{
+										width: 20,
+										height: 20,
+										display: 'flex',
+										alignItems: 'center',
+										justifyContent: 'center',
+									}}
+								>
 									<IconComponent sx={{ fontSize: 20, color: info.color }} />
 								</Box>
 							)}
@@ -119,10 +120,18 @@ const CommentAttachments = ({ attachments }: { attachments: IAttachment[] }) => 
 							<Typography sx={{ fontSize: '0.6875rem', color: '#9ca3af', flexShrink: 0 }}>
 								{formatSize(file.fileSize)}
 							</Typography>
-							<IconButton size='small' onClick={() => handleOpen(file)} sx={{ p: 0.25, color: '#6b7280' }}>
+							<IconButton
+								size='small'
+								onClick={() => handleOpen(file)}
+								sx={{ p: 0.25, color: '#6b7280' }}
+							>
 								<ExternalLink sx={{ fontSize: 14 }} />
 							</IconButton>
-							<IconButton size='small' onClick={() => handleDownload(file)} sx={{ p: 0.25, color: '#6b7280' }}>
+							<IconButton
+								size='small'
+								onClick={() => handleDownload(file)}
+								sx={{ p: 0.25, color: '#6b7280' }}
+							>
 								<Download sx={{ fontSize: 14 }} />
 							</IconButton>
 						</Box>
@@ -284,7 +293,7 @@ const CommentEntry = ({
 	)
 }
 
-export const Comments = ({ taskId, isInactive = false }: Props) => {
+export const Comments = ({ taskId, isInactive = false, canWork = true }: Props) => {
 	const [activeTab, setActiveTab] = useState<TabKey>('comments')
 	const [text, setText] = useState('')
 	const [isInternal, setIsInternal] = useState(isInactive)
@@ -312,7 +321,7 @@ export const Comments = ({ taskId, isInactive = false }: Props) => {
 			await createComment({
 				ticketId: taskId,
 				text: text.trim(),
-				isInternal: isInactive || isInternal,
+				isInternal: canWork && (isInactive || isInternal),
 				files,
 			}).unwrap()
 			setText('')
@@ -411,153 +420,186 @@ export const Comments = ({ taskId, isInactive = false }: Props) => {
 					)}
 				</Box>
 			) : (
-				<Box sx={{ p: 2.5, maxHeight: 400, overflow: 'auto' }}>
+				<Box sx={{ maxHeight: 400, overflow: 'auto' }}>
 					{logsLoading ? (
 						<Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
 							<CircularProgress size={24} />
 						</Box>
-					) : logs.length === 0 ? (
-						<Typography sx={{ color: '#9ca3af', fontSize: '0.875rem', textAlign: 'center', py: 3 }}>
-							История пуста
-						</Typography>
 					) : (
-						<Stack spacing={2.5}>
-							{logs.map(log => (
-								<ActivityEntry key={log.id} log={log} />
-							))}
-						</Stack>
+						<ActivityTimeline logs={logs} />
 					)}
 				</Box>
 			)}
 
-			<Box sx={{ borderTop: '1px solid #e5e7eb', p: 2.5, bgcolor: '#f9fafb' }}>
-				<Box sx={{ display: 'flex', gap: 1.5 }}>
-					<Box sx={{ flex: 1 }}>
-						<TextField
-							multiline
-							rows={3}
-							placeholder={
-								isInternal
-									? 'Внутренний комментарий (виден исполнителю и менеджерам)...'
-									: 'Напишите комментарий...'
-							}
-							value={text}
-							onChange={e => setText(e.target.value)}
-							fullWidth
-							sx={{
-								'& .MuiOutlinedInput-root': {
-									borderRadius: '8px',
-									fontSize: '0.8125rem',
-									bgcolor: 'white',
-								},
-							}}
-						/>
-						{files.length > 0 && (
-							<Stack spacing={0.5} sx={{ mt: 1 }}>
-								{files.map((file, index) => (
-									<Box
-										key={`${file.name}-${index}`}
-										sx={{
-											display: 'flex',
-											alignItems: 'center',
-											gap: 1,
-											px: 1,
-											py: 0.5,
-											bgcolor: 'white',
-											border: '1px solid #e5e7eb',
-											borderRadius: '6px',
-										}}
-									>
-										<Paperclip sx={{ fontSize: 14, color: '#6b7280' }} />
-										<Typography
+			{activeTab === 'comments' && (canWork || !isInactive) && (
+				<Box
+					sx={{
+						borderTop: `1px solid ${isInternal || isInactive ? '#fde68a' : '#e5e7eb'}`,
+						p: 2.5,
+						bgcolor: isInternal || isInactive ? '#fffbeb' : '#f9fafb',
+						transition: 'background-color 0.15s, border-color 0.15s',
+					}}
+				>
+					<Box sx={{ display: 'flex', gap: 1.5 }}>
+						<Box sx={{ flex: 1 }}>
+							<TextField
+								multiline
+								rows={3}
+								placeholder={
+									isInternal
+										? 'Внутренний комментарий (виден исполнителю и менеджерам)...'
+										: 'Напишите комментарий...'
+								}
+								value={text}
+								onChange={e => setText(e.target.value)}
+								fullWidth
+								sx={{
+									'& .MuiOutlinedInput-root': {
+										borderRadius: '8px',
+										fontSize: '0.8125rem',
+										bgcolor: 'white',
+										...((isInternal || isInactive) && {
+											'& fieldset': { borderColor: '#fde68a' },
+											'&:hover fieldset': { borderColor: '#fcd34d' },
+										}),
+									},
+								}}
+							/>
+							{files.length > 0 && (
+								<Stack spacing={0.5} sx={{ mt: 1 }}>
+									{files.map((file, index) => (
+										<Box
+											key={`${file.name}-${index}`}
 											sx={{
-												flex: 1,
-												minWidth: 0,
-												fontSize: '0.75rem',
-												color: '#374151',
-												overflow: 'hidden',
-												textOverflow: 'ellipsis',
-												whiteSpace: 'nowrap',
+												display: 'flex',
+												alignItems: 'center',
+												gap: 1,
+												px: 1,
+												py: 0.5,
+												bgcolor: 'white',
+												border: '1px solid #e5e7eb',
+												borderRadius: '6px',
 											}}
 										>
-											{file.name}
-										</Typography>
-										<Typography sx={{ fontSize: '0.6875rem', color: '#9ca3af', flexShrink: 0 }}>
-											{formatSize(file.size)}
-										</Typography>
-										<IconButton size='small' onClick={() => setFiles(f => f.filter((_, i) => i !== index))} sx={{ p: 0.25, color: '#9ca3af', '&:hover': { color: '#ef4444' } }}>
-											<Trash2 sx={{ fontSize: 14 }} />
-										</IconButton>
-									</Box>
-								))}
-							</Stack>
-						)}
-						<Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1.5 }}>
-							<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-								<input
-									ref={fileInputRef}
-									type='file'
-									multiple
-									hidden
-									onChange={e => {
-										const list = Array.from(e.target.files ?? [])
-										if (list.length) setFiles(f => [...f, ...list])
-										e.target.value = ''
-									}}
-								/>
-								<Tooltip title='Прикрепить файлы'>
-									<IconButton
-										size='small'
-										disabled={creating}
-										onClick={() => fileInputRef.current?.click()}
-										sx={{ color: '#6b7280', '&:hover': { color: '#2563eb' } }}
-									>
-										<Paperclip sx={{ fontSize: 18 }} />
-									</IconButton>
-								</Tooltip>
-								<EyeOff sx={{ fontSize: 16, color: isInactive || isInternal ? '#92400e' : '#9ca3af' }} />
-								{isInactive ? (
-									<Typography sx={{ fontSize: '0.75rem', color: '#92400e' }}>
-										Внутренний (заявка закрыта)
-									</Typography>
-								) : (
-									<Switch
-										size='small'
-										checked={isInternal}
-										onChange={e => setIsInternal(e.target.checked)}
-										sx={{
-											'& .MuiSwitch-switchBase.Mui-checked': { color: '#f59e0b' },
-											'& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
-												bgcolor: '#f59e0b',
-											},
+											<Paperclip sx={{ fontSize: 14, color: '#6b7280' }} />
+											<Typography
+												sx={{
+													flex: 1,
+													minWidth: 0,
+													fontSize: '0.75rem',
+													color: '#374151',
+													overflow: 'hidden',
+													textOverflow: 'ellipsis',
+													whiteSpace: 'nowrap',
+												}}
+											>
+												{file.name}
+											</Typography>
+											<Typography sx={{ fontSize: '0.6875rem', color: '#9ca3af', flexShrink: 0 }}>
+												{formatSize(file.size)}
+											</Typography>
+											<IconButton
+												size='small'
+												onClick={() => setFiles(f => f.filter((_, i) => i !== index))}
+												sx={{ p: 0.25, color: '#9ca3af', '&:hover': { color: '#ef4444' } }}
+											>
+												<Trash2 sx={{ fontSize: 14 }} />
+											</IconButton>
+										</Box>
+									))}
+								</Stack>
+							)}
+
+							<Box
+								sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1.5 }}
+							>
+								<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+									<input
+										ref={fileInputRef}
+										type='file'
+										multiple
+										hidden
+										onChange={e => {
+											const list = Array.from(e.target.files ?? [])
+											if (list.length) setFiles(f => [...f, ...list])
+											e.target.value = ''
 										}}
 									/>
-								)}
-								{!isInactive && (
-									<Typography sx={{ fontSize: '0.75rem', color: isInternal ? '#92400e' : '#6b7280' }}>
-										Внутренний
-									</Typography>
-								)}
+									<Tooltip title='Прикрепить файлы'>
+										<IconButton
+											size='small'
+											disabled={creating}
+											onClick={() => fileInputRef.current?.click()}
+											sx={{ color: '#6b7280', '&:hover': { color: '#2563eb' } }}
+										>
+											<Paperclip sx={{ fontSize: 18 }} />
+										</IconButton>
+									</Tooltip>
+									{canWork && (
+										<>
+											{/* разделитель между «прикрепить» и «внутренний» */}
+											<Box sx={{ width: '1px', height: 20, bgcolor: '#e5e7eb', mx: 0.5 }} />
+
+											<Tooltip title='Внутренний комментарий — виден исполнителю и менеджерам заявки'>
+												<span style={{ display: 'inline-flex' }}>
+													<EyeOff
+														sx={{
+															fontSize: 16,
+															color: isInactive || isInternal ? '#92400e' : '#9ca3af',
+														}}
+													/>
+												</span>
+											</Tooltip>
+											{isInactive ? (
+												<Typography sx={{ fontSize: '0.75rem', color: '#92400e' }}>
+													Внутренний (заявка закрыта)
+												</Typography>
+											) : (
+												<Switch
+													size='small'
+													checked={isInternal}
+													onChange={e => setIsInternal(e.target.checked)}
+													sx={{
+														'& .MuiSwitch-switchBase.Mui-checked': { color: '#f59e0b' },
+														'& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+															bgcolor: '#f59e0b',
+														},
+													}}
+												/>
+											)}
+											{!isInactive && (
+												<Typography
+													sx={{
+														fontSize: '0.75rem',
+														color: isInternal ? '#92400e' : '#6b7280',
+													}}
+												>
+													Внутренний
+												</Typography>
+											)}
+										</>
+									)}
+								</Box>
+								<Button
+									variant='outlined'
+									size='small'
+									disabled={!text.trim() || creating}
+									onClick={handleSubmit}
+									sx={{
+										borderRadius: '8px',
+										textTransform: 'none',
+										fontSize: '0.8125rem',
+										boxShadow: 'none',
+										'&:hover': { boxShadow: 'none' },
+									}}
+								>
+									{creating ? <CircularProgress size={16} /> : 'Отправить'}
+								</Button>
 							</Box>
-							<Button
-								variant='outlined'
-								size='small'
-								disabled={!text.trim() || creating}
-								onClick={handleSubmit}
-								sx={{
-									borderRadius: '8px',
-									textTransform: 'none',
-									fontSize: '0.8125rem',
-									boxShadow: 'none',
-									'&:hover': { boxShadow: 'none' },
-								}}
-							>
-								{creating ? <CircularProgress size={16} /> : 'Отправить'}
-							</Button>
 						</Box>
 					</Box>
 				</Box>
-			</Box>
+			)}
 		</Box>
 	)
 }

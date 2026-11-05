@@ -18,14 +18,16 @@ type SubtaskService struct {
 	repo         repository.Subtasks
 	logs         ActivityLog
 	ticketAccess TicketAccessChecker
+	users        Users
 }
 
 // NewSubtaskService создаёт SubtaskService.
-func NewSubtaskService(repo repository.Subtasks, logs ActivityLog, ticketAccess TicketAccessChecker) *SubtaskService {
+func NewSubtaskService(repo repository.Subtasks, logs ActivityLog, users Users, ticketAccess TicketAccessChecker) *SubtaskService {
 	return &SubtaskService{
 		repo:         repo,
 		logs:         logs,
 		ticketAccess: ticketAccess,
+		users:        users,
 	}
 }
 
@@ -154,7 +156,7 @@ func (s *SubtaskService) Create(ctx context.Context, tx postgres.Tx, dto *models
 		Action:        "created",
 		ChangedBy:     dto.Actor.ID,
 		ChangedByName: dto.Actor.Name,
-		EntityType:    "subtask",
+		EntityType:    models.EntityTypeSubtask,
 		EntityID:      dto.ID,
 		Entity:        dto.Title,
 		ParentID:      &dto.TicketID,
@@ -193,7 +195,7 @@ func (s *SubtaskService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto 
 			Action:        "created",
 			ChangedBy:     v.Actor.ID,
 			ChangedByName: v.Actor.Name,
-			EntityType:    "subtask",
+			EntityType:    models.EntityTypeSubtask,
 			EntityID:      v.ID,
 			Entity:        v.Title,
 			ParentID:      &v.TicketID,
@@ -242,7 +244,7 @@ func (s *SubtaskService) CreateManyOnCreate(ctx context.Context, tx postgres.Tx,
 			Action:        "created",
 			ChangedBy:     v.Actor.ID,
 			ChangedByName: v.Actor.Name,
-			EntityType:    "subtask",
+			EntityType:    models.EntityTypeSubtask,
 			EntityID:      v.ID,
 			Entity:        v.Title,
 			ParentID:      &v.TicketID,
@@ -315,18 +317,13 @@ func (s *SubtaskService) Update(ctx context.Context, tx postgres.Tx, dto *models
 	}
 
 	if len(changes) > 0 {
-		oldMap := make(map[string]string, len(changes))
-		newMap := make(map[string]string, len(changes))
-		for _, c := range changes {
-			oldMap[string(c.Tag)] = c.OldVal
-			newMap[string(c.Tag)] = c.NewVal
-		}
+		oldMap, newMap := s.subtaskLogValues(ctx, old, changes)
 
 		log := &models.ActivityLogDTO{
 			Action:        "updated",
 			ChangedBy:     dto.Actor.ID,
 			ChangedByName: dto.Actor.Name,
-			EntityType:    "subtask",
+			EntityType:    models.EntityTypeSubtask,
 			EntityID:      dto.ID,
 			Entity:        dto.Title,
 			ParentID:      &dto.TicketID,
@@ -376,7 +373,7 @@ func (s *SubtaskService) Delete(ctx context.Context, tx postgres.Tx, dto *models
 		Action:        "deleted",
 		ChangedBy:     dto.Actor.ID,
 		ChangedByName: dto.Actor.Name,
-		EntityType:    "subtask",
+		EntityType:    models.EntityTypeSubtask,
 		EntityID:      dto.ID,
 		Entity:        old.Title,
 		ParentID:      &old.TicketID,

@@ -9,6 +9,12 @@ export interface ICategory {
 	categoryGroup?: ICategoryGroupShort
 	priority: Priority
 	isActive: boolean
+	isHidden: boolean
+	defaultDueDays: number | null
+	// sortOrder — глобальная позиция категории в реалме. Порядок разделов
+	// выводится из него: блок раздела стоит там, где стоит его первая
+	// категория. Меняется переупорядочиванием (см. reorderCategories).
+	sortOrder: number
 	createdAt: string
 	updatedAt: string
 }
@@ -16,6 +22,7 @@ export interface ICategory {
 export interface ICategoryGroupShort {
 	id: string
 	name: string
+	isHidden?: boolean
 }
 
 export interface ICategoryDTO {
@@ -26,4 +33,6 @@ export interface ICategoryDTO {
 	categoryGroupId: string | null
 	priority: Priority
 	isActive: boolean
+	isHidden: boolean
+	defaultDueDays: number | null
 }

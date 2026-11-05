@@ -23,7 +23,12 @@ import (
 func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uuid.UUID, mmUserID string, siteID *uuid.UUID) (*models.UserData, error) {
 	existing, err := s.users.GetByMattermostID(ctx, mmUserID)
 	if err == nil {
-		s.ensureKnownUserRealm(ctx, realmID, existing.ID, siteID, existing.ID, existing.Username)
+		s.ensureKnownUserRealm(ctx, &models.RealmMembershipDTO{
+			RealmID:   realmID,
+			UserID:    existing.ID,
+			ActorID:   existing.ID,
+			ActorName: existing.Username,
+		}, siteID)
 		return existing, nil
 	}
 
@@ -43,12 +48,22 @@ func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uui
 	}
 
 	if matched, userID, username := matchByEmail(sysUsers, mmUser.Email); matched {
-		s.ensureLinkAndRealm(ctx, realmID, userID, mmUser.Id, siteID, userID, username)
+		s.ensureLinkAndRealm(ctx, &models.RealmMembershipDTO{
+			RealmID:   realmID,
+			UserID:    userID,
+			ActorID:   userID,
+			ActorName: username,
+		}, mmUser.Id, siteID)
 		return &models.UserData{ID: userID, Username: username, SiteID: userSiteByID(sysUsers, userID), Source: userSourceByID(sysUsers, userID)}, nil
 	}
 
 	if matched, userID, username := matchByUsername(sysUsers, mmUser.Username); matched {
-		s.ensureLinkAndRealm(ctx, realmID, userID, mmUser.Id, siteID, userID, username)
+		s.ensureLinkAndRealm(ctx, &models.RealmMembershipDTO{
+			RealmID:   realmID,
+			UserID:    userID,
+			ActorID:   userID,
+			ActorName: username,
+		}, mmUser.Id, siteID)
 		return &models.UserData{ID: userID, Username: username, SiteID: userSiteByID(sysUsers, userID), Source: userSourceByID(sysUsers, userID)}, nil
 	}
 
@@ -56,7 +71,12 @@ func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uui
 	if mmFio != "" {
 		for _, sysU := range sysUsers {
 			if buildFIO(sysU.FirstName, sysU.LastName) == mmFio {
-				s.ensureLinkAndRealm(ctx, realmID, sysU.ID, mmUser.Id, siteID, sysU.ID, sysU.Username)
+				s.ensureLinkAndRealm(ctx, &models.RealmMembershipDTO{
+					RealmID:   realmID,
+					UserID:    sysU.ID,
+					ActorID:   sysU.ID,
+					ActorName: sysU.Username,
+				}, mmUser.Id, siteID)
 				return sysU, nil
 			}
 		}
@@ -78,7 +98,12 @@ func (s *MattermostService) resolveOrCreateUser(ctx context.Context, realmID uui
 	if err := s.users.CreateSeveral(ctx, nil, []*models.UserDataDTO{userDTO}); err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
-	if err := s.ensureRealmMembership(ctx, newUserID, realmID, newUserID, mmUser.Username); err != nil {
+	if err := s.ensureRealmMembership(ctx, &models.RealmMembershipDTO{
+		RealmID:   realmID,
+		UserID:    newUserID,
+		ActorID:   newUserID,
+		ActorName: mmUser.Username,
+	}); err != nil {
 		logger.Warn("failed to add created user to realm",
 			logger.StringAttr("user_id", newUserID.String()),
 			logger.StringAttr("realm_id", realmID.String()),
@@ -136,37 +161,37 @@ func userSourceByID(users []*models.UserData, id uuid.UUID) models.UserSource {
 // чтобы новая привязка user→realm→role стала доступна для проверки прав сразу же.
 // Возвращает ошибку, если роль «user» не найдена или вставка не удалась; если
 // пользователь уже в realm — успех без события.
-func (s *MattermostService) ensureRealmMembership(ctx context.Context, userID uuid.UUID, realmID uuid.UUID, actorID uuid.UUID, actorName string) error {
-	ur, urErr := s.userRealms.GetByUserAndRealm(ctx, userID, realmID)
+func (s *MattermostService) ensureRealmMembership(ctx context.Context, m *models.RealmMembershipDTO) error {
+	ur, urErr := s.userRealms.GetByUserAndRealm(ctx, m.UserID, m.RealmID)
 	if urErr == nil && ur != nil {
 		return nil
 	}
 
-	roleID, err := s.roles.GetIDBySlug(ctx, realmID, "user")
+	roleID, err := s.roles.GetIDBySlug(ctx, m.RealmID, "user")
 	if err != nil {
 		return fmt.Errorf("failed to get default role: %w", err)
 	}
 
 	if err := s.userRealms.CreateSeveral(ctx, nil, []*models.UserRealmDTO{
-		{UserID: userID, RealmID: realmID, RoleID: &roleID, IsActive: true},
+		{UserID: m.UserID, RealmID: m.RealmID, RoleID: &roleID, IsActive: true},
 	}); err != nil {
 		return fmt.Errorf("failed to add user to realm: %w", err)
 	}
 
 	event := events.PolicyEvent{
-		ChangedBy:     actorID,
-		ChangedByName: actorName,
+		ChangedBy:     m.ActorID,
+		ChangedByName: m.ActorName,
 		Action:        "add_user_realm",
 		EntityType:    "users",
-		EntityID:      &userID,
-		RealmID:       &realmID,
+		EntityID:      &m.UserID,
+		RealmID:       &m.RealmID,
 	}
 	if err := event.SetNewValues(map[string]any{
-		"realmId": realmID,
+		"realmId": m.RealmID,
 		"role":    "user",
 	}); err != nil {
 		bestEffortError("failed to set audit new values after adding user to realm", err,
-			map[string]string{"user_id": userID.String(), "realm_id": realmID.String()})
+			map[string]string{"user_id": m.UserID.String(), "realm_id": m.RealmID.String()})
 	}
 	s.eventBus.Notify(event)
 
@@ -179,16 +204,16 @@ func (s *MattermostService) ensureRealmMembership(ctx context.Context, userID uu
 // определению fast-path, поэтому запись в БД давала бы только обновление
 // updated_at на каждый вызов (например, /plugin/context при каждом переключении
 // канала), создавая мёртвые кортежи без изменения данных.
-func (s *MattermostService) ensureKnownUserRealm(ctx context.Context, realmID uuid.UUID, userID uuid.UUID, siteID *uuid.UUID, actorID uuid.UUID, actorName string) {
+func (s *MattermostService) ensureKnownUserRealm(ctx context.Context, m *models.RealmMembershipDTO, siteID *uuid.UUID) {
 	if siteID != nil {
 		if err := s.users.UpdateMMAndSite(ctx, nil, &models.UserDataDTO{
-			ID:     userID,
+			ID:     m.UserID,
 			SiteID: siteID,
 		}); err != nil {
 			logger.Warn("failed to update user site", logger.ErrAttr(err))
 		}
 	}
-	if err := s.ensureRealmMembership(ctx, userID, realmID, actorID, actorName); err != nil {
+	if err := s.ensureRealmMembership(ctx, m); err != nil {
 		logger.Warn("failed to add user to realm", logger.ErrAttr(err))
 	}
 }
@@ -198,16 +223,16 @@ func (s *MattermostService) ensureKnownUserRealm(ctx context.Context, realmID uu
 // если он там ещё не состоит, и обновляет site_id, если он передан. Ошибки
 // некритичны (только логируются), чтобы не прерывать основной поток
 // сопоставления пользователя.
-func (s *MattermostService) ensureLinkAndRealm(ctx context.Context, realmID uuid.UUID, userID uuid.UUID, mmUserID string, siteID *uuid.UUID, actorID uuid.UUID, actorName string) {
+func (s *MattermostService) ensureLinkAndRealm(ctx context.Context, m *models.RealmMembershipDTO, mmUserID string, siteID *uuid.UUID) {
 	mmCopy := mmUserID
 	if err := s.users.UpdateMMAndSite(ctx, nil, &models.UserDataDTO{
-		ID:           userID,
+		ID:           m.UserID,
 		MattermostID: &mmCopy,
 		SiteID:       siteID,
 	}); err != nil {
 		logger.Warn("failed to update mattermost id/site", logger.ErrAttr(err))
 	}
-	if err := s.ensureRealmMembership(ctx, userID, realmID, actorID, actorName); err != nil {
+	if err := s.ensureRealmMembership(ctx, m); err != nil {
 		logger.Warn("failed to add user to realm", logger.ErrAttr(err))
 	}
 }
@@ -384,7 +409,12 @@ func (s *MattermostService) SyncRealmUsers(ctx context.Context, realmID uuid.UUI
 
 		existing, existingErr := s.users.GetByMattermostID(ctx, mmU.Id)
 		if existingErr == nil {
-			if err := s.ensureRealmMembership(ctx, existing.ID, realmID, actor.ID, actor.Name); err != nil {
+			if err := s.ensureRealmMembership(ctx, &models.RealmMembershipDTO{
+				RealmID:   realmID,
+				UserID:    existing.ID,
+				ActorID:   actor.ID,
+				ActorName: actor.Name,
+			}); err != nil {
 				logger.Warn("failed to add user to realm",
 					logger.StringAttr("mm_user_id", mmU.Id),
 					logger.ErrAttr(err),
@@ -400,7 +430,12 @@ func (s *MattermostService) SyncRealmUsers(ctx context.Context, realmID uuid.UUI
 
 		if mmU.Email != "" {
 			if sysU, ok := sysByEmail[strings.ToLower(mmU.Email)]; ok {
-				s.ensureLinkAndRealm(ctx, realmID, sysU.ID, mmU.Id, nil, actor.ID, actor.Name)
+				s.ensureLinkAndRealm(ctx, &models.RealmMembershipDTO{
+					RealmID:   realmID,
+					UserID:    sysU.ID,
+					ActorID:   actor.ID,
+					ActorName: actor.Name,
+				}, mmU.Id, nil)
 				result.Linked++
 				matched = true
 			}
@@ -408,7 +443,12 @@ func (s *MattermostService) SyncRealmUsers(ctx context.Context, realmID uuid.UUI
 
 		if !matched && mmU.Username != "" {
 			if sysU, ok := sysByUsername[strings.ToLower(mmU.Username)]; ok {
-				s.ensureLinkAndRealm(ctx, realmID, sysU.ID, mmU.Id, nil, actor.ID, actor.Name)
+				s.ensureLinkAndRealm(ctx, &models.RealmMembershipDTO{
+					RealmID:   realmID,
+					UserID:    sysU.ID,
+					ActorID:   actor.ID,
+					ActorName: actor.Name,
+				}, mmU.Id, nil)
 				result.Linked++
 				matched = true
 			}
@@ -417,7 +457,12 @@ func (s *MattermostService) SyncRealmUsers(ctx context.Context, realmID uuid.UUI
 		if !matched {
 			if fio := buildFIO(mmU.FirstName, cleanMMLastName(mmU.LastName)); fio != "" {
 				if sysU, ok := sysByFIO[fio]; ok {
-					s.ensureLinkAndRealm(ctx, realmID, sysU.ID, mmU.Id, nil, actor.ID, actor.Name)
+					s.ensureLinkAndRealm(ctx, &models.RealmMembershipDTO{
+						RealmID:   realmID,
+						UserID:    sysU.ID,
+						ActorID:   actor.ID,
+						ActorName: actor.Name,
+					}, mmU.Id, nil)
 					result.Linked++
 					matched = true
 				}
@@ -448,7 +493,12 @@ func (s *MattermostService) SyncRealmUsers(ctx context.Context, realmID uuid.UUI
 			result.Failed++
 			continue
 		}
-		if err := s.ensureRealmMembership(ctx, newUserID, realmID, actor.ID, actor.Name); err != nil {
+		if err := s.ensureRealmMembership(ctx, &models.RealmMembershipDTO{
+			RealmID:   realmID,
+			UserID:    newUserID,
+			ActorID:   actor.ID,
+			ActorName: actor.Name,
+		}); err != nil {
 			logger.Warn("failed to add user to realm",
 				logger.StringAttr("mm_user_id", mmU.Id),
 				logger.ErrAttr(err),

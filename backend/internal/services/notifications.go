@@ -62,9 +62,9 @@ type Notifications interface {
 	// TicketDeleted оповещает заинтересованных пользователей об удалении тикета.
 	TicketDeleted(ctx context.Context, ticket *models.Ticket) error
 	// TicketCommented оповещает исполнителя и подписанных о новом комментарии.
-	// commentText и authorLabel — текст комментария и «Фамилия Имя» его автора
+	// c.CommentText и c.AuthorLabel — текст комментария и «Фамилия Имя» его автора
 	// (пустая строка, если автора не удалось определить); они попадают в DM и в Data.
-	TicketCommented(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID, commentText, authorLabel string) error
+	TicketCommented(ctx context.Context, c *models.NotificationCommentDTO) error
 	// AttachmentAdded оповещает исполнителя и подписанных о новом вложении.
 	AttachmentAdded(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) error
 	// NotifyOverdue оповещает о просроченном тикете: исполнителя, менеджера, админов реалма,
@@ -72,6 +72,15 @@ type Notifications interface {
 	NotifyOverdue(ctx context.Context, ticket *models.Ticket) error
 	// GetOverdueTicketIDs возвращает ID активных тикетов с просроченным сроком.
 	GetOverdueTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error)
+	// GetActiveByPriorityGlobal возвращает ID активных непросроченных тикетов заданного
+	// приоритета; before > 0 ограничивает по сроку только заявки с due_date, заявки без
+	// срока попадают в выборку всегда.
+	GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority, before time.Duration) ([]uuid.UUID, error)
+	// NotifyReminderHigh оповещает о задаче с высоким приоритетом (периодическое напоминание).
+	// interval — настроенная частота напоминаний; из неё выводится минимальный интервал дедупа.
+	NotifyReminderHigh(ctx context.Context, ticket *models.Ticket, interval time.Duration) error
+	// NotifyReminderUrgent оповещает о задаче с критичным приоритетом (периодическое напоминание).
+	NotifyReminderUrgent(ctx context.Context, ticket *models.Ticket, interval time.Duration) error
 	// NotifyDeadlineSoon оповещает исполнителя о приближении срока тикета (ticket.deadline_soon).
 	NotifyDeadlineSoon(ctx context.Context, ticket *models.Ticket) error
 	// GetUpcomingDeadlineTicketIDs возвращает ID активных тикетов с будущим сроком и исполнителем.
@@ -168,6 +177,133 @@ func (s *NotificationService) NotifyOverdue(ctx context.Context, ticket *models.
 	logger.Info("overdue notification processed",
 		logger.StringAttr("ticket_id", ticket.ID.String()),
 		logger.StringAttr("title", ticket.Title),
+		logger.IntAttr("recipients", len(pending)),
+		logger.IntAttr("delivered", len(delivered)),
+	)
+
+	return nil
+}
+
+// reminderDedupInterval вычисляет минимальный интервал между напоминаниями из
+// настроенной частоты: чуть меньше самой частоты, чтобы повторный прогон cron в
+// пределах одного периода не отправил напоминание дважды.
+func reminderDedupInterval(interval time.Duration) time.Duration {
+	if interval <= 0 {
+		return time.Minute
+	}
+	margin := interval / 4
+	if margin > 5*time.Minute {
+		margin = 5 * time.Minute
+	}
+	dedup := interval - margin
+	if dedup < time.Minute {
+		dedup = time.Minute
+	}
+	return dedup
+}
+
+// NotifyReminderHigh — периодическое напоминание по активным тикетам с высоким приоритетом.
+// Дедупликация временная: не чаще выведенного из interval Dedup-интервала
+// (защита от повторных прогонов cron).
+func (s *NotificationService) NotifyReminderHigh(ctx context.Context, ticket *models.Ticket, interval time.Duration) error {
+	return s.notifyPriorityReminder(ctx, &models.NotificationReminderDTO{
+		Ticket:      ticket,
+		Event:       models.EventReminderHigh,
+		NotifType:   string(models.NotificationTicketReminderHigh),
+		Title:       "Важная задача",
+		MinInterval: reminderDedupInterval(interval),
+	})
+}
+
+// NotifyReminderUrgent — периодическое напоминание по активным тикетам с критичным приоритетом.
+func (s *NotificationService) NotifyReminderUrgent(ctx context.Context, ticket *models.Ticket, interval time.Duration) error {
+	return s.notifyPriorityReminder(ctx, &models.NotificationReminderDTO{
+		Ticket:      ticket,
+		Event:       models.EventReminderUrgent,
+		NotifType:   string(models.NotificationTicketReminderUrgent),
+		Title:       "Срочная задача!",
+		MinInterval: reminderDedupInterval(interval),
+	})
+}
+
+// notifyPriorityReminder — общая логика периодических напоминаний по приоритету. Получатели:
+// исполнитель, менеджер и подписчики категории/группы на соответствующее событие.
+// Все параметры события — в p (models.NotificationReminderDTO).
+func (s *NotificationService) notifyPriorityReminder(ctx context.Context, p *models.NotificationReminderDTO) error {
+	if p == nil || p.Ticket == nil {
+		return nil
+	}
+	ticket := p.Ticket
+	ok, err := s.repo.CanSendReminder(ctx, ticket.ID, p.Event, p.MinInterval)
+	if err != nil {
+		return fmt.Errorf("failed to check %s reminder: %w", p.Event, err)
+	}
+	if !ok {
+		return nil
+	}
+
+	recipients := make(map[uuid.UUID]struct{})
+	if ticket.Assignee != nil {
+		recipients[ticket.Assignee.ID] = struct{}{}
+	}
+	if ticket.Manager != nil {
+		recipients[ticket.Manager.ID] = struct{}{}
+	}
+
+	subs, err := s.subscribersByEvent(ctx, ticket, p.Event)
+	if err != nil {
+		return err
+	}
+	for _, id := range subs {
+		recipients[id] = struct{}{}
+	}
+	if ticket.Category != nil {
+		catSubs, err := s.repo.GetCategoryEventSubscribers(ctx, ticket.Category.ID, models.EventFieldName(p.Event))
+		if err != nil {
+			return fmt.Errorf("failed to get %s category subscribers: %w", p.Event, err)
+		}
+		for _, id := range catSubs {
+			recipients[id] = struct{}{}
+		}
+	}
+	if ticket.Group != nil {
+		grpSubs, err := s.repo.GetGroupEventSubscribers(ctx, ticket.Group.ID, models.EventFieldName(p.Event))
+		if err != nil {
+			return fmt.Errorf("failed to get %s group subscribers: %w", p.Event, err)
+		}
+		for _, id := range grpSubs {
+			recipients[id] = struct{}{}
+		}
+	}
+
+	pending := make([]uuid.UUID, 0, len(recipients))
+	for userID := range recipients {
+		pending = append(pending, userID)
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+
+	data, err := json.Marshal(map[string]any{
+		"ticket_id": ticket.ID.String(),
+		"title":     ticket.Title,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal %s notification data: %w", p.Event, err)
+	}
+
+	dto := &models.CreateNotificationDTO{
+		Type:  p.NotifType,
+		Title: p.Title,
+		Body:  ticket.Title,
+		Data:  data,
+	}
+	delivered := s.deliver(ctx, ticket, pending, dto)
+	s.persistForUsers(ctx, delivered, dto)
+
+	logger.Info("priority reminder processed",
+		logger.StringAttr("event", p.Event),
+		logger.StringAttr("ticket_id", ticket.ID.String()),
 		logger.IntAttr("recipients", len(pending)),
 		logger.IntAttr("delivered", len(delivered)),
 	)
@@ -411,10 +547,14 @@ func (s *NotificationService) TicketDeleted(ctx context.Context, ticket *models.
 
 // TicketCommented оповещает исполнителя и подписанных о новом комментарии по заявке.
 // Самому автору комментария уведомление не отправляется.
-func (s *NotificationService) TicketCommented(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID, commentText, authorLabel string) error {
+func (s *NotificationService) TicketCommented(ctx context.Context, c *models.NotificationCommentDTO) error {
+	if c == nil || c.Ticket == nil {
+		return nil
+	}
+	ticket := c.Ticket
 	recipients := make(map[uuid.UUID]struct{})
 
-	if ticket.Assignee != nil && ticket.Assignee.ID != actorID {
+	if ticket.Assignee != nil && ticket.Assignee.ID != c.ActorID {
 		recipients[ticket.Assignee.ID] = struct{}{}
 	}
 
@@ -424,7 +564,7 @@ func (s *NotificationService) TicketCommented(ctx context.Context, ticket *model
 		return err
 	}
 	for _, id := range commentSubs {
-		if id != actorID {
+		if id != c.ActorID {
 			recipients[id] = struct{}{}
 		}
 	}
@@ -440,7 +580,7 @@ func (s *NotificationService) TicketCommented(ctx context.Context, ticket *model
 		}
 	}
 
-	delete(recipients, actorID)
+	delete(recipients, c.ActorID)
 
 	if len(recipients) == 0 {
 		return nil
@@ -450,8 +590,8 @@ func (s *NotificationService) TicketCommented(ctx context.Context, ticket *model
 		"ticket_id": ticket.ID.String(),
 		"title":     ticket.Title,
 		"comment": map[string]string{
-			"text":   commentText,
-			"author": authorLabel,
+			"text":   c.CommentText,
+			"author": c.AuthorLabel,
 		},
 	})
 	if err != nil {
@@ -519,6 +659,13 @@ func (s *NotificationService) AttachmentAdded(ctx context.Context, ticket *model
 // GetOverdueTicketIDs возвращает ID активных тикетов с просроченным сроком.
 func (s *NotificationService) GetOverdueTicketIDs(ctx context.Context, now time.Time) ([]uuid.UUID, error) {
 	return s.repo.GetOverdueTicketIDs(ctx, now)
+}
+
+// GetActiveByPriorityGlobal возвращает ID активных непросроченных тикетов заданного
+// приоритета; before > 0 ограничивает по сроку только заявки с due_date, заявки без
+// срока попадают в выборку всегда.
+func (s *NotificationService) GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority, before time.Duration) ([]uuid.UUID, error) {
+	return s.repo.GetActiveByPriorityGlobal(ctx, priority, before)
 }
 
 // NotifyDeadlineSoon оповещает исполнителя тикета о приближении срока (ticket.deadline_soon).

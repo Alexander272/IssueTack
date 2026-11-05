@@ -2,6 +2,8 @@ import { useMemo, type FC } from 'react'
 import { Box } from '@mui/material'
 
 import { FilterChip } from '@/components/FilterChip'
+import { useAppSelector } from '@/hooks/redux'
+import { getHasNoGroups } from '@/features/user/userSlice'
 import type { FilterValues } from './types'
 import { STATUS_OPTIONS, PRIORITY_MAP } from '../../constants/taskMaps'
 
@@ -25,6 +27,7 @@ const PRIORITY_OPTIONS = Object.entries(PRIORITY_MAP).map(([value, info]) => ({
 }))
 
 export const Chips: FC<Props> = ({ filters, onChange, siteOptions, ownerOptions, assigneeOptions, equipmentLabel }) => {
+	const hasNoGroups = useAppSelector(getHasNoGroups)
 	const activeChips = useMemo(() => {
 		const chips: { key: string; prefix: string; values: string[]; onClear: () => void }[] = []
 
@@ -62,7 +65,7 @@ export const Chips: FC<Props> = ({ filters, onChange, siteOptions, ownerOptions,
 				onClear: () => onChange({ siteIds: undefined }),
 			})
 		}
-		if (filters.dueDateFrom || filters.dueDateTo) {
+		if (!hasNoGroups && (filters.dueDateFrom || filters.dueDateTo)) {
 			chips.push({
 				key: 'dueDate',
 				prefix: 'Срок',
@@ -70,7 +73,7 @@ export const Chips: FC<Props> = ({ filters, onChange, siteOptions, ownerOptions,
 				onClear: () => onChange({ dueDateFrom: undefined, dueDateTo: undefined }),
 			})
 		}
-		if (filters.priorities?.length) {
+		if (!hasNoGroups && filters.priorities?.length) {
 			const names = filters.priorities.map(p => PRIORITY_OPTIONS.find(o => o.value === p)?.label ?? p)
 			chips.push({
 				key: 'priorities',
@@ -99,7 +102,7 @@ export const Chips: FC<Props> = ({ filters, onChange, siteOptions, ownerOptions,
 		}
 
 		return chips
-	}, [filters, onChange, ownerOptions, assigneeOptions, siteOptions, equipmentLabel])
+	}, [filters, onChange, ownerOptions, assigneeOptions, siteOptions, hasNoGroups, equipmentLabel])
 
 	if (activeChips.length === 0) return null
 

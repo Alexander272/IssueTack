@@ -1,12 +1,13 @@
 import { type FC } from 'react'
 import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material'
-import { EditIcon, EyeIcon, FolderIcon, UsersIcon } from 'lucide-mui'
+import { EditIcon, EyeIcon, EyeOffIcon, FolderIcon, UsersIcon } from 'lucide-mui'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ru'
 
 import type { ICategory } from '../types/category'
 import { TaskPriorityBadge } from '@/features/tasks/components/TaskPriorityBadge'
 import { StatusBadge } from '@/features/access/components/StatusBadge'
+import { categoryHiddenLabel, isCategoryHidden } from '../utils/visibility'
 
 import { getInitials } from '@/utils/avatar'
 
@@ -66,17 +67,24 @@ export const CategoryCardList: FC<Props> = ({ categories, groupsMap, onView, onE
 									</Typography>
 								</Box>
 								<Box sx={{ flex: 1, minWidth: 0 }}>
-									<Typography
-										sx={{
-											fontWeight: 700,
-											color: '#111827',
-											overflow: 'hidden',
-											textOverflow: 'ellipsis',
-											whiteSpace: 'nowrap',
-										}}
-									>
-										{cat.name}
-									</Typography>
+									<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+										<Typography
+											sx={{
+												fontWeight: 700,
+												color: '#111827',
+												overflow: 'hidden',
+												textOverflow: 'ellipsis',
+												whiteSpace: 'nowrap',
+											}}
+										>
+											{cat.name}
+										</Typography>
+										{isCategoryHidden(cat) && (
+											<Tooltip title={categoryHiddenLabel(cat)}>
+												<EyeOffIcon sx={{ fontSize: 16, color: '#b45309', flexShrink: 0 }} />
+											</Tooltip>
+										)}
+									</Box>
 									<Typography
 										sx={{
 											fontSize: '0.875rem',

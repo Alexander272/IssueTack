@@ -126,6 +126,20 @@ func (w *whereBuilder) dueDate(from, to *time.Time) {
 	}
 }
 
+func (w *whereBuilder) closedAt(from, to *time.Time) {
+	if from != nil {
+		w.idx++
+		w.add(fmt.Sprintf("t.closed_at >= $%d", w.idx))
+		w.args = append(w.args, *from)
+	}
+	// ClosedAtTo — эксклюзивная граница (начало следующего дня), поэтому <.
+	if to != nil {
+		w.idx++
+		w.add(fmt.Sprintf("t.closed_at < $%d", w.idx))
+		w.args = append(w.args, *to)
+	}
+}
+
 func (w *whereBuilder) priorities(ps []models.Priority) {
 	inList(w, "t.priority", ps)
 }
@@ -151,6 +165,30 @@ func (w *whereBuilder) creatorOrOwner(userID *uuid.UUID) {
 	w.add(fmt.Sprintf("(t.creator_id = $%d OR t.owner_id = $%d)", w.idx, w.idx+1))
 	w.args = append(w.args, *userID, *userID)
 	w.idx++
+}
+
+// readableBy добавляет "(t.creator_id = $n OR t.owner_id = $n OR t.assignee_id = $n
+// OR t.group_id IN (...))": заявки, доступные пользователю на чтение по атрибутам.
+// Используется для поиска заявки по номеру, где обычный списочный scope отсекал бы
+// создателя, не состоящего в группе тикета. Внегрупповые заявки, назначенные
+// пользователю, покрываются сравнением по assignee_id.
+func (w *whereBuilder) readableBy(f *models.MyWorkFilter) {
+	if f == nil {
+		return
+	}
+	w.idx++
+	user := fmt.Sprintf("$%d", w.idx)
+	w.args = append(w.args, f.UserID)
+	disj := []string{
+		"t.creator_id = " + user,
+		"t.owner_id = " + user,
+		"t.assignee_id = " + user,
+	}
+	if len(f.GroupIDs) > 0 {
+		disj = append(disj, "t.group_id IN ("+w.place(len(f.GroupIDs))+")")
+		w.args = append(w.args, toAny(f.GroupIDs)...)
+	}
+	w.add("(" + strings.Join(disj, " OR ") + ")")
 }
 
 // myWork добавляет "(t.assignee_id = $n OR t.group_id IN (...))" для страницы

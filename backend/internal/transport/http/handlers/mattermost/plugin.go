@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,6 +37,8 @@ func (h *Handler) registerPluginRoutes(r *gin.RouterGroup, cfg config.Mattermost
 	plugin.Use(middleware.PluginTokenGuard(cfg.PluginToken))
 	{
 		plugin.POST("/context", h.handlePluginContext)
+		plugin.POST("/greeting", h.handlePluginGreeting)
+		plugin.GET("/dm", h.handlePluginDM)
 		plugin.GET("/tickets", h.handlePluginListMine)
 		plugin.POST("/tickets", h.handlePluginCreateTicket)
 		plugin.GET("/tickets/:id", h.handlePluginGetTicket)
@@ -109,6 +112,49 @@ func (h *Handler) handlePluginContext(c *gin.Context) {
 	response.SendData(c, ctx)
 }
 
+// handlePluginGreeting отправляет приветствие пользователю, открывшему личный
+// диалог с ботом реалма. Вызывается webapp-плагином при монтировании иконки в
+// шапке DM. Идемпотентно: повторные вызовы ничего не шлют.
+func (h *Handler) handlePluginGreeting(c *gin.Context) {
+	var req pluginContextRequest
+	if err := utils.BindJSON(c, &req); err != nil {
+		response.SendError(c, err)
+		return
+	}
+
+	err := h.service.PluginGreeting(c, models.PluginScope{
+		ChannelID: req.ChannelID,
+		MmUserID:  req.UserID,
+		BotUserID: req.BotUserID,
+	})
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+
+	response.SendData(c, gin.H{"ok": true})
+}
+
+// handlePluginDM отдаёт личный диалог пользователя с ботом реалма. По нему
+// иконка в App Bar открывает модалку из любого канала: клиент не знает id бота
+// реалма, а DM-канал создаётся идемпотентно. Реалм определяется по боту, поэтому
+// системной учётки у пользователя может ещё не быть.
+func (h *Handler) handlePluginDM(c *gin.Context) {
+	userID := c.Query("userId")
+	if userID == "" {
+		response.SendError(c, models.ErrInvalidInput)
+		return
+	}
+
+	dm, err := h.service.PluginDM(c, userID)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+
+	response.SendData(c, dm)
+}
+
 func (h *Handler) handlePluginListMine(c *gin.Context) {
 	scope := pluginScope(c)
 	if scope.ChannelID == "" || scope.MmUserID == "" {
@@ -116,13 +162,77 @@ func (h *Handler) handlePluginListMine(c *gin.Context) {
 		return
 	}
 
-	list, err := h.service.PluginListMine(c, scope)
+	query := &models.PluginTicketListQuery{
+		PluginScope: scope,
+		Archived:    pluginBoolQuery(c.Query("archived")),
+		Search:      strings.TrimSpace(c.Query("search")),
+	}
+
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			response.SendError(c, models.ErrInvalidInput)
+			return
+		}
+		query.Limit = n
+	}
+	if raw := strings.TrimSpace(c.Query("offset")); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			response.SendError(c, models.ErrInvalidInput)
+			return
+		}
+		query.Offset = n
+	}
+	if raw := strings.TrimSpace(c.Query("closedAtFrom")); raw != "" {
+		from, err := parsePluginDate(raw, false)
+		if err != nil {
+			response.SendError(c, models.ErrInvalidInput)
+			return
+		}
+		query.ClosedAtFrom = from
+	}
+	if raw := strings.TrimSpace(c.Query("closedAtTo")); raw != "" {
+		to, err := parsePluginDate(raw, true)
+		if err != nil {
+			response.SendError(c, models.ErrInvalidInput)
+			return
+		}
+		query.ClosedAtTo = to
+	}
+
+	result, err := h.service.PluginListMine(c, query)
 	if err != nil {
 		response.SendError(c, err)
 		return
 	}
 
-	response.SendData(c, list)
+	response.SendData(c, result)
+}
+
+// pluginBoolQuery разбирает необязательный булев query-параметр плагина
+// (archived): понимает 1/true/yes и 0/false/no, отсутствие — false.
+func pluginBoolQuery(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes":
+		return true
+	}
+	return false
+}
+
+// parsePluginDate разбирает дату фильтра плагина (YYYY-MM-DD) в локальном
+// поясе сервера: closed_at хранится в UTC, а пользователь выбирает день по
+// своим часам. endOfDay=true сдвигает дату на начало следующего дня, чтобы
+// фильтр «по» включал выбранный день целиком (в SQL — строгое <).
+func parsePluginDate(raw string, endOfDay bool) (*time.Time, error) {
+	t, err := time.ParseInLocation("2006-01-02", raw, time.Local)
+	if err != nil {
+		return nil, fmt.Errorf("invalid date: %w", err)
+	}
+	if endOfDay {
+		t = t.AddDate(0, 0, 1)
+	}
+	return &t, nil
 }
 
 func (h *Handler) handlePluginGetTicket(c *gin.Context) {

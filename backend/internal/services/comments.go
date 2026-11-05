@@ -92,9 +92,10 @@ func (s *CommentService) GetByTicket(ctx context.Context, ticketID uuid.UUID, us
 
 // Create создаёт комментарий к тикету с проверкой work-доступа.
 // Для активных тикетов допускаются как внешние, так и внутренние комментарии
-// (при work-доступе). Для «замороженных» (resolved/closed/cancelled) внешние
-// комментарии запрещены — допустимы только внутренние, и только от исполнителя/
-// менеджера группы (CheckInternalAssigneeAccess).
+// (при work-доступе); внешний комментарий дополнительно разрешён заказчику (owner)
+// даже без work-доступа — это его способ общаться по заявке. Для «замороженных»
+// (resolved/closed/cancelled) внешние комментарии запрещены — допустимы только
+// внутренние, и только от исполнителя/менеджера группы (CheckInternalAssigneeAccess).
 // Если транзакция не передана, открывает собственную (owner-tx), чтобы
 // запись комментария была атомарной; side-эффекты (Mattermost, уведомления)
 // выполняются уже после фикса транзакции.
@@ -119,7 +120,14 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 		}
 	} else {
 		if err := s.ticketAccess.CheckWorkAccess(ctx, check); err != nil {
-			return nil, err
+			// Заказчик (owner) — полноправный участник заявки, но не «рабочий»: он
+			// может комментировать активную заявку, не получая work-доступа (иначе
+			// получил бы и смену статусов в обход ownerTransitionAllowed). Внутренние
+			// комментарии остаются за исполнителем/менеджером группы, поэтому owner
+			// пропускается только для внешних комментариев.
+			if dto.IsInternal || ticket.Owner == nil || ticket.Owner.ID != dto.UserID {
+				return nil, err
+			}
 		}
 	}
 
@@ -144,7 +152,13 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 	s.notifyOwnerViaMattermost(ctx, comment)
 	if s.notifications != nil {
 		authorLabel := s.commentAuthorLabel(ctx, comment.UserID)
-		if err := s.notifications.TicketCommented(ctx, ticket, comment.UserID, comment.Text, authorLabel); err != nil {
+		err := s.notifications.TicketCommented(ctx, &models.NotificationCommentDTO{
+			Ticket:      ticket,
+			ActorID:     comment.UserID,
+			CommentText: comment.Text,
+			AuthorLabel: authorLabel,
+		})
+		if err != nil {
 			logger.Warn("failed to notify about comment", logger.StringAttr("ticket_id", comment.TicketID.String()), logger.ErrAttr(err))
 		}
 	}

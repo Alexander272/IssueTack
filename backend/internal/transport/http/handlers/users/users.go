@@ -147,6 +147,7 @@ func (h *Handler) updateAccount(c *gin.Context) {
 	// Без realm правка учётки была бы глобальной (любой пользователь системы).
 	realmID, ok := utils.RequireRealmUUID(c)
 	if !ok {
+		response.SendError(c, err)
 		return
 	}
 	dto.RealmID = realmID

@@ -26,6 +26,28 @@ type CreateNotificationDTO struct {
 	Data   json.RawMessage `json:"data"`
 }
 
+// NotificationReminderDTO — параметры периодического напоминания по приоритету.
+// Отдельная структура вместо длинного списка позиционных аргументов: у
+// notifyPriorityReminder событие, тип уведомления, заголовок и интервал дедупа
+// идут рядом и легко перепутать местами при вызове.
+type NotificationReminderDTO struct {
+	Ticket      *Ticket
+	Event       string
+	NotifType   string
+	Title       string
+	MinInterval time.Duration
+}
+
+// NotificationCommentDTO — параметры уведомления о новом комментарии для
+// NotificationService.TicketCommented: текст комментария и подпись автора —
+// два одинаковых string подряд, поэтому позиционно их передавать нельзя.
+type NotificationCommentDTO struct {
+	Ticket      *Ticket
+	ActorID     uuid.UUID
+	CommentText string
+	AuthorLabel string
+}
+
 type NotificationSettings struct {
 	UserID   uuid.UUID       `json:"userId" db:"user_id"`
 	Settings json.RawMessage `json:"settings" db:"settings"`
@@ -34,10 +56,12 @@ type NotificationSettings struct {
 // Категории событий, по которым могут настраиваться уведомления.
 // Используются как ключи в JSON настройках (см. EventFieldName) и как события обращений к репозиторию.
 const (
-	EventNewTask = "new"
-	EventStatus  = "status"
-	EventComment = "comment"
-	EventOverdue = "overdue"
+	EventNewTask        = "new"
+	EventStatus         = "status"
+	EventComment        = "comment"
+	EventOverdue        = "overdue"
+	EventReminderHigh   = "reminder_high"
+	EventReminderUrgent = "reminder_urgent"
 )
 
 // EventFieldName возвращает имя поля JSON-настройки события для категории.
@@ -51,6 +75,10 @@ func EventFieldName(event string) string {
 		return "comment"
 	case EventOverdue:
 		return "overdue"
+	case EventReminderHigh:
+		return "reminderHigh"
+	case EventReminderUrgent:
+		return "reminderUrgent"
 	default:
 		return ""
 	}
@@ -58,11 +86,13 @@ func EventFieldName(event string) string {
 
 // CategoryNotificationSetting — настройки уведомлений по категории (матрица «категория × событие»).
 type CategoryNotificationSetting struct {
-	ID      uuid.UUID `json:"id"`
-	NewTask bool      `json:"newTask"`
-	Status  bool      `json:"status"`
-	Comment bool      `json:"comment"`
-	Overdue bool      `json:"overdue"`
+	ID             uuid.UUID `json:"id"`
+	NewTask        bool      `json:"newTask"`
+	Status         bool      `json:"status"`
+	Comment        bool      `json:"comment"`
+	Overdue        bool      `json:"overdue"`
+	ReminderHigh   bool      `json:"reminderHigh"`
+	ReminderUrgent bool      `json:"reminderUrgent"`
 }
 
 // GroupNotificationSetting — настройки уведомлений по группе задач.

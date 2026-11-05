@@ -16,6 +16,7 @@ export const TaskFilters: FC<TaskFiltersProps> = ({
 	onReset,
 	hideGrouping = false,
 	statusOptions,
+	hideFilters = false,
 	equipmentLabel,
 }) => {
 	const [filterAnchorEl, setFilterAnchorEl] = useState<HTMLElement | null>(null)
@@ -69,29 +70,34 @@ export const TaskFilters: FC<TaskFiltersProps> = ({
 				}
 				onOpenFilter={e => setFilterAnchorEl(e.currentTarget)}
 				onReset={onReset}
+				hideFilters={hideFilters}
 			/>
 
-			<Popover
-				key={String(Boolean(filterAnchorEl))}
-				open={Boolean(filterAnchorEl)}
-				anchorEl={filterAnchorEl}
-				onClose={() => setFilterAnchorEl(null)}
-				initial={filters}
-				onApply={onChange}
-				siteOptions={siteOptions}
-				ownerOptions={ownerOptions}
-				assigneeOptions={assigneeOptions}
-				statusOptions={statusOptions}
-			/>
+			{!hideFilters && (
+				<Popover
+					key={String(Boolean(filterAnchorEl))}
+					open={Boolean(filterAnchorEl)}
+					anchorEl={filterAnchorEl}
+					onClose={() => setFilterAnchorEl(null)}
+					initial={filters}
+					onApply={onChange}
+					siteOptions={siteOptions}
+					ownerOptions={ownerOptions}
+					assigneeOptions={assigneeOptions}
+					statusOptions={statusOptions}
+				/>
+			)}
 
-			<Chips
-				filters={filters}
-				onChange={onChange}
-				siteOptions={siteOptions}
-				ownerOptions={ownerOptions}
-				assigneeOptions={assigneeOptions}
-				equipmentLabel={equipmentLabel}
-			/>
+			{!hideFilters && (
+				<Chips
+					filters={filters}
+					onChange={onChange}
+					siteOptions={siteOptions}
+					ownerOptions={ownerOptions}
+					assigneeOptions={assigneeOptions}
+					equipmentLabel={equipmentLabel}
+				/>
+			)}
 		</>
 	)
 }
