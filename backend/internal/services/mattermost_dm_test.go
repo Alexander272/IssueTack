@@ -171,13 +171,6 @@ func mustJSON(t *testing.T, v any) string {
 	return string(data)
 }
 
-// postsServer перехватывает POST /api/v4/posts и пишет отправленные посты в
-// captured. Ответ сервера — минимальный созданный пост, как его ждёт model.Client4.
-func postsServer(t *testing.T, captured *[]capturedPost) *httptest.Server {
-	t.Helper()
-	return mmServer(t, &mmCapture{posts: captured})
-}
-
 // postObjects достаёт массив объектов из props/карточки. После похода через
 // JSON значения приходят как []any, поэтому приводим к общему виду.
 func postObjects(t *testing.T, raw any) []model.StringInterface {

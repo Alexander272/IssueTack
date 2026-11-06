@@ -237,8 +237,12 @@ type EquipmentFilter struct {
 	// (это «архив»), а отдельный фильтр статуса возвращает его. Флаг, а не
 	// хардкод в репозитории: список должен уметь показать всё, если попросят.
 	IncludeWrittenOff bool `form:"includeWrittenOff" json:"includeWrittenOff"`
-	Limit             int  `form:"limit" json:"limit"`
-	Offset            int  `form:"offset" json:"offset"`
+	// ExcludeKits — исключить комплекты из выборки. Заявки заводятся на
+	// конкретную единицу оборудования, а не на логический комплект, поэтому
+	// при подборе оборудования для заявки комплекты не нужны.
+	ExcludeKits bool `form:"excludeKits" json:"excludeKits"`
+	Limit       int  `form:"limit" json:"limit"`
+	Offset      int  `form:"offset" json:"offset"`
 }
 
 // GetEquipmentTreeDTO — параметры ленивого дерева: ParentID == nil — корни реалма,

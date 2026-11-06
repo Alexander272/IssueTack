@@ -20,7 +20,6 @@ interface Props {
 	onReset: () => void
 }
 
-// Выносим общие стили кнопок, чтобы не дублировать их 3 раза
 const COMMON_BUTTON_SX = {
 	flexShrink: 0,
 	height: 40,

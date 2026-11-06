@@ -3,7 +3,6 @@ package services
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -794,16 +793,6 @@ func parseTicketActionCallback(callbackID string) (string, uuid.UUID, bool) {
 		return "", uuid.Nil, false
 	}
 	return action, id, true
-}
-
-// actionErrorMessage переводит ошибку сервиса в текст для нажавшего кнопку:
-// доменные ошибки уже несут человеческий текст, остальное — общий fallback.
-func actionErrorMessage(err error) string {
-	var domainErr *models.DomainError
-	if errors.As(err, &domainErr) {
-		return domainErr.Message()
-	}
-	return "Не удалось изменить статус заявки"
 }
 
 // sendMyTickets отвечает на нажатие «Мои заявки»: находит realm по context,

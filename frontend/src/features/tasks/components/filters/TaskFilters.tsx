@@ -3,10 +3,12 @@ import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
 import { useGetAvailableUsersQuery, useGetRealmUsersQuery } from '@/features/user/usersApiSlice'
 import { useGetAllEquipmentQuery } from '@/features/equipment/equipmentApiSlice'
 
+import type { FilterValues, TaskFiltersProps } from './types'
+import { PermRules } from '@/features/access/constants/permissions'
+import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
 import { Toolbar } from './Toolbar'
 import { Popover } from './Popover'
 import { Chips } from './Chips'
-import type { FilterValues, TaskFiltersProps } from './types'
 
 export type { FilterValues, TaskFiltersProps }
 
@@ -19,12 +21,13 @@ export const TaskFilters: FC<TaskFiltersProps> = ({
 	hideFilters = false,
 	equipmentLabel,
 }) => {
+	const canSeeEquipment = useCheckPermissions({ allOf: [PermRules.Equipment.Read] })
 	const [filterAnchorEl, setFilterAnchorEl] = useState<HTMLElement | null>(null)
 
 	const { data: sitesData } = useGetAllSitesQuery()
 	const { data: usersData } = useGetAvailableUsersQuery()
 	const { data: executorsData } = useGetRealmUsersQuery('executors')
-	const { data: equipmentData } = useGetAllEquipmentQuery({ limit: 500 })
+	const { data: equipmentData } = useGetAllEquipmentQuery({ limit: 500, excludeKits: true }, { skip: !canSeeEquipment })
 
 	const siteOptions = useMemo(() => (sitesData?.data ?? []).map(s => ({ id: s.id, label: s.name })), [sitesData])
 

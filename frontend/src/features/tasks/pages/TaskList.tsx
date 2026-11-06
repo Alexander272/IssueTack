@@ -10,11 +10,10 @@ import type { ITask, ITaskFilter } from '../types/task'
 import { AppRoutes } from '@/pages/router/routes'
 import { PermRules } from '@/features/access/constants/permissions'
 import { useAppSelector } from '@/hooks/redux'
+import { useDebounce } from '@/hooks/useDebounce'
 import { useCan } from '@/features/access/utils/can'
 import { useGetTasksQuery } from '../tasksApiSlice'
-import { useGetAllEquipmentQuery } from '@/features/equipment/equipmentApiSlice'
 import { getHasNoGroups, getIsManager } from '@/features/user/userSlice'
-import { useDebounce } from '@/hooks/useDebounce'
 import { TaskFilters } from '../components/filters'
 import { TaskListView } from '../components/Table'
 import { TaskCreateModal } from '../components/TaskCreateModal'
@@ -209,10 +208,6 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 
 	const { data, isFetching } = useGetTasksQuery(queryFilter)
 
-	// Справочник единиц для выбора фильтра по оборудованию в UI.
-	const { data: equipmentData } = useGetAllEquipmentQuery({ limit: 500 })
-	const equipmentOptions = useMemo(() => (equipmentData?.data ?? []).map(e => ({ id: e.id, label: e.name })), [equipmentData])
-
 	// Название единицы для чипа фильтра: едет в ссылке, чтобы не тянуть запрос.
 	const equipmentLabel = urlEquipmentId ? urlEquipmentName : undefined
 
@@ -325,7 +320,6 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 				hideFilters={hasNoGroups}
 				statusOptions={statusOptions}
 				equipmentLabel={equipmentLabel}
-				equipmentOptions={equipmentOptions}
 			/>
 
 			<TaskListView

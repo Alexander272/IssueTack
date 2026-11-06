@@ -6,9 +6,9 @@ import type { ICategory } from '@/features/categories/types/category'
 import type { ISite } from '@/features/sites/types/site'
 import type { FormValues } from './types'
 import type { IEquipment } from '@/features/equipment/types/equipment'
-import { useAppSelector } from '@/hooks/redux'
+import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
+import { PermRules } from '@/features/access/constants/permissions'
 import { useGetAllEquipmentQuery } from '@/features/equipment/equipmentApiSlice'
-import { getHasNoGroups } from '@/features/user/userSlice'
 import { EquipmentTypeIcon } from '@/features/equipment/components/EquipmentTypeIcon'
 import { SectionCard } from './SectionCard'
 import { fieldLabelSx } from './styles'
@@ -74,12 +74,16 @@ const equipmentGroupTitle = (equipment: IEquipment) => equipment.typeName || equ
 
 export const CategoryAndSiteSection = ({ number = 1, categories, sites }: Props) => {
 	const { control } = useFormContext<FormValues>()
-	const hasNoGroups = useAppSelector(getHasNoGroups)
-	const { data: equipmentData } = useGetAllEquipmentQuery({ status: 'in_use', limit: 500 }, { skip: hasNoGroups })
+	const canSeeEquipment = useCheckPermissions({ allOf: [PermRules.Equipment.Read] })
+
+	const { data: equipmentData } = useGetAllEquipmentQuery(
+		{ status: 'in_use', limit: 500, excludeKits: true },
+		{ skip: !canSeeEquipment },
+	)
 
 	const equipment = useMemo(
-		() => (hasNoGroups ? [] : ((equipmentData?.data ?? []) as IEquipment[])),
-		[equipmentData, hasNoGroups],
+		() => (!canSeeEquipment ? [] : (equipmentData?.data ?? [])) as IEquipment[],
+		[equipmentData, canSeeEquipment],
 	)
 
 	// Порядок списка — глобальный порядок категорий, заданный админом
@@ -310,7 +314,7 @@ export const CategoryAndSiteSection = ({ number = 1, categories, sites }: Props)
 						)}
 					/>
 				</Box>
-				{!hasNoGroups && (
+				{canSeeEquipment && (
 					<Box sx={{ gridColumn: { xs: '1 / -1', sm: '1 / -1' } }}>
 						<Typography variant='caption' sx={fieldLabelSx}>
 							Оборудование

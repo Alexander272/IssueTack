@@ -13,12 +13,14 @@ import {
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import dayjs from 'dayjs'
 
-import { DateTextField } from '@/components/DatePicker/DatePicker'
 import type { TicketStatus, Priority } from '../../types/task'
+import type { FilterValues } from './types'
+import { PermRules } from '@/features/access/constants/permissions'
 import { STATUS_OPTIONS, PRIORITY_MAP } from '../../constants/taskMaps'
 import { useAppSelector } from '@/hooks/redux'
+import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
 import { getHasNoGroups } from '@/features/user/userSlice'
-import type { FilterValues } from './types'
+import { DateTextField } from '@/components/DatePicker/DatePicker'
 
 interface Option {
 	id: string
@@ -70,6 +72,7 @@ export const Popover: FC<Props> = ({
 	equipmentOptions,
 }) => {
 	const hasNoGroups = useAppSelector(getHasNoGroups)
+	const canSeeEquipment = useCheckPermissions({ allOf: [PermRules.Equipment.Read] })
 
 	// Инициализируем стейт один раз при монтировании (благодаря key в родительском компоненте)
 	const [local, setLocal] = useState<FilterValues>(filters)
@@ -177,17 +180,19 @@ export const Popover: FC<Props> = ({
 				</Box>
 
 				{/* Оборудование */}
-				<Box sx={SECTION_BOX_SX}>
-					<Typography sx={SECTION_TITLE_SX}>Оборудование</Typography>
-					<Autocomplete
-						options={equipmentOptions}
-						value={currentEquipment}
-						onChange={(_, v) => update('equipmentId', v?.id)}
-						getOptionLabel={o => o.label}
-						renderInput={params => <TextField {...params} size='small' placeholder='Выберите...' />}
-						noOptionsText='Нет оборудования'
-					/>
-				</Box>
+				{canSeeEquipment && (
+					<Box sx={SECTION_BOX_SX}>
+						<Typography sx={SECTION_TITLE_SX}>Оборудование</Typography>
+						<Autocomplete
+							options={equipmentOptions}
+							value={currentEquipment}
+							onChange={(_, v) => update('equipmentId', v?.id)}
+							getOptionLabel={o => o.label}
+							renderInput={params => <TextField {...params} size='small' placeholder='Выберите...' />}
+							noOptionsText='Нет оборудования'
+						/>
+					</Box>
+				)}
 
 				{/* Срок */}
 				{!hasNoGroups && (

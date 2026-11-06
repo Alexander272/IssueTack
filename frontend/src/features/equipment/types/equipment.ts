@@ -168,6 +168,9 @@ export interface IEquipmentFilter {
 	// includeWrittenOff — показывать списанное в общем списке. По умолчанию
 	// (или при явном статусе) списанные скрыты: это архив, а не рабочий список.
 	includeWrittenOff?: boolean
+	// excludeKits — исключить комплекты из выборки. Заявки заводятся на
+	// конкретную единицу оборудования, а не на логический комплект.
+	excludeKits?: boolean
 	limit?: number
 	offset?: number
 }

@@ -108,8 +108,8 @@ export const EquipmentTasks: FC<Props> = ({ unit }) => {
 			) : isError || tasks.length === 0 ? (
 				<EmptyState
 					icon={FolderOpenIcon}
-					title='По этому оборудованию заявок нет'
-					hint='Созданные инциденты или обслуживания появятся здесь'
+					title={'По этому оборудованию заявок нет'}
+					hint={'Созданные инциденты или обслуживания появятся здесь'}
 				/>
 			) : (
 				<Stack spacing={1}>

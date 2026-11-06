@@ -219,6 +219,14 @@ func (r *EquipmentRepo) Get(ctx context.Context, filter *models.EquipmentFilter)
 	eq(w, "e.site_id", filter.SiteID)
 	eq(w, "e.holder_user_id", filter.HolderID)
 
+	// Комплекты — логическая группировка, не физическая единица. На них нельзя
+	// завести заявку, поэтому при подборе оборудования для заявки их исключаем.
+	if filter.ExcludeKits {
+		w.idx++
+		w.add(fmt.Sprintf("e.is_kit = $%d", w.idx))
+		w.args = append(w.args, false)
+	}
+
 	// Списанное — «архив»: в общем списке его нет. Явный фильтр статуса (в т.ч.
 	// written_off) или флаг includeWrittenOff возвращают записи. Условие добавляем,
 	// только когда статус не задан: при явном статусе фильтр по нему уже есть.

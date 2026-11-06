@@ -732,12 +732,15 @@ func (s *MattermostService) PluginListMine(ctx context.Context, query *models.Pl
 		statuses = []models.TicketStatus{models.StatusClosed, models.StatusCancelled}
 	}
 
+	mode := "created_or_owned"
+
 	filter := &models.TicketFilter{
 		RealmID:  &settings.RealmID,
 		Statuses: statuses,
 		Actor:    &models.Actor{ID: user.ID, Name: user.Username},
 		// «Мои заявки» строго по атрибутам: mode=created_or_owned сервис не
 		// применяет к начальнику области, поэтому фильтр ставим явно.
+		Mode:             &mode,
 		CreatedOrOwnedBy: &user.ID,
 		ClosedAtFrom:     query.ClosedAtFrom,
 		ClosedAtTo:       query.ClosedAtTo,

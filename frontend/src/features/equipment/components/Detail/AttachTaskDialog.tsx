@@ -15,7 +15,7 @@ import {
 	useMediaQuery,
 	useTheme,
 } from '@mui/material'
-import { LinkIcon, SearchIcon, XIcon } from 'lucide-mui'
+import { LinkIcon, SearchIcon, XIcon, FolderOpenIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
@@ -47,6 +47,50 @@ export const AttachTaskDialog: FC<Props> = ({ open, onClose, unit }) => {
 	const [updateTask] = useUpdateTaskMutation()
 
 	const tasks = useMemo(() => (data?.data ?? []).filter(task => !task.equipment), [data])
+
+// Комплект — логическая группировка, не физическая единица. К нему нельзя
+// привязать заявку: заявка вводится на конкретную единицу оборудования.
+if (unit.isKit) {
+	return (
+		<Dialog
+			open={open}
+			onClose={onClose}
+			fullWidth
+			maxWidth='sm'
+			fullScreen={isMobile}
+			slotProps={{ paper: { sx: { borderRadius: { xs: 0, sm: '16px' }, p: { xs: 0, sm: 1 } } } }}
+		>
+			<DialogTitle
+				sx={{ m: 0, px: { xs: 1.5, sm: 2 }, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+			>
+				<Typography variant='h6' component='div' sx={{ fontWeight: 'bold' }}>
+					Привязать заявку
+				</Typography>
+				<IconButton onClick={onClose} sx={{ color: 'text.secondary' }}>
+					<XIcon sx={{ fontSize: 16 }} />
+				</IconButton>
+			</DialogTitle>
+
+			<DialogContent dividers sx={{ borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', px: { xs: 1.5, sm: 3 }, py: { xs: 2, sm: 3 } }}>
+				<EmptyState
+					icon={FolderOpenIcon}
+					title='Заявку нельзя привязать к комплекту'
+					hint='Заявку заводите на единицу оборудования внутри комплекта'
+				/>
+			</DialogContent>
+
+			<DialogActions sx={{ px: { xs: 1.5, sm: 2 }, py: 2 }}>
+				<Button
+					onClick={onClose}
+					variant='outlined'
+					sx={{ textTransform: 'none', color: 'text.primary', borderColor: '#ddd' }}
+				>
+					Закрыть
+				</Button>
+			</DialogActions>
+		</Dialog>
+	)
+}
 
 	const handleAttach = async (taskId: string) => {
 		setAttachingId(taskId)

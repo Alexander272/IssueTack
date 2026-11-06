@@ -194,7 +194,7 @@ export const OverviewTab: FC<Props> = ({ unit, onOpenUnit }) => {
 					</DetailCard>
 				)}
 
-				<EquipmentTasks unit={unit} />
+				{!unit.isKit && <EquipmentTasks unit={unit} />}
 			</Stack>
 
 			{/* Диалоги состава открываются из вкладки — её собственный контекст. */}

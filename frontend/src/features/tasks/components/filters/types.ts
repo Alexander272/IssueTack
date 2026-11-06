@@ -31,6 +31,4 @@ export interface TaskFiltersProps {
 	hideFilters?: boolean
 	// equipmentLabel — название единицы для чипа фильтра по оборудованию.
 	equipmentLabel?: string
-	// equipmentOptions — справочник единиц для выбора фильтра по оборудованию.
-	equipmentOptions?: { id: string; label: string }[]
 }
