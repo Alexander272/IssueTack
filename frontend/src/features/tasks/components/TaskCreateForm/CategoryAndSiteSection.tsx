@@ -2,12 +2,14 @@ import { useMemo } from 'react'
 import { Autocomplete, Box, TextField, Typography } from '@mui/material'
 import { Controller, useFormContext } from 'react-hook-form'
 
-import { Building2, Layers, ListTreeIcon, PackageIcon } from 'lucide-mui'
 import type { ICategory } from '@/features/categories/types/category'
 import type { ISite } from '@/features/sites/types/site'
 import type { FormValues } from './types'
 import type { IEquipment } from '@/features/equipment/types/equipment'
+import { useAppSelector } from '@/hooks/redux'
 import { useGetAllEquipmentQuery } from '@/features/equipment/equipmentApiSlice'
+import { getHasNoGroups } from '@/features/user/userSlice'
+import { EquipmentTypeIcon } from '@/features/equipment/components/EquipmentTypeIcon'
 import { SectionCard } from './SectionCard'
 import { fieldLabelSx } from './styles'
 
@@ -22,6 +24,13 @@ type CategoryGroup = {
 	key: string
 	title: string | null
 	items: ICategory[]
+}
+
+// Блок списка оборудования: тип (группа) и единицы/комплекты внутри него.
+type EquipmentGroup = {
+	key: string
+	title: string
+	items: IEquipment[]
 }
 
 const isRootCategory = (category: ICategory) => !category.categoryGroupId
@@ -56,11 +65,22 @@ const optionSx = (isRoot: boolean) => ({
 	'&&&[aria-selected="true"].Mui-focused': { bgcolor: '#eff6ff', borderLeftColor: '#2563eb' },
 })
 
+// Ключ группы оборудования: у единицы — id типа, у комплекта — id комплекта
+// (у комплекта, в отличие от единицы, нет типа). Заголовок группы — тип или имя
+// комплекта.
+const equipmentGroupKey = (equipment: IEquipment) =>
+	equipment.typeId ? `type:${equipment.typeId}` : `kit:${equipment.kitId ?? equipment.id}`
+const equipmentGroupTitle = (equipment: IEquipment) => equipment.typeName || equipment.name
+
 export const CategoryAndSiteSection = ({ number = 1, categories, sites }: Props) => {
 	const { control } = useFormContext<FormValues>()
-	const { data: equipmentData } = useGetAllEquipmentQuery({ limit: 500 })
+	const hasNoGroups = useAppSelector(getHasNoGroups)
+	const { data: equipmentData } = useGetAllEquipmentQuery({ status: 'in_use', limit: 500 }, { skip: hasNoGroups })
 
-	const equipment = (equipmentData?.data ?? []) as IEquipment[]
+	const equipment = useMemo(
+		() => (hasNoGroups ? [] : ((equipmentData?.data ?? []) as IEquipment[])),
+		[equipmentData, hasNoGroups],
+	)
 
 	// Порядок списка — глобальный порядок категорий, заданный админом
 	// (categories.sort_order). Разделы в этом порядке не участвуют: блок
@@ -94,6 +114,29 @@ export const CategoryAndSiteSection = ({ number = 1, categories, sites }: Props)
 
 	// Индекс нужен только разделителю: у первого блока линии нет.
 	const groupIndexes = useMemo(() => new Map(groups.map((group, index) => [group.key, index])), [groups])
+
+	// Группы оборудования — по типу (единица/комплект): блоки с заголовками
+	// такими же, как у категорий (раздел → тип), плюс разделители между блоками.
+	const equipmentGroups = useMemo(() => {
+		const byKey = new Map<string, EquipmentGroup>()
+		const order: string[] = []
+		equipment.forEach(item => {
+			const key = equipmentGroupKey(item)
+			let group = byKey.get(key)
+			if (!group) {
+				group = { key, title: equipmentGroupTitle(item), items: [] }
+				byKey.set(key, group)
+				order.push(key)
+			}
+			group.items.push(item)
+		})
+		return order.map(k => byKey.get(k)!)
+	}, [equipment])
+
+	const equipmentGroupIndexes = useMemo(
+		() => new Map(equipmentGroups.map((group, index) => [group.key, index])),
+		[equipmentGroups],
+	)
 
 	return (
 		<SectionCard
@@ -267,69 +310,117 @@ export const CategoryAndSiteSection = ({ number = 1, categories, sites }: Props)
 						)}
 					/>
 				</Box>
-				<Box sx={{ gridColumn: { xs: '1 / -1', sm: '1 / -1' } }}>
-					<Typography variant='caption' sx={fieldLabelSx}>
-						Оборудование
-					</Typography>
-					<Controller
-						control={control}
-						name='equipmentId'
-						render={({ field }) => (
-							<Autocomplete
-								options={equipment}
-								getOptionLabel={o => o.name}
-								getOptionKey={o => o.id}
-								value={equipment.find(e => e.id === field.value) ?? null}
-								onChange={(_, value) => field.onChange(value?.id ?? null)}
-								noOptionsText='Нет оборудования'
-								renderOption={(props, option) => {
-									const { key, ...rest } = props
-									return (
-										<Box component='li' key={key} {...rest}>
-											<Box
-												sx={{
-													width: 32,
-													height: 32,
-													borderRadius: '8px',
-													bgcolor: '#dbeafe',
-													color: 'primary.main',
-													display: 'flex',
-													alignItems: 'center',
-													justifyContent: 'center',
-													mr: 1.5,
-													flexShrink: 0,
-												}}
-											>
-												<PackageIcon sx={{ fontSize: 16 }} />
-											</Box>
-											<Box sx={{ minWidth: 0 }}>
-												<Typography sx={{ fontSize: '0.8125rem', fontWeight: 500 }}>
-													{option.name}
-												</Typography>
-												{(option.inventoryNumber || option.serialNumber) && (
+				{!hasNoGroups && (
+					<Box sx={{ gridColumn: { xs: '1 / -1', sm: '1 / -1' } }}>
+						<Typography variant='caption' sx={fieldLabelSx}>
+							Оборудование
+						</Typography>
+						<Controller
+							control={control}
+							name='equipmentId'
+							render={({ field }) => (
+								<Autocomplete
+									options={equipment}
+									groupBy={(o: IEquipment) => equipmentGroupKey(o)}
+									getOptionLabel={o => o.name}
+									getOptionKey={o => o.id}
+									value={equipment.find(e => e.id === field.value) ?? null}
+									onChange={(_, value) => field.onChange(value?.id ?? null)}
+									noOptionsText='Нет оборудования'
+									filterOptions={(options, params) => {
+										const q = params.inputValue.trim().toLowerCase()
+										if (!q) return options
+										return options.filter(
+											o =>
+												o.name.toLowerCase().includes(q) ||
+												(o.inventoryNumber ?? '').toLowerCase().includes(q),
+										)
+									}}
+									renderGroup={params => {
+										const index = equipmentGroupIndexes.get(params.group) ?? -1
+										const group = equipmentGroups[index]
+										if (!group) {
+											return (
+												<Box component='li' key={params.key}>
+													{params.children}
+												</Box>
+											)
+										}
+										return (
+											<Box component='li' key={params.key}>
+												{index > 0 && (
+													<Box sx={{ height: '1px', bgcolor: 'divider', mx: 2, my: '4px' }} />
+												)}
+												<Box
+													sx={{
+														display: 'flex',
+														alignItems: 'center',
+														gap: 1,
+														position: 'sticky',
+														top: 0,
+														zIndex: 1,
+														bgcolor: 'background.paper',
+														px: 1,
+														py: 0.5,
+														mb: 0.5,
+													}}
+												>
+													<EquipmentTypeIcon
+														isKit={group.items[0].isKit}
+														icon={group.items[0].typeIcon}
+														typeName={group.items[0].typeName}
+														sx={{ fontSize: 16 }}
+													/>
 													<Typography
 														sx={{
-															fontSize: '0.6875rem',
-															color: '#9ca3af',
-															overflow: 'hidden',
-															textOverflow: 'ellipsis',
-															whiteSpace: 'nowrap',
+															fontSize: '11px',
+															fontWeight: 700,
+															textTransform: 'uppercase',
+															letterSpacing: '0.05em',
+															color: '#6b7280',
 														}}
 													>
-														{option.inventoryNumber || option.serialNumber}
+														{group.title}
 													</Typography>
-												)}
+												</Box>
+												<Box component='ul' sx={{ p: 0 }}>
+													{params.children}
+												</Box>
 											</Box>
-										</Box>
-									)
-								}}
-								renderInput={params => (
-									<TextField {...params} size='small' placeholder='Выберите оборудование' />
-								)}
-							/>
-						)}
-					/>
-				</Box>
+										)
+									}}
+									renderOption={(props, option) => {
+										const { key, ...rest } = props
+										return (
+											<Box component='li' key={key} {...rest}>
+												<Typography sx={{ fontSize: '14px', fontWeight: 500, ml: 1 }}>
+													{option.name}
+													{(option.inventoryNumber || option.serialNumber) && (
+														<Typography
+															variant='caption'
+															sx={{
+																ml: 1,
+																color: '#9ca3af',
+																overflow: 'hidden',
+																textOverflow: 'ellipsis',
+																whiteSpace: 'nowrap',
+															}}
+														>
+															({option.inventoryNumber || option.serialNumber})
+														</Typography>
+													)}
+												</Typography>
+											</Box>
+										)
+									}}
+									renderInput={params => (
+										<TextField {...params} size='small' placeholder='Выберите оборудование' />
+									)}
+								/>
+							)}
+						/>
+					</Box>
+				)}
 			</Box>
 		</SectionCard>
 	)

@@ -31,6 +31,26 @@ func (s *TicketService) Take(ctx context.Context, dto *models.TakeTicketDTO) err
 		return err
 	}
 
+	// Заказчик (owner) с доступом только по владению не может «взять заявку»: его
+	// роль — просмотр/комментарий/решения владельца (см. ownerReadOnly). Автор без
+	// групп (IsCustomer) — тоже заказчик, а не рабочий, поэтому «взять» ему нельзя.
+	ownerReadOnly, err := s.access.ownerReadOnly(ctx, ticket, dto.Actor.ID)
+	if err != nil {
+		return err
+	}
+	if ownerReadOnly {
+		return models.ErrPermissionDenied
+	}
+	if ticket.Creator.ID == dto.Actor.ID {
+		customer, err := s.access.IsCustomer(ctx, ticket, dto.Actor.ID)
+		if err != nil {
+			return err
+		}
+		if customer {
+			return models.ErrPermissionDenied
+		}
+	}
+
 	if ticket.Assignee != nil {
 		if ticket.Assignee.ID == dto.Actor.ID {
 			return models.ErrPermissionDenied
@@ -70,12 +90,7 @@ func (s *TicketService) Take(ctx context.Context, dto *models.TakeTicketDTO) err
 		}
 
 		if len(changes) > 0 {
-			oldMap := make(map[string]string, len(changes))
-			newMap := make(map[string]string, len(changes))
-			for _, c := range changes {
-				oldMap[string(c.Tag)] = c.OldVal
-				newMap[string(c.Tag)] = c.NewVal
-			}
+			oldMap, newMap := s.logValues(ctx, oldTicket, changes)
 
 			log := &models.ActivityLogDTO{
 				Action:        "updated",
@@ -166,12 +181,7 @@ func (s *TicketService) Transfer(ctx context.Context, dto *models.TransferTicket
 		}
 
 		if len(changes) > 0 {
-			oldMap := make(map[string]string, len(changes))
-			newMap := make(map[string]string, len(changes))
-			for _, c := range changes {
-				oldMap[string(c.Tag)] = c.OldVal
-				newMap[string(c.Tag)] = c.NewVal
-			}
+			oldMap, newMap := s.logValues(ctx, oldTicket, changes)
 
 			log := &models.ActivityLogDTO{
 				Action:        "updated",
@@ -233,7 +243,7 @@ func (s *TicketService) Delete(ctx context.Context, dto *models.DeleteTicketDTO)
 			"priority": ticket.Priority,
 		}
 		if ticket.Assignee != nil {
-			snapshot["assignee"] = ticket.Assignee.ID.String()
+			snapshot["assignee"] = s.logUserLabel(ctx, ticket.Assignee.ID)
 		}
 		log := &models.ActivityLogDTO{
 			Action:        "deleted",

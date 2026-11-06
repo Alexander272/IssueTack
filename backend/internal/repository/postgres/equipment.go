@@ -245,7 +245,10 @@ func (r *EquipmentRepo) Get(ctx context.Context, filter *models.EquipmentFilter)
 	if len(w.clauses) > 0 {
 		query += " WHERE " + strings.Join(w.clauses, " AND ")
 	}
-	query += " ORDER BY e.created_at DESC"
+	// Сортировка по типу (справочник): как у категорий по глобальному sort_order,
+	// список единиц/комплектов идёт типами группирующим образом — клиенту не
+	// нужно самому держать порядок групп, достаточно groupBy по type_id.
+	query += " ORDER BY COALESCE(et.sort_order, 0), e.name"
 
 	if filter.Limit > 0 {
 		w.idx++

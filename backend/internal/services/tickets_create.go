@@ -130,46 +130,33 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		return fmt.Errorf("auto-assign: %w", err)
 	}
 
-	canSetDueDate := false
-
-	isManager, err := s.isManagerOfGroup(ctx, &models.GroupShort{ID: *dto.GroupID}, dto.Actor.ID)
-	if err != nil {
-		return fmt.Errorf("failed to check manager access: %w", err)
-	}
-
-	supervisor, err := s.access.IsRealmSupervisor(ctx, dto.Actor.ID, realmStr)
-	if err != nil {
-		return fmt.Errorf("failed to check supervisor access: %w", err)
-	}
-
-	if isManager || supervisor {
-		canSetDueDate = true
-	} else {
-		// Проверяем, является ли пользователь "исполнителем" (участником хотя бы одной группы в реалме)
-		// Мы делаем этот запрос только если пользователь не менеджер и не супервизор, чтобы сэкономить ресурсы
-		memberGroups, err := s.groups.GetMemberGroups(ctx, dto.Actor.ID, dto.RealmID)
-		if err != nil {
-			return fmt.Errorf("failed to get member groups for due date check: %w", err)
-		}
-		if len(memberGroups) > 0 {
-			canSetDueDate = true
-		}
-	}
-
-	// 1. Если пользователь пытается вручную установить срок, но не имеет прав — блокируем
-	if dto.DueDate != nil && !canSetDueDate {
-		return models.ErrPermissionDenied
-	}
-
-	// 2. Если срок не указан вручную, но пользователь имеет право его устанавливать,
-	// и у категории есть срок по умолчанию — применяем его автоматически.
-	if dto.DueDate == nil && canSetDueDate && dto.CategoryID != uuid.Nil {
+	// Срок выполнения может ставить менеджер группы, начальник области или
+	// исполнитель (участник хотя бы одной группы реалма). Автосрок из категории
+	// применяется только тому, кто вправе задать срок вручную. Права проверяем
+	// лишь когда срок действительно нужен (задан явно или у категории есть
+	// автосрок), иначе создание заявки без срока делало бы лишние запросы в БД.
+	var defaultDueDays *int
+	if dto.DueDate == nil && dto.CategoryID != uuid.Nil {
 		category, err := s.categories.GetByID(ctx, &models.GetCategoryByIdDTO{ID: dto.CategoryID, RealmID: *dto.RealmID})
 		if err != nil {
 			return fmt.Errorf("failed to get category: %w", err)
 		}
 		if category.DefaultDueDays != nil && *category.DefaultDueDays > 0 {
-			dd := time.Now().UTC().AddDate(0, 0, *category.DefaultDueDays)
+			defaultDueDays = category.DefaultDueDays
+		}
+	}
+
+	if dto.DueDate != nil || defaultDueDays != nil {
+		canSetDueDate, err := s.canSetDueDateOnCreate(ctx, dto)
+		if err != nil {
+			return err
+		}
+
+		if dto.DueDate != nil && !canSetDueDate {
+			return models.ErrPermissionDenied
+		}
+		if dto.DueDate == nil && canSetDueDate {
+			dd := time.Now().UTC().AddDate(0, 0, *defaultDueDays)
 			dto.DueDate = &dd
 		}
 	}

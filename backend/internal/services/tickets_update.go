@@ -29,7 +29,12 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 			if loadErr != nil {
 				return fmt.Errorf("failed to load ticket for access check: %w", loadErr)
 			}
-			if !s.isOwner(old, dto.Actor.ID) {
+			// Автор заявки, как и владелец, сохраняет ограниченный доступ к ней
+			// даже без write/work-прав (безгрупповой автор — «заказчик»): ему
+			// доступны решения по статусам через ownerTransitionAllowed и правка
+			// своих полей через canEditFields. Менеджерские права (write/группа)
+			// сюда не попадают — они прошли CheckAccess выше.
+			if !s.isOwnerOrCreator(old, dto.Actor.ID) {
 				return err
 			}
 			ownerOnly = true
@@ -230,9 +235,10 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 			}
 		}
 
-		// Для владельца без write/work-доступа переходы по статусам уже проверены
-		// через ownerTransitionAllowed выше; здесь ограничиваем правку не-статусных
-		// полей: владелец может их менять только пока заявка ещё в статусе open.
+		// Для владельца/автора без write/work-доступа переходы по статусам уже
+		// проверены через ownerTransitionAllowed выше; здесь ограничиваем правку
+		// не-статусных полей через canEditFields: автор правит всегда, владелец —
+		// только пока заявка ещё в статусе open.
 		if ownerOnly {
 			for _, change := range changes {
 				if change.Tag == models.ActionStatusChanged || change.Tag == models.ActionClosed {
@@ -257,12 +263,7 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 		}
 
 		if len(changes) > 0 {
-			oldMap := make(map[string]string, len(changes))
-			newMap := make(map[string]string, len(changes))
-			for _, c := range changes {
-				oldMap[string(c.Tag)] = c.OldVal
-				newMap[string(c.Tag)] = c.NewVal
-			}
+			oldMap, newMap := s.logValues(ctx, oldTicket, changes)
 
 			log := &models.ActivityLogDTO{
 				Action:        "updated",

@@ -308,7 +308,9 @@ func TestPluginContext_HappyPath(t *testing.T) {
 		return []*models.Group{{ID: uuid.New(), Name: "Группа", DefaultAssigneeID: &defaultAssignee}}, nil
 	}}
 	users.On("GetByMembership", mock.Anything, realmID, models.MembershipExecutors).Return([]*models.UserData{{ID: uuid.New(), Username: "ex1"}}, nil)
-	users.On("GetByMembership", mock.Anything, realmID, models.MembershipCustomers).Return([]*models.UserData{{ID: uuid.New(), Username: "cu1"}}, nil)
+	// Заказчиком может быть любой пользователь реалма, поэтому список для плагина
+	// запрашивается без фильтра по группам (MembershipAll), а не только «вне групп».
+	users.On("GetByMembership", mock.Anything, realmID, models.MembershipAll).Return([]*models.UserData{{ID: uuid.New(), Username: "cu1"}}, nil)
 
 	access := new(MockTicketAccessChecker)
 	access.On("IsRealmSupervisor", mock.Anything, userID, realmID.String()).Return(false, nil)

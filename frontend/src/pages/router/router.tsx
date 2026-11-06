@@ -142,9 +142,6 @@ const config: RouteObject[] = [
 										path: AppRoutes.Permissions,
 										element: <RoleRoute permission={PermRules.Permissions.Write} />,
 										children: [{ index: true, element: <Permissions /> }],
-						},
-						{
-							element: <RoleRoute permission='settings:write' />,
 									},
 								],
 							},

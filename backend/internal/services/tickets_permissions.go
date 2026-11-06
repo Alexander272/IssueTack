@@ -63,8 +63,47 @@ func (s *TicketService) isManagerOfGroup(ctx context.Context, group *models.Grou
 	return false, nil
 }
 
+// canSetDueDateOnCreate сообщает, вправе ли создатель задать срок выполнения.
+// Право есть у менеджера группы заявки, начальника области и исполнителя —
+// участника хотя бы одной группы реалма. Заказчик без групп срок не ставит.
+func (s *TicketService) canSetDueDateOnCreate(ctx context.Context, dto *models.TicketDTO) (bool, error) {
+	realm := ""
+	if dto.RealmID != nil {
+		realm = dto.RealmID.String()
+	}
+
+	isManager, err := s.isManagerOfGroup(ctx, &models.GroupShort{ID: *dto.GroupID}, dto.Actor.ID)
+	if err != nil {
+		return false, fmt.Errorf("failed to check manager access: %w", err)
+	}
+	if isManager {
+		return true, nil
+	}
+
+	supervisor, err := s.access.IsRealmSupervisor(ctx, dto.Actor.ID, realm)
+	if err != nil {
+		return false, fmt.Errorf("failed to check supervisor access: %w", err)
+	}
+	if supervisor {
+		return true, nil
+	}
+
+	memberGroups, err := s.groups.GetMemberGroups(ctx, dto.Actor.ID, dto.RealmID)
+	if err != nil {
+		return false, fmt.Errorf("failed to get member groups for due date check: %w", err)
+	}
+	return len(memberGroups) > 0, nil
+}
+
 func (s *TicketService) isOwner(ticket *models.Ticket, actorID uuid.UUID) bool {
 	return ticket.Owner != nil && ticket.Owner.ID == actorID
+}
+
+// isOwnerOrCreator — владелец заявки или её автор. Оба получают «решения владельца»
+// (отмена/подтверждение/возврат), когда у них нет write/work-доступа: заказчик —
+// по владению, безгрупповой автор — как заказчик своей же заявки (см. Update).
+func (s *TicketService) isOwnerOrCreator(ticket *models.Ticket, actorID uuid.UUID) bool {
+	return s.isOwner(ticket, actorID) || ticket.Creator.ID == actorID
 }
 
 // canEditFields определяет, может ли пользователь править не-статусные поля тикета
@@ -165,8 +204,23 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 
 	// CanTake — заявку можно «взять в работу»: она активна (не resolved/closed/cancelled)
 	// и «забираема» — исполнителя нет совсем, либо исполнитель — другой пользователь,
-	// а заявка ещё в статусе open (см. Take).
-	flags.CanTake = !isTicketInactive(ticket.Status) &&
+	// а заявка ещё в статусе open (см. Take). Кнопка не показывается «не-рабочим»:
+	// чистому заказчику (ownerReadOnly) и автору-без-групп (IsCustomer) — их роль
+	// просмотр/комментарий/решения, а не работа.
+	ownerReadOnly, err := s.access.ownerReadOnly(ctx, ticket, userID)
+	if err != nil {
+		return nil, err
+	}
+	nonWorker := ownerReadOnly
+	if !nonWorker && ticket.Creator.ID == userID {
+		customer, err := s.access.IsCustomer(ctx, ticket, userID)
+		if err != nil {
+			return nil, err
+		}
+		nonWorker = customer
+	}
+	flags.CanTake = !nonWorker &&
+		!isTicketInactive(ticket.Status) &&
 		(ticket.Assignee == nil ||
 			(ticket.Assignee.ID != userID && ticket.Status == models.StatusOpen))
 
@@ -268,7 +322,8 @@ func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *mode
 		if isCreatorOrMgr || isOwner {
 			add(models.StatusClosed)
 		}
-		if hasWrite || hasWork || isOwner {
+		// Возврат в работу доступен владельцу и автору (как и ownerTransitionAllowed).
+		if hasWrite || hasWork || isOwner || isCreator {
 			add(models.StatusInProgress)
 		}
 		if hasWrite || hasWork {
