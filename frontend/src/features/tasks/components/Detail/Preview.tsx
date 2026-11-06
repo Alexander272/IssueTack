@@ -1,10 +1,8 @@
 import { type FC, useState } from 'react'
 import { Box, Dialog, IconButton, Typography } from '@mui/material'
-import { toast } from 'react-toastify'
 import { X, Download, Maximize2, Minimize2 } from 'lucide-mui'
 
 import { formatSize } from '../../utils/size'
-import { saveAs } from '@/utils/saveAs'
 import { useGetAttachmentContentQuery } from '../../modules/attachments/attachmentsApiSlice'
 import type { IAttachment } from '../../types/task'
 
@@ -23,15 +21,13 @@ function PreviewContent({ fileKey, fileName, fileSize, fullScreen, onToggleFullS
 
 	const handleDownload = async () => {
 		if (!src) return
-		try {
-			const res = await fetch(src)
-			if (!res.ok) {
-				throw new Error('Ошибка при получении файла')
-			}
-			saveAs(await res.blob(), fileName)
-		} catch {
-			toast.error('Ошибка скачивания файла')
-		}
+
+		const link = document.createElement('a')
+		link.href = src
+		link.download = fileName
+		document.body.appendChild(link)
+		link.click()
+		link.remove()
 	}
 
 	return (
@@ -102,7 +98,9 @@ function PreviewContent({ fileKey, fileName, fileSize, fullScreen, onToggleFullS
 					}}
 				>
 					<Box>
-						<Typography sx={{ color: 'white', fontWeight: 500, fontSize: '0.875rem' }}>{fileName}</Typography>
+						<Typography sx={{ color: 'white', fontWeight: 500, fontSize: '0.875rem' }}>
+							{fileName}
+						</Typography>
 						<Typography sx={{ color: '#9ca3af', fontSize: '0.75rem' }}>{formatSize(fileSize)}</Typography>
 					</Box>
 					<IconButton
