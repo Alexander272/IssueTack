@@ -10,7 +10,7 @@ import { getHasNoGroups } from '@/features/user/userSlice'
 interface Props {
 	search: string
 	groupEnabled: boolean
-	groupBy: string
+	groupBy: GroupByField
 	activeCount: number
 	hideGrouping?: boolean
 	hideFilters?: boolean
@@ -18,6 +18,16 @@ interface Props {
 	onGroupChange: (option?: GroupByField) => void
 	onOpenFilter: (e: React.MouseEvent<HTMLElement>) => void
 	onReset: () => void
+}
+
+// Выносим общие стили кнопок, чтобы не дублировать их 3 раза
+const COMMON_BUTTON_SX = {
+	flexShrink: 0,
+	height: 40,
+	borderColor: '#c4c4c4',
+	textTransform: 'none' as const,
+	whiteSpace: 'nowrap' as const,
+	width: { xs: '100%', sm: 'auto' },
 }
 
 export const Toolbar: FC<Props> = ({
@@ -54,7 +64,13 @@ export const Toolbar: FC<Props> = ({
 				value={search}
 				onChange={e => onSearchChange(e.target.value)}
 				placeholder='Поиск...'
-				sx={{ flex: { xs: '1 1 100%', sm: 1 }, order: { xs: 0, sm: 0 }, minWidth: { xs: 150, sm: 250 } }}
+				type='search'
+				autoComplete='off'
+				sx={{
+					flexGrow: 1,
+					flexBasis: { sm: '100%', md: 'auto' },
+					minWidth: { xs: 150, sm: 250 },
+				}}
 				slotProps={{
 					input: {
 						startAdornment: <SearchIcon sx={{ fontSize: 16, mr: 1, color: '#9ca3af' }} />,
@@ -70,12 +86,7 @@ export const Toolbar: FC<Props> = ({
 						onClick={e => setGroupAnchorEl(e.currentTarget)}
 						fullWidth
 						sx={{
-							flexShrink: 0,
-							height: 40,
-							borderColor: '#c4c4c4',
-							textTransform: 'none',
-							// color: 'text.secondary',
-							whiteSpace: 'nowrap',
+							...COMMON_BUTTON_SX,
 							color: groupEnabled ? 'primary.main' : '#9ca3af',
 						}}
 					>
@@ -84,24 +95,22 @@ export const Toolbar: FC<Props> = ({
 					</Button>
 					<Menu open={Boolean(groupAnchorEl)} anchorEl={groupAnchorEl} onClose={() => setGroupAnchorEl(null)}>
 						<MenuItem
-							value='none'
-							selected={!groupEnabled}
 							onClick={() => {
-								onGroupChange()
+								onGroupChange(undefined) // Явно передаем undefined
 								setGroupAnchorEl(null)
 							}}
+							selected={!groupEnabled}
 						>
 							Без группировки
 						</MenuItem>
 						{groupByOptions.map(opt => (
 							<MenuItem
 								key={opt.value}
-								value={opt.value}
-								selected={opt.value === groupBy && groupEnabled}
 								onClick={() => {
 									onGroupChange(opt.value)
 									setGroupAnchorEl(null)
 								}}
+								selected={opt.value === groupBy && groupEnabled}
 							>
 								{opt.label}
 							</MenuItem>
@@ -116,14 +125,8 @@ export const Toolbar: FC<Props> = ({
 					color='inherit'
 					onClick={onOpenFilter}
 					sx={{
-						flexShrink: 0,
-						height: 40,
-						borderColor: '#c4c4c4',
-						textTransform: 'none',
-						// color: 'text.secondary',
-						whiteSpace: 'nowrap',
+						...COMMON_BUTTON_SX,
 						color: activeCount > 0 ? 'primary.main' : '#9ca3af',
-						width: { xs: '100%', sm: 'auto' },
 					}}
 				>
 					<FilterIcon sx={{ fontSize: 18, mr: 1 }} />
@@ -154,16 +157,11 @@ export const Toolbar: FC<Props> = ({
 					onClick={onReset}
 					variant='outlined'
 					color='inherit'
+					aria-label='Сбросить все фильтры и группировку'
 					sx={{
-						flexShrink: 0,
-						height: 40,
-						order: { xs: 1, sm: 3 },
-						textTransform: 'none',
+						...COMMON_BUTTON_SX,
 						minWidth: 'auto',
-						whiteSpace: 'nowrap',
-						borderColor: '#c4c4c4',
 						color: '#9ca3af',
-						width: { xs: '100%', sm: 'auto' },
 					}}
 				>
 					<RefreshCwIcon sx={{ fontSize: 14, mr: 1 }} />

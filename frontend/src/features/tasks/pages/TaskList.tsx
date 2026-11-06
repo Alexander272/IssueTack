@@ -12,6 +12,7 @@ import { PermRules } from '@/features/access/constants/permissions'
 import { useAppSelector } from '@/hooks/redux'
 import { useCan } from '@/features/access/utils/can'
 import { useGetTasksQuery } from '../tasksApiSlice'
+import { useGetAllEquipmentQuery } from '@/features/equipment/equipmentApiSlice'
 import { getHasNoGroups, getIsManager } from '@/features/user/userSlice'
 import { useDebounce } from '@/hooks/useDebounce'
 import { TaskFilters } from '../components/filters'
@@ -195,13 +196,22 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 			sort: effectiveFilters.sort,
 			mode: listMode,
 			archived: isArchive || undefined,
+			// Deep link по оборудованию (?equipmentId=…): список «все заявки единицы» —
+			// история включает закрытые, поэтому на вкладке «Активные» (по умолчанию) статус
+			// отключаем целиком (`allStatuses`), а ручное переключение на «Архив» снимает
+			// его обратно — вкладка работает как обычно после явного выбора.
+			allStatuses: urlEquipmentId && !isArchive ? true : undefined,
 			limit: isArchive ? rowsPerPage : undefined,
 			offset: isArchive ? page * rowsPerPage : undefined,
 		}),
-		[effectiveFilters, listMode, page, isArchive, numberFilter, debouncedSearch],
+		[effectiveFilters, listMode, page, isArchive, numberFilter, debouncedSearch, urlEquipmentId],
 	)
 
 	const { data, isFetching } = useGetTasksQuery(queryFilter)
+
+	// Справочник единиц для выбора фильтра по оборудованию в UI.
+	const { data: equipmentData } = useGetAllEquipmentQuery({ limit: 500 })
+	const equipmentOptions = useMemo(() => (equipmentData?.data ?? []).map(e => ({ id: e.id, label: e.name })), [equipmentData])
 
 	// Название единицы для чипа фильтра: едет в ссылке, чтобы не тянуть запрос.
 	const equipmentLabel = urlEquipmentId ? urlEquipmentName : undefined
@@ -315,6 +325,7 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 				hideFilters={hasNoGroups}
 				statusOptions={statusOptions}
 				equipmentLabel={equipmentLabel}
+				equipmentOptions={equipmentOptions}
 			/>
 
 			<TaskListView

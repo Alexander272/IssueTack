@@ -1,14 +1,14 @@
-import { useState, useMemo, type FC } from 'react'
+import { useState, useMemo, type FC, useCallback } from 'react'
 import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
 import { useGetAvailableUsersQuery, useGetRealmUsersQuery } from '@/features/user/usersApiSlice'
+import { useGetAllEquipmentQuery } from '@/features/equipment/equipmentApiSlice'
 
 import { Toolbar } from './Toolbar'
 import { Popover } from './Popover'
 import { Chips } from './Chips'
 import type { FilterValues, TaskFiltersProps } from './types'
 
-export type { FilterValues }
-export type { TaskFiltersProps }
+export type { FilterValues, TaskFiltersProps }
 
 export const TaskFilters: FC<TaskFiltersProps> = ({
 	filters,
@@ -24,22 +24,27 @@ export const TaskFilters: FC<TaskFiltersProps> = ({
 	const { data: sitesData } = useGetAllSitesQuery()
 	const { data: usersData } = useGetAvailableUsersQuery()
 	const { data: executorsData } = useGetRealmUsersQuery('executors')
+	const { data: equipmentData } = useGetAllEquipmentQuery({ limit: 500 })
 
 	const siteOptions = useMemo(() => (sitesData?.data ?? []).map(s => ({ id: s.id, label: s.name })), [sitesData])
-	// «Заказчик» — все участники реалма; «Исполнитель» — только участники групп (как в статистике).
-	// В обоих списках локальные пользователи: импортированные из Mattermost и системные не участвуют.
+
+	const equipmentList = useMemo(
+		() => (equipmentData?.data ?? []).map(e => ({ id: e.id, label: e.name })),
+		[equipmentData],
+	)
+
+	const formatUser = (u: { id: string; lastName: string; firstName: string; username: string }) => ({
+		id: u.id,
+		label: `${u.lastName} ${u.firstName} (${u.username})`,
+	})
+
 	const ownerOptions = useMemo(
-		() =>
-			(usersData?.data ?? [])
-				.filter(u => u.source !== 'mattermost' && !u.isSystem)
-				.map(u => ({ id: u.id, label: `${u.lastName} ${u.firstName} (${u.username})` })),
+		() => (usersData?.data ?? []).filter(u => u.source !== 'mattermost' && !u.isSystem).map(formatUser),
 		[usersData],
 	)
+
 	const assigneeOptions = useMemo(
-		() =>
-			(executorsData?.data ?? [])
-				.filter(u => u.source !== 'mattermost' && !u.isSystem)
-				.map(u => ({ id: u.id, label: `${u.lastName} ${u.firstName} (${u.username})` })),
+		() => (executorsData?.data ?? []).filter(u => u.source !== 'mattermost' && !u.isSystem).map(formatUser),
 		[executorsData],
 	)
 
@@ -56,6 +61,14 @@ export const TaskFilters: FC<TaskFiltersProps> = ({
 		return count
 	}, [filters])
 
+	const handleOpenFilter = useCallback((e: React.MouseEvent<HTMLElement>) => {
+		setFilterAnchorEl(e.currentTarget)
+	}, [])
+
+	const handleCloseFilter = useCallback(() => {
+		setFilterAnchorEl(null)
+	}, [])
+
 	return (
 		<>
 			<Toolbar
@@ -65,26 +78,24 @@ export const TaskFilters: FC<TaskFiltersProps> = ({
 				activeCount={activeCount}
 				hideGrouping={hideGrouping}
 				onSearchChange={search => onChange({ search })}
-				onGroupChange={option =>
-					onChange({ groupBy: option ?? 'category', groupEnabled: option ? true : false })
-				}
-				onOpenFilter={e => setFilterAnchorEl(e.currentTarget)}
+				onGroupChange={option => onChange({ groupBy: option ?? 'category', groupEnabled: Boolean(option) })}
+				onOpenFilter={handleOpenFilter}
 				onReset={onReset}
 				hideFilters={hideFilters}
 			/>
 
 			{!hideFilters && (
 				<Popover
-					key={String(Boolean(filterAnchorEl))}
 					open={Boolean(filterAnchorEl)}
 					anchorEl={filterAnchorEl}
-					onClose={() => setFilterAnchorEl(null)}
-					initial={filters}
+					onClose={handleCloseFilter}
+					filters={filters}
 					onApply={onChange}
 					siteOptions={siteOptions}
 					ownerOptions={ownerOptions}
 					assigneeOptions={assigneeOptions}
 					statusOptions={statusOptions}
+					equipmentOptions={equipmentList}
 				/>
 			)}
 
@@ -96,6 +107,7 @@ export const TaskFilters: FC<TaskFiltersProps> = ({
 					ownerOptions={ownerOptions}
 					assigneeOptions={assigneeOptions}
 					equipmentLabel={equipmentLabel}
+					equipmentOptions={equipmentList}
 				/>
 			)}
 		</>

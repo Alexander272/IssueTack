@@ -29,81 +29,92 @@ interface Props {
 	open: boolean
 	anchorEl: HTMLElement | null
 	onClose: () => void
-	initial: FilterValues
+	filters: FilterValues
 	onApply: (patch: Partial<FilterValues>) => void
 	siteOptions: Option[]
-	// ownerOptions — «Заказчик»: все участники реалма. assigneeOptions — «Исполнитель»: только участники групп.
 	ownerOptions: Option[]
 	assigneeOptions: Option[]
-	// statusOptions — статусы, доступные на текущей вкладке (см. statusOptionsFor):
-	// на активной нет закрытых/отменённых, на «Мои задачи» — и решённых.
 	statusOptions: TicketStatus[]
+	equipmentOptions: Option[]
 }
 
-const PRIORITY_OPTIONS: { value: Priority; label: string }[] = Object.entries(PRIORITY_MAP).map(([value, info]) => ({
+const PRIORITY_OPTIONS = Object.entries(PRIORITY_MAP).map(([value, info]) => ({
 	value: value as Priority,
 	label: info.label,
 }))
+
+const SECTION_TITLE_SX = {
+	fontSize: 12,
+	fontWeight: 600,
+	color: '#57606a',
+	textTransform: 'uppercase' as const,
+	mb: 0.75,
+}
+
+const SECTION_BOX_SX = {
+	mb: 2,
+	pb: 2,
+	borderBottom: '1px solid #eaeef2',
+}
 
 export const Popover: FC<Props> = ({
 	open,
 	anchorEl,
 	onClose,
-	initial,
+	filters,
 	onApply,
 	siteOptions,
 	ownerOptions,
 	assigneeOptions,
 	statusOptions,
+	equipmentOptions,
 }) => {
 	const hasNoGroups = useAppSelector(getHasNoGroups)
-	const [local, setLocal] = useState(() => ({
-		ticketNumber: initial.ticketNumber ?? '',
-		ownerId: initial.ownerId ?? (null as string | null),
-		siteIds: initial.siteIds ?? ([] as string[]),
-		dueDateFrom: initial.dueDateFrom ?? '',
-		dueDateTo: initial.dueDateTo ?? '',
-		priorities: initial.priorities ?? ([] as Priority[]),
-		assigneeId: initial.assigneeId ?? (null as string | null),
-		statuses: initial.statuses ?? ([] as TicketStatus[]),
-	}))
 
-	const update = <K extends keyof typeof local>(key: K, value: (typeof local)[K]) => {
+	// Инициализируем стейт один раз при монтировании (благодаря key в родительском компоненте)
+	const [local, setLocal] = useState<FilterValues>(filters)
+
+	const update = <K extends keyof FilterValues>(key: K, value: FilterValues[K]) => {
 		setLocal(prev => ({ ...prev, [key]: value }))
 	}
 
 	const handleApply = () => {
 		onApply({
 			ticketNumber: local.ticketNumber || undefined,
-			ownerId: local.ownerId ?? undefined,
-			siteIds: local.siteIds.length > 0 ? local.siteIds : undefined,
+			ownerId: local.ownerId || undefined,
+			siteIds: local.siteIds?.length ? local.siteIds : undefined,
 			dueDateFrom: hasNoGroups ? undefined : local.dueDateFrom || undefined,
 			dueDateTo: hasNoGroups ? undefined : local.dueDateTo || undefined,
-			priorities: hasNoGroups || local.priorities.length === 0 ? undefined : local.priorities,
-			assigneeId: local.assigneeId ?? undefined,
-			statuses: local.statuses.length > 0 ? local.statuses : undefined,
+			priorities: hasNoGroups || !local.priorities?.length ? undefined : local.priorities,
+			assigneeId: local.assigneeId || undefined,
+			statuses: local.statuses?.length ? local.statuses : undefined,
+			equipmentId: local.equipmentId || undefined,
 		})
 		onClose()
 	}
 
 	const handleReset = () => {
-		setLocal({
+		setLocal(prev => ({
+			...prev,
 			ticketNumber: '',
-			ownerId: null,
+			ownerId: undefined,
 			siteIds: [],
 			dueDateFrom: '',
 			dueDateTo: '',
 			priorities: [],
-			assigneeId: null,
+			assigneeId: undefined,
 			statuses: [],
-		})
+			equipmentId: undefined,
+		}))
 	}
 
-	const currentOwner = ownerOptions.find(u => u.id === local.ownerId) ?? null
-	const currentSites = siteOptions.filter(s => local.siteIds.includes(s.id))
-	const currentAssignee = assigneeOptions.find(u => u.id === local.assigneeId) ?? null
+	// Ленивый рендеринг: если поповер закрыт, не грузим DOM
+	if (!open) return null
 
-	const sectionSx = { fontSize: 12, fontWeight: 600, color: '#57606a', textTransform: 'uppercase' as const, mb: 0.75 }
+	const currentOwner = ownerOptions.find(u => u.id === local.ownerId) ?? null
+	const currentSites = siteOptions.filter(s => local.siteIds?.includes(s.id))
+	const currentAssignee = assigneeOptions.find(u => u.id === local.assigneeId) ?? null
+	const currentEquipment = equipmentOptions.find(e => e.id === local.equipmentId) ?? null
 
 	return (
 		<MuiPopover
@@ -119,31 +130,35 @@ export const Popover: FC<Props> = ({
 			}}
 		>
 			<Box sx={{ width: 380, p: 2 }}>
-				<Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #eaeef2' }}>
-					<Typography sx={sectionSx}>№ заявки</Typography>
+				{/* № заявки */}
+				<Box sx={SECTION_BOX_SX}>
+					<Typography sx={SECTION_TITLE_SX}>№ заявки</Typography>
 					<TextField
 						type='number'
 						fullWidth
+						size='small'
 						placeholder='Например: 1024'
-						value={local.ticketNumber}
+						value={local.ticketNumber ?? ''}
 						onChange={e => update('ticketNumber', e.target.value)}
 					/>
 				</Box>
 
-				<Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #eaeef2' }}>
-					<Typography sx={sectionSx}>Заказчик</Typography>
+				{/* Заказчик */}
+				<Box sx={SECTION_BOX_SX}>
+					<Typography sx={SECTION_TITLE_SX}>Заказчик</Typography>
 					<Autocomplete
 						options={ownerOptions}
 						value={currentOwner}
-						onChange={(_, v) => update('ownerId', v?.id ?? null)}
+						onChange={(_, v) => update('ownerId', v?.id)}
 						getOptionLabel={o => o.label}
-						renderInput={params => <TextField {...params} placeholder='Выберите...' />}
+						renderInput={params => <TextField {...params} size='small' placeholder='Выберите...' />}
 						noOptionsText='Нет пользователей'
 					/>
 				</Box>
 
-				<Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #eaeef2' }}>
-					<Typography sx={sectionSx}>Площадка</Typography>
+				{/* Площадка */}
+				<Box sx={SECTION_BOX_SX}>
+					<Typography sx={SECTION_TITLE_SX}>Площадка</Typography>
 					<Autocomplete
 						multiple
 						disableCloseOnSelect
@@ -156,14 +171,28 @@ export const Popover: FC<Props> = ({
 							)
 						}
 						getOptionLabel={o => o.label}
-						renderInput={params => <TextField {...params} placeholder='Выберите...' />}
+						renderInput={params => <TextField {...params} size='small' placeholder='Выберите...' />}
 						noOptionsText='Нет площадок'
 					/>
 				</Box>
 
+				{/* Оборудование */}
+				<Box sx={SECTION_BOX_SX}>
+					<Typography sx={SECTION_TITLE_SX}>Оборудование</Typography>
+					<Autocomplete
+						options={equipmentOptions}
+						value={currentEquipment}
+						onChange={(_, v) => update('equipmentId', v?.id)}
+						getOptionLabel={o => o.label}
+						renderInput={params => <TextField {...params} size='small' placeholder='Выберите...' />}
+						noOptionsText='Нет оборудования'
+					/>
+				</Box>
+
+				{/* Срок */}
 				{!hasNoGroups && (
-					<Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #eaeef2' }}>
-						<Typography sx={sectionSx}>Срок</Typography>
+					<Box sx={SECTION_BOX_SX}>
+						<Typography sx={SECTION_TITLE_SX}>Срок</Typography>
 						<Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
 							<DatePicker
 								label='С'
@@ -183,13 +212,15 @@ export const Popover: FC<Props> = ({
 					</Box>
 				)}
 
+				{/* Приоритет */}
 				{!hasNoGroups && (
-					<Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #eaeef2' }}>
-						<Typography sx={sectionSx}>Приоритет</Typography>
+					<Box sx={SECTION_BOX_SX}>
+						<Typography sx={SECTION_TITLE_SX}>Приоритет</Typography>
 						<Select
 							multiple
 							fullWidth
-							value={local.priorities}
+							size='small'
+							value={local.priorities ?? []}
 							onChange={e => update('priorities', e.target.value as Priority[])}
 							renderValue={selected => (
 								<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
@@ -212,24 +243,27 @@ export const Popover: FC<Props> = ({
 					</Box>
 				)}
 
-				<Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #eaeef2' }}>
-					<Typography sx={sectionSx}>Исполнитель</Typography>
+				{/* Исполнитель */}
+				<Box sx={SECTION_BOX_SX}>
+					<Typography sx={SECTION_TITLE_SX}>Исполнитель</Typography>
 					<Autocomplete
 						options={assigneeOptions}
 						value={currentAssignee}
-						onChange={(_, v) => update('assigneeId', v?.id ?? null)}
+						onChange={(_, v) => update('assigneeId', v?.id)}
 						getOptionLabel={o => o.label}
-						renderInput={params => <TextField {...params} placeholder='Выберите...' />}
+						renderInput={params => <TextField {...params} size='small' placeholder='Выберите...' />}
 						noOptionsText='Нет пользователей'
 					/>
 				</Box>
 
-				<Box sx={{ mb: 2 }}>
-					<Typography sx={sectionSx}>Статус</Typography>
+				{/* Статус */}
+				<Box sx={{ mb: 1 }}>
+					<Typography sx={SECTION_TITLE_SX}>Статус</Typography>
 					<Select
 						multiple
 						fullWidth
-						value={local.statuses}
+						size='small'
+						value={local.statuses ?? []}
 						onChange={e => update('statuses', e.target.value as TicketStatus[])}
 						renderValue={selected => (
 							<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
@@ -251,6 +285,7 @@ export const Popover: FC<Props> = ({
 					</Select>
 				</Box>
 
+				{/* Кнопки действий */}
 				<Box
 					sx={{
 						display: 'flex',

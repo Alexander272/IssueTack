@@ -21,8 +21,8 @@ type Props = {
 }
 
 // Сколько заявок показываем в секции до кнопки «Показать все». Полный список —
-// страница задач с фильтром по оборудованию: у одной единицы заявок может быть
-// много, а секция вкладки «Обзор» не должна превращаться в ещё одну таблицу.
+// вся история единицы (включая закрытые — `allStatuses`): у одной единицы заявок
+// может быть много, а секция вкладки «Обзор» не должна превращаться в ещё одну таблицу.
 const PREVIEW_COUNT = 5
 
 // Блок «Заявки по оборудованию» вместе с кнопкой создания: заявку можно завести
@@ -36,7 +36,10 @@ export const EquipmentTasks: FC<Props> = ({ unit }) => {
 	const [createOpen, setCreateOpen] = useState(false)
 	const [attachOpen, setAttachOpen] = useState(false)
 
-	const { data, isLoading, isError } = useGetTasksQuery({ equipmentId: unit.id })
+	// allStatuses: история единицы целиком — закрытые/отменённые заявки тоже её
+	// часть (statusMode вкладки их отсекает), поэтому «все заявки по оборудованию»
+	// отдаём без статусного фильтра: общий счётчик и полный список включают их.
+	const { data, isLoading, isError } = useGetTasksQuery({ equipmentId: unit.id, allStatuses: true })
 	const tasks = data?.data ?? []
 	const total = data?.total ?? tasks.length
 	const preview = tasks.slice(0, PREVIEW_COUNT)

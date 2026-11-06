@@ -172,7 +172,7 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 	// статус (включая закрытые), пин — только на активные (проверка в сервисе
 	// избранного). Archived при этом остаётся — он включает пагинацию архива.
 	if req.FavoritesByUser == nil {
-		w.statusMode(req.Archived, req.ArchiveWithResolved)
+		w.statusMode(req.Archived, req.ArchiveWithResolved, req.AllStatuses)
 	}
 	w.myWork(req.MyWork)
 	w.favorites(req.FavoritesByUser, req.FavoriteType)

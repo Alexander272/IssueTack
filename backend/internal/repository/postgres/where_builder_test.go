@@ -43,6 +43,9 @@ func TestReadableBy(t *testing.T) {
 // TestStatusMode фиксирует раскладку статусов по вкладкам. withResolved (страница
 // «Мои задачи», mode=assigned) переносит resolved в архив: на активной вкладке
 // его нет, на архивной появляется. Пакетные срезы при этом не мутируются.
+// allStatuses (история оборудования — все заявки единицы) намеренно минуя вкладку
+// отдаёт заявки всех статусов: closed/cancelled — часть истории, а объединения
+// «активных + архивных» статусной вкладкой не строит.
 func TestStatusMode(t *testing.T) {
 	boolPtr := func(v bool) *bool { return &v }
 
@@ -50,6 +53,7 @@ func TestStatusMode(t *testing.T) {
 		name         string
 		archived     *bool
 		withResolved bool
+		allStatuses  bool
 		wantClause   string
 		wantArgs     []models.TicketStatus
 	}{
@@ -88,13 +92,26 @@ func TestStatusMode(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			w := &whereBuilder{}
-			w.statusMode(tc.archived, tc.withResolved)
+			w.statusMode(tc.archived, tc.withResolved, tc.allStatuses)
 
+			if tc.allStatuses {
+				assert.Empty(t, w.clauses)
+				assert.Empty(t, w.args)
+				return
+			}
 			assert.Len(t, w.clauses, 1)
 			assert.Equal(t, tc.wantClause, w.clauses[0])
 			assert.Equal(t, toAny(tc.wantArgs), w.args)
 		})
 	}
+
+	t.Run("all statuses skips tab filter", func(t *testing.T) {
+		w := &whereBuilder{}
+		w.statusMode(nil, false, true)
+
+		assert.Empty(t, w.clauses)
+		assert.Empty(t, w.args)
+	})
 
 	// Глобальные наборы не должны меняться вызовами выше.
 	assert.Equal(t, []models.TicketStatus{"open", "in_progress", "pending", "on_hold", "resolved"}, activeStatuses)

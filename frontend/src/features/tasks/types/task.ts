@@ -87,6 +87,12 @@ export interface ITaskFilter {
 	dueDateTo?: string
 	sort?: string
 	archived?: boolean
+	/**
+	 * Отдать заявки всех статусов, минуя вкладку «Активные/Архив» (statusMode): история
+	 * единицы оборудования включает закрытые/отменённые. Заполняется deep-link'ом
+	 * `?equipmentId=` на странице заявок и блоком «Заявки по оборудованию».
+	 */
+	allStatuses?: boolean
 	favoritesType?: 'temporary' | 'permanent'
 	limit?: number
 	offset?: number

@@ -15,8 +15,8 @@ export interface FilterValues {
 	priorities?: Priority[]
 	assigneeId?: string
 	statuses?: TicketStatus[]
-	// equipmentId приходит ссылкой (?equipmentId=…), а не выбором в фильтре —
-	// в списке только показывается снимаемый чип.
+	// equipmentId — фильтр по оборудованию: deep-link (?equipmentId=…) или выбор в
+	// фильтре (Popover/чип). Deep-link задаёт из URL, выбор — из UI.
 	equipmentId?: string
 }
 
@@ -31,4 +31,6 @@ export interface TaskFiltersProps {
 	hideFilters?: boolean
 	// equipmentLabel — название единицы для чипа фильтра по оборудованию.
 	equipmentLabel?: string
+	// equipmentOptions — справочник единиц для выбора фильтра по оборудованию.
+	equipmentOptions?: { id: string; label: string }[]
 }

@@ -1,11 +1,12 @@
 import { useMemo, type FC } from 'react'
 import { Box } from '@mui/material'
 
-import { FilterChip } from '@/components/FilterChip'
-import { useAppSelector } from '@/hooks/redux'
-import { getHasNoGroups } from '@/features/user/userSlice'
 import type { FilterValues } from './types'
+import type { Priority } from '../../types/task'
+import { useAppSelector } from '@/hooks/redux'
 import { STATUS_OPTIONS, PRIORITY_MAP } from '../../constants/taskMaps'
+import { getHasNoGroups } from '@/features/user/userSlice'
+import { FilterChip } from '@/components/FilterChip'
 
 interface Option {
 	id: string
@@ -19,17 +20,28 @@ interface Props {
 	ownerOptions: Option[]
 	assigneeOptions: Option[]
 	equipmentLabel?: string
+	equipmentOptions?: Option[]
 }
 
-const PRIORITY_OPTIONS = Object.entries(PRIORITY_MAP).map(([value, info]) => ({
-	value,
+// Явно типизируем value, чтобы избежать неявного string
+const PRIORITY_OPTIONS: { value: Priority; label: string }[] = Object.entries(PRIORITY_MAP).map(([value, info]) => ({
+	value: value as Priority,
 	label: info.label,
 }))
 
-export const Chips: FC<Props> = ({ filters, onChange, siteOptions, ownerOptions, assigneeOptions, equipmentLabel }) => {
+export const Chips: FC<Props> = ({
+	filters,
+	onChange,
+	siteOptions,
+	ownerOptions,
+	assigneeOptions,
+	equipmentLabel,
+	equipmentOptions,
+}) => {
 	const hasNoGroups = useAppSelector(getHasNoGroups)
+
 	const activeChips = useMemo(() => {
-		const chips: { key: string; prefix: string; values: string[]; onClear: () => void }[] = []
+		const chips: { key: keyof FilterValues | string; prefix: string; values: string[]; onClear: () => void }[] = []
 
 		if (filters.ticketNumber) {
 			chips.push({
@@ -39,32 +51,42 @@ export const Chips: FC<Props> = ({ filters, onChange, siteOptions, ownerOptions,
 				onClear: () => onChange({ ticketNumber: undefined }),
 			})
 		}
+
 		if (filters.equipmentId) {
+			// Используем опциональную цепочку вместо (arr ?? []).find
+			const label =
+				equipmentOptions?.find(e => e.id === filters.equipmentId)?.label ??
+				equipmentLabel ??
+				filters.equipmentId
 			chips.push({
 				key: 'equipmentId',
 				prefix: 'Оборудование',
-				values: [equipmentLabel ?? filters.equipmentId],
+				values: [label],
 				onClear: () => onChange({ equipmentId: undefined }),
 			})
 		}
+
 		if (filters.ownerId) {
-			const name = ownerOptions.find(u => u.id === filters.ownerId)?.label
+			const label = ownerOptions.find(u => u.id === filters.ownerId)?.label ?? filters.ownerId
 			chips.push({
 				key: 'ownerId',
 				prefix: 'Заказчик',
-				values: [name ?? filters.ownerId],
+				values: [label],
 				onClear: () => onChange({ ownerId: undefined }),
 			})
 		}
+
 		if (filters.siteIds?.length) {
-			const names = filters.siteIds.map(id => siteOptions.find(s => s.id === id)?.label ?? id)
+			// TypeScript знает, что siteIds существует и имеет длину > 0 благодаря проверке выше
+			const labels = filters.siteIds.map(id => siteOptions.find(s => s.id === id)?.label ?? id)
 			chips.push({
 				key: 'siteIds',
 				prefix: 'Площадка',
-				values: names,
+				values: labels,
 				onClear: () => onChange({ siteIds: undefined }),
 			})
 		}
+
 		if (!hasNoGroups && (filters.dueDateFrom || filters.dueDateTo)) {
 			chips.push({
 				key: 'dueDate',
@@ -73,36 +95,39 @@ export const Chips: FC<Props> = ({ filters, onChange, siteOptions, ownerOptions,
 				onClear: () => onChange({ dueDateFrom: undefined, dueDateTo: undefined }),
 			})
 		}
+
 		if (!hasNoGroups && filters.priorities?.length) {
-			const names = filters.priorities.map(p => PRIORITY_OPTIONS.find(o => o.value === p)?.label ?? p)
+			const labels = filters.priorities.map(p => PRIORITY_OPTIONS.find(o => o.value === p)?.label ?? p)
 			chips.push({
 				key: 'priorities',
 				prefix: 'Приоритет',
-				values: names,
+				values: labels,
 				onClear: () => onChange({ priorities: undefined }),
 			})
 		}
+
 		if (filters.assigneeId) {
-			const name = assigneeOptions.find(u => u.id === filters.assigneeId)?.label
+			const label = assigneeOptions.find(u => u.id === filters.assigneeId)?.label ?? filters.assigneeId
 			chips.push({
 				key: 'assigneeId',
 				prefix: 'Назначено',
-				values: [name ?? filters.assigneeId],
+				values: [label],
 				onClear: () => onChange({ assigneeId: undefined }),
 			})
 		}
+
 		if (filters.statuses?.length) {
-			const names = filters.statuses.map(s => STATUS_OPTIONS.find(o => o.value === s)?.label ?? s)
+			const labels = filters.statuses.map(s => STATUS_OPTIONS.find(o => o.value === s)?.label ?? s)
 			chips.push({
 				key: 'statuses',
 				prefix: 'Статус',
-				values: names,
+				values: labels,
 				onClear: () => onChange({ statuses: undefined }),
 			})
 		}
 
 		return chips
-	}, [filters, onChange, ownerOptions, assigneeOptions, siteOptions, hasNoGroups, equipmentLabel])
+	}, [filters, onChange, ownerOptions, assigneeOptions, siteOptions, equipmentOptions, equipmentLabel, hasNoGroups])
 
 	if (activeChips.length === 0) return null
 
