@@ -88,11 +88,10 @@ func (s *MattermostService) canSeeHiddenCategories(ctx context.Context, mmUserID
 }
 
 // ownerSelectElement строит select «Заказчик» для диалога создания заявки. Поле
-// доступно любому авторизованному пользователю realm (см. canPickOwner), и
-// только если в realm есть хотя бы один активный пользователь: иначе возвращает
-// nil и поле не показывается. Как и в веб-форме, поле обязательное; значение
-// элемента — UUID пользователя, который на сабмите проверяется на принадлежность
-// realm (см. dialogOwnerID).
+// показывается только тем, кто видит его в веб-форме (см. canPickOwner — менеджеры
+// и исполнители), и только если в realm есть хотя бы один активный пользователь.
+// Как и в веб-форме, поле необязательное; значение элемента — UUID пользователя,
+// который на сабмите проверяется на принадлежность realm (см. dialogOwnerID).
 func (s *MattermostService) ownerSelectElement(ctx context.Context, realmID uuid.UUID, mmUserID string) *mattermost.DialogElement {
 	if mmUserID == "" {
 		return nil
