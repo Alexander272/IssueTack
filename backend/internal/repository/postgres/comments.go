@@ -50,7 +50,7 @@ func (r *CommentRepo) GetByTicket(ctx context.Context, ticketID uuid.UUID, userI
 	var query string
 	if showAllInternal {
 		query = fmt.Sprintf(`SELECT c.id, c.text, c.user_id, c.ticket_id, c.is_internal, c.type, c.created_at,
-			u.id, u.username, u.first_name, u.last_name, u.internal_number
+			u.username, u.first_name, u.last_name, u.internal_number
 			FROM %s c
 			LEFT JOIN %s u ON u.id = c.user_id
 			WHERE c.ticket_id = $1
@@ -59,7 +59,7 @@ func (r *CommentRepo) GetByTicket(ctx context.Context, ticketID uuid.UUID, userI
 		)
 	} else {
 		query = fmt.Sprintf(`SELECT c.id, c.text, c.user_id, c.ticket_id, c.is_internal, c.type, c.created_at,
-			u.id, u.username, u.first_name, u.last_name, u.internal_number
+			u.username, u.first_name, u.last_name, u.internal_number
 			FROM %s c
 			LEFT JOIN %s u ON u.id = c.user_id
 			WHERE c.ticket_id = $1 AND (c.is_internal = FALSE OR c.user_id = $2)
