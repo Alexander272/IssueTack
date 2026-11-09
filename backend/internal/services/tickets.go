@@ -456,10 +456,6 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		return fmt.Errorf("group is required")
 	}
 
-	if dto.OwnerID == nil {
-		dto.OwnerID = &dto.CreatorID
-	}
-
 	if err := s.autoAssign(ctx, dto); err != nil {
 		return fmt.Errorf("auto-assign: %w", err)
 	}
@@ -561,9 +557,6 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 // отбрасывается). Если категория принадлежит одной из групп исполнителя, заявку и без
 // явного выбора назначают на него, иначе исполнитель подбирается системой по умолчанию.
 func (s *TicketService) applyExecutorCreateRestrictions(ctx context.Context, dto *models.TicketDTO, memberGroups []uuid.UUID) error {
-	if dto.OwnerID == nil {
-		return models.ErrOwnerRequired
-	}
 	if dto.RealmID == nil {
 		return fmt.Errorf("realm is required")
 	}
