@@ -49,6 +49,13 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 			return err
 		}
 
+		// Снятый в форме заказчик трактуется как «заявка для создателя»: колонка
+		// owner_id в БД NOT NULL, поэтому очистка поля не должна писать NULL.
+		// Так же, как при создании без заказчика, им становится создатель.
+		if dto.HasField("ownerId") && dto.OwnerID == nil {
+			dto.OwnerID = &oldTicket.Creator.ID
+		}
+
 		if dto.HasField("status") && dto.Status != oldTicket.Status {
 			ok, err := s.canChangeStatus(ctx, oldTicket, dto.Actor.ID, realmStr)
 			if err != nil {

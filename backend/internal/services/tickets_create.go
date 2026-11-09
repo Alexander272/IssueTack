@@ -104,8 +104,9 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 
 	if !ok {
 		// Исполнитель (участник хотя бы одной группы) может создать заявку
-		// с ограничениями: обязателен заказчик, а приоритет/группа/исполнитель
-		// принудительно определяются системой.
+		// с ограничениями: приоритет/группа/исполнитель принудительно
+		// определяются системой. Заказчик необязателен: если он не указан,
+		// ниже им становится создатель.
 		member, err := s.groups.GetMemberGroups(ctx, dto.Actor.ID, dto.RealmID)
 		if err != nil {
 			return fmt.Errorf("failed to get member groups: %w", err)
@@ -208,15 +209,13 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 }
 
 // applyExecutorCreateRestrictions применяет ограничения при создании заявки исполнителем
-// (участником группы, не имеющим полных прав). Заказчик обязателен; группа и приоритет
+// (участником группы, не имеющим полных прав). Заказчик необязателен: если он не указан,
+// им становится создатель (подстановка в Create). Группа и приоритет
 // принудительно берутся из категории. Исполнителем исполнитель может
 // назначить только себя (явно — на любую группу, включая чужую; чужой id из тела
 // отбрасывается). Если категория принадлежит одной из групп исполнителя, заявку и без
 // явного выбора назначают на него, иначе исполнитель подбирается системой по умолчанию.
 func (s *TicketService) applyExecutorCreateRestrictions(ctx context.Context, dto *models.TicketDTO, memberGroups []uuid.UUID) error {
-	if dto.OwnerID == nil {
-		return models.ErrOwnerRequired
-	}
 	if dto.RealmID == nil {
 		return fmt.Errorf("realm is required")
 	}
