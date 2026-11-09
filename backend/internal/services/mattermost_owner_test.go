@@ -80,6 +80,7 @@ func ownerService(t *testing.T, opts ownerOpts) *ownerFixture {
 		all = opts.customers
 	}
 	users.On("GetByMembership", mock.Anything, realmID, models.MembershipCustomers).Return(all, nil)
+	users.On("GetAll", mock.Anything, mock.Anything).Return(all, nil)
 
 	access.On("IsRealmSupervisor", mock.Anything, userID, realmID.String()).Return(opts.role.isSupervisor, nil)
 
@@ -235,13 +236,13 @@ func TestDialogOpen_NoOwnerSelect_ForPlainRequester(t *testing.T) {
 		"чистому заявителю поле не нужно — заявка создаётся на него")
 }
 
-func TestDialogOpen_NoOwnerSelect_WhenNoCustomers(t *testing.T) {
+func TestDialogOpen_NoOwnerSelect_WhenNoUsers(t *testing.T) {
 	for _, tt := range []struct {
 		name string
 		opts ownerOpts
 	}{
-		{name: "заказчиков нет", opts: ownerOpts{role: ownerRole{isSupervisor: true}}},
-		{name: "все заказчики неактивны", opts: ownerOpts{
+		{name: "пользователей нет", opts: ownerOpts{role: ownerRole{isSupervisor: true}}},
+		{name: "все пользователи неактивны", opts: ownerOpts{
 			role: ownerRole{isSupervisor: true},
 			allCustomers: []*models.UserData{
 				{ID: uuid.New(), Username: "gone", IsActive: false},
@@ -251,7 +252,7 @@ func TestDialogOpen_NoOwnerSelect_WhenNoCustomers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			f := ownerService(t, tt.opts)
 			assert.Nil(t, dialogElement(t, f.openDialog(t), "ownerId"),
-				"неактивных заказчиков в список не берём и пустой select не показываем")
+				"неактивных пользователей в список не берём и пустой select не показываем")
 		})
 	}
 }
