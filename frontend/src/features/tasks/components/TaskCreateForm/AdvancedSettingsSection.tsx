@@ -34,12 +34,12 @@ export const AdvancedSettingsSection = ({
 	const { control, setValue } = useFormContext<FormValues>()
 	const { data: categoriesData } = useGetAllCategoriesQuery()
 	const { data: groupsData } = useGetAllGroupsQuery()
-	const { data: customersData } = useGetRealmUsersQuery('customers')
+	const { data: ownersData } = useGetRealmUsersQuery('all')
 	const { data: executorsData } = useGetRealmUsersQuery('executors')
 
 	const categories = useMemo(() => categoriesData?.data ?? [], [categoriesData])
 	const groups = useMemo(() => groupsData?.data ?? [], [groupsData])
-	const customers = useMemo(() => customersData?.data ?? [], [customersData])
+	const owners = useMemo(() => ownersData?.data ?? [], [ownersData])
 	const executors = useMemo(() => executorsData?.data ?? [], [executorsData])
 
 	const selectedCategoryId = useWatch({ control, name: 'categoryId' })
@@ -125,7 +125,7 @@ export const AdvancedSettingsSection = ({
 							control={control}
 							name='ownerId'
 							render={({ field }) => (
-								<CustomerSelector options={customers} value={field.value} onChange={field.onChange} />
+								<CustomerSelector options={owners} value={field.value} onChange={field.onChange} />
 							)}
 						/>
 					</Box>

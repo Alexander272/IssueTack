@@ -105,8 +105,8 @@ type TicketFilter struct {
 	ClosedAtFrom *time.Time `form:"closedAtFrom" json:"closedAtFrom" time_format:"2006-01-02"`
 	ClosedAtTo   *time.Time `form:"closedAtTo"   json:"closedAtTo"   time_format:"2006-01-02"`
 	EquipmentID  *uuid.UUID `form:"equipmentId,parser=encoding.TextUnmarshaler" json:"equipmentId"`
-	Limit        int        `json:"limit" db:"limit"`
-	Offset       int        `json:"offset" db:"offset"`
+	Limit        int        `form:"limit" json:"limit" db:"limit" binding:"omitempty,min=0"`
+	Offset       int        `form:"offset" json:"offset" db:"offset" binding:"omitempty,min=0"`
 }
 
 // MyWorkFilter описывает фильтр «Мои задачи»: тикеты, где пользователь является

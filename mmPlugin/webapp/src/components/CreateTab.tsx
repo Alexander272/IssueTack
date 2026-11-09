@@ -279,14 +279,11 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		if (!siteId) {
 			errors.siteId = 'Обязательное поле'
 		}
-		if (isExecutor && !ownerId) {
-			errors.ownerId = 'Обязательное поле'
-		}
 		if (isManager && !priority) {
 			errors.priority = 'Обязательное поле'
 		}
 		setFieldErrors(errors)
-		if (errors.title || errors.categoryId || errors.siteId || errors.ownerId || errors.priority) {
+		if (errors.title || errors.categoryId || errors.siteId || errors.priority) {
 			return
 		}
 		setSubmitting(true)
@@ -529,7 +526,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 					<div className='it-ticket-section__body'>
 						<label className='it-f-label'>
 							<span className='it-f-label__text'>
-								Заказчик <span className='it-f-required'>*</span>
+								Заказчик
 							</span>
 							<select
 								className={`it-f${fieldErrors.ownerId ? ' it-f--error' : ''}`}
@@ -539,14 +536,13 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 									clearFieldError('ownerId')
 								}}
 							>
-								<option value=''>— Выберите заказчика —</option>
+								<option value=''>— Не указан —</option>
 								{customers.map(u => (
 									<option key={u.id} value={u.id}>
 										{pluginUserLabel(u)}
 									</option>
 								))}
 							</select>
-							{fieldErrors.ownerId ? <span className='it-f__err'>{fieldErrors.ownerId}</span> : null}
 							{customers.length === 0 ? <span className='it-f-label__hint'>Нет заказчиков</span> : null}
 						</label>
 

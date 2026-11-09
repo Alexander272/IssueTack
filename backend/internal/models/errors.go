@@ -55,7 +55,6 @@ var (
 	ErrSubtasksNotResolved   = NewDomainError(errors.New("ticket has unresolved subtasks"), http.StatusConflict, "TK001", "Нельзя отметить задачу решённой, пока не решены все её подзадачи")
 	ErrCloseRequiresResolved = NewDomainError(errors.New("cannot close ticket that is not resolved"), http.StatusConflict, "TK002", "Нельзя закрыть нерешённую задачу. Задачу можно только отменить")
 	ErrTicketFrozen          = NewDomainError(errors.New("ticket is resolved/closed/cancelled"), http.StatusConflict, "TK003", "Заявка решена, закрыта или отменена — изменение данных недоступно")
-	ErrOwnerRequired         = NewDomainError(errors.New("customer (owner) is required"), http.StatusBadRequest, "TK004", "Необходимо указать заказчика")
 	// ErrReasonRequired — диалог «Вернуть заявку в работу» отправлен без причины.
 	ErrReasonRequired = NewDomainError(errors.New("reason is required"), http.StatusBadRequest, "TK005", "Укажите причину возврата заявки в работу")
 

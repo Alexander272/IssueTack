@@ -157,8 +157,8 @@ const CommentEntry = ({
 }) => {
 	const displayName = getDisplayName(comment.user)
 	const initials = getInitials(comment.user)
-	const color = getAvatarColor(comment.userId)
-	const isAuthor = comment.userId === currentUserId
+	const color = getAvatarColor(comment.userId ?? 'deleted')
+	const isAuthor = comment.userId !== null && comment.userId === currentUserId
 	const createdAt = new Date(comment.createdAt).getTime()
 	// Реактивное окно удаления: по его истечении кнопка дизейблится, а не остаётся
 	// замороженной на значении из момента монтирования.

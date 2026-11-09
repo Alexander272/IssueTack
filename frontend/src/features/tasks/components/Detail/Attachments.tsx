@@ -7,7 +7,6 @@ import type { IFetchError } from '@/app/types/error'
 import type { IAttachment } from '../../types/task'
 import { formatSize } from '../../utils/size'
 import { isImage, isPdf, isText, getFileIcon } from '../../utils/fileIcon'
-import { saveAs } from '@/utils/saveAs'
 import {
 	useGetAttachmentContentQuery,
 	useLazyGetAttachmentContentQuery,
@@ -68,11 +67,13 @@ export const Attachments = ({ attachments, canWork, taskId }: Props) => {
 		async (file: IAttachment) => {
 			try {
 				const { url } = await fetchContent(file.id).unwrap()
-				const res = await fetch(url)
-				if (!res.ok) {
-					throw new Error('Ошибка при получении файла')
-				}
-				saveAs(await res.blob(), file.fileName)
+
+				const link = document.createElement('a')
+				link.href = url
+				link.download = file.fileName
+				document.body.appendChild(link)
+				link.click()
+				link.remove()
 			} catch (error) {
 				const fetchError = error as IFetchError
 				toast.error(fetchError.data?.message || 'Ошибка скачивания файла', { autoClose: false })

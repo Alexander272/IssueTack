@@ -21,28 +21,10 @@ type recentTicket struct {
 	createdAt time.Time
 }
 
-// dialogCustomersWarnThreshold — с какого числа заказчиков пишем предупреждение
+// dialogCustomersWarnThreshold — с какого числа пользователей пишем предупреждение
 // в лог. Сам селект не ограничиваем: у диалогов Mattermost нет документированного
 // предела на число опций, но очень длинный список на мобильных неудобен.
 const dialogCustomersWarnThreshold = 300
-
-// realmCustomers возвращает активных пользователей realm, не состоящих ни в одной
-// группе, — это «заказчики» в терминах веб-формы создания заявки
-// (membership=customers).
-func (s *MattermostService) realmCustomers(ctx context.Context, realmID uuid.UUID) ([]*models.UserData, error) {
-	users, err := s.users.GetByMembership(ctx, realmID, models.MembershipCustomers)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get realm customers: %w", err)
-	}
-
-	active := make([]*models.UserData, 0, len(users))
-	for _, u := range users {
-		if u.IsActive {
-			active = append(active, u)
-		}
-	}
-	return active, nil
-}
 
 // customerLabel собирает подпись заказчика для селекта в том же виде, что и веб-форма
 // («Фамилия Имя (username)»), но без пустых скобок, если ФИО или username отсутствуют.
@@ -105,11 +87,10 @@ func (s *MattermostService) canSeeHiddenCategories(ctx context.Context, mmUserID
 }
 
 // ownerSelectElement строит select «Заказчик» для диалога создания заявки. Поле
-// доступно только тем, кто в веб-форме видит выбор заказчика (см. canPickOwner),
-// и только если в realm есть хотя бы один активный заказчик: иначе возвращает
-// nil и поле не показывается. Как и в веб-форме, поле обязательное; значение
-// элемента — UUID пользователя, который на сабмите проверяется на принадлежность
-// realm (см. dialogOwnerID).
+// показывается только тем, кто видит его в веб-форме (см. canPickOwner — менеджеры
+// и исполнители), и только если в realm есть хотя бы один активный пользователь.
+// Как и в веб-форме, поле необязательное; значение элемента — UUID пользователя,
+// который на сабмите проверяется на принадлежность realm (см. dialogOwnerID).
 func (s *MattermostService) ownerSelectElement(ctx context.Context, realmID uuid.UUID, mmUserID string) *mattermost.DialogElement {
 	if mmUserID == "" {
 		return nil
@@ -129,35 +110,42 @@ func (s *MattermostService) ownerSelectElement(ctx context.Context, realmID uuid
 		return nil
 	}
 
-	customers, err := s.realmCustomers(ctx, realmID)
+	users, err := s.users.GetAll(ctx, &realmID)
 	if err != nil {
-		logger.Warn("failed to load customers for owner picker",
+		logger.Warn("failed to load users for owner picker",
 			logger.StringAttr("realm_id", realmID.String()),
 			logger.ErrAttr(err),
 		)
 		return nil
 	}
 
-	if len(customers) == 0 {
+	active := make([]*models.UserData, 0, len(users))
+	for _, u := range users {
+		if u.IsActive {
+			active = append(active, u)
+		}
+	}
+
+	if len(active) == 0 {
 		return nil
 	}
-	if len(customers) > dialogCustomersWarnThreshold {
-		logger.Warn("large customer list in ticket dialog",
+	if len(active) > dialogCustomersWarnThreshold {
+		logger.Warn("large user list in ticket dialog",
 			logger.StringAttr("realm_id", realmID.String()),
-			logger.Int32Attr("customers", int32(len(customers))),
+			logger.Int32Attr("users", int32(len(active))),
 		)
 	}
 
-	opts := make([]*model.PostActionOptions, 0, len(customers))
-	for _, c := range customers {
-		opts = append(opts, &model.PostActionOptions{Text: customerLabel(c), Value: c.ID.String()})
+	opts := make([]*model.PostActionOptions, 0, len(active))
+	for _, u := range active {
+		opts = append(opts, &model.PostActionOptions{Text: customerLabel(u), Value: u.ID.String()})
 	}
 
 	return &mattermost.DialogElement{
 		DisplayName: "Заказчик",
 		Name:        "ownerId",
 		Type:        "select",
-		Placeholder: "Выберите заказчика",
+		Placeholder: "Не указан",
 		Options:     opts,
 		Optional:    true,
 	}
@@ -166,7 +154,7 @@ func (s *MattermostService) ownerSelectElement(ctx context.Context, realmID uuid
 // dialogOwnerID разбирает значение поля ownerId из сабмита диалога. Значение
 // приходит из клиента, поэтому проверяем всё, что проверяет ownerSelectElement:
 // право нажать на выбор заказчика (canPickOwner) и то, что заказчик — активный
-// участник realm вне групп. TicketService.Create членство в realm не проверяет
+// пользователь realm. TicketService.Create членство в realm не проверяет
 // (только OwnerID != nil), поэтому без этих проверок можно было бы подсунуть
 // произвольного пользователя. Любая неудача не является ошибкой диалога: заявка
 // просто уходит на создателя (owner = creator).
@@ -193,7 +181,7 @@ func (s *MattermostService) dialogOwnerID(ctx context.Context, realmID uuid.UUID
 		return nil
 	}
 
-	customers, err := s.realmCustomers(ctx, realmID)
+	users, err := s.users.GetAll(ctx, &realmID)
 	if err != nil {
 		logger.Warn("failed to validate dialog ownerId",
 			logger.StringAttr("realm_id", realmID.String()),
@@ -202,13 +190,20 @@ func (s *MattermostService) dialogOwnerID(ctx context.Context, realmID uuid.UUID
 		return nil
 	}
 
-	for _, c := range customers {
+	active := make([]*models.UserData, 0, len(users))
+	for _, u := range users {
+		if u.IsActive {
+			active = append(active, u)
+		}
+	}
+
+	for _, c := range active {
 		if c.ID == id {
 			return &id
 		}
 	}
 
-	logger.Warn("dialog ownerId not in realm customers",
+	logger.Warn("dialog ownerId not in realm users",
 		logger.StringAttr("realm_id", realmID.String()),
 		logger.StringAttr("owner_id", id.String()),
 	)

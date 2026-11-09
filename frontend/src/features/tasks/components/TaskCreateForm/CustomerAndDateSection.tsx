@@ -29,25 +29,19 @@ export const CustomerAndDateSection = ({ number = 4, currentUserId = null }: Pro
 			subtitle='Укажите заказчика и желаемый срок выполнения. При необходимости назначьте себя исполнителем'
 		>
 			<Box>
-				<Typography sx={fieldLabelSx}>
-					Заказчик{' '}
-					<Typography component='span' color='error'>
-						*
-					</Typography>
+				<Typography variant='caption' sx={fieldLabelSx}>
+					Заказчик
 				</Typography>
 				<Controller
 					control={control}
 					name='ownerId'
-					rules={{ required: 'Обязательное поле' }}
-					render={({ field, fieldState }) => (
+					render={({ field }) => (
 						<CustomerSelector
 							options={customers}
 							value={field.value}
 							onChange={field.onChange}
-							placeholder='Выберите заказчика'
+							placeholder='Не указан'
 							noOptionsText='Нет заказчиков'
-							error={!!fieldState.error}
-							helperText={fieldState.error?.message}
 						/>
 					)}
 				/>
