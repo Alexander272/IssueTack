@@ -134,7 +134,7 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 	comment := &models.Comment{
 		ID:         uuid.New(),
 		Text:       dto.Text,
-		UserID:     dto.UserID,
+		UserID:     &dto.UserID,
 		TicketID:   dto.TicketID,
 		IsInternal: dto.IsInternal,
 		Type:       dto.Type,
@@ -152,9 +152,13 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 	s.notifyOwnerViaMattermost(ctx, comment)
 	if s.notifications != nil {
 		authorLabel := s.commentAuthorLabel(ctx, comment.UserID)
+		var actorID uuid.UUID
+		if comment.UserID != nil {
+			actorID = *comment.UserID
+		}
 		err := s.notifications.TicketCommented(ctx, &models.NotificationCommentDTO{
 			Ticket:      ticket,
-			ActorID:     comment.UserID,
+			ActorID:     actorID,
 			CommentText: comment.Text,
 			AuthorLabel: authorLabel,
 		})
@@ -198,8 +202,11 @@ func (s *CommentService) persistCommentAndFiles(ctx context.Context, tx postgres
 // commentAuthorLabel возвращает «Фамилия Имя» автора комментария для Mattermost.
 // Пустая строка — автора не удалось загрузить (best-effort: само сообщение при этом
 // доставляется, просто без фразы об авторе).
-func (s *CommentService) commentAuthorLabel(ctx context.Context, userID uuid.UUID) string {
-	author, err := s.users.GetByID(ctx, userID)
+func (s *CommentService) commentAuthorLabel(ctx context.Context, userID *uuid.UUID) string {
+	if userID == nil {
+		return ""
+	}
+	author, err := s.users.GetByID(ctx, *userID)
 	if err != nil || author == nil {
 		logger.Warn("failed to load comment author", logger.StringAttr("user_id", userID.String()), logger.ErrAttr(err))
 		return ""
@@ -231,7 +238,7 @@ func (s *CommentService) notifyOwnerViaMattermost(ctx context.Context, comment *
 	if ticket.Owner == nil || ticket.RealmID == nil {
 		return
 	}
-	if ticket.Owner.ID == comment.UserID {
+	if comment.UserID != nil && ticket.Owner.ID == *comment.UserID {
 		return
 	}
 
@@ -271,7 +278,7 @@ func (s *CommentService) Delete(ctx context.Context, tx postgres.Tx, dto *models
 		return fmt.Errorf("failed to load comment: %w", err)
 	}
 
-	if comment.UserID != dto.ActorID {
+	if comment.UserID == nil || *comment.UserID != dto.ActorID {
 		return models.ErrPermissionDenied
 	}
 	if time.Since(comment.CreatedAt) > commentDeleteWindow {

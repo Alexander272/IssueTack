@@ -36,11 +36,13 @@ func (r *CommentRepo) GetByID(ctx context.Context, id uuid.UUID) (*models.Commen
 	)
 
 	item := &models.Comment{}
+	var userID *uuid.UUID
 	if err := r.db.QueryRow(ctx, query, id).Scan(
-		&item.ID, &item.Text, &item.UserID, &item.TicketID, &item.IsInternal, &item.Type, &item.CreatedAt,
+		&item.ID, &item.Text, &userID, &item.TicketID, &item.IsInternal, &item.Type, &item.CreatedAt,
 	); err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
+	item.UserID = userID
 	return item, nil
 }
 
@@ -80,13 +82,24 @@ func (r *CommentRepo) GetByTicket(ctx context.Context, ticketID uuid.UUID, userI
 
 	var data []*models.Comment
 	for rows.Next() {
-		item := &models.Comment{User: &models.UserShort{}}
+		item := &models.Comment{}
+		var userID *uuid.UUID
+		var username, firstName, lastName, internalNumber *string
 		if err := rows.Scan(
-			&item.ID, &item.Text, &item.UserID, &item.TicketID, &item.IsInternal, &item.Type, &item.CreatedAt,
-			&item.User.ID, &item.User.Username, &item.User.FirstName,
-			&item.User.LastName, &item.User.InternalNumber,
+			&item.ID, &item.Text, &userID, &item.TicketID, &item.IsInternal, &item.Type, &item.CreatedAt,
+			&username, &firstName, &lastName, &internalNumber,
 		); err != nil {
 			return nil, MapError(fmt.Errorf("scan row error: %w", err))
+		}
+		item.UserID = userID
+		if userID != nil {
+			item.User = &models.UserShort{
+				ID:             *userID,
+				Username:       *username,
+				FirstName:      *firstName,
+				LastName:       *lastName,
+				InternalNumber: *internalNumber,
+			}
 		}
 		data = append(data, item)
 	}

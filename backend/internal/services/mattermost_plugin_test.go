@@ -746,7 +746,7 @@ func TestPluginCreateComment_HappyPath(t *testing.T) {
 	repo.On("GetByChannelID", mock.Anything, "ch1").Return(&models.RealmMattermost{RealmID: realmID, IsActive: true}, nil)
 	expectExistingUser(users, userRealms, userID, realmID)
 
-	created := &models.Comment{ID: uuid.New(), Text: "Всем привет", TicketID: ticketID, UserID: userID, CreatedAt: time.Now()}
+	created := &models.Comment{ID: uuid.New(), Text: "Всем привет", TicketID: ticketID, UserID: &userID, CreatedAt: time.Now()}
 	comments := &fakeCommentsSvc{
 		create: func(ctx context.Context, _ postgres.Tx, dto *models.CreateCommentDTO) (*models.Comment, error) {
 			assert.Equal(t, ticketID, dto.TicketID)

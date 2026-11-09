@@ -64,7 +64,7 @@ func TestCommentService_Create_SendsDMToOwner(t *testing.T) {
 
 	mockAccess.On("CheckWorkAccess", mock.Anything, mock.Anything).Return(nil)
 	mockRepo.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(func(c *models.Comment) bool {
-		return c.Text == dto.Text && c.UserID == prismID && c.TicketID == ticket.ID && !c.IsInternal
+		return c.Text == dto.Text && c.UserID != nil && *c.UserID == prismID && c.TicketID == ticket.ID && !c.IsInternal
 	})).Return(nil)
 	mockTickets.On("GetSummary", mock.Anything, ticket.ID).Return(ticket, nil)
 	mockUsers.On("GetByID", mock.Anything, ownerID).Return(&models.UserData{ID: ownerID, MattermostID: &ownerMM}, nil)
@@ -130,7 +130,7 @@ func TestCommentService_Create_OwnerWithoutWorkAccess_ExternalComment_Allowed(t 
 	// Заказчик не имеет work-доступа (не автор/не исполнитель), но внешний комментарий ему разрешён.
 	mockAccess.On("CheckWorkAccess", mock.Anything, mock.Anything).Return(models.ErrPermissionDenied)
 	mockRepo.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(func(c *models.Comment) bool {
-		return c.UserID == ownerID && !c.IsInternal
+		return c.UserID != nil && *c.UserID == ownerID && !c.IsInternal
 	})).Return(nil)
 
 	comment, err := svc.Create(context.Background(), nil, dto)

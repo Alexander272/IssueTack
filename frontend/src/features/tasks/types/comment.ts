@@ -17,7 +17,7 @@ export interface ICommentUser {
 export interface IComment {
 	id: string
 	text: string
-	userId: string
+	userId: string | null
 	ticketId: string
 	isInternal: boolean
 	type: string
