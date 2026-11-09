@@ -460,6 +460,17 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 	// Заказчик необязателен: если он не указан, заявка выполняется для создателя.
 	// Подстановка обязательна — колонка tickets.owner_id в БД NOT NULL, поэтому
 	// пустой заказчик из формы не должен уходить в INSERT как NULL.
+	// Серверная часть правила выбора заказчика (P2): явный заказчик должен быть
+	// выбран разрешённым пользователем (менеджер/исполнитель) и быть активным
+	// пользователем области — иначе заявка с чужим заказчиком не создаётся.
+	if dto.OwnerID != nil {
+		if dto.RealmID == nil {
+			return models.ErrInvalidInput
+		}
+		if err := s.validateOwnerSelection(ctx, dto.Actor.ID, *dto.RealmID, *dto.OwnerID); err != nil {
+			return err
+		}
+	}
 	if dto.OwnerID == nil {
 		dto.OwnerID = &dto.CreatorID
 	}
@@ -639,6 +650,20 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 		oldTicket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
 		if err != nil {
 			return err
+		}
+
+		// Серверная часть правила выбора заказчика (P2): явно выбранный заказчик
+		// должен быть выбран разрешённым пользователем (менеджер/исполнитель) и быть
+		// активным пользователем области — иначе изменение заказчика отклоняется.
+		// Проверяем до fallback: снятый в форме заказчик (OwnerID == nil) — это не
+		// явный выбор, а «без заказчика» → он заменяется создателем без валидации.
+		if dto.HasField("ownerId") && dto.OwnerID != nil {
+			if oldTicket.RealmID == nil {
+				return models.ErrInvalidInput
+			}
+			if err := s.validateOwnerSelection(ctx, dto.Actor.ID, *oldTicket.RealmID, *dto.OwnerID); err != nil {
+				return err
+			}
 		}
 
 		// Снятый в форме заказчик трактуется как «заявка для создателя»: колонка
@@ -1277,6 +1302,48 @@ func (s *TicketService) canEditFields(ctx context.Context, ticket *models.Ticket
 		return ticket.Status == models.StatusOpen, nil
 	}
 	return false, nil
+}
+
+// canPickOwner проверяет, может ли пользователь выбрать заказчика при создании
+// заявки: начальник области (realm supervisor) или менеджер управляющей группы,
+// либо исполнитель (участник группы). Это зеркалит правило веб-формы и MM-диалога
+// (MattermostService.canPickOwner) и определяет, кто из создавших заявку может
+// назначить заказчика — свой или чужой.
+func (s *TicketService) canPickOwner(ctx context.Context, userID, realmID uuid.UUID) (bool, error) {
+	isRealmAdmin, err := s.access.IsRealmSupervisor(ctx, userID, realmID.String())
+	if err != nil {
+		return false, err
+	}
+	managedGroups, err := s.groups.GetManagedGroups(ctx, userID, &realmID)
+	if err != nil {
+		return false, err
+	}
+	memberGroups, err := s.groups.GetMemberGroups(ctx, userID, &realmID)
+	if err != nil {
+		return false, err
+	}
+	isManager := isRealmAdmin || len(managedGroups) > 0
+	isExecutor := !isManager && len(memberGroups) > 0
+	return isManager || isExecutor, nil
+}
+
+// validateOwnerSelection — серверная часть правила выбора заказчика: явно выбранный
+// заказчик (ownerId) должен быть выбран пользователем, которому это разрешено
+// (менеджер/исполнитель, см. canPickOwner), и должен быть активным пользователем
+// области. Иначе заявка не создаётся/не обновляется с чужим заказчиком.
+func (s *TicketService) validateOwnerSelection(ctx context.Context, actorID, realmID uuid.UUID, ownerID uuid.UUID) error {
+	pickable, err := s.canPickOwner(ctx, actorID, realmID)
+	if err != nil {
+		return fmt.Errorf("failed to check owner picker access: %w", err)
+	}
+	if !pickable {
+		return models.ErrPermissionDenied
+	}
+	u, err := s.users.GetByID(ctx, ownerID)
+	if err != nil || u == nil || !u.IsActive {
+		return models.ErrInvalidInput
+	}
+	return nil
 }
 
 // validateAssigneeForAssign проверяет, что смена исполнителя для пользователя с

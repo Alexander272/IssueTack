@@ -22,6 +22,7 @@ func ticketServiceFixtures() (*MockTicketsRepo, *MockActivityLogService, *MockSu
 	mockNotifications := new(MockNotificationService)
 	mockGroups := new(MockGroupsRepo)
 	mockPolicies := new(MockAccessPolicies)
+	mockUsers := new(MockUserService)
 
 	svc := NewTicketService(&TicketDeps{
 		Repo:          mockRepo,
@@ -33,6 +34,7 @@ func ticketServiceFixtures() (*MockTicketsRepo, *MockActivityLogService, *MockSu
 		Groups:        mockGroups,
 		Categories:    new(MockCategoriesRepo),
 		Access:        NewTicketAccessService(mockRepo, mockGroups, mockPolicies),
+		Users:         mockUsers,
 	})
 	return mockRepo, mockLogs, mockSubtasks, mockAttachments, mockNotifications, mockGroups, mockPolicies, svc
 }
@@ -667,7 +669,9 @@ func TestTicketService_Create_Executor_OwnGroup(t *testing.T) {
 	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(false, nil)
 	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceSite), string(access.Write)).Return(false, nil)
 	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, &realmID).Return([]uuid.UUID{}, nil)
 	mockGroups.On("GetMemberGroups", mock.Anything, actorID, &realmID).Return([]uuid.UUID{groupID}, nil)
+	svc.users.(*MockUserService).On("GetByID", mock.Anything, ownerID).Return(&models.UserData{ID: ownerID, IsActive: true}, nil)
 	mockGroups.On("GetByID", mock.Anything, &models.GetGroupDTO{ID: groupID, RealmID: &realmID}).Return(&models.Group{
 		ID: groupID,
 	}, nil)
@@ -719,10 +723,12 @@ func TestTicketService_Create_Executor_SelfAssignForeignGroup(t *testing.T) {
 	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(false, nil)
 	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceSite), string(access.Write)).Return(false, nil)
 	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, &realmID).Return([]uuid.UUID{}, nil)
 	mockGroups.On("GetMemberGroups", mock.Anything, actorID, &realmID).Return([]uuid.UUID{memberGroupID}, nil)
 	mockGroups.On("GetByID", mock.Anything, &models.GetGroupDTO{ID: foreignGroupID, RealmID: &realmID}).Return(&models.Group{
 		ID: foreignGroupID,
 	}, nil)
+	svc.users.(*MockUserService).On("GetByID", mock.Anything, ownerID).Return(&models.UserData{ID: ownerID, IsActive: true}, nil)
 	mockCategories.On("GetByID", mock.Anything, &models.GetCategoryByIdDTO{ID: categoryID, RealmID: realmID}).Return(&models.Category{
 		ID:       categoryID,
 		GroupID:  foreignGroupID,
@@ -772,10 +778,12 @@ func TestTicketService_Create_Executor_ForeignAssigneeIgnored(t *testing.T) {
 	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(false, nil)
 	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceSite), string(access.Write)).Return(false, nil)
 	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, &realmID).Return([]uuid.UUID{}, nil)
 	mockGroups.On("GetMemberGroups", mock.Anything, actorID, &realmID).Return([]uuid.UUID{memberGroupID}, nil)
 	mockGroups.On("GetByID", mock.Anything, &models.GetGroupDTO{ID: foreignGroupID, RealmID: &realmID}).Return(&models.Group{
 		ID: foreignGroupID,
 	}, nil)
+	svc.users.(*MockUserService).On("GetByID", mock.Anything, ownerID).Return(&models.UserData{ID: ownerID, IsActive: true}, nil)
 	// В чужой группе нет ответственного по умолчанию, а участников больше одного —
 	// autoAssign никого не подставляет, заявка остаётся без исполнителя.
 	mockGroups.On("GetMemberCount", mock.Anything, foreignGroupID).Return(2, nil)
@@ -795,6 +803,56 @@ func TestTicketService_Create_Executor_ForeignAssigneeIgnored(t *testing.T) {
 	assert.Nil(t, dto.AssigneeID)
 	assert.Equal(t, models.PriorityHigh, dto.Priority)
 	assert.Nil(t, dto.DueDate)
+}
+
+// TestTicketService_Create_OwnerInactive_Denied — серверная часть правила выбора
+// заказчика (P2): явно выбранный заказчик должен быть активным пользователем области,
+// поэтому неактивный заказчик отклоняется доменной ошибкой ErrInvalidInput.
+func TestTicketService_Create_OwnerInactive_Denied(t *testing.T) {
+	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	realmID := uuid.New()
+	groupID := uuid.New()
+	categoryID := uuid.New()
+	ownerID := uuid.New()
+	id := uuid.New()
+	dto := &models.TicketDTO{
+		ID:         &id,
+		Actor:      &models.Actor{ID: actorID, Name: "test"},
+		Title:      "New Ticket",
+		RealmID:    &realmID,
+		CategoryID: categoryID,
+		OwnerID:    &ownerID,
+		CreatorID:  actorID,
+	}
+
+	mockCategories := new(MockCategoriesRepo)
+	svc.categories = mockCategories
+
+	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, &realmID).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, actorID, &realmID).Return([]uuid.UUID{groupID}, nil)
+	mockGroups.On("GetByID", mock.Anything, &models.GetGroupDTO{ID: groupID, RealmID: &realmID}).Return(&models.Group{
+		ID: groupID,
+	}, nil)
+	svc.users.(*MockUserService).On("GetByID", mock.Anything, ownerID).Return(&models.UserData{ID: ownerID, IsActive: false}, nil)
+	mockCategories.On("GetByID", mock.Anything, &models.GetCategoryByIdDTO{ID: categoryID, RealmID: realmID}).Return(&models.Category{
+		ID:       categoryID,
+		GroupID:  groupID,
+		Priority: models.PriorityHigh,
+	}, nil)
+	mockRepo.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: id}).Return(&models.Ticket{ID: id}, nil)
+	mockNotifications.On("TicketCreated", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+
+	err := svc.Create(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrInvalidInput)
+	mockRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
 }
 
 // Группа — часть реалма тикета: попытка привязать её к группе чужого реалма
@@ -889,6 +947,7 @@ func TestTicketService_Update_ClearOwner_DefaultsToCreator(t *testing.T) {
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
+	svc.users.(*MockUserService).On("GetByID", mock.Anything, actorID).Return(&models.UserData{ID: actorID, IsActive: true}, nil)
 
 	err := svc.Update(context.Background(), dto)
 	assert.NoError(t, err)
@@ -1397,6 +1456,7 @@ func TestTicketService_Update_CustomerCreator_NotOwner_Cancel_Success(t *testing
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
+	svc.users.(*MockUserService).On("GetByID", mock.Anything, actorID).Return(&models.UserData{ID: actorID, IsActive: true}, nil)
 
 	err := svc.Update(context.Background(), dto)
 	assert.NoError(t, err)
@@ -1951,6 +2011,7 @@ func TestTicketService_Update_Assignee_GroupManager_Success(t *testing.T) {
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
+	svc.users.(*MockUserService).On("GetByID", mock.Anything, newAssigneeID).Return(&models.UserData{ID: newAssigneeID, IsActive: true}, nil)
 
 	err := svc.Update(context.Background(), dto)
 	assert.NoError(t, err)
@@ -2324,6 +2385,7 @@ func TestTicketService_Take_NoAssignee_Success(t *testing.T) {
 	})
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
+	svc.users.(*MockUserService).On("GetByID", mock.Anything, actorID).Return(&models.UserData{ID: actorID, IsActive: true}, nil)
 
 	err := svc.Take(context.Background(), dto)
 	assert.NoError(t, err)
@@ -2354,6 +2416,7 @@ func TestTicketService_Take_OtherAssignee_Open_Success(t *testing.T) {
 	mockRepo.On("Update", mock.Anything, nil, mock.Anything).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
+	svc.users.(*MockUserService).On("GetByID", mock.Anything, actorID).Return(&models.UserData{ID: actorID, IsActive: true}, nil)
 
 	err := svc.Take(context.Background(), dto)
 	assert.NoError(t, err)
@@ -2503,6 +2566,7 @@ func TestTicketService_Take_OwnerAndMember_Success(t *testing.T) {
 	mockRepo.On("Update", mock.Anything, nil, mock.Anything).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
+	svc.users.(*MockUserService).On("GetByID", mock.Anything, actorID).Return(&models.UserData{ID: actorID, IsActive: true}, nil)
 
 	err := svc.Take(context.Background(), dto)
 	assert.NoError(t, err)
@@ -2539,6 +2603,7 @@ func TestTicketService_Transfer_Success(t *testing.T) {
 	})
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
+	svc.users.(*MockUserService).On("GetByID", mock.Anything, newAssigneeID).Return(&models.UserData{ID: newAssigneeID, IsActive: true}, nil)
 
 	err := svc.Transfer(context.Background(), dto)
 	assert.NoError(t, err)
@@ -2941,6 +3006,8 @@ func TestTicketService_Update_Supervisor_MultiField_Allowed(t *testing.T) {
 	// CheckAccess(Write): атрибуты не дают доступа (создатель чужой, менеджером группы
 	// не является), решение принимает обход начальника области.
 	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, &realmID).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, actorID, &realmID).Return([]uuid.UUID{}, nil)
 	mockPolicies.On("Enforce", actorID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(true, nil)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
 	// Резолв имени категории для снапшота журнала (хьюманизация лога).
@@ -2949,6 +3016,7 @@ func TestTicketService_Update_Supervisor_MultiField_Allowed(t *testing.T) {
 	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
 	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
 	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
+	svc.users.(*MockUserService).On("GetByID", mock.Anything, newOwnerID).Return(&models.UserData{ID: newOwnerID, IsActive: true}, nil)
 
 	err := svc.Update(context.Background(), dto)
 	assert.NoError(t, err)
