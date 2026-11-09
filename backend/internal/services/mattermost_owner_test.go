@@ -36,9 +36,10 @@ type ownerRole struct {
 
 type ownerOpts struct {
 	role ownerRole
-	// customers — активные заказчики realm (вне групп).
+	// customers — активные заказчики realm.
 	customers []*models.UserData
-	// allCustomers — весь ответ GetByMembership, включая неактивных.
+	// allCustomers — полный список пользователей realm, включая неактивных
+	// (сервис сам отфильтровывает неактивных при сборке селекта).
 	allCustomers []*models.UserData
 	// categories/sites — справочники диалога; для проверки порядка полей.
 	categories []*models.Category
@@ -79,7 +80,6 @@ func ownerService(t *testing.T, opts ownerOpts) *ownerFixture {
 	if all == nil {
 		all = opts.customers
 	}
-	users.On("GetByMembership", mock.Anything, realmID, models.MembershipCustomers).Return(all, nil)
 	users.On("GetAll", mock.Anything, mock.Anything).Return(all, nil)
 
 	access.On("IsRealmSupervisor", mock.Anything, userID, realmID.String()).Return(opts.role.isSupervisor, nil)

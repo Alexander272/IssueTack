@@ -146,7 +146,7 @@ func (s *MattermostService) ownerSelectElement(ctx context.Context, realmID uuid
 		DisplayName: "Заказчик",
 		Name:        "ownerId",
 		Type:        "select",
-		Placeholder: "Выберите заказчика",
+		Placeholder: "Не указан",
 		Options:     opts,
 		Optional:    true,
 	}
@@ -155,7 +155,7 @@ func (s *MattermostService) ownerSelectElement(ctx context.Context, realmID uuid
 // dialogOwnerID разбирает значение поля ownerId из сабмита диалога. Значение
 // приходит из клиента, поэтому проверяем всё, что проверяет ownerSelectElement:
 // право нажать на выбор заказчика (canPickOwner) и то, что заказчик — активный
-// участник realm вне групп. TicketService.Create членство в realm не проверяет
+// пользователь realm. TicketService.Create членство в realm не проверяет
 // (только OwnerID != nil), поэтому без этих проверок можно было бы подсунуть
 // произвольного пользователя. Любая неудача не является ошибкой диалога: заявка
 // просто уходит на создателя (owner = creator).

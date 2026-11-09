@@ -536,7 +536,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 									clearFieldError('ownerId')
 								}}
 							>
-								<option value=''>— Выберите заказчика —</option>
+								<option value=''>— Не указан —</option>
 								{customers.map(u => (
 									<option key={u.id} value={u.id}>
 										{pluginUserLabel(u)}

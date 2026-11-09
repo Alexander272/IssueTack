@@ -603,8 +603,9 @@ func (s *MattermostService) PluginCreateTicket(ctx context.Context, input *model
 	// Категория подставляет группу и приоритет по умолчанию, но только если
 	// менеджер не выбрал их явно в форме. Дальше ролевые ограничения применяет
 	// TicketService.Create: для пользователя без полных прав группа/приоритет
-	// всё равно принудительно берутся из категории, заказчик обязателен, срок
-	// отбрасывается, а исполнителем можно назначить только себя.
+	// всё равно принудительно берутся из категории, заказчик необязателен
+	// (по умолчанию им становится создатель), а исполнителем можно назначить
+	// только себя.
 	if input.CategoryID != uuid.Nil {
 		dto.CategoryID = input.CategoryID
 		cat, err := s.categories.GetByID(ctx, &models.GetCategoryByIdDTO{ID: input.CategoryID, RealmID: settings.RealmID})

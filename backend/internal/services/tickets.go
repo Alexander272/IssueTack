@@ -438,8 +438,9 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 
 	if !ok {
 		// Исполнитель (участник хотя бы одной группы) может создать заявку
-		// с ограничениями: обязателен заказчик, а приоритет/группа/исполнитель
-		// принудительно определяются системой.
+		// с ограничениями: приоритет/группа/исполнитель принудительно
+		// определяются системой. Заказчик необязателен: если он не указан,
+		// ниже им становится создатель.
 		member, err := s.groups.GetMemberGroups(ctx, dto.Actor.ID, dto.RealmID)
 		if err != nil {
 			return fmt.Errorf("failed to get member groups: %w", err)
@@ -454,6 +455,13 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 
 	if dto.GroupID == nil {
 		return fmt.Errorf("group is required")
+	}
+
+	// Заказчик необязателен: если он не указан, заявка выполняется для создателя.
+	// Подстановка обязательна — колонка tickets.owner_id в БД NOT NULL, поэтому
+	// пустой заказчик из формы не должен уходить в INSERT как NULL.
+	if dto.OwnerID == nil {
+		dto.OwnerID = &dto.CreatorID
 	}
 
 	if err := s.autoAssign(ctx, dto); err != nil {
@@ -551,7 +559,8 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 }
 
 // applyExecutorCreateRestrictions применяет ограничения при создании заявки исполнителем
-// (участником группы, не имеющим полных прав). Заказчик обязателен; группа и приоритет
+// (участником группы, не имеющим полных прав). Заказчик необязателен: если он не указан,
+// им становится создатель (подстановка в Create). Группа и приоритет
 // принудительно берутся из категории. Исполнителем исполнитель может
 // назначить только себя (явно — на любую группу, включая чужую; чужой id из тела
 // отбрасывается). Если категория принадлежит одной из групп исполнителя, заявку и без
@@ -630,6 +639,13 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 		oldTicket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
 		if err != nil {
 			return err
+		}
+
+		// Снятый в форме заказчик трактуется как «заявка для создателя»: колонка
+		// owner_id в БД NOT NULL, поэтому очистка поля не должна писать NULL.
+		// Так же, как при создании без заказчика, им становится создатель.
+		if dto.HasField("ownerId") && dto.OwnerID == nil {
+			dto.OwnerID = &oldTicket.Creator.ID
 		}
 
 		if dto.HasField("status") && dto.Status != oldTicket.Status {

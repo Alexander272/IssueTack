@@ -381,6 +381,7 @@ func TestTicketService_Create_Success(t *testing.T) {
 
 	err := svc.Create(context.Background(), dto)
 	assert.NoError(t, err)
+	assert.Equal(t, &actorID, dto.OwnerID, "заказчик по умолчанию — создатель")
 	assert.Equal(t, &assigneeID, dto.AssigneeID)
 	assert.Equal(t, &managerID, dto.ManagerID)
 }
@@ -599,7 +600,7 @@ func TestTicketService_Create_MissingGroup(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestTicketService_Create_Executor_NoOwnerRequired(t *testing.T) {
+func TestTicketService_Create_Executor_OwnerDefaultsToCreator(t *testing.T) {
 	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
 
 	actorID := uuid.New()
@@ -636,6 +637,7 @@ func TestTicketService_Create_Executor_NoOwnerRequired(t *testing.T) {
 
 	err := svc.Create(context.Background(), dto)
 	assert.NoError(t, err)
+	assert.Equal(t, &actorID, dto.OwnerID, "заказчик по умолчанию — создатель")
 	mockRepo.AssertCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
 }
 
@@ -855,6 +857,44 @@ func TestTicketService_Update_Success(t *testing.T) {
 
 	err := svc.Update(context.Background(), dto)
 	assert.NoError(t, err)
+}
+
+// TestTicketService_Update_ClearOwner_DefaultsToCreator — снятый в форме заказчик не
+// пишет NULL (колонка tickets.owner_id NOT NULL): заявка снова становится «для создателя»,
+// ровно как при создании без заказчика.
+func TestTicketService_Update_ClearOwner_DefaultsToCreator(t *testing.T) {
+	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	ownerID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Provided: map[string]bool{"ownerId": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:      ticketID,
+		Title:   "Original Ticket",
+		Creator: models.UserShort{ID: actorID},
+		Owner:   &models.UserShort{ID: ownerID},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(true, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	markUserAsEmployee(mockGroups, actorID)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.NoError(t, err)
+	require.NotNil(t, dto.OwnerID)
+	assert.Equal(t, actorID, *dto.OwnerID, "снятый заказчик заменяется создателем")
+	mockRepo.AssertCalled(t, "Update", mock.Anything, mock.Anything, dto)
 }
 
 func TestTicketService_Update_FieldEdit_WriteNoRole_Denied(t *testing.T) {
