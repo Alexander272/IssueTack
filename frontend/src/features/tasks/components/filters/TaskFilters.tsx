@@ -41,15 +41,9 @@ export const TaskFilters: FC<TaskFiltersProps> = ({
 		label: `${u.lastName} ${u.firstName} (${u.username})`,
 	})
 
-	const ownerOptions = useMemo(
-		() => (usersData?.data ?? []).filter(u => u.source !== 'mattermost' && !u.isSystem).map(formatUser),
-		[usersData],
-	)
+	const ownerOptions = useMemo(() => (usersData?.data ?? []).map(formatUser), [usersData])
 
-	const assigneeOptions = useMemo(
-		() => (executorsData?.data ?? []).filter(u => u.source !== 'mattermost' && !u.isSystem).map(formatUser),
-		[executorsData],
-	)
+	const assigneeOptions = useMemo(() => (executorsData?.data ?? []).map(formatUser), [executorsData])
 
 	const activeCount = useMemo(() => {
 		let count = 0

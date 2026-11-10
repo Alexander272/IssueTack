@@ -176,10 +176,7 @@ export const StatisticsFilters: FC<Props> = ({ value, onChange, onReset, isManag
 	const { data: sitesData } = useGetAllSitesQuery()
 
 	const assigneeOptions = useMemo<Option[]>(
-		() =>
-			(usersData?.data ?? [])
-				.filter(u => !u.isSystem)
-				.map(u => ({ id: u.id, label: `${u.lastName} ${u.firstName} (${u.username})` })),
+		() => (usersData?.data ?? []).map(u => ({ id: u.id, label: `${u.lastName} ${u.firstName} (${u.username})` })),
 		[usersData],
 	)
 	const categoryOptions = useMemo<Option[]>(
