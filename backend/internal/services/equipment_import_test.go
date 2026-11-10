@@ -479,7 +479,9 @@ func TestMapImportColumns_Aliases(t *testing.T) {
 }
 
 // TestParseImportDate — даты читаются в привычном русском формате (сначала
-// день, потом месяц) и в ISO.
+// день, потом месяц) и в ISO. dd.mm.yy (два последних числа года) и dd.mm.yyyy
+// читаются одинаково — ведущие нули у дня/месяца не обязательны («20.1.26» =
+// 20 января 2026, «5.3.25» = 5 марта 2025).
 func TestParseImportDate(t *testing.T) {
 	cases := []struct {
 		text string
@@ -489,6 +491,9 @@ func TestParseImportDate(t *testing.T) {
 		{text: "2026-01-15", want: "2026-01-15"},
 		{text: "15/01/2026", want: "2026-01-15"},
 		{text: "15.01.26", want: "2026-01-15"},
+		{text: "20.1.26", want: "2026-01-20"},
+		{text: "5.3.25", want: "2025-03-05"},
+		{text: "05.3.25", want: "2025-03-05"},
 	}
 	for _, tt := range cases {
 		got, ok := parseImportDate(tt.text, "")
