@@ -209,6 +209,7 @@ const (
 	importColLocation  = "location"
 	importColPurchase  = "purchase"
 	importColWarranty  = "warranty"
+	importColIssued    = "issued"
 	importColNotes     = "notes"
 	importColStatus    = "status"
 )
@@ -265,6 +266,9 @@ var importHeaderAliases = map[string]string{
 	"гарантия": importColWarranty, "гарантия до": importColWarranty,
 	"гарантийный срок": importColWarranty, "срок гарантии": importColWarranty,
 	"warranty": importColWarranty, "warranty until": importColWarranty,
+	// дата выдачи
+	"дата выдачи": importColIssued, "дата выдачи единицы": importColIssued,
+	"issued": importColIssued, "issued date": importColIssued,
 	// примечания
 	"примечания": importColNotes, "комментарий": importColNotes, "заметки": importColNotes,
 	"описание": importColNotes, "notes": importColNotes, "comment": importColNotes,

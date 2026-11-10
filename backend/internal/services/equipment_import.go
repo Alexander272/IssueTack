@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
@@ -219,6 +220,11 @@ func (s *EquipmentImportService) importRow(
 		result.Error = err.Error()
 		return result
 	}
+	issuedStr, err := columns.date(row, table, rowIndex, importColIssued)
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
 
 	location := columns.cell(row, importColLocation)
 	// Единица должна быть физически учтена: держатель, площадка или локация.
@@ -257,6 +263,33 @@ func (s *EquipmentImportService) importRow(
 	if err != nil {
 		result.Error = importErrorMessage(err)
 		return result
+	}
+
+	// Единица числится в эксплуатации (получен): выдача оформляется отдельной
+	// операцией — с датой из файла, а при её отсутствии с моментом создания.
+	// Без выдачи у «в эксплуатации» единицы нет даты выдачи в истории.
+	if created.Status == models.EquipmentStatusInUse {
+		issuedAt := time.Now()
+		if issuedStr != nil {
+			if issued, issuedErr := time.Parse(time.DateOnly, *issuedStr); issuedErr == nil {
+				issuedAt = issued
+			}
+		}
+		if err := s.equipment.Assign(ctx, &models.AssignEquipmentDTO{
+			ID:         created.ID,
+			RealmID:    dto.RealmID,
+			UserID:     holderUserID,
+			HolderName: holderName,
+			SiteID:     siteID,
+			Location:   createDTO.Location,
+			Comment:    "Импорт",
+			SkipAct:    true,
+			AssignedAt: &issuedAt,
+			Actor:      createDTO.Actor,
+		}); err != nil {
+			result.Error = importErrorMessage(err)
+			return result
+		}
 	}
 
 	result.Status = models.EquipmentImportRowCreated

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
@@ -27,6 +28,8 @@ type fakeEquipmentRepo struct {
 	// statuses — статус, выставленный SetStatus: дефект/списание проверяют
 	// переход состояния, а вернуть его нужно отдельным методом репозитория.
 	statuses []models.EquipmentStatus
+	// assignments — выдачи, созданные через Assign (импорт «в эксплуатации»).
+	assignments []*models.EquipmentAssignment
 }
 
 // SetStatus запоминает выставленный статус: AddDefect/WriteOff меняют состояние
@@ -80,6 +83,8 @@ func (f *fakeEquipmentRepo) Create(_ context.Context, _ postgres.Tx, dto *models
 	return &models.Equipment{
 		ID: id, TypeID: dto.TypeID, ParentID: dto.ParentID, Name: dto.Name,
 		SerialNumber: dto.SerialNumber, InventoryNumber: dto.InventoryNumber,
+		Status: dto.Status, HolderUserID: dto.HolderUserID, HolderName: dto.HolderName,
+		SiteID: dto.SiteID, Location: dto.Location,
 	}, nil
 }
 
@@ -99,6 +104,41 @@ func (f *fakeEquipmentRepo) Update(_ context.Context, _ postgres.Tx, dto *models
 func (f *fakeEquipmentRepo) CreateEvent(_ context.Context, _ postgres.Tx, e *models.EquipmentEvent) error {
 	f.events = append(f.events, e)
 	return nil
+}
+
+// GetChildren — состав комплекта: у только что созданной единицы потомков нет.
+func (f *fakeEquipmentRepo) GetChildren(_ context.Context, _ uuid.UUID, _ uuid.UUID) ([]*models.Equipment, error) {
+	return nil, nil
+}
+
+// GetOpenAssignment — выдач у только что созданной единицы ещё нет.
+func (f *fakeEquipmentRepo) GetOpenAssignment(_ context.Context, _ uuid.UUID) (*models.EquipmentAssignment, error) {
+	return nil, models.ErrNotFound
+}
+
+// CloseAssignment — возврат закрывает выдачу: у свежей единицы открытой нет.
+func (f *fakeEquipmentRepo) CloseAssignment(_ context.Context, _ repository.Tx, _ uuid.UUID, _ time.Time, _ string) error {
+	return nil
+}
+
+// CreateAssignment — копит выдачи: импорт «в эксплуатации» должен их создавать.
+func (f *fakeEquipmentRepo) CreateAssignment(_ context.Context, _ repository.Tx, a *models.EquipmentAssignment) error {
+	f.assignments = append(f.assignments, a)
+	return nil
+}
+
+// SetHolderAndStatus — держатель уже проставлен при создании, повторяем без записи.
+func (f *fakeEquipmentRepo) SetHolderAndStatus(_ context.Context, _ repository.Tx, _ uuid.UUID, _ *uuid.UUID, _ *string, _ *uuid.UUID, _ *string, _ models.EquipmentStatus) error {
+	return nil
+}
+
+// GetUserFullName / GetSiteName — подписи для снимка события выдачи.
+func (f *fakeEquipmentRepo) GetUserFullName(_ context.Context, _ uuid.UUID) (string, error) {
+	return "Иванов Иван", nil
+}
+
+func (f *fakeEquipmentRepo) GetSiteName(_ context.Context, _ uuid.UUID) (string, error) {
+	return "Офис на Мира 10", nil
 }
 
 // TestEquipmentService_ParentRequiresPart закрепляет правило: родитель

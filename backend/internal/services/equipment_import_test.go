@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
@@ -255,6 +256,92 @@ func TestEquipmentImport_ManualStatusKept(t *testing.T) {
 	assert.Equal(t, models.EquipmentImportRowCreated, result.Rows[0].Status)
 	require.NotNil(t, refs.equipment.created)
 	assert.Equal(t, models.EquipmentStatusRepair, refs.equipment.created.Status)
+}
+
+// TestEquipmentImport_InUse_CreatesAssignmentWithIssuedDate — единица со
+// статусом «в эксплуатации» при импорте должна получить выдачу: дату выдачи
+// берёт из новой колонки файла («Дата выдачи»/issued), при её отсутствии —
+// момент создания.
+func TestEquipmentImport_InUse_CreatesAssignmentWithIssuedDate(t *testing.T) {
+	ctx := context.Background()
+	refs := newImportTestRefs(t)
+	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites)
+
+	csv := strings.Join([]string{
+		"Наименование;Тип;Получатель;Площадка;Локация;Дата выдачи;Статус",
+		"Ноутбук Dell Latitude;Ноутбук;Иванов Иван;Офис на Мира 10;Кабинет 312;20.01.2026;в эксплуатации",
+	}, "\n")
+
+	result, err := svc.Import(ctx, &models.EquipmentImportDTO{
+		RealmID: refs.realmID,
+		File:    strings.NewReader(csv),
+		Actor:   &models.Actor{ID: uuid.New()},
+	})
+	require.NoError(t, err)
+
+	require.Len(t, result.Rows, 1)
+	assert.Equal(t, models.EquipmentImportRowCreated, result.Rows[0].Status)
+	assert.Equal(t, 1, result.Created)
+
+	// Статус «в эксплуатации» — это выдача, поэтому после создания должна
+	// создаваться сама выдача (assignment) с датой из файла.
+	require.Len(t, refs.equipment.assignments, 1)
+	assignment := refs.equipment.assignments[0]
+	require.NotNil(t, assignment.AssignedAt)
+	assert.True(t, assignment.AssignedAt.Equal(time.Date(2026, time.January, 20, 0, 0, 0, 0, time.UTC)))
+	require.NotNil(t, assignment.UserID)
+	assert.Equal(t, refs.userID, *assignment.UserID)
+}
+
+// TestEquipmentImport_InUse_WithoutIssuedColumn_AssignsNow — колонка даты
+// выдачи в файле необязательна: без неё выдача датируется моментом создания.
+func TestEquipmentImport_InUse_WithoutIssuedColumn_AssignsNow(t *testing.T) {
+	ctx := context.Background()
+	refs := newImportTestRefs(t)
+	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites)
+
+	csv := strings.Join([]string{
+		"Наименование;Тип;Получатель;Площадка;Статус",
+		"Ноутбук Dell Latitude;Ноутбук;Иванов Иван;Офис на Мира 10;в эксплуатации",
+	}, "\n")
+
+	result, err := svc.Import(ctx, &models.EquipmentImportDTO{
+		RealmID: refs.realmID,
+		File:    strings.NewReader(csv),
+		Actor:   &models.Actor{ID: uuid.New()},
+	})
+	require.NoError(t, err)
+
+	require.Len(t, result.Rows, 1)
+	assert.Equal(t, models.EquipmentImportRowCreated, result.Rows[0].Status)
+
+	require.Len(t, refs.equipment.assignments, 1)
+	require.NotNil(t, refs.equipment.assignments[0].AssignedAt)
+}
+
+// TestEquipmentImport_InStockWithoutHolder_DoesNotAssign — складная единица
+// без получателя (статус «на складе») выдачи не получает: операция выдачи
+// ровно для статусов, которые означают выданную единицу.
+func TestEquipmentImport_InStockWithoutHolder_DoesNotAssign(t *testing.T) {
+	ctx := context.Background()
+	refs := newImportTestRefs(t)
+	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites)
+
+	csv := strings.Join([]string{
+		"Наименование;Тип;Площадка;Статус",
+		"Ноутбук Dell Latitude;Ноутбук;Офис на Мира 10;на складе",
+	}, "\n")
+
+	result, err := svc.Import(ctx, &models.EquipmentImportDTO{
+		RealmID: refs.realmID,
+		File:    strings.NewReader(csv),
+		Actor:   &models.Actor{ID: uuid.New()},
+	})
+	require.NoError(t, err)
+
+	require.Len(t, result.Rows, 1)
+	assert.Equal(t, models.EquipmentImportRowCreated, result.Rows[0].Status)
+	assert.Empty(t, refs.equipment.assignments)
 }
 
 // TestEquipmentImport_UnknownColumnBecomesSpec — колонка, которая не стала
