@@ -123,6 +123,18 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		return fmt.Errorf("group is required")
 	}
 
+	// Серверная часть правила выбора заказчика (P2): явный заказчик должен быть
+	// выбран разрешённым пользователем (менеджер/исполнитель) и быть активным
+	// участником области — иначе заявка с чужим заказчиком не создаётся.
+	if dto.OwnerID != nil {
+		if dto.RealmID == nil {
+			return models.ErrInvalidInput
+		}
+		if err := s.validateOwnerSelection(ctx, dto.Actor.ID, *dto.RealmID, *dto.OwnerID); err != nil {
+			return err
+		}
+	}
+
 	if dto.OwnerID == nil {
 		dto.OwnerID = &dto.CreatorID
 	}

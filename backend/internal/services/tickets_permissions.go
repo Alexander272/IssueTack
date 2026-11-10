@@ -127,6 +127,55 @@ func (s *TicketService) canEditFields(ctx context.Context, ticket *models.Ticket
 	return false, nil
 }
 
+// canPickOwner проверяет, может ли пользователь выбрать заказчика при создании
+// заявки: начальник области (realm supervisor) или менеджер управляющей группы,
+// либо исполнитель (участник группы). Это зеркалит правило веб-формы и MM-диалога
+// (MattermostService.canPickOwner) и определяет, кто из создавших заявку может
+// назначить заказчика — свой или чужой.
+func (s *TicketService) canPickOwner(ctx context.Context, userID, realmID uuid.UUID) (bool, error) {
+	isRealmAdmin, err := s.access.IsRealmSupervisor(ctx, userID, realmID.String())
+	if err != nil {
+		return false, err
+	}
+	managedGroups, err := s.groups.GetManagedGroups(ctx, userID, &realmID)
+	if err != nil {
+		return false, err
+	}
+	memberGroups, err := s.groups.GetMemberGroups(ctx, userID, &realmID)
+	if err != nil {
+		return false, err
+	}
+	isManager := isRealmAdmin || len(managedGroups) > 0
+	isExecutor := !isManager && len(memberGroups) > 0
+	return isManager || isExecutor, nil
+}
+
+// validateOwnerSelection — серверная часть правила выбора заказчика: явно выбранный
+// заказчик (ownerId) должен быть выбран пользователем, которому это разрешено
+// (менеджер/исполнитель, см. canPickOwner), и должен быть активным участником
+// области заявки. Иначе заявка не создаётся/не обновляется с чужим заказчиком.
+func (s *TicketService) validateOwnerSelection(ctx context.Context, actorID, realmID uuid.UUID, ownerID uuid.UUID) error {
+	pickable, err := s.canPickOwner(ctx, actorID, realmID)
+	if err != nil {
+		return fmt.Errorf("failed to check owner picker access: %w", err)
+	}
+	if !pickable {
+		return models.ErrPermissionDenied
+	}
+	u, err := s.users.GetByID(ctx, ownerID)
+	if err != nil || u == nil || !u.IsActive {
+		return models.ErrInvalidInput
+	}
+	for _, r := range u.Realms {
+		if r.RealmID == realmID && r.IsActive {
+			return nil
+		}
+	}
+	// Не участник области (или членство неактивно) — выбирать его заказчиком нельзя:
+	// иначе заявка уходила бы человеку, который не видит область.
+	return models.ErrInvalidInput
+}
+
 // validateAssigneeForAssign проверяет, что смена исполнителя для пользователя с
 // соответствующим (но не полным) доступом допустима: новый исполнитель должен быть
 // участником той же группы, что и тикет, иное запрещено. Используется при передаче

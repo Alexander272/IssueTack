@@ -49,6 +49,23 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 			return err
 		}
 
+		// Серверная часть правила выбора заказчика (P2): явно выбранный заказчик
+		// должен быть выбран разрешённым пользователем (менеджер/исполнитель) и быть
+		// активным участником области — иначе изменение заказчика отклоняется.
+		// Проверяем до fallback: снятый в форме заказчик (OwnerID == nil) — это не
+		// явный выбор, а «без заказчика» → он заменяется создателем без валидации.
+		// Эхо текущего заказчика (форма шлёт все поля разом) выбором не считается:
+		// иначе автор без групп не смог бы отредактировать заголовок своей заявки.
+		if dto.HasField("ownerId") && dto.OwnerID != nil &&
+			(oldTicket.Owner == nil || *dto.OwnerID != oldTicket.Owner.ID) {
+			if oldTicket.RealmID == nil {
+				return models.ErrInvalidInput
+			}
+			if err := s.validateOwnerSelection(ctx, dto.Actor.ID, *oldTicket.RealmID, *dto.OwnerID); err != nil {
+				return err
+			}
+		}
+
 		// Снятый в форме заказчик трактуется как «заявка для создателя»: колонка
 		// owner_id в БД NOT NULL, поэтому очистка поля не должна писать NULL.
 		// Так же, как при создании без заказчика, им становится создатель.
