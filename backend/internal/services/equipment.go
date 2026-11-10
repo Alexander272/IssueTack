@@ -132,6 +132,10 @@ type Equipment interface {
 	AddComponents(ctx context.Context, dto *models.KitCompositionOpDTO) error
 	// RemoveComponents исключает единицы из состава комплекта.
 	RemoveComponents(ctx context.Context, dto *models.KitCompositionOpDTO) error
+	// AttachComponents прикрепляет компоненты к физическому хосту (установка).
+	AttachComponents(ctx context.Context, dto *models.PhysicalComponentOpDTO) error
+	// DetachComponents открепляет компоненты от физического хоста (снятие с установки).
+	DetachComponents(ctx context.Context, dto *models.PhysicalComponentOpDTO) error
 
 	// GetKitTemplates возвращает шаблоны комплектов реалма вместе с позициями.
 	GetKitTemplates(ctx context.Context, realmID uuid.UUID) ([]*models.EquipmentKitTemplate, error)

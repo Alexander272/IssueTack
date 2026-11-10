@@ -102,6 +102,8 @@ export const API = {
 		events: (id: string) => `/equipment/${id}/events` as const,
 		composition: (id: string) => `/equipment/${id}/composition` as const,
 		compositionHistory: (id: string) => `/equipment/${id}/composition/history` as const,
+		physicalCompositionAttach: (id: string) => `/equipment/${id}/composition/attach` as const,
+		physicalCompositionDetach: (id: string) => `/equipment/${id}/composition/detach` as const,
 		tree: '/equipment/tree' as const,
 		stats: '/equipment/stats' as const,
 		types: '/equipment/types' as const,

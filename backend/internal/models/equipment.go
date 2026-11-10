@@ -607,6 +607,20 @@ type KitCompositionOpDTO struct {
 	Actor      *Actor            `json:"-"`
 }
 
+// PhysicalComponentOpDTO — операция физического состава: прикрепить/открепить
+// единицы (компоненты) к/от физического хоста — устройства или периферии
+// (axis parent_id). Хост передаётся как ID операции (route :id): для прикрепления
+// компоненты получают parent_id = хост, для открепления parent_id обнуляется.
+// Операция — отдельная от Update единицы: событие журнала оборудования пишет
+// операция (component_added/component_removed), а не апдейт через PUT.
+type PhysicalComponentOpDTO struct {
+	ID         uuid.UUID         `json:"id"`
+	RealmID    uuid.UUID         `json:"realmId"`
+	Components []ComponentOpItem `json:"components"`
+	Reason     string            `json:"reason"`
+	Actor      *Actor            `json:"-"`
+}
+
 // EquipmentActDTO — создание акта вручную.
 type EquipmentActDTO struct {
 	ID              uuid.UUID  `json:"id"`

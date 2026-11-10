@@ -20,12 +20,13 @@ import { PlusIcon, Trash2Icon, XIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
-import type { IEquipment, IEquipmentDTO } from '../../types/equipment'
+import type { IEquipment } from '../../types/equipment'
 import { canBePart } from '../../types/equipment'
 import {
+	useAttachPhysicalComponentsMutation,
+	useDetachPhysicalComponentsMutation,
 	useGetAllEquipmentQuery,
 	useGetEquipmentChildrenQuery,
-	useUpdateEquipmentMutation,
 } from '../../equipmentApiSlice'
 
 type Props = {
@@ -33,32 +34,6 @@ type Props = {
 	onClose: () => void
 	unit: IEquipment
 }
-
-// toPayload переводит единицу в DTO для смены физического родителя. Отдельной
-// ручки «прикрепить/открепить» нет: состав меняется через PUT, а он пишет все
-// поля, поэтому переносим текущие значения и меняем только parentId.
-const toPayload = (child: IEquipment, parentId: string | null): IEquipmentDTO => ({
-	id: child.id,
-	typeId: child.typeId ?? undefined,
-	name: child.name,
-	vendor: child.vendor,
-	model: child.model,
-	serialNumber: child.serialNumber,
-	inventoryNumber: child.inventoryNumber,
-	specs: child.specs,
-	shop: child.shop,
-	orderNumber: child.orderNumber,
-	status: child.status,
-	parentId,
-	siteId: child.siteId,
-	holderUserId: child.holderUserId,
-	holderName: child.holderName,
-	location: child.location,
-	purchaseDate: child.purchaseDate,
-	warrantyUntil: child.warrantyUntil,
-	notes: child.notes,
-	isKit: child.isKit,
-})
 
 // Физический состав единицы (parent_id): прикрепить можно только уже заведённую
 // единицу — комплектующее или расходник (то же ограничение на бэкенде).
@@ -68,7 +43,8 @@ export const EquipmentPartsDialog: FC<Props> = ({ open, onClose, unit }) => {
 	const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
 	const { data } = useGetEquipmentChildrenQuery(unit.id, { skip: !open })
 	const { data: unitsData } = useGetAllEquipmentQuery({ limit: 500 })
-	const [update, { isLoading }] = useUpdateEquipmentMutation()
+	const [attach, { isLoading: isAttaching }] = useAttachPhysicalComponentsMutation()
+	const [detach, { isLoading: isDetaching }] = useDetachPhysicalComponentsMutation()
 
 	const [selected, setSelected] = useState<IEquipment | null>(null)
 
@@ -80,8 +56,13 @@ export const EquipmentPartsDialog: FC<Props> = ({ open, onClose, unit }) => {
 
 	const changeParent = async (child: IEquipment, parentId: string | null) => {
 		try {
-			await update(toPayload(child, parentId)).unwrap()
-			toast.success(parentId ? 'Добавлено в состав' : 'Исключено из состава')
+			if (parentId) {
+				await attach({ id: unit.id, body: { components: [{ componentId: child.id }], reason: 'Физический состав' } }).unwrap()
+				toast.success('Добавлено в состав')
+			} else {
+				await detach({ id: unit.id, body: { components: [{ componentId: child.id }], reason: 'Состав изменён' } }).unwrap()
+				toast.success('Исключено из состава')
+			}
 			return true
 		} catch (error) {
 			const fetchError = error as IFetchError
@@ -132,7 +113,7 @@ export const EquipmentPartsDialog: FC<Props> = ({ open, onClose, unit }) => {
 									secondaryAction={
 										<IconButton
 											color='error'
-											disabled={isLoading}
+											disabled={isAttaching || isDetaching}
 											onClick={() => changeParent(m, null)}
 										>
 											<Trash2Icon sx={{ fontSize: 18 }} />
@@ -168,7 +149,7 @@ export const EquipmentPartsDialog: FC<Props> = ({ open, onClose, unit }) => {
 						<Button
 							variant='outlined'
 							startIcon={<PlusIcon sx={{ fontSize: 16 }} />}
-							disabled={!selected || isLoading}
+							disabled={!selected || isAttaching || isDetaching}
 							onClick={handleAttach}
 							sx={{ textTransform: 'none', height: 40, whiteSpace: 'nowrap' }}
 						>

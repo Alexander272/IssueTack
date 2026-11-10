@@ -26,6 +26,8 @@ type fakeCompositionRepo struct {
 
 	opened []*models.KitComposition
 	events []*models.EquipmentEvent
+	// updates — сохранённые обновления единицы (физический состав через Update).
+	updates []*models.EquipmentDTO
 	// kitReads — сколько раз GetByID вернул комплект (для диагностики).
 	kitReads int
 }
@@ -59,6 +61,11 @@ func (f *fakeCompositionRepo) OpenComposition(_ context.Context, _ postgres.Tx, 
 func (f *fakeCompositionRepo) CreateEvent(_ context.Context, _ postgres.Tx, e *models.EquipmentEvent) error {
 	f.events = append(f.events, e)
 	return nil
+}
+
+func (f *fakeCompositionRepo) Update(_ context.Context, _ postgres.Tx, dto *models.EquipmentDTO) (*models.Equipment, error) {
+	f.updates = append(f.updates, dto)
+	return &models.Equipment{ID: *dto.ID, RealmID: dto.RealmID, Name: dto.Name, Status: dto.Status, ParentID: dto.ParentID, IsKit: dto.IsKit}, nil
 }
 
 // TestEquipmentService_AddComponents_RejectsParts закрепляет: комплектующее или
@@ -115,4 +122,124 @@ func TestEquipmentService_AddComponents_AllowsDevices(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, repo.opened, 1)
 	assert.Equal(t, monitorID, repo.opened[0].ComponentID)
+}
+
+// TestEquipmentService_AttachComponents_WritesEvent — операция физического
+// состава прикрепляет компонент к хосту (parent_id) и пишет событие
+// component_added в журнал. Этап состава закрывается операцией, а не апдейтом
+// единицы через PUT.
+func TestEquipmentService_AttachComponents_WritesEvent(t *testing.T) {
+	ctx := context.Background()
+	realmID := uuid.New()
+	hostID := uuid.New()
+	partID := uuid.New()
+
+	repo := &fakeCompositionRepo{
+		units: map[uuid.UUID]*models.Equipment{
+			hostID: {ID: hostID, RealmID: realmID, Name: "Ноутбук", TypeKind: models.EquipmentTypeDevice},
+			partID: {ID: partID, RealmID: realmID, Name: "SSD 1 ТБ", TypeKind: models.EquipmentTypeComponent},
+		},
+	}
+	svc := NewEquipmentService(repo, &mockTransactionManager{}, testEquipmentConf(t))
+
+	err := svc.AttachComponents(ctx, &models.PhysicalComponentOpDTO{
+		ID: hostID, RealmID: realmID,
+		Components: []models.ComponentOpItem{{ComponentID: partID}},
+		Reason:     "Установка",
+	})
+	require.NoError(t, err)
+
+	require.Len(t, repo.updates, 1)
+	require.NotNil(t, repo.updates[0].ParentID)
+	assert.Equal(t, hostID, *repo.updates[0].ParentID)
+
+	require.Len(t, repo.events, 1)
+	assert.Equal(t, models.EquipmentEventComponentAdded, repo.events[0].EventType)
+	assert.Equal(t, hostID, repo.events[0].EquipmentID)
+	require.NotNil(t, repo.events[0].ComponentID)
+	assert.Equal(t, partID, *repo.events[0].ComponentID)
+}
+
+// TestEquipmentService_AttachComponents_RejectsPartHost — хостом физического
+// состава может быть только устройство или периферия: комплектующий/расходник
+// не может содержать вложения, а комплект ведёт состав логически.
+func TestEquipmentService_AttachComponents_RejectsPartHost(t *testing.T) {
+	ctx := context.Background()
+	realmID := uuid.New()
+	hostID := uuid.New()
+	partID := uuid.New()
+
+	repo := &fakeCompositionRepo{
+		units: map[uuid.UUID]*models.Equipment{
+			hostID: {ID: hostID, RealmID: realmID, Name: "Память 16 ГБ", TypeKind: models.EquipmentTypeComponent},
+			partID: {ID: partID, RealmID: realmID, Name: "SSD 1 ТБ", TypeKind: models.EquipmentTypeComponent},
+		},
+	}
+	svc := NewEquipmentService(repo, &mockTransactionManager{}, testEquipmentConf(t))
+
+	err := svc.AttachComponents(ctx, &models.PhysicalComponentOpDTO{
+		ID: hostID, RealmID: realmID,
+		Components: []models.ComponentOpItem{{ComponentID: partID}},
+	})
+
+	require.ErrorIs(t, err, models.ErrEquipmentParentCannotHost)
+	assert.Empty(t, repo.events, "событие журнала не должно писаться")
+}
+
+// TestEquipmentService_DetachComponents_ClearsParent — открепление компонента
+// от хоста проставляет parent_id = NULL и пишет component_removed.
+func TestEquipmentService_DetachComponents_ClearsParent(t *testing.T) {
+	ctx := context.Background()
+	realmID := uuid.New()
+	hostID := uuid.New()
+	partID := uuid.New()
+	attachedTo := hostID
+
+	repo := &fakeCompositionRepo{
+		units: map[uuid.UUID]*models.Equipment{
+			hostID: {ID: hostID, RealmID: realmID, Name: "Ноутбук", TypeKind: models.EquipmentTypeDevice},
+			partID: {ID: partID, RealmID: realmID, Name: "SSD 1 ТБ", TypeKind: models.EquipmentTypeComponent, ParentID: &attachedTo},
+		},
+	}
+	svc := NewEquipmentService(repo, &mockTransactionManager{}, testEquipmentConf(t))
+
+	err := svc.DetachComponents(ctx, &models.PhysicalComponentOpDTO{
+		ID: hostID, RealmID: realmID,
+		Components: []models.ComponentOpItem{{ComponentID: partID}},
+	})
+	require.NoError(t, err)
+
+	require.Len(t, repo.updates, 1)
+	require.Nil(t, repo.updates[0].ParentID)
+
+	require.Len(t, repo.events, 1)
+	assert.Equal(t, models.EquipmentEventComponentRemoved, repo.events[0].EventType)
+	assert.Equal(t, hostID, repo.events[0].EquipmentID)
+	require.NotNil(t, repo.events[0].ComponentID)
+	assert.Equal(t, partID, *repo.events[0].ComponentID)
+}
+
+// TestEquipmentService_DetachComponents_NotAttached — открепление компонента,
+// который не состоит в этом хосте, отклоняется.
+func TestEquipmentService_DetachComponents_NotAttached(t *testing.T) {
+	ctx := context.Background()
+	realmID := uuid.New()
+	hostID := uuid.New()
+	partID := uuid.New()
+
+	repo := &fakeCompositionRepo{
+		units: map[uuid.UUID]*models.Equipment{
+			hostID: {ID: hostID, RealmID: realmID, Name: "Ноутбук", TypeKind: models.EquipmentTypeDevice},
+			partID: {ID: partID, RealmID: realmID, Name: "SSD 1 ТБ", TypeKind: models.EquipmentTypeComponent},
+		},
+	}
+	svc := NewEquipmentService(repo, &mockTransactionManager{}, testEquipmentConf(t))
+
+	err := svc.DetachComponents(ctx, &models.PhysicalComponentOpDTO{
+		ID: hostID, RealmID: realmID,
+		Components: []models.ComponentOpItem{{ComponentID: partID}},
+	})
+
+	require.ErrorIs(t, err, models.ErrEquipmentComponentNotAttached)
+	assert.Empty(t, repo.events, "событие журнала не должно писаться")
 }

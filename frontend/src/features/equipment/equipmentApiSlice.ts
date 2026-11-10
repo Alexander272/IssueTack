@@ -408,6 +408,54 @@ const equipmentApiSlice = apiSlice.injectEndpoints({
 			},
 		}),
 
+		attachPhysicalComponents: builder.mutation<
+			{ id: string; message: string },
+			{ id: string; body: ICompositionOpDTO }
+		>({
+			query: ({ id, body }) => ({
+				url: API.equipment.physicalCompositionAttach(id),
+				method: 'POST',
+				body,
+			}),
+			invalidatesTags: (_result, _err, { id }) => [
+				{ type: 'Equipment', id: 'ALL' },
+				{ type: 'Equipment', id },
+				{ type: 'Equipment', id: `events-${id}` },
+			],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		detachPhysicalComponents: builder.mutation<
+			{ id: string; message: string },
+			{ id: string; body: ICompositionOpDTO }
+		>({
+			query: ({ id, body }) => ({
+				url: API.equipment.physicalCompositionDetach(id),
+				method: 'POST',
+				body,
+			}),
+			invalidatesTags: (_result, _err, { id }) => [
+				{ type: 'Equipment', id: 'ALL' },
+				{ type: 'Equipment', id },
+				{ type: 'Equipment', id: `events-${id}` },
+			],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
 		getAllEquipmentActs: builder.query<IEquipmentActList, IEquipmentActFilter | void>({
 			query: filter => ({
 				url: API.equipment.acts,
@@ -781,6 +829,8 @@ export const {
 	useGetEquipmentCompositionHistoryQuery,
 	useAddEquipmentComponentsMutation,
 	useRemoveEquipmentComponentsMutation,
+	useAttachPhysicalComponentsMutation,
+	useDetachPhysicalComponentsMutation,
 	useGetAllEquipmentActsQuery,
 	useGetEquipmentActQuery,
 	useLazyGetEquipmentActQuery,

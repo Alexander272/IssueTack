@@ -90,6 +90,7 @@ var (
 	ErrEquipmentWriteOffNotDefective  = NewDomainError(errors.New("only a defective unit can be written off"), http.StatusConflict, "EQ021", "Списать можно только дефектную единицу")
 	ErrEquipmentWriteOffForbidden     = NewDomainError(errors.New("only a realm supervisor can write off equipment"), http.StatusForbidden, "EQ022", "Списывать оборудование может только начальник области")
 	ErrEquipmentDefectDateInFuture    = NewDomainError(errors.New("defect date is in the future"), http.StatusBadRequest, "EQ023", "Дата обнаружения дефекта не может быть в будущем")
+	ErrEquipmentComponentNotAttached  = NewDomainError(errors.New("component is not attached"), http.StatusBadRequest, "EQ024", "Компонент не состоит в указанном составе")
 	// 400 Bad Request
 	ErrInvalidInput          = NewDomainError(errors.New("invalid input data"), http.StatusBadRequest, "BR001", "Переданы некорректные данные")
 	ErrRelatedRecordNotFound = NewDomainError(errors.New("related record not found"), http.StatusBadRequest, "BR002", "Указанный связанный ресурс не существует")

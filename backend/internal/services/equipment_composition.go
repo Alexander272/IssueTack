@@ -113,6 +113,136 @@ func (s *EquipmentService) openComponents(ctx context.Context, tx repository.Tx,
 	return nil
 }
 
+// AttachComponents прикрепляет единицы к физическому хосту: компонентам
+// проставляется parent_id (установка в устройство/периферию) и в журнал
+// оборудования пишется событие component_added. Операция — отдельная от Update
+// единицы: событие пишет сервис операции, а не апдейт через PUT.
+func (s *EquipmentService) AttachComponents(ctx context.Context, dto *models.PhysicalComponentOpDTO) error {
+	if len(dto.Components) == 0 {
+		return models.ErrInvalidInput
+	}
+
+	return s.tm.WithinTransaction(ctx, func(tx repository.Tx) error {
+		opID := uuid.New()
+		actor := actorID(dto.Actor)
+
+		host, err := s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: dto.ID, RealmID: dto.RealmID})
+		if err != nil {
+			return fmt.Errorf("failed to get equipment. error: %w", err)
+		}
+		if host.TypeKind.CanBePart() || host.IsKit {
+			return models.ErrEquipmentParentCannotHost
+		}
+
+		for _, comp := range dto.Components {
+			item, err := s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: comp.ComponentID, RealmID: dto.RealmID})
+			if err != nil {
+				return fmt.Errorf("failed to get component. error: %w", err)
+			}
+			if !item.TypeKind.CanBePart() {
+				return models.ErrEquipmentParentNotPart
+			}
+			open, err := s.repo.GetOpenByComponent(ctx, comp.ComponentID)
+			if err != nil && !errors.Is(err, models.ErrNotFound) {
+				return fmt.Errorf("failed to get open composition. error: %w", err)
+			}
+			if err == nil && open.KitID != dto.ID {
+				return models.ErrEquipmentComponentInKit
+			}
+			if err == nil {
+				continue // уже состоит в этом хосте — идемпотентно
+			}
+
+			item.ParentID = &dto.ID
+			if _, err := s.setComponentParent(ctx, tx, item, dto.ID); err != nil {
+				return err
+			}
+			if err := s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
+				EquipmentID: dto.ID, EventType: models.EquipmentEventComponentAdded, OperationID: opID,
+				ComponentID: &comp.ComponentID, NewValue: componentJSON(item), UserID: actor, Comment: dto.Reason,
+			}); err != nil {
+				return fmt.Errorf("failed to create event. error: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+// DetachComponents открепляет единицы от физического хоста: компонентам
+// проставляется parent_id = NULL (снятие с установки) и в журнал оборудования
+// пишется событие component_removed.
+func (s *EquipmentService) DetachComponents(ctx context.Context, dto *models.PhysicalComponentOpDTO) error {
+	if len(dto.Components) == 0 {
+		return models.ErrInvalidInput
+	}
+
+	return s.tm.WithinTransaction(ctx, func(tx repository.Tx) error {
+		opID := uuid.New()
+		actor := actorID(dto.Actor)
+
+		for _, comp := range dto.Components {
+			item, err := s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: comp.ComponentID, RealmID: dto.RealmID})
+			if err != nil {
+				return fmt.Errorf("failed to get component. error: %w", err)
+			}
+			if item.ParentID == nil || *item.ParentID != dto.ID {
+				return models.ErrEquipmentComponentNotAttached
+			}
+
+			item.ParentID = nil
+			if _, err := s.setComponentParent(ctx, tx, item, uuid.Nil); err != nil {
+				return err
+			}
+			if err := s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
+				EquipmentID: dto.ID, EventType: models.EquipmentEventComponentRemoved, OperationID: opID,
+				ComponentID: &comp.ComponentID, OldValue: componentRefJSON(comp.ComponentID, item.Name), UserID: actor, Comment: dto.Reason,
+			}); err != nil {
+				return fmt.Errorf("failed to create event. error: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+// setComponentParent сохраняет единицу с новым физическим родителем (установкой)
+// через репозиторий. Родитель — передаётся явно: компонент получает parent_id хоста
+// или NULL (снятие с установки); репозиторий пишет колонку как есть.
+func (s *EquipmentService) setComponentParent(ctx context.Context, tx repository.Tx, item *models.Equipment, hostID uuid.UUID) (*models.Equipment, error) {
+	parentID := item.ParentID
+	if hostID != uuid.Nil {
+		parentID = &hostID
+	}
+	updated, err := s.repo.Update(ctx, tx, &models.EquipmentDTO{
+		ID:              &item.ID,
+		RealmID:         item.RealmID,
+		TypeID:          item.TypeID,
+		Name:            item.Name,
+		Vendor:          item.Vendor,
+		Model:           item.Model,
+		SerialNumber:    item.SerialNumber,
+		InventoryNumber: item.InventoryNumber,
+		Specs:           item.Specs,
+		Shop:            item.Shop,
+		OrderNumber:     item.OrderNumber,
+		Status:          item.Status,
+		ParentID:        parentID,
+		SiteID:          item.SiteID,
+		HolderUserID:    item.HolderUserID,
+		HolderName:      item.HolderName,
+		Location:        item.Location,
+		PurchaseDate:    item.PurchaseDate,
+		WarrantyUntil:   item.WarrantyUntil,
+		Notes:           item.Notes,
+		IsKit:           item.IsKit,
+		KitID:           item.KitID,
+		CreatedBy:       item.CreatedBy,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update equipment. error: %w", err)
+	}
+	return updated, nil
+}
+
 // RemoveComponents исключает единицы из состава комплекта.
 func (s *EquipmentService) RemoveComponents(ctx context.Context, dto *models.KitCompositionOpDTO) error {
 	kit, err := s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: dto.ID, RealmID: dto.RealmID})

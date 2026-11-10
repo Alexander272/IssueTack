@@ -70,6 +70,8 @@ func Register(api *gin.RouterGroup, service services.Equipment, importer Equipme
 		equipment.POST("/:id/write-off", handlers.writeOff)
 		equipment.POST("/:id/composition", handlers.addComponents)
 		equipment.DELETE("/:id/composition", handlers.removeComponents)
+		equipment.POST("/:id/composition/attach", handlers.attachPhysicalComponents)
+		equipment.POST("/:id/composition/detach", handlers.detachPhysicalComponents)
 		equipment.POST("/types", handlers.createType)
 		equipment.PUT("/types/:id", handlers.updateType)
 		equipment.POST("/templates", handlers.createTemplate)
@@ -355,6 +357,68 @@ func (h *Handler) addComponents(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, response.IdResponse{Id: id, Message: "Состав комплекта обновлён"})
+}
+
+func (h *Handler) attachPhysicalComponents(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	dto := &models.PhysicalComponentOpDTO{}
+	if err := c.BindJSON(dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+	dto.ID = id
+	dto.RealmID = realmID
+	dto.Actor = actor
+
+	if err := h.service.AttachComponents(c, dto); err != nil {
+		response.SendError(c, err, dto)
+		return
+	}
+	c.JSON(http.StatusOK, response.IdResponse{Id: id, Message: "Компоненты прикреплены к составу"})
+}
+
+func (h *Handler) detachPhysicalComponents(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+
+	dto := &models.PhysicalComponentOpDTO{}
+	if err := c.BindJSON(dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+	dto.ID = id
+	dto.RealmID = realmID
+	dto.Actor = actor
+
+	if err := h.service.DetachComponents(c, dto); err != nil {
+		response.SendError(c, err, dto)
+		return
+	}
+	c.JSON(http.StatusOK, response.IdResponse{Id: id, Message: "Компоненты исключены из состава"})
 }
 
 func (h *Handler) removeComponents(c *gin.Context) {
