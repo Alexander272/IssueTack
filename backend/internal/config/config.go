@@ -64,6 +64,8 @@ type (
 		FavoriteCleanupSchedule string `yaml:"favorite_cleanup_schedule" env:"TICKETS_FAVORITE_CLEANUP_SCHEDULE" env-default:"@daily"`
 		// Расписание напоминаний о сроке возврата выданного оборудования ("@daily", "" — отключено)
 		EquipmentReturnSchedule string `yaml:"equipment_return_schedule" env:"TICKETS_EQUIPMENT_RETURN_SCHEDULE" env-default:"@daily"`
+		// Расписание создания периодических задач оборудования ("@hourly", "" — отключено)
+		EquipmentPeriodicTasksSchedule string `yaml:"equipment_periodic_tasks_schedule" env:"TICKETS_EQUIPMENT_PERIODIC_TASKS_SCHEDULE" env-default:"@hourly"`
 		// Рабочее время периодических уведомлений: прогоны джоб вне окна пропускаются.
 		// Дефолты живут в config.yaml, а не в env-default: cleanenv подставляет
 		// env-default в незаполненное поле и перетёр бы явный «пусто» (выключение).

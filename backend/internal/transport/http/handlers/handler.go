@@ -77,7 +77,7 @@ func (h *Handler) Init(group *gin.RouterGroup) {
 	categories.Register(secure, h.services.Categories, h.middleware)
 	category_groups.Register(secure, h.services.CategoryGroups, h.middleware)
 	sites.Register(secure, h.services.Sites, h.middleware)
-	equipment.Register(secure, h.services.Equipment, h.services.EquipmentImport, h.conf.FileServer.MaxSize, h.middleware)
+	equipment.Register(secure, h.services.Equipment, h.services.EquipmentImport, h.conf.FileServer.MaxSize, h.middleware, h.services.EquipmentPeriodicTasks)
 
 	permissions.Register(secure, h.services.Permissions, h.middleware)
 	roles.Register(secure, h.services.Roles, h.middleware)

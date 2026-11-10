@@ -35,7 +35,7 @@ func NewHandler(service services.Equipment, importer EquipmentImporter, maxSize 
 	return &Handler{service: service, importer: importer, maxSize: maxSize}
 }
 
-func Register(api *gin.RouterGroup, service services.Equipment, importer EquipmentImporter, maxSize int64, middleware *middleware.Middleware) {
+func Register(api *gin.RouterGroup, service services.Equipment, importer EquipmentImporter, maxSize int64, middleware *middleware.Middleware, periodicSvc *services.EquipmentPeriodicTaskService) {
 	handlers := NewHandler(service, importer, maxSize)
 
 	equipment := api.Group("/equipment", middleware.CheckPermissions(access.Reg.R(access.ResourceEquipment).Read()))
@@ -59,6 +59,18 @@ func Register(api *gin.RouterGroup, service services.Equipment, importer Equipme
 		equipment.GET("/acts/:id/document", handlers.getActDocument)
 		equipment.GET("/acts/:id/signed", handlers.getActSignedFile)
 		equipment.GET("/import/template", handlers.importTemplate)
+
+		// Периодические задачи оборудования
+		if periodicSvc != nil {
+			periodicHandlers := NewEquipmentPeriodicTaskHandlers(*periodicSvc)
+			equipment.GET("/periodic-tasks", periodicHandlers.getTemplates)
+			equipment.GET("/periodic-tasks/templates/:id", periodicHandlers.getTemplateByID)
+			equipment.POST("/periodic-tasks/templates", periodicHandlers.createTemplate)
+			equipment.PUT("/periodic-tasks/templates/:id", periodicHandlers.updateTemplate)
+			equipment.DELETE("/periodic-tasks/templates/:id", periodicHandlers.deleteTemplate)
+			equipment.GET("/periodic-tasks/instances", periodicHandlers.getInstances)
+			equipment.POST("/periodic-tasks/run", periodicHandlers.runInstance)
+		}
 
 		equipment.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceEquipment).Write()))
 		equipment.POST("", handlers.create)

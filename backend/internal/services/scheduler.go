@@ -27,6 +27,8 @@ type SchedulerService struct {
 	// сценарий (не связан с тикетами), поэтому своя зависимость: тикетный
 	// NotificationService сюда не подходит по форме (Notifier получает заявку).
 	equipmentReturn *equipmentReturnReminder
+	// equipmentPeriodicTasks — сервис периодических задач оборудования.
+	equipmentPeriodicTasks *EquipmentPeriodicTaskService
 }
 
 // SchedulerDeps содержит зависимости для создания SchedulerService.
@@ -39,6 +41,7 @@ type SchedulerDeps struct {
 	MMRepo           repository.Mattermost
 	Users            Users
 	MMSender         mattermostSender
+	EquipmentPeriodicTasks *EquipmentPeriodicTaskService
 }
 
 // Scheduler описывает сервис планировщика фоновых заданий.
@@ -67,6 +70,7 @@ func NewSchedulerService(deps *SchedulerDeps) *SchedulerService {
 			Users:     deps.Users,
 			Sender:    deps.MMSender,
 		}),
+		equipmentPeriodicTasks: deps.EquipmentPeriodicTasks,
 	}
 }
 
@@ -79,6 +83,11 @@ func (s *SchedulerService) Start(conf *config.TicketConfig) error {
 		logger.Info("working-hours window for periodic notifications: " + s.workingHours.String())
 	} else {
 		logger.Info("working-hours window disabled: periodic notifications run on every tick")
+	}
+
+	// Передаём working hours в сервис периодических задач
+	if s.equipmentPeriodicTasks != nil {
+		s.equipmentPeriodicTasks.SetWorkingHours(s.workingHours)
 	}
 
 	if conf.ResolvedToClosedAfter > 0 {
@@ -167,6 +176,18 @@ func (s *SchedulerService) Start(conf *config.TicketConfig) error {
 		}
 		registered = true
 		logger.Info("equipment-return scheduler started, schedule: " + conf.EquipmentReturnSchedule)
+	}
+
+	if conf.EquipmentPeriodicTasksSchedule != "" {
+		_, err := s.cron.NewJob(
+			gocron.CronJob(conf.EquipmentPeriodicTasksSchedule, false),
+			gocron.NewTask(s.equipmentPeriodicTasksJob),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create equipment-periodic-tasks job. error: %w", err)
+		}
+		registered = true
+		logger.Info("equipment-periodic-tasks scheduler started, schedule: " + conf.EquipmentPeriodicTasksSchedule)
 	}
 
 	if registered {
@@ -337,5 +358,15 @@ func (s *SchedulerService) equipmentReturnJob(ctx context.Context) {
 	}
 	if sent > 0 {
 		logger.Info(fmt.Sprintf("Sent %d equipment return reminders", sent))
+	}
+}
+
+// equipmentPeriodicTasksJob — фоновая задача cron: создаёт заявки по периодическим
+// шаблонам оборудования. Задачи создаются по расписанию (pending → created),
+// следующий старт планируется автоматически.
+func (s *SchedulerService) equipmentPeriodicTasksJob(ctx context.Context) {
+	if err := s.equipmentPeriodicTasks.ProcessPendingTasks(ctx); err != nil {
+		logger.Error("failed to process equipment periodic tasks:", logger.ErrAttr(err))
+		return
 	}
 }

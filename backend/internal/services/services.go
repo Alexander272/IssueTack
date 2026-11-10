@@ -45,6 +45,7 @@ type Services struct {
 	// а не метод сервиса оборудования: импорту нужны справочники площадок и
 	// пользователей, которых у оборудования нет.
 	EquipmentImport *EquipmentImportService
+	EquipmentPeriodicTasks *EquipmentPeriodicTaskService
 	// Интеграции
 	Scheduler
 	Mattermost
@@ -169,6 +170,10 @@ func NewServices(deps *Deps) *Services {
 	// живёт в сервисе доступа — тем же поздним связыванием.
 	equipment.SetAccessChecker(access)
 
+	// Периодические задачи оборудования: создают заявки по расписанию.
+	equipmentPeriodicTasks := NewEquipmentPeriodicTaskService(deps.Repo.Equipment, transaction)
+	equipmentPeriodicTasks.SetTicketCreator(tickets)
+
 	// Цикл tickets → attachments разорван: уведомление о вложении рассылает сам
 	// TicketService (UploadAttachment), поэтому attachments не зависят от тикетов
 	// и позднее связывание не требуется.
@@ -187,6 +192,7 @@ func NewServices(deps *Deps) *Services {
 		MMRepo:           deps.Repo.Mattermost,
 		Users:            users,
 		MMSender:         mmMost,
+		EquipmentPeriodicTasks: equipmentPeriodicTasks,
 	})
 
 	mattermostSvc := NewMattermostService(&MattermostDeps{
@@ -237,6 +243,7 @@ func NewServices(deps *Deps) *Services {
 		UserRealms:      userRealms,
 		Equipment:       equipment,
 		EquipmentImport: equipmentImport,
+		EquipmentPeriodicTasks: equipmentPeriodicTasks,
 
 		// Интеграции
 		Scheduler:  scheduler,

@@ -51,6 +51,8 @@ var Tables = struct {
 	EquipmentKitTemplates      string
 	EquipmentKitTemplateItems  string
 	EquipmentInventoryCounters string
+	EquipmentTypePeriodicTasks    string
+	EquipmentPeriodicTaskInstances string
 	ReminderLastSent           string
 }{
 	Sites:                      "sites",
@@ -91,5 +93,7 @@ var Tables = struct {
 	EquipmentKitTemplates:      "equipment_kit_templates",
 	EquipmentKitTemplateItems:  "equipment_kit_template_items",
 	EquipmentInventoryCounters: "equipment_inventory_counters",
+	EquipmentTypePeriodicTasks:    "equipment_type_periodic_tasks",
+	EquipmentPeriodicTaskInstances: "equipment_periodic_task_instances",
 	ReminderLastSent:           "reminder_last_sent",
 }
