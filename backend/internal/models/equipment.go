@@ -691,20 +691,29 @@ type EquipmentShort struct {
 
 // EquipmentTypePeriodicTask — шаблон периодической задачи для типа оборудования.
 // Определяет, какие заявки создавать автоматически для единиц этого типа.
+// Период задаётся отдельно для каждого типа: годы/месяцы/дни (хотя бы один > 0).
+// Старт задачи — дата выдачи единицы + период; у единиц без выдачи первый старт
+// вручную (цепочка создаётся ручным запуском).
 type EquipmentTypePeriodicTask struct {
-	ID                 uuid.UUID `json:"id" db:"id"`
-	RealmID            uuid.UUID `json:"realmId" db:"realm_id"`
-	EquipmentTypeID    uuid.UUID `json:"equipmentTypeId" db:"equipment_type_id"`
-	Title              string    `json:"title" db:"title"`
-	Description        string    `json:"description" db:"description"`
-	PeriodInterval     string    `json:"periodInterval" db:"period_interval"`
-	CategoryID         uuid.UUID `json:"categoryId" db:"category_id"`
-	SiteID             *uuid.UUID `json:"siteId,omitempty" db:"site_id"`
-	Priority           string    `json:"priority" db:"priority"`
-	AutoStartOnFirstAssign bool  `json:"autoStartOnFirstAssign" db:"auto_start_on_first_assign"`
-	Enabled            bool      `json:"enabled" db:"enabled"`
-	CreatedAt          time.Time `json:"createdAt" db:"created_at"`
-	UpdatedAt          time.Time `json:"updatedAt" db:"updated_at"`
+	ID                     uuid.UUID  `json:"id" db:"id"`
+	RealmID                uuid.UUID  `json:"realmId" db:"realm_id"`
+	EquipmentTypeID        uuid.UUID  `json:"equipmentTypeId" db:"equipment_type_id"`
+	Title                  string     `json:"title" db:"title"`
+	Description            string     `json:"description" db:"description"`
+	PeriodYears            int        `json:"periodYears" db:"period_years"`
+	PeriodMonths           int        `json:"periodMonths" db:"period_months"`
+	PeriodDays             int        `json:"periodDays" db:"period_days"`
+	CategoryID             uuid.UUID  `json:"categoryId" db:"category_id"`
+	SiteID                 *uuid.UUID `json:"siteId,omitempty" db:"site_id"`
+	Priority               string     `json:"priority" db:"priority"`
+	AutoStartOnFirstAssign bool       `json:"autoStartOnFirstAssign" db:"auto_start_on_first_assign"`
+	Enabled                bool       `json:"enabled" db:"enabled"`
+	CreatedAt              time.Time  `json:"createdAt" db:"created_at"`
+	UpdatedAt              time.Time  `json:"updatedAt" db:"updated_at"`
+	// CreatedBy — автор шаблона (кто создал правило; заявки порождаются от него).
+	// NULL — шаблон, созданный до появления колонки (старые записи): они не должны
+	// стартовать автоматически, требуют ручного запуска.
+	CreatedBy *uuid.UUID `json:"createdBy,omitempty" db:"created_by"`
 
 	// Резолвленные подписи (заполняются при чтении)
 	EquipmentTypeName string `json:"equipmentTypeName" db:"type_name"`
@@ -713,18 +722,23 @@ type EquipmentTypePeriodicTask struct {
 }
 
 // EquipmentTypePeriodicTaskDTO — создание/правка шаблона периодической задачи.
+// CreatedBy не приходит от клиента (json:"-") и проставляется хендлером из
+// авторизованного пользователя; при обновлении сохраняется прежний автор.
 type EquipmentTypePeriodicTaskDTO struct {
-	ID                 *uuid.UUID `json:"id" db:"id"`
-	RealmID            uuid.UUID  `json:"realmId" db:"realm_id"`
-	EquipmentTypeID    uuid.UUID  `json:"equipmentTypeId" validate:"required" db:"equipment_type_id"`
-	Title              string     `json:"title" validate:"required" db:"title"`
-	Description        string     `json:"description" db:"description"`
-	PeriodInterval     string     `json:"periodInterval" validate:"required" db:"period_interval"`
-	CategoryID         uuid.UUID  `json:"categoryId" validate:"required" db:"category_id"`
-	SiteID             *uuid.UUID `json:"siteId,omitempty" db:"site_id"`
-	Priority           string     `json:"priority" db:"priority"`
-	AutoStartOnFirstAssign bool   `json:"autoStartOnFirstAssign" db:"auto_start_on_first_assign"`
-	Enabled            bool       `json:"enabled" db:"enabled"`
+	ID                     *uuid.UUID `json:"id" db:"id"`
+	RealmID                uuid.UUID  `json:"realmId" db:"realm_id"`
+	EquipmentTypeID        uuid.UUID  `json:"equipmentTypeId" validate:"required" db:"equipment_type_id"`
+	Title                  string     `json:"title" validate:"required" db:"title"`
+	Description            string     `json:"description" db:"description"`
+	PeriodYears            int        `json:"periodYears" db:"period_years"`
+	PeriodMonths           int        `json:"periodMonths" db:"period_months"`
+	PeriodDays             int        `json:"periodDays" db:"period_days"`
+	CategoryID             uuid.UUID  `json:"categoryId" validate:"required" db:"category_id"`
+	SiteID                 *uuid.UUID `json:"siteId,omitempty" db:"site_id"`
+	Priority               string     `json:"priority" db:"priority"`
+	AutoStartOnFirstAssign bool       `json:"autoStartOnFirstAssign" db:"auto_start_on_first_assign"`
+	Enabled                bool       `json:"enabled" db:"enabled"`
+	CreatedBy              *uuid.UUID `json:"-"`
 }
 
 // DelEquipmentTypePeriodicTaskDTO — удаление шаблона.
@@ -737,27 +751,28 @@ type DelEquipmentTypePeriodicTaskDTO struct {
 type EquipmentPeriodicTaskInstanceStatus string
 
 const (
-	TaskInstancePending  EquipmentPeriodicTaskInstanceStatus = "pending"
-	TaskInstanceCreated  EquipmentPeriodicTaskInstanceStatus = "created"
+	TaskInstancePending   EquipmentPeriodicTaskInstanceStatus = "pending"
+	TaskInstanceCreated   EquipmentPeriodicTaskInstanceStatus = "created"
 	TaskInstanceCancelled EquipmentPeriodicTaskInstanceStatus = "cancelled"
 )
 
 // EquipmentPeriodicTaskInstance — экземпляр периодической задачи.
-// Связывает созданную заявку с шаблоном и хранит расписание следующего запуска.
+// pending: scheduled_at — когда создать заявку (после предыдущего запуска);
+// created: ticket_id — созданная заявка, next_scheduled_at — следующий старт.
 type EquipmentPeriodicTaskInstance struct {
-	ID                uuid.UUID                             `json:"id" db:"id"`
-	RealmID           uuid.UUID                             `json:"realmId" db:"realm_id"`
-	TemplateID        uuid.UUID                             `json:"templateId" db:"template_id"`
-	EquipmentID       uuid.UUID                             `json:"equipmentId" db:"equipment_id"`
-	TicketID          *uuid.UUID                            `json:"ticketId,omitempty" db:"ticket_id"`
-	Status            EquipmentPeriodicTaskInstanceStatus   `json:"status" db:"status"`
-	ScheduledAt       time.Time                             `json:"scheduledAt" db:"scheduled_at"`
-	CreatedAt         *time.Time                            `json:"createdAt,omitempty" db:"created_at"`
-	NextScheduledAt   *time.Time                            `json:"nextScheduledAt,omitempty" db:"next_scheduled_at"`
-	LastAssignmentID  *uuid.UUID                            `json:"lastAssignmentId,omitempty" db:"last_assignment_id"`
-	CreatedBy         *uuid.UUID                            `json:"createdBy,omitempty" db:"created_by"`
+	ID               uuid.UUID                           `json:"id" db:"id"`
+	RealmID          uuid.UUID                           `json:"realmId" db:"realm_id"`
+	TemplateID       uuid.UUID                           `json:"templateId" db:"template_id"`
+	EquipmentID      uuid.UUID                           `json:"equipmentId" db:"equipment_id"`
+	TicketID         *uuid.UUID                          `json:"ticketId,omitempty" db:"ticket_id"`
+	Status           EquipmentPeriodicTaskInstanceStatus `json:"status" db:"status"`
+	ScheduledAt      time.Time                           `json:"scheduledAt" db:"scheduled_at"`
+	CreatedAt        *time.Time                          `json:"createdAt,omitempty" db:"created_at"`
+	NextScheduledAt  *time.Time                          `json:"nextScheduledAt,omitempty" db:"next_scheduled_at"`
+	LastAssignmentID *uuid.UUID                          `json:"lastAssignmentId,omitempty" db:"last_assignment_id"`
+	CreatedBy        *uuid.UUID                          `json:"createdBy,omitempty" db:"created_by"`
 
-	// Резолвленные подписи
+	// Резолвенные подписи
 	EquipmentName string `json:"equipmentName" db:"equipment_name"`
 	TicketTitle   string `json:"ticketTitle,omitempty" db:"ticket_title"`
 	TicketNumber  int    `json:"ticketNumber,omitempty" db:"ticket_number"`
@@ -765,7 +780,7 @@ type EquipmentPeriodicTaskInstance struct {
 
 // GetEquipmentPeriodicTaskInstancesFilter — фильтр списка экземпляров.
 type GetEquipmentPeriodicTaskInstancesFilter struct {
-	RealmID     uuid.UUID `json:"realmId" db:"realm_id"`
+	RealmID     uuid.UUID  `json:"realmId" db:"realm_id"`
 	TemplateID  *uuid.UUID `json:"templateId,omitempty" db:"template_id"`
 	EquipmentID *uuid.UUID `json:"equipmentId,omitempty" db:"equipment_id"`
 	Status      *string    `json:"status,omitempty" db:"status"`
@@ -778,7 +793,10 @@ type ManualPeriodicTaskRunDTO struct {
 	RealmID     uuid.UUID `json:"realmId" validate:"required"`
 	TemplateID  uuid.UUID `json:"templateId" validate:"required"`
 	EquipmentID uuid.UUID `json:"equipmentId" validate:"required"`
-	// ShiftNext — сдвинуть ли следующий старт на период от текущей даты
-	// (если false — следующий старт останется по исходному расписанию)
+	// ShiftNext — сдвинуть ли следующий старт на период от текущей даты.
+	// Запуск всегда создаёт заявку сейчас; shift влияет только на цепочку
+	// следующих запусков: true — pending перепланируется на now + период,
+	// false — pending остаётся на исходном расписании (или создаётся на now+period,
+	// если pending нет).
 	ShiftNext bool `json:"shiftNext"`
 }

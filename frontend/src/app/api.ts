@@ -117,6 +117,13 @@ export const API = {
 		actById: (id: string) => `/equipment/acts/${id}` as const,
 		actDocument: (id: string) => `/equipment/acts/${id}/document` as const,
 		actSigned: (id: string) => `/equipment/acts/${id}/signed` as const,
+		periodicTasks: {
+			base: '/equipment/periodic-tasks' as const,
+			templates: '/equipment/periodic-tasks/templates' as const,
+			templateById: (id: string) => `/equipment/periodic-tasks/templates/${id}` as const,
+			instances: '/equipment/periodic-tasks/instances' as const,
+			run: '/equipment/periodic-tasks/run' as const,
+		},
 	},
 	notifications: {
 		settings: '/notifications/settings',

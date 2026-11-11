@@ -3,12 +3,10 @@ package equipment
 import (
 	"net/http"
 
-	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
-	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -23,21 +21,8 @@ func NewEquipmentPeriodicTaskHandlers(service services.EquipmentPeriodicTaskServ
 	return &EquipmentPeriodicTaskHandlers{service: service}
 }
 
-// RegisterPeriodicTaskRoutes регистрирует роуты периодических задач.
-func (h *EquipmentPeriodicTaskHandlers) RegisterPeriodicTaskRoutes(api *gin.RouterGroup, middleware *middleware.Middleware) {
-	periodicTasks := api.Group("/equipment/periodic-tasks", middleware.CheckPermissions(access.Reg.R(access.ResourceEquipment).Read()))
-	{
-		periodicTasks.GET("", h.getTemplates)
-		periodicTasks.GET("/templates/:id", h.getTemplateByID)
-		periodicTasks.POST("", h.createTemplate)
-		periodicTasks.PUT("/templates/:id", h.updateTemplate)
-		periodicTasks.DELETE("/templates/:id", h.deleteTemplate)
-		periodicTasks.GET("/instances", h.getInstances)
-		periodicTasks.POST("/instances/:id/run", h.runInstance)
-	}
-}
-
 // getTemplates — список шаблонов периодических задач.
+// equipmentTypeId — необязательный фильтр по типу оборудования (uuid).
 func (h *EquipmentPeriodicTaskHandlers) getTemplates(c *gin.Context) {
 	realmID, ok := utils.RequireRealmUUID(c)
 	if !ok {
@@ -45,7 +30,7 @@ func (h *EquipmentPeriodicTaskHandlers) getTemplates(c *gin.Context) {
 	}
 
 	var equipmentTypeID *uuid.UUID
-	if idStr := c.Param("id"); idStr != "" {
+	if idStr := c.Query("equipmentTypeId"); idStr != "" {
 		id, err := uuid.Parse(idStr)
 		if err != nil {
 			response.SendError(c, models.ErrNotValid)
@@ -97,6 +82,10 @@ func (h *EquipmentPeriodicTaskHandlers) createTemplate(c *gin.Context) {
 		return
 	}
 	dto.RealmID = realmID
+	// Автор шаблона — создатель заявок: задачи порождаются от него.
+	if actor := utils.GetActor(c); actor != nil {
+		dto.CreatedBy = &actor.ID
+	}
 
 	template, err := h.service.CreatePeriodicTaskTemplate(c.Request.Context(), &dto)
 	if err != nil {
@@ -196,7 +185,7 @@ func (h *EquipmentPeriodicTaskHandlers) runInstance(c *gin.Context) {
 	}
 	dto.RealmID = realmID
 
-	actor := &models.Actor{ID: uuid.Nil, Name: "manual"}
+	actor := utils.GetActor(c)
 
 	err := h.service.ManualRunTask(c.Request.Context(), &dto, actor)
 	if err != nil {

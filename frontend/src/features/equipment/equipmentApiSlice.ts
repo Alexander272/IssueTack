@@ -6,6 +6,7 @@ import type {
 	IAssignEquipmentDTO,
 	IChangeStatusDTO,
 	ICompositionOpDTO,
+	IManualPeriodicTaskRunDTO,
 	IEquipment,
 	IEquipmentAct,
 	IEquipmentActDTO,
@@ -19,12 +20,16 @@ import type {
 	IEquipmentKitTemplate,
 	IEquipmentKitTemplateDTO,
 	IEquipmentList,
+	IEquipmentPeriodicTaskInstanceFilter,
+	IEquipmentPeriodicTaskInstanceList,
 	IEquipmentShop,
 	IEquipmentStats,
 	IEquipmentTreeArgs,
 	IEquipmentTreeList,
 	IEquipmentType,
 	IEquipmentTypeDTO,
+	IEquipmentTypePeriodicTask,
+	IEquipmentTypePeriodicTaskDTO,
 	IKitComposition,
 	IUnassignEquipmentDTO,
 	IWriteOffEquipmentDTO,
@@ -806,6 +811,128 @@ const equipmentApiSlice = apiSlice.injectEndpoints({
 				}
 			},
 		}),
+
+		// ===== Периодические задачи =====
+		getPeriodicTaskTemplates: builder.query<{ data: IEquipmentTypePeriodicTask[] }, { realmId: string; equipmentTypeId?: string }>({
+			query: ({ realmId, equipmentTypeId }) => ({
+				url: API.equipment.periodicTasks.base,
+				method: 'GET',
+				params: { realmId, equipmentTypeId },
+			}),
+			providesTags: [{ type: 'EquipmentPeriodicTasks', id: 'ALL' }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		getPeriodicTaskTemplate: builder.query<IEquipmentTypePeriodicTask, string>({
+			query: id => ({
+				url: API.equipment.periodicTasks.templateById(id),
+				method: 'GET',
+			}),
+			providesTags: (_result, _err, id) => [{ type: 'EquipmentPeriodicTasks', id }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		createPeriodicTaskTemplate: builder.mutation<IEquipmentTypePeriodicTask, IEquipmentTypePeriodicTaskDTO>({
+			query: body => ({
+				url: API.equipment.periodicTasks.templates,
+				method: 'POST',
+				body,
+			}),
+			invalidatesTags: [{ type: 'EquipmentPeriodicTasks', id: 'ALL' }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+					toast.success('Шаблон периодической задачи создан')
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		updatePeriodicTaskTemplate: builder.mutation<IEquipmentTypePeriodicTask, IEquipmentTypePeriodicTaskDTO>({
+			query: body => ({
+				url: API.equipment.periodicTasks.templateById(body.id!),
+				method: 'PUT',
+				body,
+			}),
+			invalidatesTags: [{ type: 'EquipmentPeriodicTasks', id: 'ALL' }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+					toast.success('Шаблон периодической задачи обновлён')
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		deletePeriodicTaskTemplate: builder.mutation<void, string>({
+			query: id => ({
+				url: API.equipment.periodicTasks.templateById(id),
+				method: 'DELETE',
+			}),
+			invalidatesTags: [{ type: 'EquipmentPeriodicTasks', id: 'ALL' }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+					toast.success('Шаблон периодической задачи удалён')
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		getPeriodicTaskInstances: builder.query<IEquipmentPeriodicTaskInstanceList, IEquipmentPeriodicTaskInstanceFilter>({
+			query: filter => ({
+				url: API.equipment.periodicTasks.instances,
+				method: 'GET',
+				params: filter,
+			}),
+			providesTags: [{ type: 'EquipmentPeriodicTaskInstances', id: 'ALL' }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		runPeriodicTask: builder.mutation<void, IManualPeriodicTaskRunDTO>({
+			query: body => ({
+				url: API.equipment.periodicTasks.run,
+				method: 'POST',
+				body,
+			}),
+			invalidatesTags: [{ type: 'EquipmentPeriodicTaskInstances', id: 'ALL' }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+					toast.success('Периодическая задача запущена')
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
 	}),
 })
 
@@ -852,4 +979,11 @@ export const {
 	useCreateEquipmentTemplateMutation,
 	useUpdateEquipmentTemplateMutation,
 	useDeleteEquipmentTemplateMutation,
+	useGetPeriodicTaskTemplatesQuery,
+	useGetPeriodicTaskTemplateQuery,
+	useCreatePeriodicTaskTemplateMutation,
+	useUpdatePeriodicTaskTemplateMutation,
+	useDeletePeriodicTaskTemplateMutation,
+	useGetPeriodicTaskInstancesQuery,
+	useRunPeriodicTaskMutation,
 } = equipmentApiSlice

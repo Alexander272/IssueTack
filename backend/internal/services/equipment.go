@@ -29,6 +29,11 @@ type EquipmentService struct {
 	// Приходит позднее тем же сеттером, что и tickets: оборудование не должно
 	// зависеть от сервиса тикетов на этапе сборки. nil — списание запрещено.
 	access EquipmentAccessChecker
+	// periodicStarter — автостарт периодических задач оборудования после выдачи
+	// (тип с autoStartOnFirstAssign → первая pending-задача на дату выдачи + период).
+	// Приходит из сервиса периодических задач через тот же поздний сеттер, что и
+	// TicketCreator. nil — автостарт отключён.
+	periodicStarter PeriodicTaskStarter
 }
 
 // EquipmentAccessChecker — узкий срез модели доступа: оборудованию нужна одна
@@ -71,6 +76,13 @@ func (s *EquipmentService) SetTicketCreator(tc TicketCreator) {
 // от него не зависит.
 func (s *EquipmentService) SetAccessChecker(ac EquipmentAccessChecker) {
 	s.access = ac
+}
+
+// SetPeriodicStarter подключает автостарт периодических задач после выдачи.
+// Тот же поздний принцип, что и у TicketCreator: сервис периодических задач
+// зависит от создателя заявок, а не наоборот.
+func (s *EquipmentService) SetPeriodicStarter(ps PeriodicTaskStarter) {
+	s.periodicStarter = ps
 }
 
 // Equipment — интерфейс работы с оборудованием.

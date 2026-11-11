@@ -121,10 +121,32 @@ type Equipment interface {
 
 	// Экземпляры периодических задач
 	GetPeriodicTaskInstances(ctx context.Context, filter *models.GetEquipmentPeriodicTaskInstancesFilter) ([]*models.EquipmentPeriodicTaskInstance, int, error)
-	// GetPendingPeriodicTasks возвращает задачи со статусом pending, у которых scheduled_at <= now
+	// GetPendingPeriodicTasks возвращает задачи со статусом pending, у которых scheduled_at <= now,
+	// по включённым шаблонам (шаблон должен быть enabled).
 	GetPendingPeriodicTasks(ctx context.Context, now time.Time, limit int) ([]*models.EquipmentPeriodicTaskInstance, error)
 	CreatePeriodicTaskInstance(ctx context.Context, tx Tx, instance *models.EquipmentPeriodicTaskInstance) error
 	UpdatePeriodicTaskInstance(ctx context.Context, tx Tx, instance *models.EquipmentPeriodicTaskInstance) error
+	// ClaimPeriodicTaskInstance атомарно переводит pending-экземпляр в created
+	// (claim сбрасывает ticket_id/created_at/next_scheduled_at — они проставляются
+	// после фактического создания заявки; при сбое заявки claim откатывается).
+	ClaimPeriodicTaskInstance(ctx context.Context, tx Tx, id uuid.UUID, realmID uuid.UUID) (bool, error)
+	// RevertPeriodicTaskClaim возвращает экзаемпляр из created обратно в pending
+	// (раскрывает claim после сбоя создания заявки): расписание и последняя выдача
+	// восстанавливаются из снимка, взятого до claim.
+	RevertPeriodicTaskClaim(ctx context.Context, tx Tx, id uuid.UUID, realmID uuid.UUID, scheduledAt time.Time, lastAssignmentID *uuid.UUID) error
+	// SetPeriodicTaskInstanceTicket привязывает созданную заявку к экземпляру
+	// и проставляет next_scheduled_at (расписание следующего запуска).
+	SetPeriodicTaskInstanceTicket(ctx context.Context, tx Tx, instance *models.EquipmentPeriodicTaskInstance, ticketID uuid.UUID, nextScheduledAt time.Time) error
+	// ReschedulePendingInstance переписывает расписание pending-экземпляра
+	// (ручной запуск с shift=true).
+	ReschedulePendingInstance(ctx context.Context, tx Tx, instance *models.EquipmentPeriodicTaskInstance, scheduledAt time.Time) error
+	// HasPeriodicTaskInstances сообщает, есть ли уже экземпляры (не отменённые)
+	// для пары «шаблон — единица»: автостарт при первой выдаче должен сработать
+	// только если цепочка ещё не заводилась.
+	HasPeriodicTaskInstances(ctx context.Context, templateID, equipmentID, realmID uuid.UUID) (bool, error)
+	// GetPendingPeriodicTaskInstance возвращает единственный pending-экземпляр
+	// пары «шаблон — единица».
+	GetPendingPeriodicTaskInstance(ctx context.Context, templateID, equipmentID, realmID uuid.UUID) (*models.EquipmentPeriodicTaskInstance, error)
 	// GetLastAssignmentForEquipment возвращает последнюю выдачу оборудования
 	GetLastAssignmentForEquipment(ctx context.Context, equipmentID uuid.UUID) (*models.EquipmentAssignment, error)
 }
@@ -462,9 +484,10 @@ func (r *EquipmentRepo) SetStatus(ctx context.Context, tx Tx, realmID, id uuid.U
 func (r *EquipmentRepo) GetPeriodicTaskTemplates(ctx context.Context, realmID uuid.UUID, equipmentTypeID *uuid.UUID) ([]*models.EquipmentTypePeriodicTask, error) {
 	query := fmt.Sprintf(`SELECT 
 		pt.id, pt.realm_id, pt.equipment_type_id, pt.title, pt.description,
-		pt.period_interval, pt.category_id, pt.site_id,
+		pt.period_years, pt.period_months, pt.period_days,
+		pt.category_id, pt.site_id,
 		pt.priority, pt.auto_start_on_first_assign, pt.enabled,
-		pt.created_at, pt.updated_at,
+		pt.created_at, pt.updated_at, pt.created_by,
 		COALESCE(et.name, '') AS type_name,
 		COALESCE(c.name, '') AS category_name,
 		COALESCE(s.name, '') AS site_name
@@ -493,9 +516,10 @@ func (r *EquipmentRepo) GetPeriodicTaskTemplates(ctx context.Context, realmID uu
 		var t models.EquipmentTypePeriodicTask
 		if err := rows.Scan(
 			&t.ID, &t.RealmID, &t.EquipmentTypeID, &t.Title, &t.Description,
-			&t.PeriodInterval, &t.CategoryID, &t.SiteID,
+			&t.PeriodYears, &t.PeriodMonths, &t.PeriodDays,
+			&t.CategoryID, &t.SiteID,
 			&t.Priority, &t.AutoStartOnFirstAssign, &t.Enabled,
-			&t.CreatedAt, &t.UpdatedAt,
+			&t.CreatedAt, &t.UpdatedAt, &t.CreatedBy,
 			&t.EquipmentTypeName, &t.CategoryName, &t.SiteName,
 		); err != nil {
 			return nil, MapError(fmt.Errorf("failed to scan periodic task template: %w", err))
@@ -509,9 +533,10 @@ func (r *EquipmentRepo) GetPeriodicTaskTemplates(ctx context.Context, realmID uu
 func (r *EquipmentRepo) GetPeriodicTaskTemplateByID(ctx context.Context, id uuid.UUID, realmID uuid.UUID) (*models.EquipmentTypePeriodicTask, error) {
 	query := fmt.Sprintf(`SELECT 
 		pt.id, pt.realm_id, pt.equipment_type_id, pt.title, pt.description,
-		pt.period_interval, pt.category_id, pt.site_id,
+		pt.period_years, pt.period_months, pt.period_days,
+		pt.category_id, pt.site_id,
 		pt.priority, pt.auto_start_on_first_assign, pt.enabled,
-		pt.created_at, pt.updated_at,
+		pt.created_at, pt.updated_at, pt.created_by,
 		COALESCE(et.name, '') AS type_name,
 		COALESCE(c.name, '') AS category_name,
 		COALESCE(s.name, '') AS site_name
@@ -525,9 +550,10 @@ func (r *EquipmentRepo) GetPeriodicTaskTemplateByID(ctx context.Context, id uuid
 	var t models.EquipmentTypePeriodicTask
 	if err := r.db.QueryRow(ctx, query, id, realmID).Scan(
 		&t.ID, &t.RealmID, &t.EquipmentTypeID, &t.Title, &t.Description,
-		&t.PeriodInterval, &t.CategoryID, &t.SiteID,
+		&t.PeriodYears, &t.PeriodMonths, &t.PeriodDays,
+		&t.CategoryID, &t.SiteID,
 		&t.Priority, &t.AutoStartOnFirstAssign, &t.Enabled,
-		&t.CreatedAt, &t.UpdatedAt,
+		&t.CreatedAt, &t.UpdatedAt, &t.CreatedBy,
 		&t.EquipmentTypeName, &t.CategoryName, &t.SiteName,
 	); err != nil {
 		if err == pgx.ErrNoRows {
@@ -541,17 +567,18 @@ func (r *EquipmentRepo) GetPeriodicTaskTemplateByID(ctx context.Context, id uuid
 // CreatePeriodicTaskTemplate создаёт шаблон периодической задачи.
 func (r *EquipmentRepo) CreatePeriodicTaskTemplate(ctx context.Context, tx Tx, dto *models.EquipmentTypePeriodicTaskDTO) (*models.EquipmentTypePeriodicTask, error) {
 	query := fmt.Sprintf(`INSERT INTO %s (
-		realm_id, equipment_type_id, title, description, period_interval,
-		category_id, site_id, priority, auto_start_on_first_assign, enabled
-	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		realm_id, equipment_type_id, title, description,
+		period_years, period_months, period_days,
+		category_id, site_id, priority, auto_start_on_first_assign, enabled, created_by
+	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 	RETURNING id, created_at, updated_at`,
 		Tables.EquipmentTypePeriodicTasks)
 
 	var t models.EquipmentTypePeriodicTask
 	if err := r.getExec(tx).QueryRow(ctx, query,
 		dto.RealmID, dto.EquipmentTypeID, dto.Title, dto.Description,
-		dto.PeriodInterval, dto.CategoryID, dto.SiteID,
-		dto.Priority, dto.AutoStartOnFirstAssign, dto.Enabled,
+		dto.PeriodYears, dto.PeriodMonths, dto.PeriodDays,
+		dto.CategoryID, dto.SiteID, dto.Priority, dto.AutoStartOnFirstAssign, dto.Enabled, dto.CreatedBy,
 	).Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt); err != nil {
 		return nil, MapError(fmt.Errorf("failed to create periodic task template: %w", err))
 	}
@@ -559,19 +586,22 @@ func (r *EquipmentRepo) CreatePeriodicTaskTemplate(ctx context.Context, tx Tx, d
 }
 
 // UpdatePeriodicTaskTemplate обновляет шаблон периодической задачи.
+// created_by = COALESCE(пришедший автор, существующий): при отсутствии автора
+// (CreatedBy == nil, например обновление старого шаблона) сохраняется прежний.
 func (r *EquipmentRepo) UpdatePeriodicTaskTemplate(ctx context.Context, tx Tx, dto *models.EquipmentTypePeriodicTaskDTO) (*models.EquipmentTypePeriodicTask, error) {
 	query := fmt.Sprintf(`UPDATE %s SET
-		equipment_type_id = $2, title = $3, description = $4, period_interval = $5,
-		category_id = $6, site_id = $7, priority = $8,
-		auto_start_on_first_assign = $9, enabled = $10, updated_at = NOW()
-		WHERE id = $1 AND realm_id = $11`,
+		equipment_type_id = $2, title = $3, description = $4,
+		period_years = $5, period_months = $6, period_days = $7,
+		category_id = $8, site_id = $9, priority = $10,
+		auto_start_on_first_assign = $11, enabled = $12,
+		created_by = COALESCE($13, created_by), updated_at = NOW()
+		WHERE id = $1 AND realm_id = $14`,
 		Tables.EquipmentTypePeriodicTasks)
 
 	result, err := r.getExec(tx).Exec(ctx, query,
 		*dto.ID, dto.EquipmentTypeID, dto.Title, dto.Description,
-		dto.PeriodInterval, dto.CategoryID, dto.SiteID,
-		dto.Priority, dto.AutoStartOnFirstAssign, dto.Enabled,
-		dto.RealmID,
+		dto.PeriodYears, dto.PeriodMonths, dto.PeriodDays,
+		dto.CategoryID, dto.SiteID, dto.Priority, dto.AutoStartOnFirstAssign, dto.Enabled, dto.CreatedBy, dto.RealmID,
 	)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to update periodic task template: %w", err))
@@ -614,7 +644,7 @@ func (r *EquipmentRepo) GetPeriodicTaskInstances(ctx context.Context, filter *mo
 		i.last_assignment_id, i.created_by,
 		COALESCE(eq.name, '') AS equipment_name,
 		COALESCE(t.title, '') AS ticket_title,
-		COALESCE(t.number, 0) AS ticket_number
+		COALESCE(t.ticket_number, 0) AS ticket_number
 	FROM %s i
 	LEFT JOIN %s eq ON eq.id = i.equipment_id
 	LEFT JOIN %s t ON t.id = i.ticket_id
@@ -623,15 +653,15 @@ func (r *EquipmentRepo) GetPeriodicTaskInstances(ctx context.Context, filter *mo
 
 	args := []any{filter.RealmID}
 	if filter.TemplateID != nil {
-		query += " AND i.template_id = $" + string(rune(len(args)+1))
+		query += " AND i.template_id = " + fmt.Sprintf("$%d", len(args)+1)
 		args = append(args, *filter.TemplateID)
 	}
 	if filter.EquipmentID != nil {
-		query += " AND i.equipment_id = $" + string(rune(len(args)+1))
+		query += " AND i.equipment_id = " + fmt.Sprintf("$%d", len(args)+1)
 		args = append(args, *filter.EquipmentID)
 	}
 	if filter.Status != nil {
-		query += " AND i.status = $" + string(rune(len(args)+1))
+		query += " AND i.status = " + fmt.Sprintf("$%d", len(args)+1)
 		args = append(args, *filter.Status)
 	}
 
@@ -642,14 +672,14 @@ func (r *EquipmentRepo) GetPeriodicTaskInstances(ctx context.Context, filter *mo
 		i.last_assignment_id, i.created_by,
 		COALESCE(eq.name, '') AS equipment_name,
 		COALESCE(t.title, '') AS ticket_title,
-		COALESCE(t.number, 0) AS ticket_number`, "SELECT COUNT(*)")
+		COALESCE(t.ticket_number, 0) AS ticket_number`, "SELECT COUNT(*)")
 
 	var total int
 	if err := r.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, MapError(fmt.Errorf("failed to count periodic task instances: %w", err))
 	}
 
-	query += " ORDER BY i.scheduled_at DESC OFFSET $"+string(rune(len(args)+1))+" LIMIT $"+string(rune(len(args)+2))
+	query += fmt.Sprintf(" ORDER BY i.scheduled_at DESC OFFSET $%d LIMIT $%d", len(args)+1, len(args)+2)
 	args = append(args, offset, limit)
 
 	rows, err := r.db.Query(ctx, query, args...)
@@ -674,7 +704,8 @@ func (r *EquipmentRepo) GetPeriodicTaskInstances(ctx context.Context, filter *mo
 	return instances, total, nil
 }
 
-// GetPendingPeriodicTasks возвращает задачи со статусом pending, у которых scheduled_at <= now.
+// GetPendingPeriodicTasks возвращает задачи со статусом pending, у которых scheduled_at <= now,
+// по включённым шаблонам (правило должно быть enabled, иначе тик не должен стартить).
 func (r *EquipmentRepo) GetPendingPeriodicTasks(ctx context.Context, now time.Time, limit int) ([]*models.EquipmentPeriodicTaskInstance, error) {
 	if limit <= 0 {
 		limit = 100
@@ -685,13 +716,14 @@ func (r *EquipmentRepo) GetPendingPeriodicTasks(ctx context.Context, now time.Ti
 		i.last_assignment_id, i.created_by,
 		COALESCE(eq.name, '') AS equipment_name,
 		COALESCE(t.title, '') AS ticket_title,
-		COALESCE(t.number, 0) AS ticket_number
+		COALESCE(t.ticket_number, 0) AS ticket_number
 	FROM %s i
+	JOIN %s pt ON pt.id = i.template_id AND pt.realm_id = i.realm_id AND pt.enabled = true
 	LEFT JOIN %s eq ON eq.id = i.equipment_id
 	LEFT JOIN %s t ON t.id = i.ticket_id
 	WHERE i.status = 'pending' AND i.scheduled_at <= $1
 	ORDER BY i.scheduled_at ASC LIMIT $2`,
-		Tables.EquipmentPeriodicTaskInstances, Tables.Equipment, Tables.Tickets)
+		Tables.EquipmentPeriodicTaskInstances, Tables.EquipmentTypePeriodicTasks, Tables.Equipment, Tables.Tickets)
 
 	rows, err := r.db.Query(ctx, query, now, limit)
 	if err != nil {
@@ -716,12 +748,15 @@ func (r *EquipmentRepo) GetPendingPeriodicTasks(ctx context.Context, now time.Ti
 }
 
 // CreatePeriodicTaskInstance создаёт экземпляр периодической задачи.
+// ON CONFLICT DO NOTHING — дедуп по (realm, template, equipment, scheduled_at):
+// повторный старт на то же расписание не порождает второй pending.
 func (r *EquipmentRepo) CreatePeriodicTaskInstance(ctx context.Context, tx Tx, instance *models.EquipmentPeriodicTaskInstance) error {
 	query := fmt.Sprintf(`INSERT INTO %s (
 		id, realm_id, template_id, equipment_id, ticket_id,
 		status, scheduled_at, created_at, next_scheduled_at,
 		last_assignment_id, created_by
-	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		ON CONFLICT (realm_id, template_id, equipment_id, scheduled_at) DO NOTHING`,
 		Tables.EquipmentPeriodicTaskInstances)
 
 	_, err := r.getExec(tx).Exec(ctx, query,
@@ -752,6 +787,122 @@ func (r *EquipmentRepo) UpdatePeriodicTaskInstance(ctx context.Context, tx Tx, i
 	)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to update periodic task instance: %w", err))
+	}
+	if result.RowsAffected() == 0 {
+		return models.ErrNotFound
+	}
+	return nil
+}
+
+// HasPeriodicTaskInstances сообщает, есть ли уже экземпляры (не отменённые)
+// для пары «шаблон — единица».
+func (r *EquipmentRepo) HasPeriodicTaskInstances(ctx context.Context, templateID, equipmentID, realmID uuid.UUID) (bool, error) {
+	query := fmt.Sprintf(`SELECT EXISTS (
+		SELECT 1 FROM %s i
+		WHERE i.realm_id = $1 AND i.template_id = $2 AND i.equipment_id = $3 AND i.status <> 'cancelled'
+	) AS exists`,
+		Tables.EquipmentPeriodicTaskInstances)
+
+	var exists bool
+	if err := r.db.QueryRow(ctx, query, realmID, templateID, equipmentID).Scan(&exists); err != nil {
+		return false, MapError(fmt.Errorf("failed to check periodic task instances: %w", err))
+	}
+	return exists, nil
+}
+
+// GetPendingPeriodicTaskInstance возвращает единственный pending-экземпляр
+// пары «шаблон — единица» (ближайший по расписанию).
+func (r *EquipmentRepo) GetPendingPeriodicTaskInstance(ctx context.Context, templateID, equipmentID, realmID uuid.UUID) (*models.EquipmentPeriodicTaskInstance, error) {
+	query := fmt.Sprintf(`SELECT 
+		i.id, i.realm_id, i.template_id, i.equipment_id, i.ticket_id,
+		i.status, i.scheduled_at, i.created_at, i.next_scheduled_at,
+		i.last_assignment_id, i.created_by,
+		COALESCE(eq.name, '') AS equipment_name,
+		COALESCE(t.title, '') AS ticket_title,
+		COALESCE(t.ticket_number, 0) AS ticket_number
+	FROM %s i
+	LEFT JOIN %s eq ON eq.id = i.equipment_id
+	LEFT JOIN %s t ON t.id = i.ticket_id
+	WHERE i.realm_id = $1 AND i.template_id = $2 AND i.equipment_id = $3 AND i.status = 'pending'
+	ORDER BY i.scheduled_at DESC LIMIT 1`,
+		Tables.EquipmentPeriodicTaskInstances, Tables.Equipment, Tables.Tickets)
+
+	var i models.EquipmentPeriodicTaskInstance
+	if err := r.db.QueryRow(ctx, query, realmID, templateID, equipmentID).Scan(
+		&i.ID, &i.RealmID, &i.TemplateID, &i.EquipmentID, &i.TicketID,
+		&i.Status, &i.ScheduledAt, &i.CreatedAt, &i.NextScheduledAt,
+		&i.LastAssignmentID, &i.CreatedBy,
+		&i.EquipmentName, &i.TicketTitle, &i.TicketNumber,
+	); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, MapError(fmt.Errorf("failed to query pending periodic task: %w", err))
+	}
+	return &i, nil
+}
+
+// ClaimPeriodicTaskInstance атомарно переводит pending-экземпляр в created.
+// Возвращает true, если claim сработал (статус реально pending → created); false —
+// экземпляр уже обрабатывался (конкурентный тик): повторно не трогаем.
+func (r *EquipmentRepo) ClaimPeriodicTaskInstance(ctx context.Context, tx Tx, id uuid.UUID, realmID uuid.UUID) (bool, error) {
+	query := fmt.Sprintf(`UPDATE %s SET
+		status = 'created', ticket_id = NULL, created_at = NULL, next_scheduled_at = NULL
+		WHERE id = $1 AND realm_id = $2 AND status = 'pending'`,
+		Tables.EquipmentPeriodicTaskInstances)
+
+	result, err := r.getExec(tx).Exec(ctx, query, id, realmID)
+	if err != nil {
+		return false, MapError(fmt.Errorf("failed to claim periodic task instance: %w", err))
+	}
+	return result.RowsAffected() > 0, nil
+}
+
+// RevertPeriodicTaskClaim возвращает экземпляр из created обратно в pending
+// (разворачивает claim после сбоя создания заявки): расписание и привязка к
+// последней выдаче восстанавливаются из снимка, взятого до claim.
+func (r *EquipmentRepo) RevertPeriodicTaskClaim(ctx context.Context, tx Tx, id uuid.UUID, realmID uuid.UUID, scheduledAt time.Time, lastAssignmentID *uuid.UUID) error {
+	query := fmt.Sprintf(`UPDATE %s SET
+		status = 'pending', ticket_id = NULL, created_at = NULL, next_scheduled_at = NULL,
+		scheduled_at = $3, last_assignment_id = $4
+		WHERE id = $1 AND realm_id = $2 AND status = 'created'`,
+		Tables.EquipmentPeriodicTaskInstances)
+
+	_, err := r.getExec(tx).Exec(ctx, query, id, realmID, scheduledAt, lastAssignmentID)
+	if err != nil {
+		return MapError(fmt.Errorf("failed to revert periodic task claim: %w", err))
+	}
+	return nil
+}
+
+// SetPeriodicTaskInstanceTicket привязывает созданную заявку к экземпляру и
+// проставляет next_scheduled_at — момент следующего запуска (расписание + период).
+func (r *EquipmentRepo) SetPeriodicTaskInstanceTicket(ctx context.Context, tx Tx, instance *models.EquipmentPeriodicTaskInstance, ticketID uuid.UUID, nextScheduledAt time.Time) error {
+	query := fmt.Sprintf(`UPDATE %s SET
+		status = 'created', ticket_id = $2, created_at = NOW(), next_scheduled_at = $3
+		WHERE id = $1 AND realm_id = $4 AND status = 'created'`,
+		Tables.EquipmentPeriodicTaskInstances)
+
+	result, err := r.getExec(tx).Exec(ctx, query, instance.ID, ticketID, nextScheduledAt, instance.RealmID)
+	if err != nil {
+		return MapError(fmt.Errorf("failed to set periodic task instance ticket: %w", err))
+	}
+	if result.RowsAffected() == 0 {
+		return models.ErrNotFound
+	}
+	return nil
+}
+
+// ReschedulePendingInstance переписывает расписание pending-экземпляра
+// (ручной запуск с shift=true).
+func (r *EquipmentRepo) ReschedulePendingInstance(ctx context.Context, tx Tx, instance *models.EquipmentPeriodicTaskInstance, scheduledAt time.Time) error {
+	query := fmt.Sprintf(`UPDATE %s SET scheduled_at = $2, last_assignment_id = $3
+		WHERE id = $1 AND realm_id = $4 AND status = 'pending'`,
+		Tables.EquipmentPeriodicTaskInstances)
+
+	result, err := r.getExec(tx).Exec(ctx, query, instance.ID, instance.RealmID, scheduledAt, instance.LastAssignmentID)
+	if err != nil {
+		return MapError(fmt.Errorf("failed to reschedule pending periodic task: %w", err))
 	}
 	if result.RowsAffected() == 0 {
 		return models.ErrNotFound

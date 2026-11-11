@@ -23,6 +23,10 @@ func (f *fakeTicketCreator) Create(_ context.Context, dto *models.TicketDTO) err
 		return f.err
 	}
 	f.created = append(f.created, dto)
+	if dto.ID == nil {
+		id := uuid.New()
+		dto.ID = &id
+	}
 	return nil
 }
 

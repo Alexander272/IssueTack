@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Box, Tab, Tabs, useMediaQuery, useTheme } from '@mui/material'
 
-import { EquipmentTemplatesSection, EquipmentTypesSection, Header } from '../components/Settings'
+import { EquipmentTemplatesSection, EquipmentTypesSection, Header, PeriodicTasksSection } from '../components/Settings'
 
 export const SettingsPage = () => {
 	const theme = useTheme()
@@ -39,6 +39,7 @@ export const SettingsPage = () => {
 						>
 							<Tab label='Типы оборудования' />
 							<Tab label='Шаблоны комплектов' />
+							<Tab label='Периодические задачи' />
 						</Tabs>
 					</Box>
 				</Box>
@@ -46,6 +47,7 @@ export const SettingsPage = () => {
 				<Box sx={{ flexGrow: 1, overflow: 'auto' }}>
 					{tab === 0 && <EquipmentTypesSection />}
 					{tab === 1 && <EquipmentTemplatesSection />}
+					{tab === 2 && <PeriodicTasksSection />}
 				</Box>
 			</Box>
 		</Box>

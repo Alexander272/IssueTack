@@ -3,10 +3,12 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
+	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/google/uuid"
 )
 
@@ -15,6 +17,8 @@ type EquipmentPeriodicTaskService struct {
 	repo         postgres.Equipment
 	tm           TransactionManager
 	tickets      TicketCreator
+	categories   Categories
+	users        Users
 	workingHours *workingHours
 }
 
@@ -26,9 +30,22 @@ func NewEquipmentPeriodicTaskService(repo postgres.Equipment, tm TransactionMana
 	}
 }
 
-// SetTicketCreator подключает создатель заявок.
+// SetTicketCreator подключает создателя заявок (TicketService): периодическая
+// задача — это создание заявки через обычный TicketService.Create, поэтому права,
+// журнал и уведомления применяются штатно.
 func (s *EquipmentPeriodicTaskService) SetTicketCreator(tc TicketCreator) {
 	s.tickets = tc
+}
+
+// SetCategories подключает справочники категорий: из категории (группа, приоритет,
+// автосрок) собираются реквизиты создаваемой заявки.
+func (s *EquipmentPeriodicTaskService) SetCategories(c Categories) {
+	s.categories = c
+}
+
+// SetUsers подключает пользователей: имя автора шаблона проставляется в Actor заявки.
+func (s *EquipmentPeriodicTaskService) SetUsers(u Users) {
+	s.users = u
 }
 
 // SetWorkingHours задаёт конфигурацию рабочего времени для планировщика.
@@ -36,7 +53,82 @@ func (s *EquipmentPeriodicTaskService) SetWorkingHours(wh *workingHours) {
 	s.workingHours = wh
 }
 
+// PeriodicTaskStarter — подключается из EquipmentService после коммита выдачи:
+// у типа с autoStartOnFirstAssign при первой выдаче единицы должна создаваться
+// первая pending-задача (старт = дата выдачи + период).
+type PeriodicTaskStarter interface {
+	StartPeriodicTasksForAssignment(ctx context.Context, equipmentID, realmID uuid.UUID, assignedAt time.Time) error
+}
+
+var _ PeriodicTaskStarter = (*EquipmentPeriodicTaskService)(nil)
+
+// StartPeriodicTasksForAssignment заводит первую pending-задачу для выданной
+// единицы: включённые шаблоны типа с autoStartOnFirstAssign, у которых для пары
+// «шаблон — единица» ещё нет экземпляров. Старт планируется от даты выдачи
+// (assignedAt) + период; у единиц без выдачи (нет присвоения) старт не планируется.
+func (s *EquipmentPeriodicTaskService) StartPeriodicTasksForAssignment(ctx context.Context, equipmentID, realmID uuid.UUID, assignedAt time.Time) error {
+	if s.repo == nil {
+		return nil
+	}
+
+	eq, err := s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: equipmentID, RealmID: realmID})
+	if err != nil {
+		return fmt.Errorf("failed to get equipment for periodic tasks: %w", err)
+	}
+	if eq.TypeID == nil || *eq.TypeID == uuid.Nil {
+		// У комплекта нет типа — правил для него не существует.
+		return nil
+	}
+
+	templates, err := s.repo.GetPeriodicTaskTemplates(ctx, realmID, eq.TypeID)
+	if err != nil {
+		return fmt.Errorf("failed to get periodic task templates: %w", err)
+	}
+
+	for _, template := range templates {
+		if !template.Enabled || !template.AutoStartOnFirstAssign || template.CreatedBy == nil {
+			continue
+		}
+		started, err := s.repo.HasPeriodicTaskInstances(ctx, template.ID, equipmentID, realmID)
+		if err != nil {
+			return fmt.Errorf("failed to check periodic task instances: %w", err)
+		}
+		if started {
+			continue
+		}
+
+		assignment, err := s.repo.GetLastAssignmentForEquipment(ctx, equipmentID)
+		if err != nil {
+			return fmt.Errorf("failed to get last assignment: %w", err)
+		}
+		startAt := assignedAt
+		if assignment != nil && !assignment.AssignedAt.IsZero() {
+			startAt = assignment.AssignedAt
+		}
+		lastAssignmentID := (*uuid.UUID)(nil)
+		if assignment != nil {
+			lastAssignmentID = &assignment.ID
+		}
+
+		instance := &models.EquipmentPeriodicTaskInstance{
+			ID:               uuid.New(),
+			RealmID:          template.RealmID,
+			TemplateID:       template.ID,
+			EquipmentID:      eq.ID,
+			Status:           models.TaskInstancePending,
+			ScheduledAt:      startAt.AddDate(template.PeriodYears, template.PeriodMonths, template.PeriodDays),
+			LastAssignmentID: lastAssignmentID,
+			CreatedBy:        template.CreatedBy,
+		}
+		if err := s.repo.CreatePeriodicTaskInstance(ctx, nil, instance); err != nil {
+			return fmt.Errorf("failed to create initial periodic task instance: %w", err)
+		}
+	}
+	return nil
+}
+
 // GetPeriodicTaskTemplates возвращает шаблоны периодических задач реалма.
+// Если equipmentTypeID != nil, фильтрует по типу.
 func (s *EquipmentPeriodicTaskService) GetPeriodicTaskTemplates(ctx context.Context, realmID uuid.UUID, equipmentTypeID *uuid.UUID) ([]*models.EquipmentTypePeriodicTask, error) {
 	return s.repo.GetPeriodicTaskTemplates(ctx, realmID, equipmentTypeID)
 }
@@ -60,6 +152,9 @@ func (s *EquipmentPeriodicTaskService) CreatePeriodicTaskTemplate(ctx context.Co
 	if dto.EquipmentTypeID == uuid.Nil {
 		return nil, models.ErrNotValid
 	}
+	if !hasPeriod(dto.PeriodYears, dto.PeriodMonths, dto.PeriodDays) {
+		return nil, models.ErrNotValid
+	}
 
 	var template *models.EquipmentTypePeriodicTask
 	var createErr error
@@ -70,9 +165,10 @@ func (s *EquipmentPeriodicTaskService) CreatePeriodicTaskTemplate(ctx context.Co
 			return txErr
 		}
 
-		// Если autoStartOnFirstAssign = true, создаём pending-задачи для всех единиц этого типа
-		if dto.AutoStartOnFirstAssign {
-			if createErr = s.createInitialInstancesForType(ctx, tx, template); createErr != nil {
+		// Если autoStartOnFirstAssign = true, создаём pending-задачи для всех единиц
+		// типа, у которых ещё нет цепочки. Автор шаблона — создатель заявки.
+		if dto.AutoStartOnFirstAssign && dto.CreatedBy != nil {
+			if createErr = s.createInitialInstancesForType(ctx, tx, template, dto.CreatedBy); createErr != nil {
 				return fmt.Errorf("failed to create initial instances: %w", createErr)
 			}
 		}
@@ -85,41 +181,27 @@ func (s *EquipmentPeriodicTaskService) CreatePeriodicTaskTemplate(ctx context.Co
 	return template, nil
 }
 
-// createInitialInstancesForType создаёт pending-задачи для всех единиц типа.
-func (s *EquipmentPeriodicTaskService) createInitialInstancesForType(ctx context.Context, tx postgres.Tx, template *models.EquipmentTypePeriodicTask) error {
-	// Получаем все единицы этого типа
-	filter := &models.EquipmentFilter{
+// createInitialInstancesForType создаёт pending-задачи для всех единиц типа с
+// последней выдачей (старт = дата выдачи + период). Единицы без выдачи пропускаются:
+// первый старт для них вручную.
+func (s *EquipmentPeriodicTaskService) createInitialInstancesForType(ctx context.Context, tx postgres.Tx, template *models.EquipmentTypePeriodicTask, initiatorID *uuid.UUID) error {
+	equipment, _, err := s.repo.Get(ctx, &models.EquipmentFilter{
 		RealmID: template.RealmID,
 		TypeID:  &template.EquipmentTypeID,
 		Limit:   1000,
-	}
-	equipment, _, err := s.repo.Get(ctx, filter)
+	})
 	if err != nil {
 		return fmt.Errorf("failed to get equipment: %w", err)
 	}
 
 	for _, eq := range equipment {
-		// Для каждой единицы ищем последнюю выдачу
 		assignment, err := s.repo.GetLastAssignmentForEquipment(ctx, eq.ID)
 		if err != nil {
 			return fmt.Errorf("failed to get assignment for equipment %s: %w", eq.ID, err)
 		}
-
-		var scheduledAt time.Time
-		var lastAssignmentID *uuid.UUID
-		if assignment != nil && !assignment.AssignedAt.IsZero() {
-			// Старт = дата выдачи + период
-			scheduledAt = assignment.AssignedAt
-			lastAssignmentID = &assignment.ID
-		} else {
-			// Нет выдачи — первый старт не планируется (ожидает ручного запуска)
+		if assignment == nil || assignment.AssignedAt.IsZero() {
+			// Нет выдачи — первый старт не планируем.
 			continue
-		}
-
-		// Добавляем период к дате выдачи
-		nextAt, err := addInterval(scheduledAt, template.PeriodInterval)
-		if err != nil {
-			return fmt.Errorf("failed to add interval: %w", err)
 		}
 
 		instance := &models.EquipmentPeriodicTaskInstance{
@@ -128,10 +210,10 @@ func (s *EquipmentPeriodicTaskService) createInitialInstancesForType(ctx context
 			TemplateID:       template.ID,
 			EquipmentID:      eq.ID,
 			Status:           models.TaskInstancePending,
-			ScheduledAt:      nextAt,
-			LastAssignmentID: lastAssignmentID,
+			ScheduledAt:      assignment.AssignedAt.AddDate(template.PeriodYears, template.PeriodMonths, template.PeriodDays),
+			LastAssignmentID: &assignment.ID,
+			CreatedBy:        initiatorID,
 		}
-
 		if err := s.repo.CreatePeriodicTaskInstance(ctx, tx, instance); err != nil {
 			return fmt.Errorf("failed to create instance: %w", err)
 		}
@@ -140,9 +222,23 @@ func (s *EquipmentPeriodicTaskService) createInitialInstancesForType(ctx context
 	return nil
 }
 
-// UpdatePeriodicTaskTemplate обновляет шаблон периодической задачи.
+// UpdatePeriodicTaskTemplate обновляет шаблон периодической задачи. Автор
+// (created_by) сохраняется: при пустом CreatedBy (обновление старого шаблона)
+// COALESCE оставляет прежнего.
 func (s *EquipmentPeriodicTaskService) UpdatePeriodicTaskTemplate(ctx context.Context, dto *models.EquipmentTypePeriodicTaskDTO) (*models.EquipmentTypePeriodicTask, error) {
 	if dto.Title == "" {
+		return nil, models.ErrNotValid
+	}
+	if dto.CategoryID == uuid.Nil {
+		return nil, models.ErrNotValid
+	}
+	if dto.RealmID == uuid.Nil {
+		return nil, models.ErrNotValid
+	}
+	if dto.EquipmentTypeID == uuid.Nil {
+		return nil, models.ErrNotValid
+	}
+	if !hasPeriod(dto.PeriodYears, dto.PeriodMonths, dto.PeriodDays) {
 		return nil, models.ErrNotValid
 	}
 
@@ -172,11 +268,12 @@ func (s *EquipmentPeriodicTaskService) GetPeriodicTaskInstances(ctx context.Cont
 	return s.repo.GetPeriodicTaskInstances(ctx, filter)
 }
 
-// ProcessPendingTasks обрабатывает pending-задачи: создаёт заявки и планирует следующие.
+// ProcessPendingTasks обрабатывает pending-задачи: создаёт заявки и планирует
+// следующие. Ошибки одного экземпляра не останавливают обработку остальных.
 func (s *EquipmentPeriodicTaskService) ProcessPendingTasks(ctx context.Context) error {
 	now := time.Now().UTC()
 
-	// Проверяем рабочее время
+	// Проверяем рабочее время.
 	if s.workingHours != nil && !s.workingHours.allows(now) {
 		return nil
 	}
@@ -188,117 +285,183 @@ func (s *EquipmentPeriodicTaskService) ProcessPendingTasks(ctx context.Context) 
 
 	for _, instance := range pending {
 		if err := s.processSingleTask(ctx, instance, now); err != nil {
-			// Логгируем ошибку, но не прерываем обработку остальных
-			continue
+			logger.Error("failed to process equipment periodic task",
+				logger.StringAttr("instance_id", instance.ID.String()),
+				logger.StringAttr("equipment_id", instance.EquipmentID.String()),
+				logger.ErrAttr(err),
+			)
 		}
 	}
 
 	return nil
 }
 
-// processSingleTask обрабатывает одну pending-задачу.
+// processSingleTask обрабатывает одну pending-задачу: claim → создание заявки →
+// планирование следующего запуска. При сбое заявки claim откатывается, задача
+// повторится на следующем тике.
 func (s *EquipmentPeriodicTaskService) processSingleTask(ctx context.Context, instance *models.EquipmentPeriodicTaskInstance, now time.Time) error {
 	if instance.Status != models.TaskInstancePending {
 		return nil
 	}
 
-	// Получаем шаблон
 	template, err := s.repo.GetPeriodicTaskTemplateByID(ctx, instance.TemplateID, instance.RealmID)
 	if err != nil {
 		return fmt.Errorf("failed to get template: %w", err)
 	}
+	if !template.Enabled {
+		// Шаблон выключен: тик не должен стартить задачи.
+		return nil
+	}
 
-	// Получаем оборудование
 	eq, err := s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: instance.EquipmentID, RealmID: instance.RealmID})
 	if err != nil {
 		return fmt.Errorf("failed to get equipment: %w", err)
 	}
 
-	// Создаём заявку
-	ticketDTO := &models.TicketDTO{
-		Actor: &models.Actor{
-			Name: "Система",
-		},
-		RealmID:     &template.RealmID,
-		Title:       template.Title,
-		Description: fmt.Sprintf("%s\n\nОборудование: %s (инв. № %s)", template.Description, eq.Name, *eq.InventoryNumber),
-		CategoryID:  template.CategoryID,
-		SiteID:      uuid.Nil,
-		Priority:    models.Priority(template.Priority),
-		EquipmentID: &eq.ID,
+	nextAt := instance.ScheduledAt.AddDate(template.PeriodYears, template.PeriodMonths, template.PeriodDays)
+
+	// Claim-first: атомарный перевод pending → created. Дедупликация конкуррирующих
+	// тиков — через RowsAffected claim'а.
+	claimed, err := s.repo.ClaimPeriodicTaskInstance(ctx, nil, instance.ID, instance.RealmID)
+	if err != nil {
+		return fmt.Errorf("failed to claim periodic task instance: %w", err)
+	}
+	if !claimed {
+		// Уже обработан (конкурентный тик): пропускаем.
+		return nil
 	}
 
-	// Создаём заявку через TransactionManager, чтобы получить ID
-	var processErr error
-	processErr = s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
-		var createErr error
-		createErr = s.tickets.Create(ctx, ticketDTO)
-		if createErr != nil {
-			return fmt.Errorf("failed to create ticket: %w", createErr)
+	ticketDTO, err := s.buildTicket(ctx, template, eq)
+	if err != nil {
+		if revertErr := s.repo.RevertPeriodicTaskClaim(ctx, nil, instance.ID, instance.RealmID, instance.ScheduledAt, instance.LastAssignmentID); revertErr != nil {
+			return fmt.Errorf("%w (revert failed: %v)", err, revertErr)
 		}
-		if ticketDTO.ID == nil {
-			return fmt.Errorf("ticket ID is nil after creation")
-		}
+		return err
+	}
 
-		// Обновляем экземпляр
-		instance.TicketID = ticketDTO.ID
-		instance.Status = models.TaskInstanceCreated
-		instance.CreatedAt = &now
-		var nextAt time.Time
-		nextAt, processErr = addInterval(now, template.PeriodInterval)
-		if processErr != nil {
-			return fmt.Errorf("failed to calculate next scheduled at: %w", processErr)
+	if err := s.tickets.Create(ctx, ticketDTO); err != nil {
+		if revertErr := s.repo.RevertPeriodicTaskClaim(ctx, nil, instance.ID, instance.RealmID, instance.ScheduledAt, instance.LastAssignmentID); revertErr != nil {
+			return fmt.Errorf("failed to create ticket: %w (revert failed: %v)", err, revertErr)
 		}
-		instance.NextScheduledAt = &nextAt
+		return fmt.Errorf("failed to create ticket: %w", err)
+	}
+	if ticketDTO.ID == nil {
+		if revertErr := s.repo.RevertPeriodicTaskClaim(ctx, nil, instance.ID, instance.RealmID, instance.ScheduledAt, instance.LastAssignmentID); revertErr != nil {
+			return fmt.Errorf("ticket ID is nil after creation (revert failed: %v)", revertErr)
+		}
+		return fmt.Errorf("ticket ID is nil after creation")
+	}
 
-		return s.repo.UpdatePeriodicTaskInstance(ctx, tx, instance)
-	})
-	if processErr != nil {
-		return processErr
+	// Заявка создана: привязываем её к экземпляру и плановируем следующий запуск
+	// (якорь — расписание, а не now: интервалы месяцев/лет не должны дрейфовать от
+	// момента обработки).
+	if err := s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+		if err := s.repo.SetPeriodicTaskInstanceTicket(ctx, tx, instance, *ticketDTO.ID, nextAt); err != nil {
+			return err
+		}
+		nextInstance := &models.EquipmentPeriodicTaskInstance{
+			ID:               uuid.New(),
+			RealmID:          instance.RealmID,
+			TemplateID:       instance.TemplateID,
+			EquipmentID:      instance.EquipmentID,
+			Status:           models.TaskInstancePending,
+			ScheduledAt:      nextAt,
+			LastAssignmentID: instance.LastAssignmentID,
+			CreatedBy:        template.CreatedBy,
+		}
+		return s.repo.CreatePeriodicTaskInstance(ctx, tx, nextInstance)
+	}); err != nil {
+		return fmt.Errorf("failed to schedule next periodic task: %w", err)
 	}
 
 	return nil
 }
 
-// ManualRunTask запускает периодическую задачу вручную.
+// buildTicket собирает TicketDTO для заявки, порождаемой шаблоном. Создателем
+// (и, соответственно, заказчиком/исполнителем по правилам TicketService) становится
+// автор шаблона: recurring-задача живёт в его правах. Группа — из категории.
+func (s *EquipmentPeriodicTaskService) buildTicket(ctx context.Context, template *models.EquipmentTypePeriodicTask, eq *models.Equipment) (*models.TicketDTO, error) {
+	authorID := uuid.Nil
+	if template.CreatedBy != nil {
+		authorID = *template.CreatedBy
+	}
+	if authorID == uuid.Nil {
+		return nil, fmt.Errorf("periodic task template %s has no author", template.ID)
+	}
+
+	category, err := s.categories.GetByID(ctx, &models.GetCategoryByIdDTO{ID: template.CategoryID, RealmID: template.RealmID})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get category: %w", err)
+	}
+	if category.GroupID == uuid.Nil {
+		return nil, fmt.Errorf("periodic task category %s has no group", template.CategoryID)
+	}
+
+	siteID := uuid.Nil
+	if template.SiteID != nil {
+		siteID = *template.SiteID
+	}
+
+	authorName := s.authorName(ctx, authorID)
+	ticketDTO := &models.TicketDTO{
+		Actor: &models.Actor{
+			ID:   authorID,
+			Name: authorName,
+		},
+		RealmID:     &template.RealmID,
+		Title:       template.Title,
+		Description: fmt.Sprintf("%s\n\nОборудование: %s (инв. № %s)", template.Description, eq.Name, inventoryLabel(eq)),
+		Status:      models.StatusOpen,
+		Priority:    models.Priority(template.Priority),
+		CategoryID:  template.CategoryID,
+		GroupID:     &category.GroupID,
+		// Заказчик и создатель — автор шаблона: заявка «для него», и права на создание
+		// (которые у автора шаблона должны быть) проверяет TicketService.
+		OwnerID:     &authorID,
+		CreatorID:   authorID,
+		SiteID:      siteID,
+		EquipmentID: &eq.ID,
+	}
+	return ticketDTO, nil
+}
+
+// authorName собирает человекочитаемое имя автора по ID (best-effort: без пользователя
+// остаётся пустая строка, права всё равно резолвятся по ID).
+func (s *EquipmentPeriodicTaskService) authorName(ctx context.Context, userID uuid.UUID) string {
+	if s.users == nil {
+		return ""
+	}
+	user, err := s.users.GetByID(ctx, userID)
+	if err != nil || user == nil {
+		return ""
+	}
+	name := strings.TrimSpace(user.LastName + " " + user.FirstName)
+	if user.Username != "" {
+		name = fmt.Sprintf("%s (%s)", name, user.Username)
+	}
+	return name
+}
+
+// ManualRunTask запускает периодическую задачу вручную: всегда создаёт заявку
+// сейчас. Семантика цепочки:
+//   - shift=true — существующий pending перепланируется на now + период, заявка
+//     создаётся сейчас и цепочка продолжается с нового расписания;
+//   - shift=false — pending остаётся на исходном расписании (при отсутствии pending
+//     создаётся новый старт на now + период — цепочка обязана стартовать);
+//   - pending нет вообще — создаём старт на now + период и заявку сейчас.
 func (s *EquipmentPeriodicTaskService) ManualRunTask(ctx context.Context, dto *models.ManualPeriodicTaskRunDTO, actor *models.Actor) error {
 	if actor == nil {
 		return models.ErrPermissionDenied
 	}
 
-	// Получаем шаблон - сначала надо получить реалм из DTO или откуда-то еще
-	// Для упрощения, предположим, что шаблон принадлежит реалму актора
-	// Но шаблон doesn't have realm in DTO, so we need a different approach
-	// Поиск шаблона по ID без realm - это может быть ошибка
-	// Давайте предположим, что шаблон ID включает реалм в каком-то способе
-	// или нам нужно добавить realm в DTO
-
-	// Поиск шаблона только по ID, без realm - не безопасно
-	// Давайте просто получить шаблон и проверить, что он принадлежит реалму актора
-	// но для этого нужен actor.RealmID, которого нет в Actor struct
-
-	// Давайте временно использовать технику: template, err := s.repo.GetPeriodicTaskTemplateByID(ctx, dto.TemplateID, "")
-	// и будем искать шаблон по ID только (может быть проблема безопасности)
-
-	// Реальное решение: добавить realm в ManualPeriodicTaskRunDTO
-	// Давайте просто использовать first template with matching ID for now
-	// и будем фильтровать по реалму позже
-
-	// Поиск шаблона по ID - может быть неправильный шаблон
-	// Давайте считать, что это корректно, так как шаблон ID уникальный по реалму
-	// и мы имеем actor, который должен иметь доступ к этому реалму
-
-	// Поиск шаблона
 	template, err := s.repo.GetPeriodicTaskTemplateByID(ctx, dto.TemplateID, dto.RealmID)
 	if err != nil {
 		return fmt.Errorf("failed to get template: %w", err)
 	}
+	if !template.Enabled {
+		return models.ErrNotValid
+	}
 
-	// Проверяем, что шаблон принадлежит реалму актора - но у актора нет realm
-	// Давайте пропустим эту проверку для упрощения
-	// В реальном коде вы должны проверить, что актор имеет доступ к реалму шаблона
-
-	// Получаем оборудование - нужно realm для GetByID
 	eq, err := s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: dto.EquipmentID, RealmID: dto.RealmID})
 	if err != nil {
 		return fmt.Errorf("failed to get equipment: %w", err)
@@ -306,94 +469,101 @@ func (s *EquipmentPeriodicTaskService) ManualRunTask(ctx context.Context, dto *m
 
 	now := time.Now().UTC()
 
-	// Создаём заявку
-	ticketDTO := &models.TicketDTO{
-		Actor:       actor,
-		RealmID:     &template.RealmID,
-		Title:       template.Title,
-		Description: fmt.Sprintf("%s\n\nОборудование: %s (инв. № %s)", template.Description, eq.Name, *eq.InventoryNumber),
-		CategoryID:  template.CategoryID,
-		SiteID:      *template.SiteID,
-		Priority:    models.Priority(template.Priority),
-		EquipmentID: &eq.ID,
+	pending, err := s.repo.GetPendingPeriodicTaskInstance(ctx, dto.TemplateID, dto.EquipmentID, dto.RealmID)
+	if err != nil {
+		return fmt.Errorf("failed to get pending periodic task: %w", err)
 	}
 
-	var runErr error
-	runErr = s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
-		var createErr error
-		createErr = s.tickets.Create(ctx, ticketDTO)
-		if createErr != nil {
-			return fmt.Errorf("failed to create ticket: %w", createErr)
+	shiftNext := dto.ShiftNext
+	pendingFromDB := pending != nil
+	if pending == nil {
+		// pending нет — первая задача цепочки: старт на now, создаём экземпляр
+		// (цепочка обязана стартовать).
+		assignment, err := s.repo.GetLastAssignmentForEquipment(ctx, eq.ID)
+		if err != nil {
+			return fmt.Errorf("failed to get last assignment: %w", err)
 		}
-		if ticketDTO.ID == nil {
-			return fmt.Errorf("ticket ID is nil after creation")
+		lastAssignmentID := (*uuid.UUID)(nil)
+		if assignment != nil {
+			lastAssignmentID = &assignment.ID
 		}
-
-		// Создаём или обновляем экземпляр
-		instance := &models.EquipmentPeriodicTaskInstance{
-			ID:          uuid.New(),
-			RealmID:     template.RealmID,
-			TemplateID:  template.ID,
-			EquipmentID: dto.EquipmentID,
-			TicketID:    ticketDTO.ID,
-			Status:      models.TaskInstanceCreated,
-			ScheduledAt: now,
-			CreatedAt:   &now,
+		pending = &models.EquipmentPeriodicTaskInstance{
+			ID:               uuid.New(),
+			RealmID:          template.RealmID,
+			TemplateID:       template.ID,
+			EquipmentID:      eq.ID,
+			Status:           models.TaskInstancePending,
+			ScheduledAt:      now,
+			LastAssignmentID: lastAssignmentID,
+			CreatedBy:        &actor.ID,
 		}
-
-		// Рассчитываем следующий старт
-		var nextAt time.Time
-		if dto.ShiftNext {
-			// Сдвиг от текущей даты
-			nextAt, runErr = addInterval(now, template.PeriodInterval)
-		} else {
-			// Оставляем по расписанию (или рассчитываем от последней выдачи)
-			assignment, _ := s.repo.GetLastAssignmentForEquipment(ctx, dto.EquipmentID)
-			if assignment != nil {
-				nextAt, runErr = addInterval(assignment.AssignedAt, template.PeriodInterval)
-			} else {
-				nextAt, runErr = addInterval(now, template.PeriodInterval)
-			}
+		if err := s.repo.CreatePeriodicTaskInstance(ctx, nil, pending); err != nil {
+			return fmt.Errorf("failed to create periodic task instance: %w", err)
 		}
-		if runErr != nil {
-			return fmt.Errorf("failed to calculate next scheduled at: %w", runErr)
-		}
-		instance.NextScheduledAt = &nextAt
-
-		if createErr = s.repo.CreatePeriodicTaskInstance(ctx, tx, instance); createErr != nil {
-			return fmt.Errorf("failed to create instance: %w", createErr)
-		}
-
-		return nil
-	})
-	if runErr != nil {
-		return runErr
 	}
 
-	return nil
+	// Запуск всегда создаёт заявку сейчас: актор — инициатор ручного запуска.
+	ticketDTO, err := s.buildTicket(ctx, template, eq)
+	if err != nil {
+		return err
+	}
+	ticketDTO.Actor = actor
+	ticketDTO.CreatorID = actor.ID
+	ticketDTO.OwnerID = &actor.ID
+
+	if err := s.tickets.Create(ctx, ticketDTO); err != nil {
+		return fmt.Errorf("failed to create ticket: %w", err)
+	}
+	if ticketDTO.ID == nil {
+		return fmt.Errorf("ticket ID is nil after creation")
+	}
+	ticketID := *ticketDTO.ID
+
+	// Сдвиг: при shift=true расписание pending переписывается на now + период
+	// (следующий автоматический запуск уходит вперёд); при shift=false pending
+	// остаётся на исходном расписании.
+	if shiftNext && pendingFromDB {
+		if err := s.repo.ReschedulePendingInstance(ctx, nil, pending, now.AddDate(template.PeriodYears, template.PeriodMonths, template.PeriodDays)); err != nil {
+			return fmt.Errorf("failed to reschedule pending periodic task: %w", err)
+		}
+		pending.ScheduledAt = now.AddDate(template.PeriodYears, template.PeriodMonths, template.PeriodDays)
+	}
+
+	// Заявка создана — привязываем экземпляр и планируем следующий старт:
+	// следующий запуск = расписание текущего + период (якорь — расписание, не now).
+	created := *pending
+	created.Status = models.TaskInstanceCreated
+	created.TicketID = &ticketID
+	created.CreatedAt = &now
+	nextAt := created.ScheduledAt.AddDate(template.PeriodYears, template.PeriodMonths, template.PeriodDays)
+	created.NextScheduledAt = &nextAt
+	if err := s.repo.UpdatePeriodicTaskInstance(ctx, nil, &created); err != nil {
+		return fmt.Errorf("failed to update periodic task instance: %w", err)
+	}
+
+	nextInstance := &models.EquipmentPeriodicTaskInstance{
+		ID:               uuid.New(),
+		RealmID:          template.RealmID,
+		TemplateID:       template.ID,
+		EquipmentID:      eq.ID,
+		Status:           models.TaskInstancePending,
+		ScheduledAt:      nextAt,
+		LastAssignmentID: created.LastAssignmentID,
+		CreatedBy:        created.CreatedBy,
+	}
+	return s.repo.CreatePeriodicTaskInstance(ctx, nil, nextInstance)
 }
 
-// addInterval добавляет интервал к времени.
-// Поддерживаем форматы: "30 days", "2 months", "1 year" и т.д.
-func addInterval(t time.Time, interval string) (time.Time, error) {
-	// Парсим форматы типа "30 days", "2 months"
-	var n int
-	var unit string
-	_, err := fmt.Sscanf(interval, "%d %s", &n, &unit)
-	if err != nil {
-		return t, fmt.Errorf("invalid interval format: %s", interval)
-	}
+// hasPeriod сообщает, что период задан хотя бы одним ненулевым компонентом
+// (годы/месяцы/дни): все нули — невалидный шаблон.
+func hasPeriod(years, months, days int) bool {
+	return years > 0 || months > 0 || days > 0
+}
 
-	switch unit {
-	case "day", "days":
-		return t.AddDate(0, 0, n), nil
-	case "week", "weeks":
-		return t.AddDate(0, 0, n*7), nil
-	case "month", "months":
-		return t.AddDate(0, n, 0), nil
-	case "year", "years":
-		return t.AddDate(n, 0, 0), nil
-	default:
-		return t, fmt.Errorf("unsupported interval unit: %s", unit)
+// inventoryLabel собирает человекочитаемый номер единицы для описания заявки.
+func inventoryLabel(eq *models.Equipment) string {
+	if eq.InventoryNumber == nil || *eq.InventoryNumber == "" {
+		return "не указан"
 	}
+	return *eq.InventoryNumber
 }

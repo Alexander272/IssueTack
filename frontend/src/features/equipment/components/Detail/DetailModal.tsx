@@ -7,6 +7,7 @@ import { HistoryTimeline } from './HistoryTimeline'
 import { ItemActs } from './ItemActs'
 import { DetailHeader } from './DetailHeader'
 import { OverviewTab } from './OverviewTab'
+import { PeriodicTasksTab } from './PeriodicTasksTab'
 
 type Props = {
 	open: boolean
@@ -69,6 +70,7 @@ export const DetailModal: FC<Props> = ({ open, unitId, onClose, onOpenUnit }) =>
 							sx={{ mt: { xs: 1.5, sm: 2 }, minHeight: 40, borderBottom: '1px solid #eef2f6' }}
 						>
 							<Tab label='Обзор' sx={{ textTransform: 'none', minHeight: 40 }} />
+							<Tab label='Периодические задачи' sx={{ textTransform: 'none', minHeight: 40 }} />
 							<Tab label='История' sx={{ textTransform: 'none', minHeight: 40 }} />
 							<Tab label='Акты' sx={{ textTransform: 'none', minHeight: 40 }} />
 						</Tabs>
@@ -84,8 +86,9 @@ export const DetailModal: FC<Props> = ({ open, unitId, onClose, onOpenUnit }) =>
 						}}
 					>
 						{tab === 0 && <OverviewTab unit={unit} onOpenUnit={onOpenUnit} />}
-						{tab === 1 && <HistoryTimeline unit={unit} />}
-						{tab === 2 && <ItemActs unit={unit} />}
+						{tab === 1 && <PeriodicTasksTab unit={unit} />}
+						{tab === 2 && <HistoryTimeline unit={unit} />}
+						{tab === 3 && <ItemActs unit={unit} />}
 					</DialogContent>
 				</>
 			)}

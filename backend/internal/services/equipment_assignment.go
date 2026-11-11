@@ -166,6 +166,17 @@ func (s *EquipmentService) Assign(ctx context.Context, dto *models.AssignEquipme
 	// Заявка в 1C:ERP — после коммита выдачи: заявка ссылается на единицу уже с
 	// новым держателем, и её сбой не откатывает выдачу.
 	s.createERPTicket(ctx, erpAssign, dto.ID, dto.RealmID, dto.Actor)
+
+	// Автостарт периодической задачи — после коммита выдачи, best-effort: сбой
+	// не откатывает выдачу, но и не должен терять факт (заявка будет создана
+	// следующим тиком планировщика, если старт не заводился).
+	if s.periodicStarter != nil {
+		if err := s.periodicStarter.StartPeriodicTasksForAssignment(ctx, dto.ID, dto.RealmID, assignedAt); err != nil {
+			bestEffortError("failed to start equipment periodic task", err, map[string]string{
+				"equipment_id": dto.ID.String(),
+			})
+		}
+	}
 	return nil
 }
 

@@ -479,3 +479,92 @@ export interface IEquipmentImportResult {
 	failed: number
 	rows: IEquipmentImportRow[]
 }
+
+// ===== Периодические задачи =====
+
+import type { Priority } from '../../tasks/types/task'
+
+// IEquipmentTypePeriodicTask — шаблон периодической задачи для типа оборудования.
+export interface IEquipmentTypePeriodicTask {
+	id: string
+	realmId: string
+	equipmentTypeId: string
+	// Период задачи: годы/месяцы/дни (хотя бы один > 0).
+	periodYears: number
+	periodMonths: number
+	periodDays: number
+	title: string
+	description: string
+	priority: Priority
+	categoryId: string
+	siteId?: string
+	// Автор шаблона — создатель заявок, от которого порождаются задачи.
+	createdBy?: string
+	// Резолвленные подписи.
+	equipmentTypeName?: string
+	categoryName?: string
+	siteName?: string
+	// Автостарт при первой выдаче единицы типа.
+	autoStartOnFirstAssign: boolean
+	// Включено ли правило.
+	enabled: boolean
+	createdAt: string
+	updatedAt: string
+}
+
+export interface IEquipmentTypePeriodicTaskDTO {
+	id?: string
+	realmId?: string
+	equipmentTypeId: string
+	periodYears: number
+	periodMonths: number
+	periodDays: number
+	title: string
+	description: string
+	priority: Priority
+	categoryId: string
+	siteId?: string
+	autoStartOnFirstAssign: boolean
+	enabled: boolean
+}
+
+// IEquipmentPeriodicTaskInstanceStatus — статус экземпляра периодической задачи.
+export type EquipmentPeriodicTaskInstanceStatus = 'pending' | 'created' | 'cancelled'
+
+export interface IEquipmentPeriodicTaskInstance {
+	id: string
+	realmId: string
+	templateId: string
+	equipmentId: string
+	equipmentName?: string
+	status: EquipmentPeriodicTaskInstanceStatus
+	scheduledAt: string
+	nextScheduledAt?: string
+	ticketId?: string
+	ticketTitle?: string
+	ticketNumber?: number
+	createdAt?: string
+	createdBy?: string
+}
+
+export interface IEquipmentPeriodicTaskInstanceFilter {
+	realmId: string
+	templateId?: string
+	equipmentId?: string
+	status?: EquipmentPeriodicTaskInstanceStatus
+	limit?: number
+	offset?: number
+}
+
+export interface IEquipmentPeriodicTaskInstanceList {
+	data: IEquipmentPeriodicTaskInstance[]
+	total: number
+}
+
+// IManualPeriodicTaskRunDTO — ручной запуск периодической задачи.
+export interface IManualPeriodicTaskRunDTO {
+	realmId: string
+	templateId: string
+	equipmentId: string
+	shiftNext: boolean
+}

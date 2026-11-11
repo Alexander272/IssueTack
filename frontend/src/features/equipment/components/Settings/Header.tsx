@@ -43,7 +43,7 @@ export const Header: FC = () => {
 					Настройки оборудования
 				</Typography>
 				<Typography variant='body2' sx={{ color: '#6b7280', display: { xs: 'none', sm: 'block' } }}>
-					Типы, шаблоны комплектов
+					Типы, шаблоны комплектов, периодические задачи
 				</Typography>
 			</Box>
 		</Box>

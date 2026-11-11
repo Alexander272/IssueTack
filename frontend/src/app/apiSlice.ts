@@ -86,6 +86,8 @@ export const apiSlice = createApi({
 		'EquipmentTemplates',
 		'Equipment',
 		'EquipmentActs',
+		'EquipmentPeriodicTasks',
+		'EquipmentPeriodicTaskInstances',
 	],
 	endpoints: () => ({}),
 })
