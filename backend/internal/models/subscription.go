@@ -28,13 +28,16 @@ type IsSubscribedDTO struct {
 type NotificationType string
 
 const (
-	NotificationTicketCreated        NotificationType = "ticket.created"
-	NotificationTicketUpdated        NotificationType = "ticket.updated"
-	NotificationTicketDeleted        NotificationType = "ticket.deleted"
-	NotificationTicketComment        NotificationType = "ticket.comment_added"
-	NotificationTicketAttachment     NotificationType = "ticket.attachment_added"
-	NotificationTicketOverdue        NotificationType = "ticket.overdue"
-	NotificationDeadlineSoon         NotificationType = "ticket.deadline_soon"
-	NotificationTicketReminderHigh   NotificationType = "ticket.reminder_high"
-	NotificationTicketReminderUrgent NotificationType = "ticket.reminder_urgent"
+	NotificationTicketCreated          NotificationType = "ticket.created"
+	NotificationTicketUpdated          NotificationType = "ticket.updated"
+	NotificationTicketDeleted          NotificationType = "ticket.deleted"
+	NotificationTicketComment          NotificationType = "ticket.comment_added"
+	NotificationTicketAttachment       NotificationType = "ticket.attachment_added"
+	NotificationTicketOverdue          NotificationType = "ticket.overdue"
+	NotificationDeadlineSoon           NotificationType = "ticket.deadline_soon"
+	NotificationTicketReminderHigh     NotificationType = "ticket.reminder_high"
+	NotificationTicketReminderUrgent   NotificationType = "ticket.reminder_urgent"
+	NotificationTicketDueDateRequested NotificationType = "ticket.due_date_requested"
+	NotificationTicketDueDateApproved  NotificationType = "ticket.due_date_approved"
+	NotificationTicketDueDateRejected  NotificationType = "ticket.due_date_rejected"
 )

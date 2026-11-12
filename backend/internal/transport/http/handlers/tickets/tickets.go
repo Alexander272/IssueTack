@@ -33,10 +33,13 @@ func Register(api *gin.RouterGroup, service services.Tickets, middleware *middle
 		tickets.GET("/:id", handlers.getByID)
 		tickets.POST("/:id/take", handlers.take)
 		tickets.POST("/:id/transfer", handlers.transfer)
+		tickets.GET("/:id/due-date-requests", handlers.getDueDateRequests)
+		tickets.POST("/:id/due-date-requests", handlers.createDueDateRequest)
 
 		tickets.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Write()))
 		tickets.POST("", handlers.create)
 		tickets.PUT("/:id", handlers.update)
+		tickets.POST("/:id/due-date-requests/:requestId/decide", handlers.decideDueDateRequest)
 
 		tickets.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Delete()))
 		tickets.DELETE("/:id", handlers.delete)
@@ -163,6 +166,94 @@ func (h *Handler) transfer(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, response.IdResponse{Id: id, Message: "Заявка передана"})
+}
+
+func (h *Handler) getDueDateRequests(c *gin.Context) {
+	strId := c.Param("id")
+	id, err := uuid.Parse(strId)
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+
+	data, err := h.service.GetDueDateRequest(c, id)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	response.SendData(c, data)
+}
+
+func (h *Handler) createDueDateRequest(c *gin.Context) {
+	strId := c.Param("id")
+	id, err := uuid.Parse(strId)
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	dto := &models.CreateDueDateRequestDTO{}
+	if err := c.BindJSON(dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	dto.TicketID = id
+
+	// Реалм берём из контекста (middleware проверил членство и права): строка
+	// заголовка здесь — не авторизованное значение.
+	realmIdStr := utils.GetRealmString(c)
+	dto.RealmID = realmIdStr
+
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+	dto.Actor = actor
+
+	data, err := h.service.CreateDueDateRequest(c, dto)
+	if err != nil {
+		response.SendError(c, err, dto)
+		return
+	}
+	response.SendData(c, data)
+}
+
+func (h *Handler) decideDueDateRequest(c *gin.Context) {
+	requestId, err := uuid.Parse(c.Param("requestId"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	dto := &models.DecideDueDateRequestDTO{}
+	if err := c.BindJSON(dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	dto.RequestID = requestId
+
+	// Реалм берём из контекста (middleware проверил членство и права): строка
+	// заголовка здесь — не авторизованное значение.
+	realmIdStr := utils.GetRealmString(c)
+	dto.RealmID = realmIdStr
+
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+	dto.Actor = actor
+
+	data, err := h.service.DecideDueDateRequest(c, dto)
+	if err != nil {
+		response.SendError(c, err, dto)
+		return
+	}
+	response.SendData(c, data)
 }
 
 func (h *Handler) create(c *gin.Context) {

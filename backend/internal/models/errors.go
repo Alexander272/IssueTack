@@ -57,6 +57,10 @@ var (
 	ErrTicketFrozen          = NewDomainError(errors.New("ticket is resolved/closed/cancelled"), http.StatusConflict, "TK003", "Заявка решена, закрыта или отменена — изменение данных недоступно")
 	// ErrReasonRequired — диалог «Вернуть заявку в работу» отправлен без причины.
 	ErrReasonRequired = NewDomainError(errors.New("reason is required"), http.StatusBadRequest, "TK005", "Укажите причину возврата заявки в работу")
+	// ErrDueDateRequestAlreadyPending — на тикет уже есть активный pending-запрос на перенос срока.
+	ErrDueDateRequestAlreadyPending = NewDomainError(errors.New("due date request already pending"), http.StatusConflict, "TK006", "На этой заявке уже есть запрос на перенос срока")
+	// ErrDueDateRequestNotPending — запрос уже был решён и нельзя его изменить/решить повторно.
+	ErrDueDateRequestNotPending = NewDomainError(errors.New("due date request not pending"), http.StatusConflict, "TK007", "Запрос на перенос срока уже обработан")
 
 	// 409 Conflict (шаблоны чек-листов)
 	ErrTemplateNameExists = NewDomainError(errors.New("checklist template with this title already exists"), http.StatusConflict, "CL001", "Шаблон с таким названием уже существует")

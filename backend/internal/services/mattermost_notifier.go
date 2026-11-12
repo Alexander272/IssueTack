@@ -129,6 +129,12 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 		prefix = "Важная задача"
 	case string(models.NotificationTicketReminderUrgent):
 		prefix = "Срочная задача!"
+	case string(models.NotificationTicketDueDateRequested):
+		prefix = "Запрос на перенос срока"
+	case string(models.NotificationTicketDueDateApproved):
+		prefix, action = "Задача", "срок перенесён"
+	case string(models.NotificationTicketDueDateRejected):
+		prefix, action = "Задача", "запрос отклонён"
 	default:
 		prefix = "Уведомление"
 	}
@@ -144,6 +150,30 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 	}
 
 	links := n.links(ctx, user, ticket)
+
+	// Детали переноса срока для типов, связанных с запросом/решениями по сроку.
+	dueDateDetails := ""
+	switch notif.Type {
+	case string(models.NotificationTicketDueDateRequested), string(models.NotificationTicketDueDateApproved), string(models.NotificationTicketDueDateRejected):
+		var payload struct {
+			ProposedDueDate string `json:"proposed_due_date"`
+			Reason          string `json:"reason"`
+		}
+		if len(notif.Data) > 0 {
+			if err := json.Unmarshal(notif.Data, &payload); err != nil {
+				payload = struct {
+					ProposedDueDate string `json:"proposed_due_date"`
+					Reason          string `json:"reason"`
+				}{}
+			}
+		}
+		if proposed := strings.TrimSpace(payload.ProposedDueDate); proposed != "" {
+			dueDateDetails = fmt.Sprintf("\nНовый срок: %s", proposed)
+		}
+		if reason := strings.TrimSpace(payload.Reason); reason != "" {
+			dueDateDetails += fmt.Sprintf("\nПричина: %s", reason)
+		}
+	}
 
 	if action != "" {
 		// «Задача №12 обновлена: title» — действие идёт после номера.
@@ -161,6 +191,7 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 				text += "\n\n" + details
 			}
 		}
+		text += dueDateDetails
 		return text + links
 	}
 
@@ -203,6 +234,10 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 		if block := commentBlock(notif.Data); block != "" {
 			text += "\n\n" + block
 		}
+	}
+
+	if notif.Type == string(models.NotificationTicketDueDateRequested) || notif.Type == string(models.NotificationTicketDueDateApproved) || notif.Type == string(models.NotificationTicketDueDateRejected) {
+		text += dueDateDetails
 	}
 
 	return text + links

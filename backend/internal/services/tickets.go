@@ -29,6 +29,7 @@ type TicketService struct {
 	access        TicketAccessChecker
 	users         Users
 	sites         Sites
+	dueRequests   repository.DueDateRequests
 }
 
 // NewTicketService создаёт новый сервис тикетов на основе переданных зависимостей.
@@ -45,22 +46,24 @@ func NewTicketService(deps *TicketDeps) *TicketService {
 		access:        deps.Access,
 		users:         deps.Users,
 		sites:         deps.Sites,
+		dueRequests:   deps.DueDateRequests,
 	}
 }
 
 // TicketDeps — зависимости, необходимые для создания TicketService.
 type TicketDeps struct {
-	Repo          repository.Tickets
-	TxManager     TransactionManager
-	Logs          ActivityLog
-	Subtasks      Subtasks
-	Attachments   Attachments
-	Notifications Notifications
-	Groups        Groups
-	Categories    Categories
-	Access        TicketAccessChecker
-	Users         Users
-	Sites         Sites
+	Repo            repository.Tickets
+	TxManager       TransactionManager
+	Logs            ActivityLog
+	Subtasks        Subtasks
+	Attachments     Attachments
+	Notifications   Notifications
+	Groups          Groups
+	Categories      Categories
+	Access          TicketAccessChecker
+	Users           Users
+	Sites           Sites
+	DueDateRequests repository.DueDateRequests
 }
 
 // Tickets — интерфейс сервиса тикетов: описывает чтение, создание,
@@ -97,6 +100,12 @@ type Tickets interface {
 	UploadAttachment(ctx context.Context, tx postgres.Tx, dto *models.UploadAttachmentDTO) (*models.Attachment, error)
 	// AutoCloseResolved закрывает resolved-тикеты по истечении задержки и возвращает их количество.
 	AutoCloseResolved(ctx context.Context, delay time.Duration) (int64, error)
+	// CreateDueDateRequest создаёт запрос исполнителем на перенос срока заявки.
+	CreateDueDateRequest(ctx context.Context, dto *models.CreateDueDateRequestDTO) (*models.DueDateRequest, error)
+	// GetDueDateRequest возвращает активный (pending) запрос тикета на перенос срока.
+	GetDueDateRequest(ctx context.Context, ticketID uuid.UUID) (*models.DueDateRequest, error)
+	// DecideDueDateRequest принимает решение менеджера по запросу на перенос срока.
+	DecideDueDateRequest(ctx context.Context, dto *models.DecideDueDateRequestDTO) (*models.DueDateRequest, error)
 }
 
 // Get возвращает список тикетов и общее количество с учётом прав актора:
@@ -1484,6 +1493,21 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 	flags.IsManager = isManager
 
 	flags.AllowedStatuses = s.computeAllowedStatuses(ctx, ticket, userID)
+
+	// CanRequestDueDate — исполнитель (assignee) может запросить перенос срока заявки.
+	// Запрос имеет смысл при установленном сроке и при отсутствии уже pending-запроса
+	// (лимит — один на тикет, enforced в БД через partial unique index).
+	flags.CanRequestDueDate = false
+	if !isTicketInactive(ticket.Status) && ticket.DueDate != nil &&
+		ticket.Assignee != nil && ticket.Assignee.ID == userID {
+		if existing, reqErr := s.dueRequests.GetPendingByTicket(ctx, ticket.ID); reqErr != nil || existing == nil {
+			flags.CanRequestDueDate = true
+		}
+	}
+
+	// CanDecideDueDate — утверждать/отклонять запросы может менеджер группы или
+	// начальник области (realm supervisor) — те же, кому backend разрешает править срок.
+	flags.CanDecideDueDate = isManager || isAdmin
 
 	return flags, nil
 }

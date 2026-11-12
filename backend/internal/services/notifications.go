@@ -67,6 +67,10 @@ type Notifications interface {
 	TicketCommented(ctx context.Context, c *models.NotificationCommentDTO) error
 	// AttachmentAdded оповещает исполнителя и подписанных о новом вложении.
 	AttachmentAdded(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) error
+	// NotifyDueDateRequested оповещает менеджера группы о новом запросе переноса срока.
+	NotifyDueDateRequested(ctx context.Context, ticket *models.Ticket, request *models.DueDateRequest) error
+	// NotifyDueDateDecided оповещает исполнителя о решении по его запросу переноса срока.
+	NotifyDueDateDecided(ctx context.Context, ticket *models.Ticket, request *models.DueDateRequest) error
 	// NotifyOverdue оповещает о просроченном тикете: исполнителя, менеджера, админов реалма,
 	// а также подписчиков категории/группы на событие «Просрочка».
 	NotifyOverdue(ctx context.Context, ticket *models.Ticket) error

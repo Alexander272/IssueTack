@@ -1,17 +1,19 @@
 import { Box, Button, Menu, MenuItem } from '@mui/material'
-import { ChevronDown, Check, CheckCircle2, RotateCcw, XCircle, Hand } from 'lucide-mui'
+import { ChevronDown, Check, CheckCircle2, RotateCcw, XCircle, Hand, CalendarClock } from 'lucide-mui'
 import { useState } from 'react'
 
 import type { ITask, TicketStatus } from '../../types/task'
 import { STATUS_MAP } from '../../constants/taskMaps'
 import { useAppSelector } from '@/hooks/redux'
 import { getUserId, getCurrentCapabilities, getHasNoGroups } from '@/features/user/userSlice'
-import { useUpdateTaskMutation, useTakeTaskMutation } from '../../tasksApiSlice'
+import { useUpdateTaskMutation, useTakeTaskMutation, useGetDueDateRequestsQuery } from '../../tasksApiSlice'
 import { useCreateCommentMutation } from '../../modules/comments/commentsApiSlice'
 import { TaskStatusBadge } from '../TaskStatusBadge'
 import { TaskPriorityBadge } from '../TaskPriorityBadge'
 import { StatusChangeDialog } from './StatusChangeDialog'
 import { DeadlinePopover } from './DeadlinePopover'
+import { DueDateRequestDialog } from './DueDateRequestDialog'
+import { DueDateRequestCard } from './DueDateRequestCard'
 
 const ACTIVE_STATUSES: TicketStatus[] = ['open', 'in_progress', 'pending', 'on_hold']
 const COMMENT_REQUIRED_STATUSES: TicketStatus[] = ['on_hold', 'pending']
@@ -26,6 +28,10 @@ export const InfoBar = ({ task }: Props) => {
 	const [updateTask] = useUpdateTaskMutation()
 	const [takeTask] = useTakeTaskMutation()
 	const [createComment] = useCreateCommentMutation()
+	const { data: dueDateRequestsData } = useGetDueDateRequestsQuery(task.id, {
+		skip: !task.access,
+	})
+	const dueDateRequest = dueDateRequestsData?.data ?? task.dueDateRequest ?? null
 	const currentUserId = useAppSelector(getUserId)
 	const capabilities = useAppSelector(getCurrentCapabilities)
 	const hasNoGroups = useAppSelector(getHasNoGroups)
@@ -46,6 +52,8 @@ export const InfoBar = ({ task }: Props) => {
 	const canUseMenu = !isTerminal && isStatusManager
 	const canTake = Boolean(task.access?.canTake)
 	const allowedStatuses = task.access?.allowedStatuses
+	const canRequestDueDate = Boolean(task.access?.canRequestDueDate)
+	const canDecideDueDate = Boolean(task.access?.canDecideDueDate)
 	// «Терминальные» статусы (Закрыта/Отменена) — решения менеджера. Чистому
 	// исполнителю их не показываем (бэкенд всё равно не даст — canChangeStatus /
 	// isCreatorOrManager), чтобы в меню не висели серые недоступные пункты.
@@ -102,6 +110,8 @@ export const InfoBar = ({ task }: Props) => {
 		}
 	}
 
+	const [dueDateRequestDialogOpen, setDueDateRequestDialogOpen] = useState(false)
+
 	return (
 		<Box
 			sx={{
@@ -119,8 +129,23 @@ export const InfoBar = ({ task }: Props) => {
 			</Box>
 
 			<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
+				{isAssignee && canRequestDueDate && isActive && (
+					<Button
+						variant='outlined'
+						onClick={() => setDueDateRequestDialogOpen(true)}
+						startIcon={<CalendarClock sx={{ fontSize: 16 }} />}
+						sx={{ textTransform: 'none', boxShadow: 'none', '&:hover': { boxShadow: 'none' } }}
+					>
+						Запросить перенос
+					</Button>
+				)}
+
 				{!hasNoGroups && (task.access?.isManager || capabilities.isRealmAdmin) && isActive && !task.dueDate && (
 					<DeadlinePopover onSetDueDate={handleSetDueDate} />
+				)}
+
+				{canDecideDueDate && dueDateRequest?.status === 'pending' && (
+					<DueDateRequestCard task={task} request={dueDateRequest} />
 				)}
 
 				{canCancel && (
@@ -237,6 +262,8 @@ export const InfoBar = ({ task }: Props) => {
 					onCancel={() => setPendingStatus(null)}
 				/>
 			)}
+
+			<DueDateRequestDialog open={dueDateRequestDialogOpen} task={task} onClose={() => setDueDateRequestDialogOpen(false)} />
 		</Box>
 	)
 }

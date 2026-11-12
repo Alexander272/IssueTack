@@ -361,6 +361,27 @@ func (m *MockTicketsService) AutoCloseResolved(ctx context.Context, delay time.D
 	args := m.Called(ctx, delay)
 	return args.Get(0).(int64), args.Error(1)
 }
+func (m *MockTicketsService) CreateDueDateRequest(ctx context.Context, dto *models.CreateDueDateRequestDTO) (*models.DueDateRequest, error) {
+	args := m.Called(ctx, dto)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.DueDateRequest), args.Error(1)
+}
+func (m *MockTicketsService) GetDueDateRequest(ctx context.Context, ticketID uuid.UUID) (*models.DueDateRequest, error) {
+	args := m.Called(ctx, ticketID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.DueDateRequest), args.Error(1)
+}
+func (m *MockTicketsService) DecideDueDateRequest(ctx context.Context, dto *models.DecideDueDateRequestDTO) (*models.DueDateRequest, error) {
+	args := m.Called(ctx, dto)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.DueDateRequest), args.Error(1)
+}
 func (m *MockTicketsService) UploadAttachment(ctx context.Context, tx postgres.Tx, dto *models.UploadAttachmentDTO) (*models.Attachment, error) {
 	args := m.Called(ctx, tx, dto)
 	if args.Get(0) == nil {
@@ -816,6 +837,14 @@ func (m *MockNotificationService) TicketCommented(ctx context.Context, c *models
 }
 func (m *MockNotificationService) AttachmentAdded(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) error {
 	args := m.Called(ctx, ticket, actorID)
+	return args.Error(0)
+}
+func (m *MockNotificationService) NotifyDueDateRequested(ctx context.Context, ticket *models.Ticket, request *models.DueDateRequest) error {
+	args := m.Called(ctx, ticket, request)
+	return args.Error(0)
+}
+func (m *MockNotificationService) NotifyDueDateDecided(ctx context.Context, ticket *models.Ticket, request *models.DueDateRequest) error {
+	args := m.Called(ctx, ticket, request)
 	return args.Error(0)
 }
 func (m *MockNotificationService) NotifyOverdue(ctx context.Context, ticket *models.Ticket) error {

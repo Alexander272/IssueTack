@@ -1,7 +1,7 @@
 import { toast } from 'react-toastify'
 
 import type { IBaseFetchError } from '@/app/types/error'
-import type { ITask, ITaskDTO, ITaskFilter } from './types/task'
+import type { IDueDateRequest, ITask, ITaskDTO, ITaskFilter } from './types/task'
 import { API } from '@/app/api'
 import { apiSlice } from '@/app/apiSlice'
 
@@ -143,6 +143,51 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 			providesTags: (_result, _error, id) => [{ type: 'Tasks', id: `sub:${id}` }],
 		}),
 
+		getDueDateRequests: builder.query<{ data: IDueDateRequest | null }, string>({
+			query: ticketId => ({
+				url: API.tickets.dueDateRequests(ticketId),
+				method: 'GET',
+			}),
+			providesTags: (_result, _error, ticketId) => [{ type: 'DueDateRequests', id: ticketId }],
+		}),
+
+		createDueDateRequest: builder.mutation<{ data: IDueDateRequest }, { ticketId: string; proposedDueDate: string; reason: string }>({
+			query: ({ ticketId, proposedDueDate, reason }) => ({
+				url: API.tickets.dueDateRequests(ticketId),
+				method: 'POST',
+				body: { proposedDueDate, reason },
+			}),
+			invalidatesTags: (_result, _error, arg) => [{ type: 'DueDateRequests', id: arg.ticketId }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		decideDueDateRequest: builder.mutation<{ data: IDueDateRequest }, { ticketId: string; requestId: string; approved: boolean; decisionComment?: string }>({
+			query: ({ ticketId, requestId, ...body }) => ({
+				url: API.tickets.dueDateRequestDecide(ticketId, requestId),
+				method: 'POST',
+				body,
+			}),
+			invalidatesTags: (_result, _error, arg) => [
+				{ type: 'DueDateRequests', id: arg.ticketId },
+				{ type: 'Tasks', id: arg.ticketId },
+			],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
 		subscribe: builder.mutation<{ data: { message: string } }, string>({
 			query: id => ({
 				url: API.tickets.subscription(id),
@@ -172,4 +217,7 @@ export const {
 	useGetIsSubscribedQuery,
 	useSubscribeMutation,
 	useUnsubscribeMutation,
+	useGetDueDateRequestsQuery,
+	useCreateDueDateRequestMutation,
+	useDecideDueDateRequestMutation,
 } = tasksApiSlice
