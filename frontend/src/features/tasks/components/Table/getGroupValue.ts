@@ -19,7 +19,7 @@ export function getGroupValue(task: ITask, groupBy: GroupByField, hasNoGroups = 
 			// Безгрупповому группа заявки ни о чём не говорит — не подписываем ею
 			// неназначенные заявки (см. Participants).
 			if (task.group && !hasNoGroups) return `👥 ${task.group.name}`
-			return 'Без назначения'
+			return 'Без исполнителя'
 		}
 		case 'creator':
 			return task.creator ? `${task.owner?.lastName} ${task.owner?.firstName}` : 'Без заказчика'

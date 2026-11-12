@@ -33,6 +33,7 @@ func Register(api *gin.RouterGroup, service services.Statistics, middleware *mid
 	{
 		statistics.GET("/tickets", handlers.getTickets)
 		statistics.GET("/tickets/list", handlers.getTicketsList)
+		statistics.GET("/kpi/tickets", handlers.getKpiTickets)
 	}
 }
 
@@ -54,6 +55,15 @@ type statisticsTicketsQuery struct {
 	Ring        string `form:"ring" binding:"omitempty,oneof=active closed"`
 	Limit       int    `form:"limit" binding:"omitempty,min=1,max=100"`
 	Offset      int    `form:"offset" binding:"min=0"`
+}
+
+// kpiTicketsQuery — параметры запроса списка KPI-карточки.
+type kpiTicketsQuery struct {
+	From     string `form:"from"`
+	To       string `form:"to"`
+	CardKey  string `form:"cardKey" binding:"required,oneof=total active overdue resolved"`
+	Limit    int    `form:"limit" binding:"omitempty,min=1,max=100"`
+	Offset   int    `form:"offset" binding:"min=0"`
 }
 
 // buildFilter собирает фильтр статистики: период + уточнения + актор. Общий для
@@ -241,4 +251,50 @@ func parseUUIDList(c *gin.Context, key string) ([]uuid.UUID, error) {
 		}
 	}
 	return ids, nil
+}
+
+// getKpiTickets отдаёт список заявок для KPI-карточки (total/active/overdue/resolved).
+// Срез доступа и уточнения те же, что у агрегатов, поэтому список совпадает с
+// числом на самой карточке.
+func (h *Handler) getKpiTickets(c *gin.Context) {
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+
+	query := &kpiTicketsQuery{}
+	if err := c.ShouldBindQuery(query); err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	from, to, err := parseRange(query.From, query.To)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+
+	filter, err := buildFilter(c, actor, realmID, from, to, "")
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+
+	kpiQuery := models.StatisticsKpiQuery{
+		Filter:  filter,
+		CardKey: models.KpiCardKey(query.CardKey),
+		Limit:   query.Limit,
+		Offset:  query.Offset,
+	}
+
+	data, total, err := h.service.GetKpiTickets(c.Request.Context(), kpiQuery)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	response.SendData(c, data, total)
 }

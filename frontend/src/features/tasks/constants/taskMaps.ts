@@ -120,8 +120,8 @@ export const SORT_OPTIONS = [
 	{ value: 'owner_desc', label: 'По заказчику (Я-А)' },
 	{ value: 'category_asc', label: 'По категории (А-Я)' },
 	{ value: 'category_desc', label: 'По категории (Я-А)' },
-	{ value: 'assignee_asc', label: 'По назначению (А-Я)' },
-	{ value: 'assignee_desc', label: 'По назначению (Я-А)' },
+	{ value: 'assignee_asc', label: 'По исполнителю (А-Я)' },
+	{ value: 'assignee_desc', label: 'По исполнителю (Я-А)' },
 	{ value: 'closedAt_asc', label: 'По дате закрытия (возр.)' },
 	{ value: 'closedAt_desc', label: 'По дате закрытия (убыв.)' },
 ] as const
@@ -130,7 +130,7 @@ export const GROUP_BY_OPTIONS = [
 	{ value: 'site', label: 'По площадке' },
 	{ value: 'status', label: 'По статусу' },
 	{ value: 'priority', label: 'По приоритету' },
-	{ value: 'assignee', label: 'По назначению' },
+	{ value: 'assignee', label: 'По исполнителю' },
 	{ value: 'creator', label: 'По заказчику' },
 	{ value: 'dueDate', label: 'По сроку (неделям)' },
 	{ value: 'category', label: 'По категории' },
@@ -146,9 +146,7 @@ const GROUPLESS_HIDDEN_GROUP_FIELDS = new Set<string>(['priority', 'dueDate'])
 // groupByOptionsFor отдаёт пункты группировки под роль пользователя: безгрупповому
 // скрываются «По приоритету» и «По сроку». Хранит правило скрытия в одном месте.
 export const groupByOptionsFor = (hasNoGroups: boolean) =>
-	hasNoGroups
-		? GROUP_BY_OPTIONS.filter(o => !GROUPLESS_HIDDEN_GROUP_FIELDS.has(o.value))
-		: [...GROUP_BY_OPTIONS]
+	hasNoGroups ? GROUP_BY_OPTIONS.filter(o => !GROUPLESS_HIDDEN_GROUP_FIELDS.has(o.value)) : [...GROUP_BY_OPTIONS]
 
 // groupByFieldHidden сообщает, является ли поле группировки скрытым для безгруппового
 // пользователя (нужно для санитайза сохранённого в localStorage фильтра).

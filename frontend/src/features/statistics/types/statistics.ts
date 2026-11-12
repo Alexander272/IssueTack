@@ -7,6 +7,8 @@ export interface IStatisticsSummary {
 	resolvedPrev: number
 }
 
+export type KpiCardKey = 'total' | 'active' | 'overdue' | 'resolved'
+
 export interface IStatisticsBucket {
 	id: string
 	name: string

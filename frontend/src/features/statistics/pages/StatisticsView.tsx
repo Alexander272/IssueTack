@@ -10,6 +10,7 @@ import { getPresetDates } from '@/components/Period/utils'
 import type { DateRange } from '@/components/Period/types'
 import { useGetTicketStatisticsQuery } from '../statisticsApiSlice'
 import { KpiCards } from '../components/KpiCards'
+import { KpiTicketsModal } from '../components/KpiTicketsModal'
 import { TrendChart } from '../components/TrendChart'
 import { StatusChart } from '../components/StatusChart'
 import { BreakdownChart } from '../components/BreakdownChart'
@@ -38,6 +39,15 @@ interface IDrilldown {
 	ring: StatisticsDrilldownRing
 }
 
+interface IKpiDrilldown {
+	type: 'kpi'
+	cardKey: 'total' | 'active' | 'overdue' | 'resolved'
+}
+
+type Drilldown = IDrilldown | IKpiDrilldown | null
+
+const STORAGE_KEY = '@issueTrack/statistics/showOverdue'
+
 export const StatisticsView: FC = () => {
 	const isManager = useAppSelector(getIsManager)
 	const [range, setRange] = useState<DateRange>(() => getPresetDates('month', 'month', 1))
@@ -45,8 +55,28 @@ export const StatisticsView: FC = () => {
 	// сворачивается в «Прочие» (см. NestedDonut).
 	const [topNAssignee, setTopNAssignee] = useState(DEFAULT_TOP_N)
 	const [topNOwner, setTopNOwner] = useState(DEFAULT_TOP_N)
-	const [drilldown, setDrilldown] = useState<IDrilldown | null>(null)
+	const [drilldown, setDrilldown] = useState<Drilldown>(null)
 	const [searchParams, setSearchParams] = useSearchParams()
+
+	// Показывать ли карточку «Просроченные» — по умолчанию скрыта, включается кликом.
+	const [showOverdue, setShowOverdue] = useState(() => {
+		try {
+			const stored = localStorage.getItem(STORAGE_KEY)
+			return stored === 'true'
+		} catch {
+			return false
+		}
+	})
+
+	const toggleOverdue = useCallback(() => {
+		setShowOverdue(prev => {
+			const next = !prev
+			try {
+				localStorage.setItem(STORAGE_KEY, String(next))
+			} catch {}
+			return next
+		})
+	}, [])
 
 	const refinements = useMemo<IStatisticsRefinements>(
 		() => ({
@@ -119,6 +149,10 @@ export const StatisticsView: FC = () => {
 		[ownerBuckets],
 	)
 
+	const openKpi = useCallback((cardKey: 'total' | 'active' | 'overdue' | 'resolved') => {
+		setDrilldown({ type: 'kpi', cardKey })
+	}, [])
+
 	return (
 		<Box sx={{ flexGrow: 1, overflow: 'auto', p: 3 }}>
 			<Box
@@ -136,8 +170,28 @@ export const StatisticsView: FC = () => {
 					<Typography variant='h5' sx={{ fontWeight: 'bold', color: '#1f2937' }}>
 						Статистика
 					</Typography>
-					<Typography variant='body2' sx={{ color: '#6b7280', display: { xs: 'none', sm: 'block' } }}>
+					<Typography
+						variant='body2'
+						sx={{
+							color: '#6b7280',
+							display: { xs: 'none', sm: 'block' },
+							cursor: 'pointer',
+							userSelect: 'none',
+						}}
+						onClick={toggleOverdue}
+					>
 						Показатели заявок за выбранный период
+						<Box
+							component='span'
+							sx={{
+								ml: 1,
+								fontSize: '0.75rem',
+								color: showOverdue ? '#16a34a' : '#9ca3af',
+								opacity: showOverdue ? 1 : 0.6,
+							}}
+						>
+							{showOverdue ? '✓' : '•'}
+						</Box>
 					</Typography>
 				</Box>
 				<PeriodPicker value={range} onChange={setRange} />
@@ -149,7 +203,7 @@ export const StatisticsView: FC = () => {
 				/>
 			</Box>
 
-			<KpiCards summary={stats?.summary} isLoading={isFetching} />
+			<KpiCards summary={stats?.summary} isLoading={isFetching} onCardClick={openKpi} showOverdue={showOverdue} />
 
 			<Grid container spacing={3} sx={{ mb: 3 }}>
 				<Grid size={{ xs: 12, lg: 8 }}>
@@ -210,16 +264,19 @@ export const StatisticsView: FC = () => {
 				</Grid>
 			)}
 
-			{drilldown && (
-				<StatisticsTicketsModal
-					dimension={drilldown.dimension}
-					bucketId={drilldown.bucketId}
-					bucketName={drilldown.bucketName}
-					ring={drilldown.ring}
-					filter={query}
-					onClose={() => setDrilldown(null)}
-				/>
-			)}
+			{drilldown &&
+				('type' in drilldown && drilldown.type === 'kpi' ? (
+					<KpiTicketsModal cardKey={drilldown.cardKey} filter={query} onClose={() => setDrilldown(null)} />
+				) : (
+					<StatisticsTicketsModal
+						dimension={(drilldown as IDrilldown).dimension}
+						bucketId={(drilldown as IDrilldown).bucketId}
+						bucketName={(drilldown as IDrilldown).bucketName}
+						ring={(drilldown as IDrilldown).ring}
+						filter={query}
+						onClose={() => setDrilldown(null)}
+					/>
+				))}
 		</Box>
 	)
 }

@@ -147,3 +147,24 @@ type TicketStatistics struct {
 	ByOwner    []*StatisticsBreakdownBucket `json:"byOwner"`
 	Workload   []*WorkloadBucket            `json:"workload"`
 }
+
+// KpiCardKey — тип KPI-карточки: total (новые за период), active (активные на конец периода),
+// overdue (просроченные), resolved (решённые за период).
+type KpiCardKey string
+
+const (
+	KpiTotal     KpiCardKey = "total"
+	KpiActive    KpiCardKey = "active"
+	KpiOverdue   KpiCardKey = "overdue"
+	KpiResolved  KpiCardKey = "resolved"
+)
+
+// StatisticsKpiQuery — вход запроса списка заявок для KPI-карточки.
+// Scope и Filter те же, что у агрегатов, CardKey задаёт тип выборки.
+type StatisticsKpiQuery struct {
+	Scope   StatisticsScope
+	Filter  *StatisticsFilter
+	CardKey KpiCardKey
+	Limit   int
+	Offset  int
+}

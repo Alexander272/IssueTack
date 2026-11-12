@@ -39,6 +39,7 @@ export const API = {
 	statistics: {
 		tickets: '/statistics/tickets' as const,
 		ticketsList: '/statistics/tickets/list' as const,
+		kpiTickets: '/statistics/kpi/tickets' as const,
 	},
 
 	categories: {
