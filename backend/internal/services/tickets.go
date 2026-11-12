@@ -764,9 +764,15 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 		// Неактивные статусы (resolved/closed/cancelled) — «замороженные»: менять
 		// разрешено только сам статус (resolved→closed, resolved→in_progress и т.п.).
 		// Все прочие поля (срок, приоритет, исполнитель, заголовок и др.) изменить нельзя.
+		// Исключение: при возврате из resolved в in_progress менеджер может указать новый срок.
 		if isTicketInactive(oldTicket.Status) {
 			for _, change := range changes {
-				if change.Tag != models.ActionStatusChanged && change.Tag != models.ActionClosed {
+				// При возврате из resolved разрешены: смена статуса, срок (dueDate), закрытие.
+				if change.Tag != models.ActionStatusChanged && change.Tag != models.ActionClosed && change.Tag != models.ActionDueDateChanged {
+					return models.ErrTicketFrozen
+				}
+				// Срок разрешён только при переходе resolved → in_progress.
+				if change.Tag == models.ActionDueDateChanged && (oldTicket.Status != models.StatusResolved || dto.Status != models.StatusInProgress) {
 					return models.ErrTicketFrozen
 				}
 			}

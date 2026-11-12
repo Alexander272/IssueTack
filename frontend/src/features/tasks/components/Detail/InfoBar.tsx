@@ -63,9 +63,13 @@ export const InfoBar = ({ task }: Props) => {
 	// Отменить можно только новую (open) заявку.
 	const canCancel = isOwner && task.status === 'open'
 
-	const handleStatusChange = async (status: TicketStatus, comment?: string) => {
+	const handleStatusChange = async (status: TicketStatus, comment?: string, dueDate?: string | null) => {
 		try {
-			await updateTask({ id: task.id, status })
+			const updateData: { status: TicketStatus; dueDate?: string | null } = { status }
+			if (dueDate !== undefined) {
+				updateData.dueDate = dueDate
+			}
+			await updateTask({ id: task.id, ...updateData })
 			if (comment) {
 				await createComment({ ticketId: task.id, text: comment, isInternal: false, type: 'status_change' })
 			}
@@ -87,9 +91,9 @@ export const InfoBar = ({ task }: Props) => {
 		}
 	}
 
-	const handleDialogSubmit = (comment: string) => {
+	const handleDialogSubmit = (comment: string, dueDate?: string | null) => {
 		if (pendingStatus) {
-			handleStatusChange(pendingStatus, comment)
+			handleStatusChange(pendingStatus, comment, dueDate)
 			setPendingStatus(null)
 		}
 	}
@@ -258,7 +262,9 @@ export const InfoBar = ({ task }: Props) => {
 				<StatusChangeDialog
 					open
 					statusLabel={STATUS_MAP[pendingStatus].label}
-					onSubmit={handleDialogSubmit}
+					showDueDateField={pendingStatus === 'in_progress' && task.status === 'resolved' && isManager}
+					currentDueDate={task.dueDate ?? null}
+					onSubmit={(text, dueDate) => handleDialogSubmit(text, dueDate)}
 					onCancel={() => setPendingStatus(null)}
 				/>
 			)}
