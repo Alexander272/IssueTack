@@ -13,6 +13,7 @@ import {
 } from '@mui/material'
 import { CalendarClock, Send } from 'lucide-mui'
 import dayjs, { type Dayjs } from 'dayjs'
+import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 
 import { DateTextField } from '@/components/DatePicker/DatePicker'
 import { useCreateDueDateRequestMutation } from '../../tasksApiSlice'
