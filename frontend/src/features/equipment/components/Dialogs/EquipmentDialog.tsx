@@ -212,8 +212,7 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 			}}
 		>
 			<DialogTitle
-				// На телефоне окно во весь экран: отступы уменьшены до 12px по
-				// горизонтали и 16px по вертикали вместо 16/20. С sm — как было.
+				component='div'
 				sx={{
 					m: 0,
 					px: { xs: 1.5, sm: 2 },

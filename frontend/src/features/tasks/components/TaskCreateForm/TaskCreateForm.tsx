@@ -10,7 +10,6 @@ import type { FormValues, Props } from './types'
 import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
 import { useAppSelector } from '@/hooks/redux'
 import { useGetAllCategoriesQuery } from '@/features/categories/categoriesApiSlice'
-import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
 import { useCreateTaskMutation } from '../../tasksApiSlice'
 import { useUploadAttachmentMutation } from '../../modules/attachments/attachmentsApiSlice'
 import { getCurrentCapabilities, getIsManager, getUserId, getUserSiteId } from '@/features/user/userSlice'
@@ -52,14 +51,12 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 		const [createTask, { isLoading: isCreating }] = useCreateTaskMutation()
 		const [uploadAttachment, { isLoading: isUploading }] = useUploadAttachmentMutation()
 		const { data: categoriesData } = useGetAllCategoriesQuery()
-		const { data: sitesData } = useGetAllSitesQuery()
 
 		const [files, setFiles] = useState<File[]>([])
 		const [submitting, setSubmitting] = useState(false)
 		const [confirmOpen, setConfirmOpen] = useState(false)
 
 		const categories = useMemo(() => categoriesData?.data ?? [], [categoriesData])
-		const sites = useMemo(() => sitesData?.data ?? [], [sitesData])
 
 		// Черновик читается синхронно на первом рендере, чтобы сразу попасть в
 		// defaultValues формы. Ключ — realm + пользователь.
@@ -224,7 +221,7 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 				<FormProvider {...methods}>
 					<Box component='form' onSubmit={onSubmit}>
 						<Stack sx={{ gap: { xs: 1.5, sm: 3 } }}>
-							<CategoryAndSiteSection categories={categories} sites={sites} />
+							<CategoryAndSiteSection />
 							<DescriptionSection files={files} onFilesChange={setFiles} />
 
 							{(isManager || isExecutor) && <SubtasksCreationSection />}

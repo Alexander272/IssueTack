@@ -813,7 +813,10 @@ const equipmentApiSlice = apiSlice.injectEndpoints({
 		}),
 
 		// ===== Периодические задачи =====
-		getPeriodicTaskTemplates: builder.query<{ data: IEquipmentTypePeriodicTask[] }, { realmId: string; equipmentTypeId?: string }>({
+		getPeriodicTaskTemplates: builder.query<
+			{ data: IEquipmentTypePeriodicTask[] },
+			{ realmId: string; equipmentTypeId?: string }
+		>({
 			query: ({ realmId, equipmentTypeId }) => ({
 				url: API.equipment.periodicTasks.base,
 				method: 'GET',
@@ -830,12 +833,18 @@ const equipmentApiSlice = apiSlice.injectEndpoints({
 			},
 		}),
 
-		getPeriodicTaskTemplate: builder.query<IEquipmentTypePeriodicTask, string>({
+		getPeriodicTaskTemplate: builder.query<{ data: IEquipmentTypePeriodicTask }, string>({
 			query: id => ({
 				url: API.equipment.periodicTasks.templateById(id),
 				method: 'GET',
 			}),
-			providesTags: (_result, _err, id) => [{ type: 'EquipmentPeriodicTasks', id }],
+			// Шаблон по id тоже помечается ALL: мутации инвалидируют только ALL, и без
+			// этого тега кэш одиночного запроса не сбрасывался (диалог показывал старые
+			// данные при повторном открытии).
+			providesTags: (_result, _err, id) => [
+				{ type: 'EquipmentPeriodicTasks', id: 'ALL' },
+				{ type: 'EquipmentPeriodicTasks', id },
+			],
 			onQueryStarted: async (_arg, api) => {
 				try {
 					await api.queryFulfilled
@@ -899,7 +908,10 @@ const equipmentApiSlice = apiSlice.injectEndpoints({
 			},
 		}),
 
-		getPeriodicTaskInstances: builder.query<IEquipmentPeriodicTaskInstanceList, IEquipmentPeriodicTaskInstanceFilter>({
+		getPeriodicTaskInstances: builder.query<
+			IEquipmentPeriodicTaskInstanceList,
+			IEquipmentPeriodicTaskInstanceFilter
+		>({
 			query: filter => ({
 				url: API.equipment.periodicTasks.instances,
 				method: 'GET',

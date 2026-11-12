@@ -15,18 +15,18 @@ import {
 } from '@mui/material'
 import { Controller, useForm } from 'react-hook-form'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
-import dayjs from 'dayjs'
 import { AlertTriangleIcon, InfoIcon, XIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
+import dayjs from 'dayjs'
 
 import type { IFetchError } from '@/app/types/error'
-import { DateTextField } from '@/components/DatePicker/DatePicker'
 import type { IAddDefectDTO, IEquipment } from '../../types/equipment'
+import { inputProps } from './UnitForm/consts'
 import { useAddEquipmentDefectMutation } from '../../equipmentApiSlice'
+import { DateTextField } from '@/components/DatePicker/DatePicker'
 import { resolveTypeIcon } from '../../typeIcons'
 import { EquipmentStatusBadge } from '../EquipmentStatusBadge'
 import { Field } from './UnitForm/Field'
-import { inputProps } from './UnitForm/consts'
 
 type Props = {
 	open: boolean
@@ -106,6 +106,7 @@ export const EquipmentDefectDialog: FC<Props> = ({ open, onClose, unit }) => {
 			}}
 		>
 			<DialogTitle
+				component='div'
 				sx={{
 					m: 0,
 					px: { xs: 1.5, sm: 2 },

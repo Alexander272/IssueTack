@@ -1,19 +1,15 @@
 import { useState, type FC } from 'react'
 import { Box, Button, Typography, Chip, IconButton, Tooltip } from '@mui/material'
-import { PlusIcon, PencilIcon, Trash2Icon, CopyIcon, PlayIcon, PauseIcon, ForwardIcon } from 'lucide-mui'
-import { toast } from 'react-toastify'
+import { PlusIcon, PencilIcon, Trash2Icon, CopyIcon, PlayIcon, PauseIcon, ClockIcon } from 'lucide-mui'
 
-import type { IFetchError } from '@/app/types/error'
 import type { IEquipmentTypePeriodicTask } from '../../types/equipment'
-import {
-	useGetPeriodicTaskTemplatesQuery,
-	useDeletePeriodicTaskTemplateMutation,
-} from '../../equipmentApiSlice'
+import { useGetPeriodicTaskTemplatesQuery, useDeletePeriodicTaskTemplateMutation } from '../../equipmentApiSlice'
 import { PeriodicTaskDialog } from '../Dialogs/PeriodicTaskDialog'
 import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
 import { PermRules } from '@/features/access/constants/permissions'
 import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
 import { pluralize } from '@/utils/plural'
+import { periodLabel } from '../../utils/period'
 import { useAppSelector } from '@/hooks/redux'
 import { getRealm } from '@/features/realms/realmSlice'
 import { EquipmentTypeIcon } from '../EquipmentTypeIcon'
@@ -54,25 +50,14 @@ export const PeriodicTasksSection: FC = () => {
 		if (!deleteTarget?.id) return
 		try {
 			await remove(deleteTarget.id).unwrap()
-			toast.success('Шаблон удалён')
 			setDeleteTarget(null)
-		} catch (error) {
-			const fetchError = error as IFetchError
-			toast.error(fetchError.data?.message || 'Ошибка при удалении', { autoClose: false })
+		} catch {
+			// Ошибка уже показана в тосте хуком
 		}
 	}
 
-	// Человекочитаемая подпись периода
-	const periodLabel = (t: IEquipmentTypePeriodicTask): string => {
-		const parts: string[] = []
-		if (t.periodYears > 0) parts.push(`${t.periodYears} г`)
-		if (t.periodMonths > 0) parts.push(`${t.periodMonths} мес`)
-		if (t.periodDays > 0) parts.push(`${t.periodDays} д`)
-		return parts.length > 0 ? parts.join(' ') : 'Без периода'
-	}
-
 	return (
-		<Box>
+		<>
 			<Box
 				sx={{
 					display: 'flex',
@@ -152,7 +137,7 @@ export const PeriodicTasksSection: FC = () => {
 								<Box key={typeId}>
 									<Box
 										sx={{
-											px: 3,
+											px: 2,
 											py: 1.5,
 											bgcolor: '#f9fafb',
 											borderBottom: '1px solid #e5e7eb',
@@ -180,114 +165,151 @@ export const PeriodicTasksSection: FC = () => {
 										<Box
 											key={template.id}
 											sx={{
-												p: 3,
+												py: 1,
+												px: 2,
 												borderBottom: '1px solid #f3f4f6',
 												'&:last-child': { borderBottom: 'none' },
 												'&:hover': { bgcolor: '#f9fafb' },
 												transition: 'background-color 0.15s',
+												display: 'flex',
+												alignItems: 'center',
+												gap: 1.5,
 											}}
 										>
-											<Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-start' }}>
-												{/* Иконка статуса */}
-												<Box
-													sx={{
-														width: 40,
-														height: 40,
-														borderRadius: '8px',
-														bgcolor: template.enabled ? '#dbeafe' : '#f3f4f6',
-														display: 'flex',
-														alignItems: 'center',
-														justifyContent: 'center',
-														flexShrink: 0,
-													}}
-												>
-													{template.enabled ? (
-														<PlayIcon sx={{ fontSize: 18, color: '#2563eb' }} />
-													) : (
-														<PauseIcon sx={{ fontSize: 18, color: '#6b7280' }} />
-													)}
-												</Box>
-
-												{/* Контент */}
-												<Box sx={{ flexGrow: 1, minWidth: 0 }}>
-													<Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', mb: 0.5 }}>
-														<Typography variant='subtitle1' sx={{ fontWeight: 600, color: '#1f2937' }}>
-															{template.title}
-														</Typography>
-														<Chip
-															label={template.enabled ? 'Активен' : 'Неактивен'}
-															size='small'
-															sx={{
-																bgcolor: template.enabled ? '#dcfce7' : '#f3f4f6',
-																color: template.enabled ? '#166534' : '#6b7280',
-																border: '1px solid',
-																borderColor: template.enabled ? '#86efac' : '#d1d5db',
-																fontWeight: 600,
-																height: 20,
-															}}
-														/>
-													</Box>
-
-													{template.description && (
-														<Typography variant='body2' sx={{ color: '#6b7280', mb: 1.5 }}>
-															{template.description}
-														</Typography>
-													)}
-
-													<Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'center' }}>
-														<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: '#6b7280' }}>
-															<PlayIcon sx={{ fontSize: 14 }} />
-															<Typography variant='caption' sx={{ color: '#6b7280' }}>
-																Период: <Typography component='span' sx={{ fontWeight: 600, color: '#374151' }}>
-																	{periodLabel(template)}
-																</Typography>
-															</Typography>
-														</Box>
-														<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: '#6b7280' }}>
-															<CopyIcon sx={{ fontSize: 14 }} />
-															<Typography variant='caption' sx={{ color: '#6b7280' }}>
-																Категория: <Typography component='span' sx={{ fontWeight: 600, color: '#374151' }}>
-																	{template.categoryName || 'Не указана'}
-																</Typography>
-															</Typography>
-														</Box>
-														{template.siteName && (
-															<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: '#6b7280' }}>
-																<ForwardIcon sx={{ fontSize: 14 }} />
-																<Typography variant='caption' sx={{ color: '#6b7280' }}>
-																	Площадка: <Typography component='span' sx={{ fontWeight: 600, color: '#374151' }}>
-																		{template.siteName}
-																	</Typography>
-																</Typography>
-															</Box>
-														)}
-													</Box>
-												</Box>
-
-												{/* Действия */}
-												{canWrite && (
-													<Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-														<Tooltip title='Редактировать'>
-															<IconButton
-																size='small'
-																onClick={() => openEdit(template)}
-																sx={{ color: '#6b7280', '&:hover': { color: '#2563eb', bgcolor: '#eff6ff' } }}
-															>
-																<PencilIcon sx={{ fontSize: 16 }} />
-															</IconButton>
-														</Tooltip>
-														<Tooltip title='Удалить'>
-															<IconButton
-																size='small'
-																onClick={() => setDeleteTarget(template)}
-																sx={{ color: '#6b7280', '&:hover': { color: '#dc2626', bgcolor: '#fef2f2' } }}
-															>
-																<Trash2Icon sx={{ fontSize: 16 }} />
-															</IconButton>
-														</Tooltip>
-													</Box>
+											<Box
+												sx={{
+													width: 40,
+													height: 40,
+													borderRadius: '8px',
+													bgcolor: template.enabled ? '#dbeafe' : '#f3f4f6',
+													display: 'flex',
+													alignItems: 'center',
+													justifyContent: 'center',
+													flexShrink: 0,
+												}}
+											>
+												{template.enabled ? (
+													<PlayIcon sx={{ fontSize: 18, color: '#2563eb' }} />
+												) : (
+													<PauseIcon sx={{ fontSize: 18, color: '#6b7280' }} />
 												)}
 											</Box>
+
+											{/* Контент */}
+											<Box sx={{ flexGrow: 1, minWidth: 0 }}>
+												<Box
+													sx={{
+														display: 'flex',
+														alignItems: 'center',
+														gap: 1.5,
+														flexWrap: 'wrap',
+													}}
+												>
+													<Typography
+														variant='subtitle1'
+														sx={{ fontWeight: 600, color: '#1f2937' }}
+													>
+														{template.title}
+													</Typography>
+													<Chip
+														label={template.enabled ? 'Активен' : 'Неактивен'}
+														size='small'
+														sx={{
+															bgcolor: template.enabled ? '#dcfce7' : '#f3f4f6',
+															color: template.enabled ? '#166534' : '#6b7280',
+															border: '1px solid',
+															borderColor: template.enabled ? '#86efac' : '#d1d5db',
+															fontWeight: 600,
+															height: 20,
+														}}
+													/>
+												</Box>
+
+												{template.description && (
+													<Typography variant='body2' sx={{ color: '#6b7280', mb: 1.5 }}>
+														{template.description}
+													</Typography>
+												)}
+
+												<Box
+													sx={{
+														display: 'flex',
+														gap: 3,
+														flexWrap: 'wrap',
+														alignItems: 'center',
+													}}
+												>
+													<Box
+														sx={{
+															display: 'flex',
+															alignItems: 'center',
+															gap: 1,
+															color: '#6b7280',
+														}}
+													>
+														<ClockIcon sx={{ fontSize: 14 }} />
+														<Typography variant='caption' sx={{ color: '#6b7280' }}>
+															Период:{' '}
+															<Typography
+																component='span'
+																sx={{ fontWeight: 600, color: '#374151' }}
+															>
+																{periodLabel(template)}
+															</Typography>
+														</Typography>
+													</Box>
+													<Box
+														sx={{
+															display: 'flex',
+															alignItems: 'center',
+															gap: 1,
+															color: '#6b7280',
+														}}
+													>
+														<CopyIcon sx={{ fontSize: 14 }} />
+														<Typography variant='caption' sx={{ color: '#6b7280' }}>
+															Категория:{' '}
+															<Typography
+																component='span'
+																sx={{ fontWeight: 600, color: '#374151' }}
+															>
+																{template.categoryName || 'Не указана'}
+															</Typography>
+														</Typography>
+													</Box>
+												</Box>
+											</Box>
+
+											{/* Действия */}
+											{canWrite && (
+												<Box
+													sx={{ display: 'flex', gap: 1, flexShrink: 0 }}
+													onClick={e => e.stopPropagation()}
+												>
+													<Tooltip title='Редактировать'>
+														<IconButton
+															onClick={() => openEdit(template)}
+															sx={{
+																color: '#6b7280',
+																'&:hover': { color: '#2563eb', bgcolor: '#eff6ff' },
+															}}
+														>
+															<PencilIcon sx={{ fontSize: 16 }} />
+														</IconButton>
+													</Tooltip>
+													<Tooltip title='Удалить'>
+														<IconButton
+															onClick={() => setDeleteTarget(template)}
+															sx={{
+																color: '#6b7280',
+																'&:hover': { color: '#dc2626', bgcolor: '#fef2f2' },
+															}}
+														>
+															<Trash2Icon sx={{ fontSize: 16 }} />
+														</IconButton>
+													</Tooltip>
+												</Box>
+											)}
 										</Box>
 									))}
 								</Box>
@@ -305,8 +327,6 @@ export const PeriodicTasksSection: FC = () => {
 					setDialogOpen(false)
 				}}
 				templateId={editTemplate?.id ?? null}
-				realmId={realm?.id ?? ''}
-				equipmentTypeId={editTemplate?.equipmentTypeId ?? ''}
 			/>
 
 			<ConfirmDialog
@@ -318,6 +338,6 @@ export const PeriodicTasksSection: FC = () => {
 				onConfirm={handleDelete}
 				onCancel={() => setDeleteTarget(null)}
 			/>
-		</Box>
+		</>
 	)
 }

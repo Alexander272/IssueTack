@@ -62,10 +62,10 @@ export const EquipmentTemplateDialog: FC<Props> = ({ open, onClose, template }) 
 	const { control, handleSubmit, formState } = useForm<FormValues>({
 		values: template
 			? {
-				name: template.name,
-				description: template.description,
-				items: (template.items ?? []).map(item => ({ typeId: item.typeId })),
-			}
+					name: template.name,
+					description: template.description,
+					items: (template.items ?? []).map(item => ({ typeId: item.typeId })),
+				}
 			: { name: '', description: '', items: [] },
 		mode: 'onTouched',
 	})
@@ -112,11 +112,21 @@ export const EquipmentTemplateDialog: FC<Props> = ({ open, onClose, template }) 
 			maxWidth='sm'
 			slotProps={{ paper: { sx: { borderRadius: { xs: 0, sm: '12px' } } } }}
 		>
-			<DialogTitle sx={{ m: 0, px: { xs: 1.5, sm: 3 }, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+			<DialogTitle
+				component='div'
+				sx={{
+					m: 0,
+					px: { xs: 1.5, sm: 3 },
+					py: 2,
+					display: 'flex',
+					justifyContent: 'space-between',
+					alignItems: 'center',
+				}}
+			>
 				<Typography variant='h6' sx={{ fontWeight: 700 }}>
 					{isEdit ? 'Редактирование шаблона' : 'Новый шаблон комплекта'}
 				</Typography>
-				<IconButton onClick={onClose} size='small'>
+				<IconButton onClick={onClose}>
 					<XIcon sx={{ fontSize: 18 }} />
 				</IconButton>
 			</DialogTitle>
@@ -162,7 +172,10 @@ export const EquipmentTemplateDialog: FC<Props> = ({ open, onClose, template }) 
 						</Field>
 
 						<Box>
-							<Typography variant='caption' sx={{ fontWeight: 600, mb: 0.5, display: 'block', color: '#374151' }}>
+							<Typography
+								variant='caption'
+								sx={{ fontWeight: 600, mb: 0.5, display: 'block', color: '#374151' }}
+							>
 								Состав шаблона *
 							</Typography>
 
@@ -184,7 +197,10 @@ export const EquipmentTemplateDialog: FC<Props> = ({ open, onClose, template }) 
 													    собран до запрета комплектующих или тип стал
 													    комплектующим) — показываем, иначе поле выглядело
 													    бы пустым, хотя значение есть. */}
-													{[...kitTypes, ...types.filter(t => t.id === field.value && canBePart(t.kind))].map(type => (
+													{[
+														...kitTypes,
+														...types.filter(t => t.id === field.value && canBePart(t.kind)),
+													].map(type => (
 														<MenuItem key={type.id} value={type.id}>
 															{type.name}
 														</MenuItem>
@@ -225,7 +241,13 @@ export const EquipmentTemplateDialog: FC<Props> = ({ open, onClose, template }) 
 						type='submit'
 						variant='contained'
 						disabled={isLoading || !formState.isValid || (isEdit && !formState.isDirty)}
-						sx={{ textTransform: 'none', px: 3, borderRadius: '8px', bgcolor: '#0432a5', '&:hover': { bgcolor: '#002d91' } }}
+						sx={{
+							textTransform: 'none',
+							px: 3,
+							borderRadius: '8px',
+							bgcolor: '#0432a5',
+							'&:hover': { bgcolor: '#002d91' },
+						}}
 					>
 						{isEdit ? 'Сохранить' : 'Создать'}
 					</Button>

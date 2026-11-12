@@ -1,40 +1,41 @@
-import { useMemo, useState, type FC } from 'react'
+import { type FC } from 'react'
 import {
 	Dialog,
-	DialogTitle,
 	DialogContent,
-	DialogActions,
-	Button,
-	TextField,
+	DialogTitle,
 	Box,
+	TextField,
+	Button,
 	Typography,
-	FormControl,
-	FormLabel,
-	RadioGroup,
-	FormControlLabel,
-	Radio,
+	Divider,
+	DialogActions,
 	Autocomplete,
-	Checkbox,
+	IconButton,
 } from '@mui/material'
+import { FormProvider, useForm, Controller, useWatch } from 'react-hook-form'
+import { RotateCwIcon, TriangleAlertIcon, InfoIcon, XIcon } from 'lucide-mui'
+import { toast } from 'react-toastify'
 
+import type { IFetchError } from '@/app/types/error'
+import type { IEquipmentTypePeriodicTaskDTO, IEquipmentType } from '../../types/equipment'
+import type { Priority } from '@/features/tasks/types/task'
+import { PRIORITY_MAP } from '@/features/tasks/constants/taskMaps'
+import { useAppSelector } from '@/hooks/redux'
+import { pluralize } from '@/utils/plural'
 import {
 	useGetPeriodicTaskTemplateQuery,
 	useCreatePeriodicTaskTemplateMutation,
 	useUpdatePeriodicTaskTemplateMutation,
+	useGetAllEquipmentTypesQuery,
 } from '../../equipmentApiSlice'
-import type { IEquipmentTypePeriodicTaskDTO } from '../../types/equipment'
-import { PRIORITY_MAP } from '@/features/tasks/constants/taskMaps'
-import type { Priority } from '@/features/tasks/types/task'
-import { useGetAllCategoriesQuery } from '@/features/categories/categoriesApiSlice'
-import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
+import { getRealm } from '@/features/realms/realmSlice'
+import { CategoryField } from '@/components/FormFields'
+import { Switch } from '@/components/Switch/Switch'
 
 type Props = {
 	open: boolean
 	onClose: () => void
-	// templateId — null/undefined: создание шаблона; иначе редактирование.
 	templateId: string | null
-	realmId: string
-	equipmentTypeId: string
 }
 
 const EMPTY_FORM: IEquipmentTypePeriodicTaskDTO = {
@@ -52,194 +53,497 @@ const EMPTY_FORM: IEquipmentTypePeriodicTaskDTO = {
 	enabled: true,
 }
 
-export const PeriodicTaskDialog: FC<Props> = ({ open, onClose, templateId, realmId, equipmentTypeId }) => {
+// Живая сводка периода
+const PeriodSummary: FC = () => {
+	const [years = 0, months = 0, days = 0] = useWatch({
+		name: ['periodYears', 'periodMonths', 'periodDays'],
+	}).map(v => Number(v) || 0)
+
+	const parts = [
+		years > 0 && `${years} ${pluralize(years, ['год', 'года', 'лет'])}`,
+		months > 0 && `${months} ${pluralize(months, ['месяц', 'месяца', 'месяцев'])}`,
+		days > 0 && `${days} ${pluralize(days, ['день', 'дня', 'дней'])}`,
+	].filter(Boolean)
+
+	const isEmpty = parts.length === 0
+
+	const styles = isEmpty
+		? { bgcolor: '#fffbeb', borderColor: '#fde68a', color: '#92400e' }
+		: { bgcolor: '#eff6ff', borderColor: '#bfdbfe', color: '#1e40af' }
+
+	const Icon = isEmpty ? TriangleAlertIcon : RotateCwIcon
+
+	return (
+		<Box
+			sx={{
+				mt: 2.5,
+				display: 'flex',
+				alignItems: 'center',
+				gap: 2,
+				borderRadius: '8px',
+				px: 2,
+				py: 1.5,
+				border: '1px solid',
+				...styles,
+			}}
+		>
+			<Icon sx={{ fontSize: 16, flexShrink: 0 }} />
+			<Typography component={'p'} variant='caption' sx={{ color: 'inherit', lineHeight: 1 }}>
+				{isEmpty ? (
+					'Период не задан — укажите хотя бы одно значение'
+				) : (
+					<>
+						Заявка будет создаваться{' '}
+						<Box component='span' sx={{ fontWeight: 600 }}>
+							каждые {parts.join(', ')}
+						</Box>{' '}
+						после предыдущего запуска
+					</>
+				)}
+			</Typography>
+		</Box>
+	)
+}
+
+export const PeriodicTaskDialog: FC<Props> = ({ open, onClose, templateId }) => {
+	const realm = useAppSelector(getRealm)
 	const isEditing = templateId !== null && templateId !== ''
-	const queryKey = templateId ?? '__new__'
 
 	const { data: existingTemplate } = useGetPeriodicTaskTemplateQuery(templateId ?? '', { skip: !templateId })
-	const { data: categoriesData } = useGetAllCategoriesQuery(void 0)
-	const { data: sitesData } = useGetAllSitesQuery(void 0)
-	const categories = categoriesData?.data ?? []
-	const sites = sitesData?.data ?? []
+	const { data: typesData } = useGetAllEquipmentTypesQuery()
+	const equipmentTypes = typesData?.data ?? []
 
 	const [createTemplate] = useCreatePeriodicTaskTemplateMutation()
 	const [updateTemplate] = useUpdatePeriodicTaskTemplateMutation()
 
-	// Базовые значения: пустая форма при создании, данные шаблона при редактировании.
-	// Пока шаблон грузится — null, форма рендерится пустой (кнопка заблокирована валидацией).
-	const baseForm = useMemo<IEquipmentTypePeriodicTaskDTO | null>(() => {
-		if (!isEditing) {
-			return { ...EMPTY_FORM, realmId, equipmentTypeId }
-		}
-		const t = existingTemplate
-		if (!t) return null
-		return {
-			id: t.id ?? '',
-			realmId: t.realmId,
-			equipmentTypeId: t.equipmentTypeId,
-			periodYears: t.periodYears,
-			periodMonths: t.periodMonths,
-			periodDays: t.periodDays,
-			title: t.title,
-			description: t.description,
-			priority: t.priority,
-			categoryId: t.categoryId,
-			siteId: t.siteId,
-			autoStartOnFirstAssign: t.autoStartOnFirstAssign,
-			enabled: t.enabled,
-		}
-	}, [isEditing, existingTemplate, realmId, equipmentTypeId])
+	const methods = useForm<IEquipmentTypePeriodicTaskDTO>({
+		mode: 'onChange',
+		defaultValues: EMPTY_FORM,
+		values: isEditing ? existingTemplate?.data : { ...EMPTY_FORM, realmId: realm?.id ?? '' },
+	})
+	const { handleSubmit, formState } = methods
+	const { isValid } = formState
 
-	// Перекрытие правок пользователя: пока пользователь не сохранил изменения,
-	// форма редактируется поверх базовых значений; сброс происходит при смене шаблона.
-	const [overrides, setOverrides] = useState<{ key: string; data: IEquipmentTypePeriodicTaskDTO } | null>(null)
-	const formData = overrides && overrides.key === queryKey ? overrides.data : baseForm
-	const setFormData = (data: IEquipmentTypePeriodicTaskDTO) => setOverrides({ key: queryKey, data })
+	const onSubmit = async (data: IEquipmentTypePeriodicTaskDTO) => {
+		const payload: IEquipmentTypePeriodicTaskDTO = {
+			...data,
+			periodYears: Number(data.periodYears) || 0,
+			periodMonths: Number(data.periodMonths) || 0,
+			periodDays: Number(data.periodDays) || 0,
+		}
 
-	const handleSubmit = async () => {
-		if (!formData) return
-		const payload: IEquipmentTypePeriodicTaskDTO = { ...formData, realmId, equipmentTypeId }
 		try {
-			if (templateId && formData.id) {
+			if (isEditing && data.id) {
 				await updateTemplate(payload).unwrap()
+				toast.success('Шаблон обновлён')
 			} else {
 				await createTemplate(payload).unwrap()
+				toast.success('Шаблон создан')
 			}
 			onClose()
-		} catch {
-			// Ошибка уже показана в тосте хуком
+		} catch (error) {
+			const fetchError = error as IFetchError
+			toast.error(fetchError.data?.message || 'Ошибка при сохранении', { autoClose: false })
 		}
-	}
-
-	const isFormValid =
-		formData !== null &&
-		formData.title.trim() !== '' &&
-		formData.categoryId !== '' &&
-		(formData.periodYears > 0 || formData.periodMonths > 0 || formData.periodDays > 0)
-
-	if (!formData) {
-		return (
-			<Dialog open={open} onClose={onClose} fullWidth maxWidth='sm'>
-				<DialogTitle>{templateId ? 'Редактирование шаблона периодической задачи' : 'Новый шаблон периодической задачи'}</DialogTitle>
-			</Dialog>
-		)
 	}
 
 	return (
-		<Dialog open={open} onClose={onClose} fullWidth maxWidth='sm'>
-			<DialogTitle>
-				{templateId ? 'Редактирование шаблона периодической задачи' : 'Новый шаблон периодической задачи'}
+		<Dialog
+			open={open}
+			onClose={onClose}
+			maxWidth='md'
+			fullWidth
+			slotProps={{
+				paper: { sx: { borderRadius: { xs: 0, sm: '12px' } } },
+			}}
+		>
+			<DialogTitle
+				sx={{
+					m: 0,
+					px: { xs: 1.5, sm: 3 },
+					py: 2,
+					display: 'flex',
+					justifyContent: 'space-between',
+					alignItems: 'center',
+				}}
+			>
+				<Box>
+					<Typography variant='h6' sx={{ fontWeight: 700 }}>
+						{isEditing ? 'Редактирование шаблона' : 'Новый шаблон периодической задачи'}
+					</Typography>
+					<Typography variant='caption' sx={{ color: '#6b7280', display: 'block', fontSize: '12px' }}>
+						{isEditing
+							? 'Измените параметры шаблона'
+							: 'Будет применяться ко всему оборудованию выбранного типа'}
+					</Typography>
+				</Box>
+				<IconButton onClick={onClose}>
+					<XIcon sx={{ fontSize: 18 }} />
+				</IconButton>
 			</DialogTitle>
 
-			<DialogContent>
-				<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-					<TextField
-						fullWidth
-						label='Название'
-						value={formData.title}
-						onChange={e => setFormData({ ...formData, title: e.target.value })}
-						required
-					/>
+			<FormProvider {...methods}>
+				<Box
+					component='form'
+					onSubmit={handleSubmit(onSubmit)}
+					sx={{ display: 'flex', flexDirection: 'column', flex: 1 }}
+				>
+					<DialogContent dividers sx={{ px: { xs: 1.5, sm: 3 }, py: { xs: 2, sm: 2.5 } }}>
+						{/* Основные параметры */}
+						<Typography
+							variant='caption'
+							sx={{
+								display: 'block',
+								fontWeight: 600,
+								textTransform: 'uppercase',
+								letterSpacing: '0.05em',
+								color: '#6b7280',
+								mb: 1.5,
+								fontSize: '12px',
+							}}
+						>
+							Основные параметры
+						</Typography>
+						<Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+							<Box>
+								<Typography
+									variant='caption'
+									sx={{ fontWeight: 600, mb: 0.5, display: 'block', color: '#374151' }}
+								>
+									Название *
+								</Typography>
+								<Controller
+									name='title'
+									rules={{ required: 'Название обязательно' }}
+									render={({ field, fieldState }) => (
+										<TextField
+											{...field}
+											fullWidth
+											size='small'
+											error={!!fieldState.error}
+											helperText={fieldState.error?.message}
+											placeholder='Например: Плановое ТО ноутбуков'
+										/>
+									)}
+								/>
+							</Box>
+							<Box>
+								<Typography
+									variant='caption'
+									sx={{ fontWeight: 600, mb: 0.5, display: 'block', color: '#374151' }}
+								>
+									Описание
+								</Typography>
+								<Controller
+									name='description'
+									render={({ field }) => (
+										<TextField
+											{...field}
+											fullWidth
+											multiline
+											rows={3}
+											placeholder='Что нужно сделать при каждом запуске: чистка, диагностика, замена расходников...'
+										/>
+									)}
+								/>
+							</Box>
+							<Box>
+								<Typography
+									variant='caption'
+									sx={{ fontWeight: 600, mb: 0.5, display: 'block', color: '#374151' }}
+								>
+									Тип оборудования *
+								</Typography>
+								<Controller
+									name='equipmentTypeId'
+									rules={{ required: 'Выберите тип оборудования' }}
+									render={({ field, fieldState }) => (
+										<Autocomplete
+											{...field}
+											fullWidth
+											options={equipmentTypes}
+											getOptionLabel={(type: IEquipmentType) => type.name}
+											value={equipmentTypes.find(t => t.id === field.value) || null}
+											onChange={(_e, val) => field.onChange(val?.id || '')}
+											renderInput={params => (
+												<TextField
+													{...params}
+													error={Boolean(fieldState.error)}
+													helperText={fieldState.error?.message}
+													placeholder='— Выберите тип —'
+												/>
+											)}
+										/>
+									)}
+								/>
+								<Typography
+									variant='caption'
+									sx={{ color: '#6b7280', mt: 1, display: 'block', fontSize: '12px' }}
+								>
+									Задача будет создана для каждой единицы этого типа
+								</Typography>
+							</Box>
+						</Box>
 
-					<TextField
-						fullWidth
-						label='Описание'
-						value={formData.description}
-						onChange={e => setFormData({ ...formData, description: e.target.value })}
-						multiline
-						rows={3}
-					/>
+						<Divider sx={{ borderColor: '#f3f4f6', my: 2 }} />
 
-					<Box>
-						<Typography variant='subtitle2' gutterBottom>
+						{/* Периодичность */}
+						<Typography
+							variant='caption'
+							sx={{
+								display: 'block',
+								fontWeight: 600,
+								textTransform: 'uppercase',
+								letterSpacing: '0.05em',
+								color: '#6b7280',
+								mb: 1.5,
+								fontSize: '12px',
+							}}
+						>
 							Периодичность
 						</Typography>
-						<Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-							<TextField
-								label='Лет'
-								type='number'
-								size='small'
-								value={formData.periodYears}
-								onChange={e => setFormData({ ...formData, periodYears: Number(e.target.value) || 0 })}
-								slotProps={{ input: { inputProps: { min: 0 } } }}
-								sx={{ width: 100 }}
-							/>
-							<TextField
-								label='Месяцев'
-								type='number'
-								size='small'
-								value={formData.periodMonths}
-								onChange={e => setFormData({ ...formData, periodMonths: Number(e.target.value) || 0 })}
-								slotProps={{ input: { inputProps: { min: 0 } } }}
-								sx={{ width: 100 }}
-							/>
-							<TextField
-								label='Дней'
-								type='number'
-								size='small'
-								value={formData.periodDays}
-								onChange={e => setFormData({ ...formData, periodDays: Number(e.target.value) || 0 })}
-								slotProps={{ input: { inputProps: { min: 0 } } }}
-								sx={{ width: 100 }}
-							/>
+						<Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1 }}>
+							<Box>
+								<Typography
+									variant='caption'
+									sx={{ fontWeight: 600, mb: 0.5, display: 'block', color: '#374151' }}
+								>
+									Лет
+								</Typography>
+								<Controller
+									name='periodYears'
+									render={({ field }) => <TextField {...field} type='number' fullWidth />}
+								/>
+							</Box>
+
+							<Box>
+								<Typography
+									variant='caption'
+									sx={{ fontWeight: 600, mb: 0.5, display: 'block', color: '#374151' }}
+								>
+									Месяцев
+								</Typography>
+								<Controller
+									name='periodMonths'
+									render={({ field }) => <TextField {...field} type='number' fullWidth />}
+								/>
+							</Box>
+
+							<Box>
+								<Typography
+									variant='caption'
+									sx={{ fontWeight: 600, mb: 0.5, display: 'block', color: '#374151' }}
+								>
+									Дней
+								</Typography>
+								<Controller
+									name='periodDays'
+									render={({ field }) => <TextField {...field} type='number' fullWidth />}
+								/>
+							</Box>
 						</Box>
-					</Box>
+						<PeriodSummary />
 
-					<FormControl>
-						<FormLabel id='priority-label'>Приоритет</FormLabel>
-						<RadioGroup
-							row
-							aria-labelledby='priority-label'
-							value={formData.priority}
-							onChange={e => setFormData({ ...formData, priority: e.target.value as Priority })}
+						<Divider sx={{ borderColor: '#f3f4f6', my: 2 }} />
+
+						{/* Параметры заявки */}
+						<Typography
+							variant='caption'
+							sx={{
+								display: 'block',
+								fontWeight: 600,
+								textTransform: 'uppercase',
+								letterSpacing: '0.05em',
+								color: '#6b7280',
+								mb: 1.5,
+								fontSize: '12px',
+							}}
 						>
-							{(Object.keys(PRIORITY_MAP) as Priority[]).map(value => (
-								<FormControlLabel key={value} value={value} control={<Radio />} label={PRIORITY_MAP[value].label} />
-							))}
-						</RadioGroup>
-					</FormControl>
+							Параметры создаваемой заявки
+						</Typography>
+						<Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+							<Box>
+								<Typography
+									variant='caption'
+									sx={{ fontWeight: 600, mb: 0.5, display: 'block', color: '#374151' }}
+								>
+									Категория *
+								</Typography>
+								<CategoryField name='categoryId' rules={{ required: 'Обязательное поле' }} />
+							</Box>
 
-					<Autocomplete
-						fullWidth
-						options={categories}
-						getOptionLabel={(cat: { name: string }) => cat.name}
-						value={categories.find(c => c.id === formData.categoryId) || null}
-						onChange={(_e, val) => setFormData({ ...formData, categoryId: val?.id ?? '' })}
-						renderInput={params => <TextField {...params} label='Категория' required />}
-					/>
+							<Box>
+								<Typography
+									variant='caption'
+									sx={{ fontWeight: 600, mb: 0.5, display: 'block', color: '#374151' }}
+								>
+									Приоритет
+								</Typography>
+								<Controller
+									name='priority'
+									render={({ field }) => (
+										<Autocomplete
+											{...field}
+											fullWidth
+											options={Object.keys(PRIORITY_MAP) as Priority[]}
+											getOptionLabel={(value: Priority) => PRIORITY_MAP[value].label}
+											value={field.value || null}
+											onChange={(_e, val) => field.onChange(val || 'medium')}
+											renderInput={params => <TextField {...params} />}
+										/>
+									)}
+								/>
+							</Box>
+						</Box>
 
-					<Autocomplete
-						fullWidth
-						options={sites}
-						getOptionLabel={(site: { name: string }) => site.name}
-						value={sites.find(s => s.id === formData.siteId) || null}
-						onChange={(_e, val) => setFormData({ ...formData, siteId: val?.id })}
-						renderInput={params => <TextField {...params} label='Площадка' />}
-					/>
+						<Divider sx={{ borderColor: '#f3f4f6', my: 2 }} />
 
-					<Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-						<FormControlLabel
-							control={
-								<Checkbox checked={formData.autoStartOnFirstAssign} onChange={e => setFormData({ ...formData, autoStartOnFirstAssign: e.target.checked })} />
-							}
-							label='Автостарт при первой выдаче'
-						/>
-						<FormControlLabel
-							control={<Checkbox checked={formData.enabled} onChange={e => setFormData({ ...formData, enabled: e.target.checked })} />}
-							label='Включено'
-						/>
-					</Box>
+						{/* Настройки */}
+						<Typography
+							variant='caption'
+							sx={{
+								display: 'block',
+								fontWeight: 600,
+								textTransform: 'uppercase',
+								letterSpacing: '0.05em',
+								color: '#6b7280',
+								mb: 1.5,
+								fontSize: '12px',
+							}}
+						>
+							Настройки
+						</Typography>
+						<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+							<Box
+								component='label'
+								sx={{
+									display: 'flex',
+									alignItems: 'center',
+									gap: 2,
+									py: 1,
+									px: 2,
+									border: '1px solid #e5e7eb',
+									borderRadius: '8px',
+									cursor: 'pointer',
+									'&:hover': { bgcolor: '#f9fafb' },
+									'&:has(input:checked)': {
+										borderColor: '#60a5fa',
+										bgcolor: '#eff6ff',
+									},
+								}}
+							>
+								<Controller
+									name='autoStartOnFirstAssign'
+									render={({ field }) => <Switch {...field} checked={field.value} />}
+								/>
+								<Box sx={{ flex: 1 }}>
+									<Typography
+										variant='subtitle2'
+										sx={{ fontWeight: 500, color: '#111827', fontSize: '14px' }}
+									>
+										Автостарт при первой выдаче
+									</Typography>
+									<Typography
+										sx={{
+											color: '#6b7280',
+											display: 'block',
+											fontSize: '12px',
+										}}
+									>
+										Отсчёт начнётся от даты выдачи: первый запуск = выдача + период. Если выключено
+										или даты выдачи нет — первый запуск только вручную.
+									</Typography>
+								</Box>
+							</Box>
+
+							<Box
+								component='label'
+								sx={{
+									display: 'flex',
+									alignItems: 'center',
+									gap: 2,
+									py: 1,
+									px: 2,
+									border: '1px solid #e5e7eb',
+									borderRadius: '8px',
+									cursor: 'pointer',
+									'&:hover': { bgcolor: '#f9fafb' },
+									'&:has(input:checked)': {
+										borderColor: '#60a5fa',
+										bgcolor: '#eff6ff',
+									},
+								}}
+							>
+								<Controller
+									name='enabled'
+									render={({ field }) => <Switch {...field} checked={field.value} />}
+								/>
+								<Box sx={{ flex: 1 }}>
+									<Typography
+										variant='subtitle2'
+										sx={{ fontWeight: 500, color: '#111827', fontSize: '14px' }}
+									>
+										Шаблон активен
+									</Typography>
+									<Typography
+										sx={{
+											color: '#6b7280',
+											display: 'block',
+											fontSize: '12px',
+										}}
+									>
+										Отключённый шаблон не создаёт новые задачи
+									</Typography>
+								</Box>
+							</Box>
+						</Box>
+					</DialogContent>
+
+					<DialogActions
+						sx={{
+							px: { xs: 1.5, sm: 3 },
+							py: 2,
+							gap: 1,
+							justifyContent: 'space-between',
+						}}
+					>
+						<Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+							<InfoIcon sx={{ fontSize: 14, color: '#9ca3af' }} />
+							<Typography variant='caption' sx={{ color: '#6b7280', fontSize: '12px' }}>
+								{isValid ? 'Все обязательные поля заполнены' : 'Заполните обязательные поля'}
+							</Typography>
+						</Box>
+						<Box sx={{ display: 'flex', gap: 1 }}>
+							<Button
+								onClick={onClose}
+								variant='outlined'
+								sx={{
+									textTransform: 'none',
+									color: '#374151',
+									borderColor: '#d1d5db',
+									borderRadius: '8px',
+								}}
+							>
+								Отмена
+							</Button>
+							<Button
+								type='submit'
+								variant='contained'
+								disabled={!isValid}
+								sx={{
+									textTransform: 'none',
+									px: 3,
+									borderRadius: '8px',
+									bgcolor: '#0432a5',
+									'&:hover': { bgcolor: '#002d91' },
+								}}
+							>
+								{isEditing ? 'Сохранить' : 'Создать'}
+							</Button>
+						</Box>
+					</DialogActions>
 				</Box>
-			</DialogContent>
-
-			<DialogActions sx={{ px: 3, pb: 2.5 }}>
-				<Button onClick={onClose} color='inherit'>
-					Отмена
-				</Button>
-				<Button onClick={handleSubmit} variant='contained' disabled={!isFormValid}>
-					{templateId ? 'Сохранить' : 'Создать'}
-				</Button>
-			</DialogActions>
+			</FormProvider>
 		</Dialog>
 	)
 }

@@ -57,7 +57,7 @@ func (f *fakePeriodicRepo) GetPeriodicTaskTemplates(_ context.Context, _ uuid.UU
 	return result, nil
 }
 
-func (f *fakePeriodicRepo) GetPeriodicTaskTemplateByID(_ context.Context, id uuid.UUID, _ uuid.UUID) (*models.EquipmentTypePeriodicTask, error) {
+func (f *fakePeriodicRepo) GetPeriodicTaskTemplateByID(_ context.Context, _ postgres.Tx, id uuid.UUID, _ uuid.UUID) (*models.EquipmentTypePeriodicTask, error) {
 	t, ok := f.templates[id]
 	if !ok {
 		return nil, models.ErrNotFound
@@ -400,20 +400,19 @@ func TestEquipmentPeriodicTaskService_ManualRun_ShiftReschedulesChain(t *testing
 	require.NoError(t, err)
 	require.Len(t, creator.created, 1)
 
-	// Сдвинут на now + период (7 дней).
+	// Расписание заменено на «сейчас»: ручной запуск заменяет ближайший плановый.
 	require.Len(t, repo.rescheduleCalls, 1)
-	wantReschedule := time.Now().UTC().AddDate(0, 0, 7)
-	assert.WithinDuration(t, wantReschedule, repo.rescheduleCalls[0].scheduledAt, time.Minute)
+	assert.WithinDuration(t, time.Now().UTC(), repo.rescheduleCalls[0].scheduledAt, time.Minute)
 	assert.Equal(t, pending.ID, repo.rescheduleCalls[0].instanceID)
 
 	// Заявка создана от имени инициатора ручного запуска.
 	ticket := creator.created[0]
 	assert.Equal(t, actorID, ticket.CreatorID)
 
-	// Следующий старт — от нового расписания + период (now + 2 периода).
+	// Следующий автоматический старт — ровно через период (now + 7 дней), а не через два.
 	require.Len(t, repo.createdInstances, 1)
-	wantNext := repo.rescheduleCalls[0].scheduledAt.AddDate(0, 0, 7)
-	assert.True(t, repo.createdInstances[0].ScheduledAt.Equal(wantNext))
+	wantNext := time.Now().UTC().AddDate(0, 0, 7)
+	assert.WithinDuration(t, wantNext, repo.createdInstances[0].ScheduledAt, time.Minute)
 }
 
 // TestEquipmentPeriodicTaskService_ManualRun_NoPending_CreatesChainStart: при отсутствии

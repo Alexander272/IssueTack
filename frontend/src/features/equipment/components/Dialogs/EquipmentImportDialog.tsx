@@ -100,6 +100,7 @@ export const EquipmentImportDialog: FC<Props> = ({ open, onClose }) => {
 			}}
 		>
 			<DialogTitle
+				component='div'
 				sx={{
 					m: 0,
 					px: { xs: 1.5, sm: 2 },
@@ -218,8 +219,8 @@ export const EquipmentImportDialog: FC<Props> = ({ open, onClose }) => {
 								<Alert severity='success'>Все строки импортированы.</Alert>
 							) : (
 								<Alert severity='warning'>
-									Строки с ошибкой не созданы — остальные импортированы. Исправьте их в файле и загрузите
-									заново.
+									Строки с ошибкой не созданы — остальные импортированы. Исправьте их в файле и
+									загрузите заново.
 								</Alert>
 							)}
 
@@ -367,7 +368,11 @@ const ImportRow: FC<{ row: IEquipmentImportRow }> = ({ row }) => {
 					<Typography variant='caption' sx={{ color: 'text.secondary' }}>
 						{[
 							row.inventoryNumber ? `Инв. №${row.inventoryNumber}` : '',
-							row.holder ? (row.holderFound ? `Получатель: ${row.holder}` : `Получатель (свободно): ${row.holder}`) : '',
+							row.holder
+								? row.holderFound
+									? `Получатель: ${row.holder}`
+									: `Получатель (свободно): ${row.holder}`
+								: '',
 							row.note,
 						]
 							.filter(Boolean)

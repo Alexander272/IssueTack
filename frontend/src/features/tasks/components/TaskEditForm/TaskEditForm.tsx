@@ -1,14 +1,12 @@
 import { Box, Button, Stack, TextField, Typography } from '@mui/material'
 import { Controller, FormProvider, useForm, useFormContext } from 'react-hook-form'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'react-toastify'
 
 import type { ITask, ITaskDTO } from '../../types/task'
 import type { FormValues } from './types'
 import { useAppSelector } from '@/hooks/redux'
 import { getIsManager, getCurrentCapabilities } from '@/features/user/userSlice'
-import { useGetAllCategoriesQuery } from '@/features/categories/categoriesApiSlice'
-import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
 import { useUpdateTaskMutation } from '../../tasksApiSlice'
 import { AdvancedSettingsSection } from '../TaskCreateForm/AdvancedSettingsSection'
 import { CategoryAndSiteSection } from '../TaskCreateForm/CategoryAndSiteSection'
@@ -84,11 +82,6 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 	const capabilities = useAppSelector(getCurrentCapabilities)
 
 	const [updateTask, { isLoading }] = useUpdateTaskMutation()
-	const { data: categoriesData } = useGetAllCategoriesQuery()
-	const { data: sitesData } = useGetAllSitesQuery()
-
-	const categories = useMemo(() => categoriesData?.data ?? [], [categoriesData])
-	const sites = useMemo(() => sitesData?.data ?? [], [sitesData])
 
 	// Заголовок/описание может править только создатель/менеджер группы/владелец
 	// (canEditFields). Начальник области (task.access.isAdmin) правит через форму
@@ -167,7 +160,7 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 			<FormProvider {...methods}>
 				<Box component='form' onSubmit={onSubmit}>
 					<Stack sx={{ gap: 1 }}>
-						<CategoryAndSiteSection number={1} categories={categories} sites={sites} />
+						<CategoryAndSiteSection number={1} />
 						<EditDescriptionSection readOnly={!canEditContent} />
 
 						{isManager && (

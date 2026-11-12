@@ -19,16 +19,16 @@ import {
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
-import dayjs from 'dayjs'
 import { InfoIcon, UserPlusIcon, XIcon } from 'lucide-mui'
 import { toast } from 'react-toastify'
+import dayjs from 'dayjs'
 
 import type { IFetchError } from '@/app/types/error'
-import { DateTextField } from '@/components/DatePicker/DatePicker'
 import type { IAssignEquipmentDTO, IEquipment } from '../../types/equipment'
 import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
 import { useGetRealmUsersQuery } from '@/features/user/usersApiSlice'
 import { useAssignEquipmentMutation } from '../../equipmentApiSlice'
+import { DateTextField } from '@/components/DatePicker/DatePicker'
 import { resolveTypeIcon } from '../../typeIcons'
 import { EquipmentStatusBadge } from '../EquipmentStatusBadge'
 import { Field } from './UnitForm/Field'
@@ -170,8 +170,7 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 			}}
 		>
 			<DialogTitle
-				// На телефоне окно во весь экран: 12px по горизонтали и 16px по
-				// вертикали вместо 16/20. С sm — как было.
+				component='div'
 				sx={{
 					m: 0,
 					px: { xs: 1.5, sm: 2 },

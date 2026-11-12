@@ -54,12 +54,12 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 	const { control, handleSubmit, formState } = useForm<IEquipmentTypeDTO>({
 		values: type
 			? {
-				id: type.id,
-				name: type.name,
-				kind: type.kind,
-				icon: type.icon,
-				sortOrder: type.sortOrder,
-			}
+					id: type.id,
+					name: type.name,
+					kind: type.kind,
+					icon: type.icon,
+					sortOrder: type.sortOrder,
+				}
 			: { id: undefined, name: '', kind: 'device', icon: '', sortOrder: 0 },
 		mode: 'onTouched',
 	})
@@ -118,11 +118,21 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 					paper: { sx: { borderRadius: { xs: 0, sm: '12px' } } },
 				}}
 			>
-				<DialogTitle sx={{ m: 0, px: { xs: 1.5, sm: 3 }, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+				<DialogTitle
+					component='div'
+					sx={{
+						m: 0,
+						px: { xs: 1.5, sm: 3 },
+						py: 2,
+						display: 'flex',
+						justifyContent: 'space-between',
+						alignItems: 'center',
+					}}
+				>
 					<Typography variant='h6' sx={{ fontWeight: 700 }}>
 						{isEdit ? 'Редактирование типа' : 'Новый тип оборудования'}
 					</Typography>
-					<IconButton onClick={onClose} size='small'>
+					<IconButton onClick={onClose}>
 						<XIcon sx={{ fontSize: 18 }} />
 					</IconButton>
 				</DialogTitle>
@@ -131,7 +141,10 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 					<DialogContent dividers sx={{ px: { xs: 1.5, sm: 3 }, py: { xs: 2, sm: 2.5 } }}>
 						<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
 							<Box>
-								<Typography variant='caption' sx={{ fontWeight: 600, mb: 0.5, display: 'block', color: '#374151' }}>
+								<Typography
+									variant='caption'
+									sx={{ fontWeight: 600, mb: 0.5, display: 'block', color: '#374151' }}
+								>
 									Название *
 								</Typography>
 								<Controller
@@ -146,13 +159,15 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 											placeholder='Например: Веб-камера'
 											error={Boolean(fieldState.error)}
 											helperText={fieldState.error?.message}
-											sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
 										/>
 									)}
 								/>
 							</Box>
 							<Box>
-								<Typography variant='caption' sx={{ fontWeight: 600, mb: 0.5, display: 'block', color: '#374151' }}>
+								<Typography
+									variant='caption'
+									sx={{ fontWeight: 600, mb: 0.5, display: 'block', color: '#374151' }}
+								>
 									Категория *
 								</Typography>
 								<Controller
@@ -167,7 +182,6 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 											size='small'
 											error={Boolean(fieldState.error)}
 											helperText={fieldState.error?.message}
-											sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
 										>
 											{CATEGORIES.map(c => (
 												<MenuItem key={c.value} value={c.value}>
@@ -178,11 +192,15 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 									)}
 								/>
 								<FormHelperText sx={{ mt: 0.5 }}>
-									Комплектующие и расходники можно включить в физический состав; устройства и периферию — нет
+									Комплектующие и расходники можно включить в физический состав; устройства и
+									периферию — нет
 								</FormHelperText>
 							</Box>
 							<Box>
-								<Typography variant='caption' sx={{ fontWeight: 600, mb: 0.5, display: 'block', color: '#374151' }}>
+								<Typography
+									variant='caption'
+									sx={{ fontWeight: 600, mb: 0.5, display: 'block', color: '#374151' }}
+								>
 									Иконка
 								</Typography>
 								<Controller
@@ -199,7 +217,9 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 												return (
 													<Tooltip
 														key={key || 'auto'}
-														title={key ? label : 'Авто — иконка подбирается по названию типа'}
+														title={
+															key ? label : 'Авто — иконка подбирается по названию типа'
+														}
 														arrow
 														slotProps={{ popper: { sx: { pointerEvents: 'none' } } }}
 													>
@@ -216,7 +236,11 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 																borderRadius: '8px',
 																border: '1px solid #d1d5db',
 																borderStyle: selected || key ? 'solid' : 'dashed',
-																borderColor: selected ? '#0432a5' : key ? '#d1d5db' : '#9ca3af',
+																borderColor: selected
+																	? '#0432a5'
+																	: key
+																		? '#d1d5db'
+																		: '#9ca3af',
 																outline: selected ? '1px solid #0432a5' : 'none',
 																outlineOffset: 1,
 																bgcolor: selected ? '#eef2ff' : '#fff',
@@ -241,7 +265,14 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 						</Box>
 					</DialogContent>
 
-					<DialogActions sx={{ px: { xs: 1.5, sm: 3 }, py: 2, gap: 1, justifyContent: isEdit ? 'space-between' : 'flex-end' }}>
+					<DialogActions
+						sx={{
+							px: { xs: 1.5, sm: 3 },
+							py: 2,
+							gap: 1,
+							justifyContent: isEdit ? 'space-between' : 'flex-end',
+						}}
+					>
 						{isEdit && (
 							<Button
 								type='button'
@@ -259,7 +290,12 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 								type='button'
 								onClick={onClose}
 								variant='outlined'
-								sx={{ textTransform: 'none', color: '#374151', borderColor: '#d1d5db', borderRadius: '8px' }}
+								sx={{
+									textTransform: 'none',
+									color: '#374151',
+									borderColor: '#d1d5db',
+									borderRadius: '8px',
+								}}
 							>
 								Отмена
 							</Button>
@@ -267,7 +303,13 @@ export const EquipmentTypeDialog: FC<Props> = ({ open, onClose, type, setType })
 								type='submit'
 								variant='contained'
 								disabled={isLoading || !formState.isValid || (isEdit && !formState.isDirty)}
-								sx={{ textTransform: 'none', px: 3, borderRadius: '8px', bgcolor: '#0432a5', '&:hover': { bgcolor: '#002d91' } }}
+								sx={{
+									textTransform: 'none',
+									px: 3,
+									borderRadius: '8px',
+									bgcolor: '#0432a5',
+									'&:hover': { bgcolor: '#002d91' },
+								}}
 							>
 								{isEdit ? 'Сохранить' : 'Создать'}
 							</Button>

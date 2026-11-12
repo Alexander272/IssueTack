@@ -164,6 +164,23 @@ func TestEquipmentRepo_Stage3Flow(t *testing.T) {
 	assert.Equal(t, "Тестов Тест", history[1].HolderFullName)
 	assert.Equal(t, "Тестов Тест", history[1].AssignedByName)
 
+	// Последняя выдача читается тем же набором колонок, что и история. Регресс:
+	// запрос собирался руками с неполными именами (`id`, `user_id`, …) поверх
+	// JOIN'ов users/sites, и Postgres отвечал 42702 «column reference "id" is
+	// ambiguous» — падала выдача единицы с autoStartOnFirstAssign и ручной запуск
+	// периодической задачи (500).
+	last, err := repo.GetLastAssignmentForEquipment(ctx, kit.ID)
+	require.NoError(t, err)
+	require.NotNil(t, last)
+	assert.Equal(t, history[0].ID, last.ID)
+	assert.Equal(t, siteID, *last.SiteID)
+	assert.Equal(t, "ППРЗ", last.SiteName)
+
+	// Нет выдач — nil без ошибки: сервис периодических задач на это опирается.
+	none, err := repo.GetLastAssignmentForEquipment(ctx, comp.ID)
+	require.NoError(t, err)
+	assert.Nil(t, none)
+
 	events, err := repo.GetEvents(ctx, f.realmID, kit.ID, 100, 0)
 	require.NoError(t, err)
 	require.Len(t, events, 1)

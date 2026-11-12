@@ -44,9 +44,16 @@ export const TaskCreateModal: FC<Props> = ({ open, onClose, defaultEquipmentId }
 			}}
 		>
 			<DialogTitle
-				sx={{ m: 0, p: { xs: 1.5, sm: 2 }, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+				component='div'
+				sx={{
+					m: 0,
+					p: { xs: 1.5, sm: 2 },
+					display: 'flex',
+					justifyContent: 'space-between',
+					alignItems: 'center',
+				}}
 			>
-				<Typography variant='h6' component='div' sx={{ fontWeight: 'bold' }}>
+				<Typography variant='h6' sx={{ fontWeight: 'bold' }}>
 					Создание заявки
 				</Typography>
 				<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -64,7 +71,12 @@ export const TaskCreateModal: FC<Props> = ({ open, onClose, defaultEquipmentId }
 							</span>
 						</Tooltip>
 					)}
-					<IconButton size='large' onClick={canClose ? onClose : undefined} disabled={saving} sx={{ color: 'text.secondary' }}>
+					<IconButton
+						size='large'
+						onClick={canClose ? onClose : undefined}
+						disabled={saving}
+						sx={{ color: 'text.secondary' }}
+					>
 						<XIcon sx={{ fontSize: 20 }} />
 					</IconButton>
 				</Box>

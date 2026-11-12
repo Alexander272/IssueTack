@@ -114,7 +114,7 @@ type Equipment interface {
 
 	// Периодические задачи
 	GetPeriodicTaskTemplates(ctx context.Context, realmID uuid.UUID, equipmentTypeID *uuid.UUID) ([]*models.EquipmentTypePeriodicTask, error)
-	GetPeriodicTaskTemplateByID(ctx context.Context, id uuid.UUID, realmID uuid.UUID) (*models.EquipmentTypePeriodicTask, error)
+	GetPeriodicTaskTemplateByID(ctx context.Context, tx Tx, id uuid.UUID, realmID uuid.UUID) (*models.EquipmentTypePeriodicTask, error)
 	CreatePeriodicTaskTemplate(ctx context.Context, tx Tx, dto *models.EquipmentTypePeriodicTaskDTO) (*models.EquipmentTypePeriodicTask, error)
 	UpdatePeriodicTaskTemplate(ctx context.Context, tx Tx, dto *models.EquipmentTypePeriodicTaskDTO) (*models.EquipmentTypePeriodicTask, error)
 	DeletePeriodicTaskTemplate(ctx context.Context, dto *models.DelEquipmentTypePeriodicTaskDTO) error
@@ -530,7 +530,7 @@ func (r *EquipmentRepo) GetPeriodicTaskTemplates(ctx context.Context, realmID uu
 }
 
 // GetPeriodicTaskTemplateByID возвращает шаблон по ID.
-func (r *EquipmentRepo) GetPeriodicTaskTemplateByID(ctx context.Context, id uuid.UUID, realmID uuid.UUID) (*models.EquipmentTypePeriodicTask, error) {
+func (r *EquipmentRepo) GetPeriodicTaskTemplateByID(ctx context.Context, tx Tx, id uuid.UUID, realmID uuid.UUID) (*models.EquipmentTypePeriodicTask, error) {
 	query := fmt.Sprintf(`SELECT 
 		pt.id, pt.realm_id, pt.equipment_type_id, pt.title, pt.description,
 		pt.period_years, pt.period_months, pt.period_days,
@@ -548,7 +548,7 @@ func (r *EquipmentRepo) GetPeriodicTaskTemplateByID(ctx context.Context, id uuid
 		Tables.EquipmentTypePeriodicTasks, Tables.EquipmentTypes, Tables.Categories, Tables.Sites)
 
 	var t models.EquipmentTypePeriodicTask
-	if err := r.db.QueryRow(ctx, query, id, realmID).Scan(
+	if err := r.getExec(tx).QueryRow(ctx, query, id, realmID).Scan(
 		&t.ID, &t.RealmID, &t.EquipmentTypeID, &t.Title, &t.Description,
 		&t.PeriodYears, &t.PeriodMonths, &t.PeriodDays,
 		&t.CategoryID, &t.SiteID,
@@ -582,7 +582,7 @@ func (r *EquipmentRepo) CreatePeriodicTaskTemplate(ctx context.Context, tx Tx, d
 	).Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt); err != nil {
 		return nil, MapError(fmt.Errorf("failed to create periodic task template: %w", err))
 	}
-	return r.GetPeriodicTaskTemplateByID(ctx, t.ID, t.RealmID)
+	return r.GetPeriodicTaskTemplateByID(ctx, tx, t.ID, dto.RealmID)
 }
 
 // UpdatePeriodicTaskTemplate обновляет шаблон периодической задачи.
@@ -609,7 +609,7 @@ func (r *EquipmentRepo) UpdatePeriodicTaskTemplate(ctx context.Context, tx Tx, d
 	if result.RowsAffected() == 0 {
 		return nil, models.ErrNotFound
 	}
-	return r.GetPeriodicTaskTemplateByID(ctx, *dto.ID, dto.RealmID)
+	return r.GetPeriodicTaskTemplateByID(ctx, tx, *dto.ID, dto.RealmID)
 }
 
 // DeletePeriodicTaskTemplate удаляет шаблон периодической задачи.
@@ -911,31 +911,19 @@ func (r *EquipmentRepo) ReschedulePendingInstance(ctx context.Context, tx Tx, in
 }
 
 // GetLastAssignmentForEquipment возвращает последнюю выдачу оборудования.
+// Строка собирается тем же assignmentSelectBase, что и остальные выдачи: иначе
+// набор колонок (и их алиасы) разъезжается с scanAssignment, а неполные имена
+// колонок в SELECT становятся неоднозначными из-за JOIN'ов справочников.
 func (r *EquipmentRepo) GetLastAssignmentForEquipment(ctx context.Context, equipmentID uuid.UUID) (*models.EquipmentAssignment, error) {
-	query := fmt.Sprintf(`SELECT 
-		id, equipment_id, user_id, holder_name, site_id, location,
-		assigned_at, unassigned_at, return_due_at, assigned_by, comment,
-		COALESCE(u.full_name, '') AS holder_full_name,
-		COALESCE(s.name, '') AS site_name,
-		COALESCE(au.full_name, '') AS assigned_by_name
-	FROM %s a
-	LEFT JOIN %s u ON u.id = a.user_id
-	LEFT JOIN %s s ON s.id = a.site_id
-	LEFT JOIN %s au ON au.id = a.assigned_by
-	WHERE a.equipment_id = $1
-	ORDER BY a.assigned_at DESC LIMIT 1`,
-		Tables.EquipmentAssignments, Tables.Users, Tables.Sites, Tables.Users)
+	query := assignmentSelectBase() +
+		` WHERE a.equipment_id = $1 ORDER BY a.assigned_at DESC LIMIT 1`
 
-	var a models.EquipmentAssignment
-	if err := r.db.QueryRow(ctx, query, equipmentID).Scan(
-		&a.ID, &a.EquipmentID, &a.UserID, &a.HolderName, &a.SiteID, &a.Location,
-		&a.AssignedAt, &a.UnassignedAt, &a.ReturnDueAt, &a.AssignedBy, &a.Comment,
-		&a.HolderFullName, &a.SiteName, &a.AssignedByName,
-	); err != nil {
+	a, err := scanAssignment(r.db.QueryRow(ctx, query, equipmentID))
+	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil
 		}
 		return nil, MapError(fmt.Errorf("failed to query last assignment: %w", err))
 	}
-	return &a, nil
+	return a, nil
 }

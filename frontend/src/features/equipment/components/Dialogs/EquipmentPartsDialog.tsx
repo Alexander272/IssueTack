@@ -57,10 +57,16 @@ export const EquipmentPartsDialog: FC<Props> = ({ open, onClose, unit }) => {
 	const changeParent = async (child: IEquipment, parentId: string | null) => {
 		try {
 			if (parentId) {
-				await attach({ id: unit.id, body: { components: [{ componentId: child.id }], reason: 'Физический состав' } }).unwrap()
+				await attach({
+					id: unit.id,
+					body: { components: [{ componentId: child.id }], reason: 'Физический состав' },
+				}).unwrap()
 				toast.success('Добавлено в состав')
 			} else {
-				await detach({ id: unit.id, body: { components: [{ componentId: child.id }], reason: 'Состав изменён' } }).unwrap()
+				await detach({
+					id: unit.id,
+					body: { components: [{ componentId: child.id }], reason: 'Состав изменён' },
+				}).unwrap()
 				toast.success('Исключено из состава')
 			}
 			return true
@@ -86,9 +92,17 @@ export const EquipmentPartsDialog: FC<Props> = ({ open, onClose, unit }) => {
 			slotProps={{ paper: { sx: { borderRadius: { xs: 0, sm: '16px' }, p: { xs: 0, sm: 1 } } } }}
 		>
 			<DialogTitle
-				sx={{ m: 0, px: { xs: 1.5, sm: 2 }, py: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+				component='div'
+				sx={{
+					m: 0,
+					px: { xs: 1.5, sm: 2 },
+					py: 2,
+					display: 'flex',
+					justifyContent: 'space-between',
+					alignItems: 'center',
+				}}
 			>
-				<Typography variant='h6' component='div' sx={{ fontWeight: 'bold' }}>
+				<Typography variant='h6' sx={{ fontWeight: 'bold' }}>
 					Физический состав
 				</Typography>
 				<IconButton onClick={onClose} sx={{ color: 'text.secondary' }}>
@@ -98,7 +112,12 @@ export const EquipmentPartsDialog: FC<Props> = ({ open, onClose, unit }) => {
 
 			<DialogContent
 				dividers
-				sx={{ borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', px: { xs: 1.5, sm: 3 }, py: { xs: 2, sm: 3 } }}
+				sx={{
+					borderTop: '1px solid #f0f0f0',
+					borderBottom: '1px solid #f0f0f0',
+					px: { xs: 1.5, sm: 3 },
+					py: { xs: 2, sm: 3 },
+				}}
 			>
 				<Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
 					<List dense sx={{ py: 0 }}>

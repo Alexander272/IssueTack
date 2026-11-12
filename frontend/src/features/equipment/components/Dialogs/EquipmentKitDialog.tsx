@@ -224,6 +224,7 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 			slotProps={{ paper: { sx: { borderRadius: { xs: 0, sm: '16px' } } } }}
 		>
 			<DialogTitle
+				component='div'
 				sx={{
 					m: 0,
 					px: { xs: 1.5, sm: 2 },

@@ -135,7 +135,7 @@ func (s *EquipmentPeriodicTaskService) GetPeriodicTaskTemplates(ctx context.Cont
 
 // GetPeriodicTaskTemplateByID возвращает шаблон по ID.
 func (s *EquipmentPeriodicTaskService) GetPeriodicTaskTemplateByID(ctx context.Context, id uuid.UUID, realmID uuid.UUID) (*models.EquipmentTypePeriodicTask, error) {
-	return s.repo.GetPeriodicTaskTemplateByID(ctx, id, realmID)
+	return s.repo.GetPeriodicTaskTemplateByID(ctx, nil, id, realmID)
 }
 
 // CreatePeriodicTaskTemplate создаёт шаблон периодической задачи.
@@ -304,7 +304,7 @@ func (s *EquipmentPeriodicTaskService) processSingleTask(ctx context.Context, in
 		return nil
 	}
 
-	template, err := s.repo.GetPeriodicTaskTemplateByID(ctx, instance.TemplateID, instance.RealmID)
+	template, err := s.repo.GetPeriodicTaskTemplateByID(ctx, nil, instance.TemplateID, instance.RealmID)
 	if err != nil {
 		return fmt.Errorf("failed to get template: %w", err)
 	}
@@ -397,8 +397,13 @@ func (s *EquipmentPeriodicTaskService) buildTicket(ctx context.Context, template
 		return nil, fmt.Errorf("periodic task category %s has no group", template.CategoryID)
 	}
 
-	siteID := uuid.Nil
-	if template.SiteID != nil {
+	// Площадка берётся из оборудования: единица может перемещаться между площадками,
+	// и заявка должна идти на ту, где оборудование находится сейчас. Площадка из шаблона
+	// — fallback, если у единицы она не указана.
+	var siteID uuid.UUID
+	if eq.SiteID != nil && *eq.SiteID != uuid.Nil {
+		siteID = *eq.SiteID
+	} else if template.SiteID != nil {
 		siteID = *template.SiteID
 	}
 
@@ -444,8 +449,9 @@ func (s *EquipmentPeriodicTaskService) authorName(ctx context.Context, userID uu
 
 // ManualRunTask запускает периодическую задачу вручную: всегда создаёт заявку
 // сейчас. Семантика цепочки:
-//   - shift=true — существующий pending перепланируется на now + период, заявка
-//     создаётся сейчас и цепочка продолжается с нового расписания;
+//   - shift=true — ручной запуск заменяет ближайший плановый: pending считается
+//     выполненным сейчас, заявка создаётся сейчас, следующий автоматический
+//     старт = now + период;
 //   - shift=false — pending остаётся на исходном расписании (при отсутствии pending
 //     создаётся новый старт на now + период — цепочка обязана стартовать);
 //   - pending нет вообще — создаём старт на now + период и заявку сейчас.
@@ -454,7 +460,7 @@ func (s *EquipmentPeriodicTaskService) ManualRunTask(ctx context.Context, dto *m
 		return models.ErrPermissionDenied
 	}
 
-	template, err := s.repo.GetPeriodicTaskTemplateByID(ctx, dto.TemplateID, dto.RealmID)
+	template, err := s.repo.GetPeriodicTaskTemplateByID(ctx, nil, dto.TemplateID, dto.RealmID)
 	if err != nil {
 		return fmt.Errorf("failed to get template: %w", err)
 	}
@@ -519,14 +525,15 @@ func (s *EquipmentPeriodicTaskService) ManualRunTask(ctx context.Context, dto *m
 	}
 	ticketID := *ticketDTO.ID
 
-	// Сдвиг: при shift=true расписание pending переписывается на now + период
-	// (следующий автоматический запуск уходит вперёд); при shift=false pending
+	// Сдвиг: при shift=true ручной запуск заменяет ближайший плановый — экземпляр
+	// считается выполненным сейчас (расписание переписывается на now), поэтому
+	// следующий автоматический старт = now + период. При shift=false pending
 	// остаётся на исходном расписании.
 	if shiftNext && pendingFromDB {
-		if err := s.repo.ReschedulePendingInstance(ctx, nil, pending, now.AddDate(template.PeriodYears, template.PeriodMonths, template.PeriodDays)); err != nil {
+		if err := s.repo.ReschedulePendingInstance(ctx, nil, pending, now); err != nil {
 			return fmt.Errorf("failed to reschedule pending periodic task: %w", err)
 		}
-		pending.ScheduledAt = now.AddDate(template.PeriodYears, template.PeriodMonths, template.PeriodDays)
+		pending.ScheduledAt = now
 	}
 
 	// Заявка создана — привязываем экземпляр и планируем следующий старт:
