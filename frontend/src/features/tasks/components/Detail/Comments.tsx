@@ -305,7 +305,7 @@ export const Comments = ({ taskId, isInactive = false, canWork = true }: Props) 
 		skip: activeTab !== 'comments',
 	})
 
-	const { data: logsData, isLoading: logsLoading } = useGetActivityLogsQuery(taskId, {
+	const { data: logsData, isLoading: logsLoading } = useGetActivityLogsQuery({ parentId: taskId }, {
 		skip: activeTab !== 'history',
 	})
 

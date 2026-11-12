@@ -34,6 +34,7 @@ export const API = {
 	activityLog: {
 		base: '/activity-log' as const,
 		byEntity: (entityId: string) => `/activity-log?entityId=${entityId}` as const,
+		byParent: (parentId: string) => `/activity-log?parentId=${parentId}` as const,
 	},
 	statistics: {
 		tickets: '/statistics/tickets' as const,

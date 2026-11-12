@@ -5,11 +5,18 @@ import type { IActivityLog } from '../../types/activity'
 const activityApiSlice = apiSlice.injectEndpoints({
 	overrideExisting: false,
 	endpoints: builder => ({
-		getActivityLogs: builder.query<{ data: IActivityLog[] }, string>({
-			query: entityId => ({
-				url: API.activityLog.byEntity(entityId),
-				method: 'GET',
-			}),
+		getActivityLogs: builder.query<{ data: IActivityLog[] }, { entityId?: string; parentId?: string }>({
+			query: ({ entityId, parentId }) => {
+				const url = parentId
+					? API.activityLog.byParent(parentId)
+					: entityId
+						? API.activityLog.byEntity(entityId)
+						: API.activityLog.base
+				return {
+					url,
+					method: 'GET',
+				}
+			},
 			providesTags: [{ type: 'ActivityLogs', id: 'LIST' }],
 		}),
 	}),

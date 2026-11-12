@@ -192,7 +192,7 @@ func (s *SubtaskService) CreateSeveral(ctx context.Context, tx postgres.Tx, dto 
 	logs := make([]*models.ActivityLogDTO, len(dto))
 	for i, v := range dto {
 		log := &models.ActivityLogDTO{
-			Action:        "created",
+			Action:        "created_subtask",
 			ChangedBy:     v.Actor.ID,
 			ChangedByName: v.Actor.Name,
 			EntityType:    models.EntityTypeSubtask,
@@ -241,7 +241,7 @@ func (s *SubtaskService) CreateManyOnCreate(ctx context.Context, tx postgres.Tx,
 	logs := make([]*models.ActivityLogDTO, len(dto))
 	for i, v := range dto {
 		log := &models.ActivityLogDTO{
-			Action:        "created",
+			Action:        "created_subtask",
 			ChangedBy:     v.Actor.ID,
 			ChangedByName: v.Actor.Name,
 			EntityType:    models.EntityTypeSubtask,
@@ -370,7 +370,7 @@ func (s *SubtaskService) Delete(ctx context.Context, tx postgres.Tx, dto *models
 		"priority": old.Priority,
 	}
 	log := &models.ActivityLogDTO{
-		Action:        "deleted",
+		Action:        "deleted_subtask",
 		ChangedBy:     dto.Actor.ID,
 		ChangedByName: dto.Actor.Name,
 		EntityType:    models.EntityTypeSubtask,
