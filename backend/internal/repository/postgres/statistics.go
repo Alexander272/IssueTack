@@ -124,17 +124,18 @@ func (r *StatisticsRepo) GetStatisticsSummary(ctx context.Context, q models.Stat
 			COUNT(*) FILTER (WHERE t.due_date IS NOT NULL AND t.due_date < NOW() AND t.status NOT IN ('closed', 'cancelled')),
 			COUNT(*) FILTER (WHERE t.resolved_at >= %s AND t.resolved_at < %s),
 			COUNT(*) FILTER (WHERE t.created_at >= %s AND t.created_at < %s),
-			COUNT(*) FILTER (WHERE t.resolved_at >= %s AND t.resolved_at < %s)
+			COUNT(*) FILTER (WHERE t.resolved_at >= %s AND t.resolved_at < %s),
+			COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM %s st WHERE st.ticket_id = t.id))
 		FROM %s t
 		WHERE %s`,
 		fromPh, toPh, fromPh, toPh, prevFromPh, prevToPh, prevFromPh, prevToPh,
-		Tables.Tickets, strings.Join(w.clauses, " AND "),
+		Tables.Subtasks, Tables.Tickets, strings.Join(w.clauses, " AND "),
 	)
 
 	summary := &models.StatisticsSummary{}
 	if err := r.db.QueryRow(ctx, query, w.args...).Scan(
 		&summary.Total, &summary.Active, &summary.Overdue, &summary.Resolved,
-		&summary.TotalPrev, &summary.ResolvedPrev,
+		&summary.TotalPrev, &summary.ResolvedPrev, &summary.WithSubtasks,
 	); err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}

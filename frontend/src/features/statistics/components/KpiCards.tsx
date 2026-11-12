@@ -89,7 +89,12 @@ const resolveSubtitle = (key: 'total' | 'active' | 'overdue' | 'resolved', s: IS
 			)
 		}
 		case 'active':
-			return <Subtitle>{s.overdue > 0 ? `из них просрочено ${s.overdue}` : 'просроченных нет'}</Subtitle>
+			return (
+				<Subtitle>
+					{`с подзадачами: ${s.withSubtasks}`}
+					{s.active > 0 && ` (${percent(s.withSubtasks / s.active)})`}
+				</Subtitle>
+			)
 		case 'overdue': {
 			const overdueShare = share(s.overdue, s.active)
 			return <Subtitle>{overdueShare ? `${overdueShare} от активных` : 'активных нет'}</Subtitle>

@@ -177,6 +177,7 @@ export const StatisticsView: FC = () => {
 							display: { xs: 'none', sm: 'block' },
 							cursor: 'pointer',
 							userSelect: 'none',
+							width: 'fit-content',
 						}}
 						onClick={toggleOverdue}
 					>

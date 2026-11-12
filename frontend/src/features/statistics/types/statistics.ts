@@ -5,6 +5,7 @@ export interface IStatisticsSummary {
 	resolved: number
 	totalPrev: number
 	resolvedPrev: number
+	withSubtasks: number
 }
 
 export type KpiCardKey = 'total' | 'active' | 'overdue' | 'resolved'

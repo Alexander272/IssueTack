@@ -48,13 +48,15 @@ func (s StatisticsScope) IsManagerial() bool {
 // (created_at / resolved_at в диапазоне), Active и Overdue характеризуют текущее
 // состояние видимых заявок и от периода не зависят. TotalPrev и ResolvedPrev —
 // те же периодные метрики за предыдущее окно той же длины, для расчёта дельт.
+// WithSubtasks — число заявок, у которых есть хотя бы одна подзадача.
 type StatisticsSummary struct {
-	Total        int `json:"total"`
-	Active       int `json:"active"`
-	Overdue      int `json:"overdue"`
-	Resolved     int `json:"resolved"`
-	TotalPrev    int `json:"totalPrev"`
-	ResolvedPrev int `json:"resolvedPrev"`
+	Total         int `json:"total"`
+	Active        int `json:"active"`
+	Overdue       int `json:"overdue"`
+	Resolved      int `json:"resolved"`
+	TotalPrev     int `json:"totalPrev"`
+	ResolvedPrev  int `json:"resolvedPrev"`
+	WithSubtasks  int `json:"withSubtasks"`
 }
 
 // StatisticsQuery — вход запроса к слою данных статистики: вычисленный срез доступа
