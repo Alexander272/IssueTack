@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Typography } from '@mui/material'
+import { Box, Button, Dialog, DialogActions, DialogContent, TextField, Typography } from '@mui/material'
 import { Check, X } from 'lucide-mui'
 import dayjs from 'dayjs'
 
@@ -53,9 +53,10 @@ export const DueDateRequestCard = ({ task, request }: Props) => {
 	return (
 		<Box
 			sx={{
+				width: '100%',
 				display: 'flex',
-				flexWrap: 'wrap',
-				alignItems: 'center',
+				flexDirection: { xs: 'column', sm: 'row' },
+				alignItems: { xs: 'stretch', sm: 'center' },
 				gap: 1.5,
 				p: 2,
 				borderRadius: '12px',
@@ -63,36 +64,47 @@ export const DueDateRequestCard = ({ task, request }: Props) => {
 				bgcolor: '#fffbeb',
 			}}
 		>
-			<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+			<Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, flex: 1 }}>
 				<Typography sx={{ fontSize: '0.8125rem', fontWeight: 700, color: '#92400e' }}>
 					Запрос переноса срока
 				</Typography>
+				<Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: { xs: 0, sm: 2 } }}>
+					{task.assignee && (
+						<Typography sx={{ fontSize: '0.8125rem', color: '#78350f' }}>
+							Исполнитель:{' '}
+							<b>
+								{task.assignee.firstName} {task.assignee.lastName}
+							</b>
+						</Typography>
+					)}
+					{current && (
+						<Typography sx={{ fontSize: '0.8125rem', color: '#78350f' }}>
+							Срок: {current.format('DD.MM.YYYY')} → {proposed ? proposed.format('DD.MM.YYYY') : '—'}
+						</Typography>
+					)}
+				</Box>
+				{request.reason && (
+					<Typography sx={{ fontSize: '0.8125rem', color: '#78350f', fontStyle: 'italic' }}>
+						{request.reason}
+					</Typography>
+				)}
 			</Box>
-			{task.assignee && (
-				<Typography sx={{ fontSize: '0.8125rem', color: '#78350f' }}>
-					Исполнитель: {task.assignee.firstName} {task.assignee.lastName}
-				</Typography>
-			)}
-			{current && (
-				<Typography sx={{ fontSize: '0.8125rem', color: '#78350f' }}>
-					Срок: {current.format('DD.MM.YYYY')} →{' '}
-					{proposed ? proposed.format('DD.MM.YYYY') : '—'}
-				</Typography>
-			)}
-			{request.reason && (
-				<Typography sx={{ fontSize: '0.8125rem', color: '#78350f', fontStyle: 'italic' }}>
-					{request.reason}
-				</Typography>
-			)}
 
-			<Box sx={{ display: 'flex', gap: 1, ml: 'auto' }}>
+			<Box
+				sx={{
+					display: 'flex',
+					flexDirection: { xs: 'column', sm: 'row' },
+					gap: 1,
+					width: { xs: '100%', sm: 'auto' },
+				}}
+			>
 				<Button
 					variant='contained'
 					color='success'
 					disabled={isLoading}
 					onClick={approve}
 					startIcon={<Check sx={{ fontSize: 16 }} />}
-					sx={{ textTransform: 'none' }}
+					sx={{ textTransform: 'none', flex: { xs: 1, sm: 'none' } }}
 				>
 					Утвердить
 				</Button>
@@ -102,14 +114,16 @@ export const DueDateRequestCard = ({ task, request }: Props) => {
 					disabled={isLoading}
 					onClick={() => setRejectOpen(true)}
 					startIcon={<X sx={{ fontSize: 16 }} />}
-					sx={{ textTransform: 'none' }}
+					sx={{ textTransform: 'none', flex: { xs: 1, sm: 'none' } }}
 				>
 					Отклонить
 				</Button>
 			</Box>
 
 			<Dialog open={rejectOpen} onClose={() => setRejectOpen(false)} maxWidth='xs' fullWidth>
-				<DialogTitle>Отклонить запрос</DialogTitle>
+				<Typography variant='h6' sx={{ fontSize: '1.25rem', px: 3, pt: 2 }}>
+					Отклонить запрос
+				</Typography>
 				<DialogContent>
 					<TextField
 						autoFocus

@@ -2,11 +2,13 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -65,7 +67,9 @@ func (r *dueDateRequestRepository) GetByID(ctx context.Context, id uuid.UUID) (*
 		WHERE r.id = $1
 	`)
 
-	req := &models.DueDateRequest{}
+	req := &models.DueDateRequest{
+		Requester: &models.UserShort{},
+	}
 	if err := r.db.QueryRow(ctx, query, id).Scan(
 		&req.ID, &req.TicketID, &req.RequesterID, &req.CurrentDueDate, &req.ProposedDueDate, &req.Reason, &req.Status,
 		&req.DecidedBy, &req.DecidedAt, &req.DecisionComment, &req.CreatedAt,
@@ -90,12 +94,18 @@ func (r *dueDateRequestRepository) GetPendingByTicket(ctx context.Context, ticke
 		LIMIT 1
 	`)
 
-	req := &models.DueDateRequest{}
-	if err := r.db.QueryRow(ctx, query, ticketID).Scan(
+	req := &models.DueDateRequest{
+		Requester: &models.UserShort{},
+	}
+	err := r.db.QueryRow(ctx, query, ticketID).Scan(
 		&req.ID, &req.TicketID, &req.RequesterID, &req.CurrentDueDate, &req.ProposedDueDate, &req.Reason, &req.Status,
 		&req.DecidedBy, &req.DecidedAt, &req.DecisionComment, &req.CreatedAt,
 		&req.Requester.ID, &req.Requester.Username, &req.Requester.FirstName, &req.Requester.LastName, &req.Requester.Email, &req.Requester.InternalNumber,
-	); err != nil {
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
 
@@ -127,7 +137,9 @@ func (r *dueDateRequestRepository) Decide(ctx context.Context, tx Tx, id uuid.UU
 		WHERE r.id = $1
 	`)
 
-	req := &models.DueDateRequest{}
+	req := &models.DueDateRequest{
+		Requester: &models.UserShort{},
+	}
 	if err := r.getExec(tx).QueryRow(ctx, query, id).Scan(
 		&req.ID, &req.TicketID, &req.RequesterID, &req.CurrentDueDate, &req.ProposedDueDate, &req.Reason, &req.Status,
 		&req.DecidedBy, &req.DecidedAt, &req.DecisionComment, &req.CreatedAt,

@@ -70,7 +70,9 @@ func (s *TicketService) CreateDueDateRequest(ctx context.Context, dto *models.Cr
 		return nil, fmt.Errorf("failed to create due date request: %w", err)
 	}
 
-	// Журнал: запрос на перенос срока (тег due_date_requested, старое/новое — сроки).
+	// Журнал: запрос на перенос срока — один тег due_date_requested.
+	// newValue содержит новый срок и причину (чтобы в истории это было одним изменением,
+	// а не «изменил поля» с двумя тегами).
 	log := &models.ActivityLogDTO{
 		Action:        "updated",
 		ChangedBy:     dto.Actor.ID,
@@ -79,10 +81,19 @@ func (s *TicketService) CreateDueDateRequest(ctx context.Context, dto *models.Cr
 		EntityID:      dto.TicketID,
 		Entity:        ticket.Title,
 	}
-	if err := log.SetOldValues(map[string]string{"due_date_requested": formatDueDateValue(ticket.DueDate)}); err != nil {
+	if err := log.SetOldValues(map[string]string{
+		"due_date_requested": formatDueDateValue(ticket.DueDate),
+	}); err != nil {
 		return nil, fmt.Errorf("set old values: %w", err)
 	}
-	if err := log.SetNewValues(map[string]string{"due_date_requested": formatDueDateValue(&dto.ProposedDueDate)}); err != nil {
+	// newValue: новый срок + причина (разделены \n для рендера в две строки).
+	newVal := formatDueDateValue(&dto.ProposedDueDate)
+	if strings.TrimSpace(dto.Reason) != "" {
+		newVal += "\nПричина: " + dto.Reason
+	}
+	if err := log.SetNewValues(map[string]string{
+		"due_date_requested": newVal,
+	}); err != nil {
 		return nil, fmt.Errorf("set new values: %w", err)
 	}
 	if err := s.logs.Create(ctx, nil, []*models.ActivityLogDTO{log}); err != nil {
@@ -172,20 +183,29 @@ func (s *TicketService) DecideDueDateRequest(ctx context.Context, dto *models.De
 	}
 
 	if !dto.Approved {
-		// Отклонение — не меняет срок, но фиксирует в истории факт решения:
-		// старое значение — запрошенный перенос, новое — фактический (текущий) срок.
+		// Отклонение — один тег due_date_rejected.
+		// newValue содержит текущий срок и причину отклонения.
 		log := &models.ActivityLogDTO{
 			Action:        "updated",
 			ChangedBy:     dto.Actor.ID,
 			ChangedByName: dto.Actor.Name,
-			EntityType:   string(access.ResourceTicket),
+			EntityType:    string(access.ResourceTicket),
 			EntityID:      request.TicketID,
 			Entity:        ticket.Title,
 		}
-		if err := log.SetOldValues(map[string]string{"due_date_rejected": formatDueDateValue(&request.ProposedDueDate)}); err != nil {
+		oldVal := formatDueDateValue(&request.ProposedDueDate)
+		newVal := formatDueDateValue(request.CurrentDueDate)
+		if strings.TrimSpace(dto.DecisionComment) != "" {
+			newVal += "\nПричина: " + dto.DecisionComment
+		}
+		if err := log.SetOldValues(map[string]string{
+			"due_date_rejected": oldVal,
+		}); err != nil {
 			return nil, fmt.Errorf("set old values: %w", err)
 		}
-		if err := log.SetNewValues(map[string]string{"due_date_rejected": formatDueDateValue(request.CurrentDueDate)}); err != nil {
+		if err := log.SetNewValues(map[string]string{
+			"due_date_rejected": newVal,
+		}); err != nil {
 			return nil, fmt.Errorf("set new values: %w", err)
 		}
 		if err := s.logs.Create(ctx, nil, []*models.ActivityLogDTO{log}); err != nil {

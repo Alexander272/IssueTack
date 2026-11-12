@@ -144,10 +144,6 @@ export const InfoBar = ({ task }: Props) => {
 					<DeadlinePopover onSetDueDate={handleSetDueDate} />
 				)}
 
-				{canDecideDueDate && dueDateRequest?.status === 'pending' && (
-					<DueDateRequestCard task={task} request={dueDateRequest} />
-				)}
-
 				{canCancel && (
 					<Button
 						variant='outlined'
@@ -253,6 +249,10 @@ export const InfoBar = ({ task }: Props) => {
 					</Menu>
 				)}
 			</Box>
+
+			{canDecideDueDate && dueDateRequest?.status === 'pending' && (
+				<DueDateRequestCard task={task} request={dueDateRequest} />
+			)}
 
 			{pendingStatus && (
 				<StatusChangeDialog

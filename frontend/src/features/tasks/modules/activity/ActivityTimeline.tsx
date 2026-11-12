@@ -89,22 +89,51 @@ const PriorityChip = ({ value }: { value: string }) => {
 
 // Одно значение в строке изменения. Чипы статуса/приоритета цветные с обеих сторон;
 // у заголовка/описания и даты старое серое и зачёркнутое, у «имени» — обычное тёмное,
-// новое везде темнее и жирнее.
+// новое везде темнее и жирнее. Для дат с причиной (due_date_requested/rejected)
+// значение может содержать \n — разбиваем на строки.
 const ChangeValue = ({ meta, value, side }: { meta: FieldMeta; value: string | undefined; side: 'old' | 'new' }) => {
 	if (meta.kind === 'status') return <StatusChip value={value ?? ''} />
 	if (meta.kind === 'priority') return <PriorityChip value={value ?? ''} />
 
-	const text = meta.kind === 'date' ? formatDate(value ?? '') : isNone(value) ? '—' : value
 	const isOld = side === 'old'
 	const isPlain = meta.kind === 'plain'
+
+	// Для дат с причиной (due_date_requested/rejected) значение может быть многострочным.
+	if (meta.kind === 'date' && value && value.includes('\n')) {
+		const lines = value.split('\n')
+		return (
+			<Box component='span' sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+				<Typography
+					component='span'
+					sx={{
+						fontSize: '0.8125rem',
+						color: isOld ? '#9ca3af' : '#1f2937',
+						fontWeight: isOld ? 400 : 500,
+						textDecoration: isOld ? 'line-through' : 'none',
+					}}
+				>
+					{formatDate(lines[0])}
+				</Typography>
+				{lines.slice(1).map((line, i) => (
+					<Typography
+						key={i}
+						component='span'
+						sx={{ fontSize: '0.75rem', color: '#6b7280', fontStyle: 'italic' }}
+					>
+						{line}
+					</Typography>
+				))}
+			</Box>
+		)
+	}
+
+	const text = meta.kind === 'date' ? formatDate(value ?? '') : isNone(value) ? '—' : value
 
 	return (
 		<Typography
 			component='span'
 			sx={{
 				fontSize: '0.8125rem',
-				// У «имени» старое не приглушаем — контраст только по жирности (как в макете),
-				// у заголовка/описания и даты старое серое и зачёркнутое.
 				color: isOld ? (isPlain ? '#374151' : '#9ca3af') : '#1f2937',
 				fontWeight: isOld ? 400 : isPlain ? 600 : 500,
 				textDecoration: isOld && (meta.kind === 'diff' || meta.kind === 'date') ? 'line-through' : 'none',
