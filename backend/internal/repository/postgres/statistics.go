@@ -122,7 +122,7 @@ func (r *StatisticsRepo) GetStatisticsSummary(ctx context.Context, q models.Stat
 	// для попавших в выборку тикетов (индекс subtasks(ticket_id)), а условные
 	// агрегаты дают и число карточек, и цифры блока «подзадачи» для каждой из них.
 	activeCond := "t.status IN ('open', 'in_progress', 'pending', 'on_hold')"
-	overdueCond := "t.due_date IS NOT NULL AND t.due_date < NOW() AND t.status NOT IN ('closed', 'cancelled')"
+	overdueCond := "t.due_date IS NOT NULL AND t.due_date < NOW() AND t.status NOT IN ('closed', 'cancelled', 'resolved')"
 	createdInPeriod := fmt.Sprintf("t.created_at >= %s AND t.created_at < %s", fromPh, toPh)
 	resolvedInPeriod := fmt.Sprintf("t.resolved_at >= %s AND t.resolved_at < %s", fromPh, toPh)
 
@@ -699,7 +699,6 @@ func (r *StatisticsRepo) GetKpiTickets(ctx context.Context, q models.StatisticsK
 		w.add("t.due_date IS NOT NULL AND t.due_date < NOW()")
 		w.statuses(nil, []models.TicketStatus{
 			models.StatusOpen, models.StatusInProgress, models.StatusPending, models.StatusOnHold,
-			models.StatusResolved,
 		})
 	case models.KpiResolved:
 		fromPh, toPh := w.rangeArgs(q.Filter.From, q.Filter.To)
