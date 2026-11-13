@@ -103,7 +103,7 @@ type Tickets interface {
 	// CreateDueDateRequest создаёт запрос исполнителем на перенос срока заявки.
 	CreateDueDateRequest(ctx context.Context, dto *models.CreateDueDateRequestDTO) (*models.DueDateRequest, error)
 	// GetDueDateRequest возвращает активный (pending) запрос тикета на перенос срока.
-	GetDueDateRequest(ctx context.Context, ticketID uuid.UUID) (*models.DueDateRequest, error)
+	GetDueDateRequest(ctx context.Context, dto *models.GetDueDateRequestDTO) (*models.DueDateRequest, error)
 	// DecideDueDateRequest принимает решение менеджера по запросу на перенос срока.
 	DecideDueDateRequest(ctx context.Context, dto *models.DecideDueDateRequestDTO) (*models.DueDateRequest, error)
 }
@@ -625,37 +625,68 @@ func containsUUID(values []uuid.UUID, target uuid.UUID) bool {
 // Update обновляет поля тикета с учётом прав доступа и правил переходов по статусам.
 // Пользователь с work-доступом может менять только статус; «чистый» владелец —
 // только допустимые переходы из трёх (отменить, принять решение, вернуть в работу);
-// статус closed можно поставить только из resolved.
+// статус closed можно поставить только из resolved. Тело — updateTicket в переданной
+// транзакции; уведомления подписчиков отправляет после коммита.
 func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error {
-	realmStr := ""
-	if dto.RealmID != nil {
-		realmStr = dto.RealmID.String()
-	}
-
-	assignedOnly := false
-	adminOnlyEdit := false
-	ownerOnly := false
-	if err := s.access.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: *dto.ID, UserID: dto.Actor.ID, Action: string(access.Write)}); err != nil {
-		if workErr := s.access.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: *dto.ID, UserID: dto.Actor.ID}); workErr != nil {
-			old, loadErr := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
-			if loadErr != nil {
-				return fmt.Errorf("failed to load ticket for access check: %w", loadErr)
-			}
-			// Автор заявки, как и владелец, сохраняет ограниченный доступ к ней
-			// даже без write/work-прав (безгрупповой автор — «заказчик»): ему
-			// доступны решения по статусам через ownerTransitionAllowed и правка
-			// своих полей через canEditFields. Менеджерские права (write/группа)
-			// сюда не попадают — они прошли CheckAccess выше.
-			if !s.isOwnerOrCreator(old, dto.Actor.ID) {
-				return err
-			}
-			ownerOnly = true
-		}
-		assignedOnly = true
-	}
-
 	var changes []*models.FieldChange
 	err := s.tx.WithinTransaction(ctx, func(newTx postgres.Tx) error {
+		var txErr error
+		changes, txErr = s.updateTicket(ctx, newTx, dto, nil)
+		return txErr
+	})
+	if err != nil {
+		return err
+	}
+
+	s.notifyTicketUpdated(ctx, dto, changes)
+	return nil
+}
+
+// ticketUpdateOptions — необязательные уточнения updateTicket. Сейчас это только
+// подмена тега в снапшоте журнала: уведомления и Mattermost получают исходные
+// изменения DTO, а история может назвать изменение точнее.
+type ticketUpdateOptions struct {
+	logTagAlias map[models.ActivityType]models.ActivityType
+}
+
+// updateTicket — тело Update внутри уже открытой транзакции: проверки прав, запись
+// изменений и журнал. Возвращает изменения для уведомления после коммита — их
+// рассылает вызывающий (Update либо DecideDueDateRequest, который проводит решение
+// по переносу срока и смену срока одной транзакцией).
+func (s *TicketService) updateTicket(
+	ctx context.Context,
+	newTx postgres.Tx,
+	dto *models.TicketDTO,
+	opts *ticketUpdateOptions,
+) (changes []*models.FieldChange, err error) {
+	err = func() error {
+		realmStr := ""
+		if dto.RealmID != nil {
+			realmStr = dto.RealmID.String()
+		}
+
+		assignedOnly := false
+		adminOnlyEdit := false
+		ownerOnly := false
+		if err := s.access.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: *dto.ID, UserID: dto.Actor.ID, Action: string(access.Write)}); err != nil {
+			if workErr := s.access.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: *dto.ID, UserID: dto.Actor.ID}); workErr != nil {
+				old, loadErr := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
+				if loadErr != nil {
+					return fmt.Errorf("failed to load ticket for access check: %w", loadErr)
+				}
+				// Автор заявки, как и владелец, сохраняет ограниченный доступ к ней
+				// даже без write/work-прав (безгрупповой автор — «заказчик»): ему
+				// доступны решения по статусам через ownerTransitionAllowed и правка
+				// своих полей через canEditFields. Менеджерские права (write/группа)
+				// сюда не попадают — они прошли CheckAccess выше.
+				if !s.isOwnerOrCreator(old, dto.Actor.ID) {
+					return err
+				}
+				ownerOnly = true
+			}
+			assignedOnly = true
+		}
+
 		oldTicket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
 		if err != nil {
 			return err
@@ -903,6 +934,9 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 
 		if len(changes) > 0 {
 			oldMap, newMap := s.logValues(ctx, oldTicket, changes)
+			if opts != nil {
+				renameLogTags(oldMap, newMap, opts.logTagAlias)
+			}
 
 			log := &models.ActivityLogDTO{
 				Action:        "updated",
@@ -924,20 +958,24 @@ func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error
 		}
 
 		return nil
-	})
-	if err != nil {
-		return err
-	}
+	}()
+	return changes, err
+}
 
-	if len(changes) > 0 {
-		updated, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
-		if err != nil {
-			s.notifyBestEffort("update", *dto.ID, dto.Title, err)
-		} else if err := s.notifications.TicketUpdated(ctx, updated, dto.Actor.ID, changes); err != nil {
-			s.notifyBestEffort("update", *dto.ID, dto.Title, err)
-		}
+// notifyTicketUpdated — уведомление об изменениях заявки. Вызывается только после
+// коммита: получатели не должны узнать об изменении, которое откатилось.
+func (s *TicketService) notifyTicketUpdated(ctx context.Context, dto *models.TicketDTO, changes []*models.FieldChange) {
+	if len(changes) == 0 {
+		return
 	}
-	return nil
+	updated, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
+	if err != nil {
+		s.notifyBestEffort("update", *dto.ID, dto.Title, err)
+		return
+	}
+	if err := s.notifications.TicketUpdated(ctx, updated, dto.Actor.ID, changes); err != nil {
+		s.notifyBestEffort("update", *dto.ID, dto.Title, err)
+	}
 }
 
 // Take — «взять заявку в работу»: пользователь назначает себя исполнителем
@@ -1344,8 +1382,8 @@ func (s *TicketService) canPickOwner(ctx context.Context, userID, realmID uuid.U
 
 // validateOwnerSelection — серверная часть правила выбора заказчика: явно выбранный
 // заказчик (ownerId) должен быть выбран пользователем, которому это разрешено
-// (менеджер/исполнитель, см. canPickOwner), и должен быть активным пользователем
-// области. Иначе заявка не создаётся/не обновляется с чужим заказчиком.
+// (менеджер/исполнитель, см. canPickOwner), и должен быть активным участником
+// области заявки. Иначе заявка не создаётся/не обновляется с чужим заказчиком.
 func (s *TicketService) validateOwnerSelection(ctx context.Context, actorID, realmID uuid.UUID, ownerID uuid.UUID) error {
 	pickable, err := s.canPickOwner(ctx, actorID, realmID)
 	if err != nil {
@@ -1358,7 +1396,23 @@ func (s *TicketService) validateOwnerSelection(ctx context.Context, actorID, rea
 	if err != nil || u == nil || !u.IsActive {
 		return models.ErrInvalidInput
 	}
+	// Заказчик — участник именно этой области: GetByID отдаёт все членства, и
+	// пользователь из другого realm (или с деактивированным членством) не должен
+	// становиться заказчиком — владение даёт read-доступ к заявке чужой области.
+	if !hasActiveRealmMembership(u, realmID) {
+		return models.ErrInvalidInput
+	}
 	return nil
+}
+
+// hasActiveRealmMembership — есть ли у пользователя активное членство в области.
+func hasActiveRealmMembership(u *models.UserData, realmID uuid.UUID) bool {
+	for _, membership := range u.Realms {
+		if membership != nil && membership.RealmID == realmID && membership.IsActive {
+			return true
+		}
+	}
+	return false
 }
 
 // validateAssigneeForAssign проверяет, что смена исполнителя для пользователя с
@@ -1506,7 +1560,9 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 	flags.CanRequestDueDate = false
 	if !isTicketInactive(ticket.Status) && ticket.DueDate != nil &&
 		ticket.Assignee != nil && ticket.Assignee.ID == userID {
-		if existing, reqErr := s.dueRequests.GetPendingByTicket(ctx, ticket.ID); reqErr != nil || existing == nil {
+		// Ошибку чтения нельзя трактовать как «запроса нет»: иначе кнопка висела бы,
+		// а создание падало бы на том же запросе (или, хуже, дублировало pending).
+		if existing, reqErr := s.dueRequests.GetPendingByTicket(ctx, ticket.ID); reqErr == nil && existing == nil {
 			flags.CanRequestDueDate = true
 		}
 	}

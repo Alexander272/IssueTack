@@ -181,7 +181,7 @@ func (h *Handler) getDueDateRequests(c *gin.Context) {
 		return
 	}
 
-	data, err := h.service.GetDueDateRequest(c, id)
+	data, err := h.service.GetDueDateRequest(c, &models.GetDueDateRequestDTO{TicketID: id, Actor: actor})
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -224,6 +224,12 @@ func (h *Handler) createDueDateRequest(c *gin.Context) {
 }
 
 func (h *Handler) decideDueDateRequest(c *gin.Context) {
+	ticketID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
 	requestId, err := uuid.Parse(c.Param("requestId"))
 	if err != nil {
 		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
@@ -236,6 +242,9 @@ func (h *Handler) decideDueDateRequest(c *gin.Context) {
 		return
 	}
 	dto.RequestID = requestId
+	// :id — заявка из адреса: решение принимается только по её запросу, иначе
+	// можно было бы утвердить перенос по чужой заявке, подставив её requestId.
+	dto.TicketID = ticketID
 
 	// Реалм берём из контекста (middleware проверил членство и права): строка
 	// заголовка здесь — не авторизованное значение.

@@ -51,7 +51,7 @@ func (s *NotificationService) NotifyDueDateDecided(ctx context.Context, ticket *
 
 	data, err := json.Marshal(map[string]any{
 		"ticket_id":         ticket.ID.String(),
-		"approved":          request.Status == "approved",
+		"approved":          request.Status == models.DueDateRequestStatusApproved,
 		"proposed_due_date": request.ProposedDueDate.Format(time.RFC3339),
 		"decision_comment":  request.DecisionComment,
 	})
@@ -66,7 +66,7 @@ func (s *NotificationService) NotifyDueDateDecided(ctx context.Context, ticket *
 		Body:   ticket.Title,
 		Data:   data,
 	}
-	if request.Status != "approved" {
+	if request.Status != models.DueDateRequestStatusApproved {
 		dto.Type = string(models.NotificationTicketDueDateRejected)
 	}
 

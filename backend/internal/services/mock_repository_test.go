@@ -376,8 +376,8 @@ func (m *MockTicketsService) CreateDueDateRequest(ctx context.Context, dto *mode
 	}
 	return args.Get(0).(*models.DueDateRequest), args.Error(1)
 }
-func (m *MockTicketsService) GetDueDateRequest(ctx context.Context, ticketID uuid.UUID) (*models.DueDateRequest, error) {
-	args := m.Called(ctx, ticketID)
+func (m *MockTicketsService) GetDueDateRequest(ctx context.Context, dto *models.GetDueDateRequestDTO) (*models.DueDateRequest, error) {
+	args := m.Called(ctx, dto)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

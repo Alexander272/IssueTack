@@ -48,15 +48,34 @@ func (s StatisticsScope) IsManagerial() bool {
 // (created_at / resolved_at в диапазоне), Active и Overdue характеризуют текущее
 // состояние видимых заявок и от периода не зависят. TotalPrev и ResolvedPrev —
 // те же периодные метрики за предыдущее окно той же длины, для расчёта дельт.
-// WithSubtasks — число заявок, у которых есть хотя бы одна подзадача.
+// Subtasks — подзадачи в разрезе KPI-карточки (свои цифры у каждой).
 type StatisticsSummary struct {
-	Total         int `json:"total"`
-	Active        int `json:"active"`
-	Overdue       int `json:"overdue"`
-	Resolved      int `json:"resolved"`
-	TotalPrev     int `json:"totalPrev"`
-	ResolvedPrev  int `json:"resolvedPrev"`
+	Total        int                       `json:"total"`
+	Active       int                       `json:"active"`
+	Overdue      int                       `json:"overdue"`
+	Resolved     int                       `json:"resolved"`
+	TotalPrev    int                       `json:"totalPrev"`
+	ResolvedPrev int                       `json:"resolvedPrev"`
+	Subtasks     StatisticsSummarySubtasks `json:"subtasks"`
+}
+
+// StatisticsSubtasks — подзадачи одной KPI-карточки: WithSubtasks — сколько заявок
+// карточки имеют хотя бы одну подзадачу, TotalSubtasks — сколько подзадач у этих
+// заявок суммарно.
+type StatisticsSubtasks struct {
 	WithSubtasks  int `json:"withSubtasks"`
+	TotalSubtasks int `json:"totalSubtasks"`
+}
+
+// StatisticsSummarySubtasks — блок подзадач для каждой KPI-карточки. Цифры не общие:
+// у «Просроченные» считаются только просроченные заявки, у «Решено» — решённые за
+// период и т.д. Отдельная структура, а не карта, чтобы блок всегда был заполнен и
+// фронт не проверял nil.
+type StatisticsSummarySubtasks struct {
+	Total    StatisticsSubtasks `json:"total"`
+	Active   StatisticsSubtasks `json:"active"`
+	Overdue  StatisticsSubtasks `json:"overdue"`
+	Resolved StatisticsSubtasks `json:"resolved"`
 }
 
 // StatisticsQuery — вход запроса к слою данных статистики: вычисленный срез доступа
@@ -155,10 +174,10 @@ type TicketStatistics struct {
 type KpiCardKey string
 
 const (
-	KpiTotal     KpiCardKey = "total"
-	KpiActive    KpiCardKey = "active"
-	KpiOverdue   KpiCardKey = "overdue"
-	KpiResolved  KpiCardKey = "resolved"
+	KpiTotal    KpiCardKey = "total"
+	KpiActive   KpiCardKey = "active"
+	KpiOverdue  KpiCardKey = "overdue"
+	KpiResolved KpiCardKey = "resolved"
 )
 
 // StatisticsKpiQuery — вход запроса списка заявок для KPI-карточки.

@@ -63,12 +63,18 @@ export const DueDateRequestDialog = ({ open, task, onClose }: Props) => {
 			<DialogContent>
 				<Stack spacing={2} sx={{ pt: 1 }}>
 					<Typography variant='body2' sx={{ color: 'text.secondary' }}>
-						Заявка: <Box component='span' sx={{ fontWeight: 600, color: 'text.primary' }}>{task.title}</Box>
+						Заявка:{' '}
+						<Box component='span' sx={{ fontWeight: 600, color: 'text.primary' }}>
+							{task.title}
+						</Box>
 					</Typography>
 
 					{currentDueDate && (
 						<Typography variant='body2' sx={{ color: 'text.secondary' }}>
-							Текущий срок: <Box component='span' sx={{ color: 'text.primary' }}>{task.dueDate}</Box>
+							Текущий срок:{' '}
+							<Box component='span' sx={{ color: 'text.primary' }}>
+								{currentDueDate.format('DD.MM.YYYY')}
+							</Box>
 						</Typography>
 					)}
 
@@ -102,7 +108,12 @@ export const DueDateRequestDialog = ({ open, task, onClose }: Props) => {
 				<Button onClick={onClose} sx={{ textTransform: 'none' }}>
 					Отмена
 				</Button>
-				<Button variant='contained' onClick={submit} disabled={!canSubmit || isLoading} sx={{ textTransform: 'none' }}>
+				<Button
+					variant='contained'
+					onClick={submit}
+					disabled={!canSubmit || isLoading}
+					sx={{ textTransform: 'none' }}
+				>
 					<Send sx={{ fontSize: 16, mr: 0.5 }} />
 					Отправить запрос
 				</Button>

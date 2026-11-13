@@ -109,6 +109,26 @@ func (s *TicketService) logValues(ctx context.Context, old *models.Ticket, chang
 	return oldMap, newMap
 }
 
+// renameLogTags переносит значения снапшота под другим тегом. Журнал может назвать
+// изменение точнее, чем исходный тег DTO (due_date_changed → due_date_approved при
+// утверждении запроса на перенос срока); уведомления и Mattermost при этом получают
+// исходный []*FieldChange, поэтому их формат не меняется.
+func renameLogTags(oldMap, newMap map[string]string, alias map[models.ActivityType]models.ActivityType) {
+	for from, to := range alias {
+		if from == to {
+			continue
+		}
+		if v, ok := oldMap[string(from)]; ok {
+			delete(oldMap, string(from))
+			oldMap[string(to)] = v
+		}
+		if v, ok := newMap[string(from)]; ok {
+			delete(newMap, string(from))
+			newMap[string(to)] = v
+		}
+	}
+}
+
 // logTicketUser — имя пользователя тикета по тегу изменения (старая сторона).
 func logTicketUser(old *models.Ticket, tag models.ActivityType) string {
 	switch tag {

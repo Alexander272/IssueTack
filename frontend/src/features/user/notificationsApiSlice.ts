@@ -12,9 +12,6 @@ export interface ICategoryNotificationSetting {
 	overdue: boolean
 	reminderHigh: boolean
 	reminderUrgent: boolean
-	dueDateRequested: boolean
-	dueDateApproved: boolean
-	dueDateRejected: boolean
 }
 
 export interface IGroupNotificationSetting {

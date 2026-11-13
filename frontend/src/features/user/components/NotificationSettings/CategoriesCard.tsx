@@ -32,9 +32,6 @@ const EMPTY_SETTING = {
 	overdue: false,
 	reminderHigh: false,
 	reminderUrgent: false,
-	dueDateRequested: false,
-	dueDateApproved: false,
-	dueDateRejected: false,
 }
 
 export interface IGroupWithCategories extends IGroup {

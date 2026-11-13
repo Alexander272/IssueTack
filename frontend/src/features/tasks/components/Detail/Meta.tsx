@@ -1,6 +1,5 @@
 import { Box, Typography } from '@mui/material'
-import { Info, Layers, Building2, Flag, Calendar, Clock, Hash, CheckCircle, CalendarClock } from 'lucide-mui'
-import dayjs from 'dayjs'
+import { Info, Layers, Building2, Flag, Calendar, Clock, Hash, CheckCircle } from 'lucide-mui'
 
 import type { ITask } from '../../types/task'
 import {
@@ -118,20 +117,6 @@ export const Meta = ({ task }: Props) => {
 								}}
 							>
 								{getSmartDate(task.dueDate || '')}
-							</Typography>
-						}
-					/>
-				)}
-				{task.access?.canDecideDueDate && task.dueDateRequest?.status === 'pending' && (
-					<MetaRow
-						label='Перенос срока'
-						icon={<CalendarClock sx={{ fontSize: 14 }} />}
-						value={
-							<Typography sx={{ fontSize: '0.75rem', color: '#92400e', fontWeight: 600, textAlign: 'right' }}>
-								Ожидает решения:{' '}
-								{task.dueDateRequest.proposedDueDate
-									? dayjs(task.dueDateRequest.proposedDueDate).format('DD.MM.YYYY')
-									: '—'}
 							</Typography>
 						}
 					/>

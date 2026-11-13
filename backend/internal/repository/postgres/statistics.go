@@ -118,24 +118,46 @@ func (r *StatisticsRepo) GetStatisticsSummary(ctx context.Context, q models.Stat
 	span := to.Sub(from)
 	prevFromPh, prevToPh := w.rangeArgs(from.Add(-span), from)
 
+	// Один проход по видимым заявкам: LEFT JOIN LATERAL считает подзадачи только
+	// для попавших в выборку тикетов (индекс subtasks(ticket_id)), а условные
+	// агрегаты дают и число карточек, и цифры блока «подзадачи» для каждой из них.
+	activeCond := "t.status IN ('open', 'in_progress', 'pending', 'on_hold')"
+	overdueCond := "t.due_date IS NOT NULL AND t.due_date < NOW() AND t.status NOT IN ('closed', 'cancelled')"
+	createdInPeriod := fmt.Sprintf("t.created_at >= %s AND t.created_at < %s", fromPh, toPh)
+	resolvedInPeriod := fmt.Sprintf("t.resolved_at >= %s AND t.resolved_at < %s", fromPh, toPh)
+
 	query := fmt.Sprintf(`SELECT
-			COUNT(*) FILTER (WHERE t.created_at >= %s AND t.created_at < %s),
-			COUNT(*) FILTER (WHERE t.status IN ('open', 'in_progress', 'pending', 'on_hold')),
-			COUNT(*) FILTER (WHERE t.due_date IS NOT NULL AND t.due_date < NOW() AND t.status NOT IN ('closed', 'cancelled')),
-			COUNT(*) FILTER (WHERE t.resolved_at >= %s AND t.resolved_at < %s),
-			COUNT(*) FILTER (WHERE t.created_at >= %s AND t.created_at < %s),
-			COUNT(*) FILTER (WHERE t.resolved_at >= %s AND t.resolved_at < %s),
-			COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM %s st WHERE st.ticket_id = t.id))
-		FROM %s t
-		WHERE %s`,
-		fromPh, toPh, fromPh, toPh, prevFromPh, prevToPh, prevFromPh, prevToPh,
-		Tables.Subtasks, Tables.Tickets, strings.Join(w.clauses, " AND "),
+			COUNT(*) FILTER (WHERE %[1]s),
+			COUNT(*) FILTER (WHERE %[2]s),
+			COUNT(*) FILTER (WHERE %[3]s),
+			COUNT(*) FILTER (WHERE %[4]s),
+			COUNT(*) FILTER (WHERE t.created_at >= %[5]s AND t.created_at < %[6]s),
+			COUNT(*) FILTER (WHERE t.resolved_at >= %[5]s AND t.resolved_at < %[6]s),
+			COUNT(*) FILTER (WHERE sc.cnt > 0 AND %[1]s),
+			COALESCE(SUM(sc.cnt) FILTER (WHERE %[1]s), 0)::bigint,
+			COUNT(*) FILTER (WHERE sc.cnt > 0 AND %[2]s),
+			COALESCE(SUM(sc.cnt) FILTER (WHERE %[2]s), 0)::bigint,
+			COUNT(*) FILTER (WHERE sc.cnt > 0 AND %[3]s),
+			COALESCE(SUM(sc.cnt) FILTER (WHERE %[3]s), 0)::bigint,
+			COUNT(*) FILTER (WHERE sc.cnt > 0 AND %[4]s),
+			COALESCE(SUM(sc.cnt) FILTER (WHERE %[4]s), 0)::bigint
+		FROM %[7]s t
+		CROSS JOIN LATERAL (SELECT COUNT(*) AS cnt FROM %[8]s st WHERE st.ticket_id = t.id) sc
+		WHERE %[9]s`,
+		createdInPeriod, activeCond, overdueCond, resolvedInPeriod,
+		prevFromPh, prevToPh,
+		Tables.Tickets, Tables.Subtasks,
+		strings.Join(w.clauses, " AND "),
 	)
 
 	summary := &models.StatisticsSummary{}
 	if err := r.db.QueryRow(ctx, query, w.args...).Scan(
 		&summary.Total, &summary.Active, &summary.Overdue, &summary.Resolved,
-		&summary.TotalPrev, &summary.ResolvedPrev, &summary.WithSubtasks,
+		&summary.TotalPrev, &summary.ResolvedPrev,
+		&summary.Subtasks.Total.WithSubtasks, &summary.Subtasks.Total.TotalSubtasks,
+		&summary.Subtasks.Active.WithSubtasks, &summary.Subtasks.Active.TotalSubtasks,
+		&summary.Subtasks.Overdue.WithSubtasks, &summary.Subtasks.Overdue.TotalSubtasks,
+		&summary.Subtasks.Resolved.WithSubtasks, &summary.Subtasks.Resolved.TotalSubtasks,
 	); err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}

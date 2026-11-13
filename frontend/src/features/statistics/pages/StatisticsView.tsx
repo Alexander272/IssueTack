@@ -1,13 +1,19 @@
 import { useCallback, useMemo, useState, type FC } from 'react'
-import dayjs from 'dayjs'
 import { Box, Grid, Typography } from '@mui/material'
 import { useSearchParams } from 'react-router'
+import dayjs from 'dayjs'
 
+import type { DateRange } from '@/components/Period/types'
+import type {
+	IStatisticsFilter,
+	IStatisticsRefinements,
+	StatisticsDrilldownDimension,
+	StatisticsDrilldownRing,
+} from '../types/statistics'
 import { useAppSelector } from '@/hooks/redux'
 import { getIsManager } from '@/features/user/userSlice'
 import { PeriodPicker } from '@/components/Period/Period'
 import { getPresetDates } from '@/components/Period/utils'
-import type { DateRange } from '@/components/Period/types'
 import { useGetTicketStatisticsQuery } from '../statisticsApiSlice'
 import { KpiCards } from '../components/KpiCards'
 import { KpiTicketsModal } from '../components/KpiTicketsModal'
@@ -18,12 +24,6 @@ import { NestedDonut, type IDonutBucket } from '../components/NestedDonut'
 import { StatisticsTicketsModal } from '../components/StatisticsTicketsModal'
 import { DEFAULT_TOP_N } from '../components/TopNSelect'
 import { StatisticsFilters } from '../components/StatisticsFilters'
-import type {
-	IStatisticsFilter,
-	IStatisticsRefinements,
-	StatisticsDrilldownDimension,
-	StatisticsDrilldownRing,
-} from '../types/statistics'
 
 // refinementKeys — имена query-параметров URL, в которых хранится состояние панели
 // фильтров. Повторяющиеся параметры (?assigneeId=a&assigneeId=b) сохраняют
@@ -46,8 +46,6 @@ interface IKpiDrilldown {
 
 type Drilldown = IDrilldown | IKpiDrilldown | null
 
-const STORAGE_KEY = '@issueTrack/statistics/showOverdue'
-
 export const StatisticsView: FC = () => {
 	const isManager = useAppSelector(getIsManager)
 	const [range, setRange] = useState<DateRange>(() => getPresetDates('month', 'month', 1))
@@ -59,24 +57,9 @@ export const StatisticsView: FC = () => {
 	const [searchParams, setSearchParams] = useSearchParams()
 
 	// Показывать ли карточку «Просроченные» — по умолчанию скрыта, включается кликом.
-	const [showOverdue, setShowOverdue] = useState(() => {
-		try {
-			const stored = localStorage.getItem(STORAGE_KEY)
-			return stored === 'true'
-		} catch {
-			return false
-		}
-	})
+	const [showOverdue, setShowOverdue] = useState(false)
 
-	const toggleOverdue = useCallback(() => {
-		setShowOverdue(prev => {
-			const next = !prev
-			try {
-				localStorage.setItem(STORAGE_KEY, String(next))
-			} catch {}
-			return next
-		})
-	}, [])
+	const toggleOverdue = () => setShowOverdue(prev => !prev)
 
 	const refinements = useMemo<IStatisticsRefinements>(
 		() => ({
@@ -154,7 +137,7 @@ export const StatisticsView: FC = () => {
 	}, [])
 
 	return (
-		<Box sx={{ flexGrow: 1, overflow: 'auto', p: 3 }}>
+		<Box sx={{ flexGrow: 1, overflow: 'auto', p: 2 }}>
 			<Box
 				sx={{
 					display: 'flex',
@@ -163,7 +146,7 @@ export const StatisticsView: FC = () => {
 					justifyContent: 'space-between',
 					alignItems: { xs: 'flex-start', sm: 'center' },
 					gap: { xs: 2, sm: 1 },
-					mb: 4,
+					mb: 3,
 				}}
 			>
 				<Box sx={{ flexGrow: { xs: 0, sm: 1 } }}>
@@ -206,7 +189,7 @@ export const StatisticsView: FC = () => {
 
 			<KpiCards summary={stats?.summary} isLoading={isFetching} onCardClick={openKpi} showOverdue={showOverdue} />
 
-			<Grid container spacing={3} sx={{ mb: 3 }}>
+			<Grid container spacing={2} sx={{ mb: 2 }}>
 				<Grid size={{ xs: 12, lg: 8 }}>
 					<TrendChart points={stats?.trend ?? []} isLoading={isFetching} />
 				</Grid>
@@ -215,7 +198,7 @@ export const StatisticsView: FC = () => {
 				</Grid>
 			</Grid>
 
-			<Grid container spacing={3} sx={{ mb: isManager ? 3 : 0 }}>
+			<Grid container spacing={2} sx={{ mb: isManager ? 2 : 0 }}>
 				{/* Менеджеру три в ряд с 900px (md), не-менеджеру две по 6; lg всплывает из md. */}
 				<Grid size={{ xs: 12, md: isManager ? 4 : 6 }}>
 					<BreakdownChart title='По категориям' buckets={stats?.byCategory ?? []} isLoading={isFetching} />
@@ -241,7 +224,7 @@ export const StatisticsView: FC = () => {
 			</Grid>
 
 			{isManager && (
-				<Grid container spacing={3}>
+				<Grid container spacing={2}>
 					<Grid size={{ xs: 12, lg: 6 }}>
 						<NestedDonut
 							title='Нагрузка исполнителей'
