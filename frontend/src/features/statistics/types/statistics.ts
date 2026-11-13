@@ -64,7 +64,7 @@ export interface ITicketStatistics {
 export type StatisticsGranularity = 'day' | 'week' | 'month'
 
 // Разрез drill-down статистики: кого показать — исполнителя или заказчика.
-export type StatisticsDrilldownDimension = 'assignee' | 'owner'
+export type StatisticsDrilldownDimension = 'assignee' | 'owner' | 'category' | 'site' | 'group'
 
 // Кольцо диаграммы: пусто — внутреннее (все заявки), active — внешнее активное,
 // closed — внешнее закрытое. Значения совпадают с параметром `ring` API.

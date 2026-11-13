@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, type FC } from 'react'
-import { Box, Grid, Typography } from '@mui/material'
+import { Box, Grid, Stack, Typography } from '@mui/material'
 import { useSearchParams } from 'react-router'
 import dayjs from 'dayjs'
 
@@ -134,6 +134,21 @@ export const StatisticsView: FC = () => {
 		[assigneeBuckets],
 	)
 
+	const openCategory = useCallback((bucketId: string) => {
+		const name = stats?.byCategory?.find(bucket => bucket.id === bucketId)?.name ?? ''
+		setDrilldown({ dimension: 'category', bucketId, bucketName: name, ring: '' })
+	}, [stats?.byCategory])
+
+	const openSite = useCallback((bucketId: string) => {
+		const name = stats?.bySite?.find(bucket => bucket.id === bucketId)?.name ?? ''
+		setDrilldown({ dimension: 'site', bucketId, bucketName: name, ring: '' })
+	}, [stats?.bySite])
+
+	const openGroup = useCallback((bucketId: string) => {
+		const name = stats?.byGroup?.find(bucket => bucket.id === bucketId)?.name ?? ''
+		setDrilldown({ dimension: 'group', bucketId, bucketName: name, ring: '' })
+	}, [stats?.byGroup])
+
 	const openKpi = useCallback((cardKey: 'total' | 'active' | 'overdue' | 'resolved') => {
 		setDrilldown({ type: 'kpi', cardKey })
 	}, [])
@@ -200,30 +215,59 @@ export const StatisticsView: FC = () => {
 				</Grid>
 			</Grid>
 
-			<Grid container spacing={2} sx={{ mb: isManager ? 2 : 0 }}>
-				{/* Менеджеру три в ряд с 900px (md), не-менеджеру две по 6; lg всплывает из md. */}
-				<Grid size={{ xs: 12, md: isManager ? 4 : 6 }}>
-					<BreakdownChart title='По категориям' buckets={stats?.byCategory ?? []} isLoading={isFetching} />
-				</Grid>
-				<Grid size={{ xs: 12, md: isManager ? 4 : 6 }}>
-					<BreakdownChart
-						title='По площадкам'
-						buckets={stats?.bySite ?? []}
-						color='#27b05c'
-						isLoading={isFetching}
-					/>
-				</Grid>
-				{isManager && (
-					<Grid size={{ xs: 12, md: 4 }}>
+			{isManager ? (
+				<Grid container spacing={2} sx={{ mb: 2 }}>
+					{/* Левая колонка: длинный график по категориям */}
+					<Grid size={{ xs: 12, md: 6 }}>
 						<BreakdownChart
-							title='По группам'
-							buckets={stats?.byGroup ?? []}
-							color='#ff9800'
+							title='По категориям'
+							buckets={stats?.byCategory ?? []}
 							isLoading={isFetching}
+							onBarClick={openCategory}
 						/>
 					</Grid>
-				)}
-			</Grid>
+
+					{/* Правая колонка: два компактных графика друг под другом */}
+					<Grid size={{ xs: 12, md: 6 }}>
+						<Stack spacing={2}>
+							<BreakdownChart
+								title='По площадкам'
+								buckets={stats?.bySite ?? []}
+								color='#27b05c'
+								isLoading={isFetching}
+								onBarClick={openSite}
+							/>
+							<BreakdownChart
+								title='По группам'
+								buckets={stats?.byGroup ?? []}
+								color='#ff9800'
+								isLoading={isFetching}
+								onBarClick={openGroup}
+							/>
+						</Stack>
+					</Grid>
+				</Grid>
+			) : (
+				<Grid container spacing={2}>
+					<Grid size={{ xs: 12, md: 6 }}>
+						<BreakdownChart
+							title='По категориям'
+							buckets={stats?.byCategory ?? []}
+							isLoading={isFetching}
+							onBarClick={openCategory}
+						/>
+					</Grid>
+					<Grid size={{ xs: 12, md: 6 }}>
+						<BreakdownChart
+							title='По площадкам'
+							buckets={stats?.bySite ?? []}
+							color='#27b05c'
+							isLoading={isFetching}
+							onBarClick={openSite}
+						/>
+					</Grid>
+				</Grid>
+			)}
 
 			{isManager && (
 				<Grid container spacing={2}>

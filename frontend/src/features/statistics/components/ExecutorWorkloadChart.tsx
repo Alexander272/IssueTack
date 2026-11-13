@@ -6,6 +6,7 @@ import type { IWorkloadBucket } from '../types/statistics'
 import { TopNSelect } from './TopNSelect'
 import { WorkloadBarTooltip } from './WorkloadBarTooltip'
 import { EXECUTOR_SERIES_COLORS, getWorkloadCellColor, WORKLOAD_REST_ID } from './workloadChartColors'
+import { CustomBarLabel } from './BarLabel'
 
 interface Props {
 	title: string
@@ -59,6 +60,7 @@ export const ExecutorWorkloadChart: FC<Props> = ({ title, buckets, topN, onTopNC
 				label: 'Задачи (активные)',
 				data: rows.map(r => r.activeTasks),
 				stack: 'active',
+				barLabel: 'value' as const,
 				color: EXECUTOR_SERIES_COLORS.activeTasks.legendColor,
 				colorGetter: ({ dataIndex }: { dataIndex: number }) =>
 					getWorkloadCellColor(
@@ -71,6 +73,7 @@ export const ExecutorWorkloadChart: FC<Props> = ({ title, buckets, topN, onTopNC
 				label: 'Подзадачи (активные)',
 				data: rows.map(r => r.activeSubtasks),
 				stack: 'active',
+				barLabel: 'value' as const,
 				color: EXECUTOR_SERIES_COLORS.activeSubtasks.legendColor,
 				colorGetter: ({ dataIndex }: { dataIndex: number }) =>
 					getWorkloadCellColor(
@@ -83,6 +86,7 @@ export const ExecutorWorkloadChart: FC<Props> = ({ title, buckets, topN, onTopNC
 				label: 'Задачи (закрытые)',
 				data: rows.map(r => r.closedTasks),
 				stack: 'closed',
+				barLabel: 'value' as const,
 				color: EXECUTOR_SERIES_COLORS.closedTasks.legendColor,
 				colorGetter: ({ dataIndex }: { dataIndex: number }) =>
 					getWorkloadCellColor(
@@ -95,6 +99,7 @@ export const ExecutorWorkloadChart: FC<Props> = ({ title, buckets, topN, onTopNC
 				label: 'Подзадачи (закрытые)',
 				data: rows.map(r => r.closedSubtasks),
 				stack: 'closed',
+				barLabel: 'value' as const,
 				color: EXECUTOR_SERIES_COLORS.closedSubtasks.legendColor,
 				colorGetter: ({ dataIndex }: { dataIndex: number }) =>
 					getWorkloadCellColor(
@@ -164,7 +169,7 @@ export const ExecutorWorkloadChart: FC<Props> = ({ title, buckets, topN, onTopNC
 					margin={{ right: 24, top: 8, bottom: 24 }}
 					borderRadius={8}
 					hideLegend={false}
-					slots={{ tooltip: WorkloadBarTooltip }}
+					slots={{ tooltip: WorkloadBarTooltip, barLabel: CustomBarLabel }}
 				/>
 			)}
 		</Paper>

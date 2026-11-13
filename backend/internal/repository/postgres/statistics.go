@@ -585,10 +585,30 @@ func (r *StatisticsRepo) GetStatisticsTickets(ctx context.Context, q models.Stat
 
 	w := &whereBuilder{}
 	w.statisticsWhere(models.StatisticsQuery{Scope: q.Scope, Filter: q.Filter})
+
 	fromPh, toPh := w.rangeArgs(q.Filter.From, q.Filter.To)
 	w.add(fmt.Sprintf("t.created_at >= %s AND t.created_at < %s", fromPh, toPh))
 
+	// Добавляем WHERE условие в зависимости от измерения
 	switch q.Dimension {
+	case "category":
+		if q.BucketID != nil {
+			w.idx++
+			w.add(fmt.Sprintf("c.id = $%d", w.idx))
+			w.args = append(w.args, *q.BucketID)
+		}
+	case "site":
+		if q.BucketID != nil {
+			w.idx++
+			w.add(fmt.Sprintf("s.id = $%d", w.idx))
+			w.args = append(w.args, *q.BucketID)
+		}
+	case "group":
+		if q.BucketID != nil {
+			w.idx++
+			w.add(fmt.Sprintf("g.id = $%d", w.idx))
+			w.args = append(w.args, *q.BucketID)
+		}
 	case "owner":
 		if q.OwnerNone {
 			w.add("t.owner_id IS NULL")
@@ -618,12 +638,18 @@ func (r *StatisticsRepo) GetStatisticsTickets(ctx context.Context, q models.Stat
 	w.idx++
 	limitPh := fmt.Sprintf("$%d", w.idx)
 	w.args = append(w.args, limit)
+
 	w.idx++
 	offsetPh := fmt.Sprintf("$%d", w.idx)
 	w.args = append(w.args, offset)
 
-	query := fmt.Sprintf(`%s WHERE %s ORDER BY t.created_at DESC LIMIT %s OFFSET %s`,
-		ticketSelectBase(), strings.Join(w.clauses, " AND "), limitPh, offsetPh,
+	// Убрали лишний %s в начале шаблона (было `%s %s WHERE ...`)
+	query := fmt.Sprintf(
+		`%s WHERE %s ORDER BY t.created_at DESC LIMIT %s OFFSET %s`,
+		ticketSelectBase(),
+		strings.Join(w.clauses, " AND "),
+		limitPh,
+		offsetPh,
 	)
 
 	rows, err := r.db.Query(ctx, query, w.args...)
@@ -642,9 +668,11 @@ func (r *StatisticsRepo) GetStatisticsTickets(ctx context.Context, q models.Stat
 		total = rowTotal
 		data = append(data, ticket)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, 0, MapError(fmt.Errorf("rows iteration error: %w", err))
 	}
+
 	return data, total, nil
 }
 

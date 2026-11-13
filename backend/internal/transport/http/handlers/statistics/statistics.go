@@ -50,7 +50,7 @@ type statisticsTicketsQuery struct {
 	From        string `form:"from"`
 	To          string `form:"to"`
 	Granularity string `form:"granularity" binding:"omitempty,oneof=day week month"`
-	Dimension   string `form:"dim" binding:"required,oneof=assignee owner"`
+	Dimension   string `form:"dim" binding:"required,oneof=assignee owner category site group"`
 	ID          string `form:"id"`
 	Ring        string `form:"ring" binding:"omitempty,oneof=active closed"`
 	Limit       int    `form:"limit" binding:"omitempty,min=1,max=100"`
@@ -181,10 +181,17 @@ func (h *Handler) getTicketsList(c *gin.Context) {
 		Limit:       query.Limit,
 		Offset:      query.Offset,
 	}
-	if query.Dimension == "owner" && id == uuid.Nil {
-		drill.OwnerNone = true
-	} else {
+	switch query.Dimension {
+	case "owner":
+		if id == uuid.Nil {
+			drill.OwnerNone = true
+		} else {
+			drill.PersonID = &id
+		}
+	case "assignee":
 		drill.PersonID = &id
+	case "category", "site", "group":
+		drill.BucketID = &id
 	}
 
 	data, total, err := h.service.GetTickets(c.Request.Context(), drill)

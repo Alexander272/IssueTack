@@ -1,24 +1,38 @@
-import { useEffect, useRef, useState, type FC } from 'react'
+import { useEffect, useMemo, useRef, useState, type FC } from 'react'
 import { Box, Paper, Skeleton, Typography } from '@mui/material'
 import { BarChart } from '@mui/x-charts/BarChart'
 
 import type { IStatisticsBucket } from '../types/statistics'
+import { CustomBarLabel } from './BarLabel'
 
 interface Props {
 	title: string
 	buckets: IStatisticsBucket[]
 	color?: string
 	isLoading: boolean
+	onBarClick?: (bucketId: string) => void
 }
-
-const truncate = (value: string, max = 40) => (value.length > max ? `${value.slice(0, max - 1)}…` : value)
 
 // До первого замера ResizeObserver — фолбэк ширины контента карточки.
 const FALLBACK_CONTENT_WIDTH = 160
 
-export const BreakdownChart: FC<Props> = ({ title, buckets, color = '#2196f3', isLoading }) => {
+export const BreakdownChart: FC<Props> = ({ title, buckets, color = '#2196f3', isLoading, onBarClick }) => {
 	const contentRef = useRef<HTMLDivElement | null>(null)
 	const [contentWidth, setContentWidth] = useState(0)
+
+	const bucketIds = useMemo(() => buckets.map(b => b.id), [buckets])
+	const nameById = useMemo(() => {
+		const map = new Map<string, string>()
+		buckets.forEach(b => map.set(b.id, b.name))
+		return map
+	}, [buckets])
+
+	const handleItemClick = (_event: unknown, item: { dataIndex: number }) => {
+		if (!onBarClick || item.dataIndex == null) return
+		const bucket = buckets[item.dataIndex]
+		if (!bucket) return
+		onBarClick(bucket.id)
+	}
 
 	useEffect(() => {
 		const el = contentRef.current
@@ -37,7 +51,6 @@ export const BreakdownChart: FC<Props> = ({ title, buckets, color = '#2196f3', i
 	const needed = Math.max(120, Math.min(longest, 40) * 7)
 	const allowed = Math.max(80, Math.round((contentWidth || FALLBACK_CONTENT_WIDTH) * 0.4))
 	const axisWidth = Math.min(needed, allowed, 300)
-	const labelMax = Math.max(8, Math.floor(axisWidth / 7))
 
 	return (
 		<Paper sx={{ p: 3, border: '1px solid #e5e7eb', borderRadius: '12px', height: '100%' }} elevation={0}>
@@ -60,15 +73,19 @@ export const BreakdownChart: FC<Props> = ({ title, buckets, color = '#2196f3', i
 						yAxis={[
 							{
 								scaleType: 'band',
-								data: buckets.map(bucket => truncate(bucket.name, labelMax)),
+								data: bucketIds,
+								valueFormatter: (bucketId: string) => nameById.get(bucketId) ?? bucketId,
 								tickLabelStyle: { fontSize: 12 },
 								width: axisWidth,
+								categoryGapRatio: 0.2,
 							},
 						]}
-						// xAxis={[{ min: 0 }]}
-						series={[{ data: buckets.map(bucket => bucket.count), color }]}
+						xAxis={[{ tickLabelStyle: { fontSize: 11 } }]}
+						series={[{ data: buckets.map(bucket => bucket.count), color, barLabel: 'value' as const }]}
+						onItemClick={handleItemClick}
 						margin={{ right: 24, top: 8, bottom: 24 }}
 						borderRadius={8}
+						slots={{ barLabel: CustomBarLabel }}
 					/>
 				)}
 			</Box>

@@ -6,6 +6,7 @@ import type { IDonutBucket } from './NestedDonut'
 import { TopNSelect } from './TopNSelect'
 import { WorkloadBarTooltip } from './WorkloadBarTooltip'
 import { getWorkloadCellColor, OWNER_SERIES_COLORS, WORKLOAD_REST_ID } from './workloadChartColors'
+import { CustomBarLabel } from './BarLabel'
 
 interface Props {
 	title: string
@@ -50,6 +51,7 @@ export const OwnerWorkloadChart: FC<Props> = ({ title, buckets, topN, onTopNChan
 				label: 'Активные',
 				data: rows.map(r => r.active),
 				stack: 'total',
+				barLabel: 'value' as const,
 				color: OWNER_SERIES_COLORS.active.legendColor,
 				colorGetter: ({ dataIndex }: { dataIndex: number }) =>
 					getWorkloadCellColor(rows[dataIndex]?.id ?? WORKLOAD_REST_ID, OWNER_SERIES_COLORS.active),
@@ -59,6 +61,7 @@ export const OwnerWorkloadChart: FC<Props> = ({ title, buckets, topN, onTopNChan
 				label: 'Закрытые',
 				data: rows.map(r => Math.max(r.total - r.active, 0)),
 				stack: 'total',
+				barLabel: 'value' as const,
 				color: OWNER_SERIES_COLORS.closed.legendColor,
 				colorGetter: ({ dataIndex }: { dataIndex: number }) =>
 					getWorkloadCellColor(rows[dataIndex]?.id ?? WORKLOAD_REST_ID, OWNER_SERIES_COLORS.closed),
@@ -124,7 +127,7 @@ export const OwnerWorkloadChart: FC<Props> = ({ title, buckets, topN, onTopNChan
 					margin={{ right: 24, top: 8, bottom: 24 }}
 					borderRadius={8}
 					hideLegend={false}
-					slots={{ tooltip: WorkloadBarTooltip }}
+					slots={{ tooltip: WorkloadBarTooltip, barLabel: CustomBarLabel }}
 				/>
 			)}
 		</Paper>

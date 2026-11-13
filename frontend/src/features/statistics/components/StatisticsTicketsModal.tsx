@@ -30,6 +30,14 @@ const RING_LABEL: Record<StatisticsDrilldownRing, string> = {
 	closed: 'Закрытые заявки',
 }
 
+const DIMENSION_LABELS: Record<StatisticsDrilldownDimension, string> = {
+	assignee: 'исполнитель',
+	owner: 'заказчик',
+	category: 'категория',
+	site: 'площадка',
+	group: 'группа',
+}
+
 // StatisticsTicketsModal — drill-down статистики: список заявок, стоящих за
 // сектором диаграммы. Срез уже посчитан бэкендом по тем же период/уточнениям,
 // что и агрегаты, поэтому число в списке совпадает с числом в секции. Клик по
@@ -84,7 +92,7 @@ export const StatisticsTicketsModal: FC<Props> = ({ dimension, bucketId, bucketN
 							{isNoPerson ? 'Без заказчика' : bucketName}
 						</Typography>
 						<Typography sx={{ flexShrink: 0, fontSize: '0.825rem', fontWeight: 400, color: '#6b7280' }}>
-							{dimension === 'assignee' ? ' · исполнитель' : ' · заказчик'}
+							· {DIMENSION_LABELS[dimension]}
 						</Typography>
 					</Box>
 					<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 0.25, color: '#6b7280' }}>
@@ -114,7 +122,7 @@ export const StatisticsTicketsModal: FC<Props> = ({ dimension, bucketId, bucketN
 					total={total}
 					onOpenTask={handleOpenTask}
 					onShowMore={() => setLimit(value => value + PAGE_SIZE)}
-					dimension={dimension}
+					dimension={dimension === 'assignee' ? 'assignee' : dimension === 'owner' ? 'owner' : undefined}
 				/>
 			</DialogContent>
 		</Dialog>
