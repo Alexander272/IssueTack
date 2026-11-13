@@ -10,6 +10,7 @@ import type {
 	StatisticsDrilldownDimension,
 	StatisticsDrilldownRing,
 } from '../types/statistics'
+import type { IDonutBucket } from '../components/NestedDonut'
 import { useAppSelector } from '@/hooks/redux'
 import { getIsManager } from '@/features/user/userSlice'
 import { PeriodPicker } from '@/components/Period/Period'
@@ -20,7 +21,8 @@ import { KpiTicketsModal } from '../components/KpiTicketsModal'
 import { TrendChart } from '../components/TrendChart'
 import { StatusChart } from '../components/StatusChart'
 import { BreakdownChart } from '../components/BreakdownChart'
-import { NestedDonut, type IDonutBucket } from '../components/NestedDonut'
+import { ExecutorWorkloadChart } from '../components/ExecutorWorkloadChart'
+import { OwnerWorkloadChart } from '../components/OwnerWorkloadChart'
 import { StatisticsTicketsModal } from '../components/StatisticsTicketsModal'
 import { DEFAULT_TOP_N } from '../components/TopNSelect'
 import { StatisticsFilters } from '../components/StatisticsFilters'
@@ -108,28 +110,28 @@ export const StatisticsView: FC = () => {
 			(stats?.workload ?? []).map(item => ({
 				id: item.userId,
 				name: item.name,
-				total: item.total,
-				active: item.active,
+				total: item.activeTasks + item.closedTasks + item.activeSubtasks + item.closedSubtasks,
+				active: item.activeTasks + item.activeSubtasks,
 			})),
 		[stats?.workload],
 	)
 	const ownerBuckets = useMemo<IDonutBucket[]>(() => stats?.byOwner ?? [], [stats?.byOwner])
 
-	// Клик по сектору открывает список заявок этого человека. Имя берём из уже
-	// загруженных бакетов (диаграмма отдаёт только id), чтобы не ходить на бэкенд.
-	const openAssignee = useCallback(
-		(bucketId: string, ring: StatisticsDrilldownRing) => {
-			const name = assigneeBuckets.find(bucket => bucket.id === bucketId)?.name ?? ''
-			setDrilldown({ dimension: 'assignee', bucketId, bucketName: name, ring })
-		},
-		[assigneeBuckets],
-	)
 	const openOwner = useCallback(
 		(bucketId: string, ring: StatisticsDrilldownRing) => {
 			const name = ownerBuckets.find(bucket => bucket.id === bucketId)?.name ?? ''
 			setDrilldown({ dimension: 'owner', bucketId, bucketName: name, ring })
 		},
 		[ownerBuckets],
+	)
+
+	// Клик по столбцу workload: ring = 'active' | 'closed' (совпадает с API)
+	const openAssigneeWorkload = useCallback(
+		(bucketId: string, ring: 'active' | 'closed') => {
+			const name = assigneeBuckets.find(bucket => bucket.id === bucketId)?.name ?? ''
+			setDrilldown({ dimension: 'assignee', bucketId, bucketName: name, ring: ring as StatisticsDrilldownRing })
+		},
+		[assigneeBuckets],
 	)
 
 	const openKpi = useCallback((cardKey: 'total' | 'active' | 'overdue' | 'resolved') => {
@@ -226,23 +228,23 @@ export const StatisticsView: FC = () => {
 			{isManager && (
 				<Grid container spacing={2}>
 					<Grid size={{ xs: 12, lg: 6 }}>
-						<NestedDonut
+						<ExecutorWorkloadChart
 							title='Нагрузка исполнителей'
-							buckets={assigneeBuckets}
+							buckets={stats?.workload ?? []}
 							topN={topNAssignee}
 							onTopNChange={setTopNAssignee}
 							isLoading={isFetching}
-							onSliceClick={openAssignee}
+							onBarClick={openAssigneeWorkload}
 						/>
 					</Grid>
 					<Grid size={{ xs: 12, lg: 6 }}>
-						<NestedDonut
+						<OwnerWorkloadChart
 							title='Задачи от заказчиков'
 							buckets={ownerBuckets}
 							topN={topNOwner}
 							onTopNChange={setTopNOwner}
 							isLoading={isFetching}
-							onSliceClick={openOwner}
+							onBarClick={openOwner}
 						/>
 					</Grid>
 				</Grid>

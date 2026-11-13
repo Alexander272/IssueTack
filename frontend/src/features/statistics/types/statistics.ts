@@ -29,8 +29,10 @@ export interface IStatusBucket {
 export interface IWorkloadBucket {
 	userId: string
 	name: string
-	active: number
-	total: number
+	activeTasks: number
+	activeSubtasks: number
+	closedTasks: number
+	closedSubtasks: number
 }
 
 // IByOwnerBucket — разрез по заказчику. active/total нужны для двухкольцевой

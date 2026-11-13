@@ -141,12 +141,15 @@ type StatisticsBreakdownBucket struct {
 	Active int       `json:"active"`
 }
 
-// WorkloadBucket — нагрузка на исполнителя за период.
+// WorkloadBucket — нагрузка на исполнителя за период: два столбца (active/closed),
+// каждый — stack из задач и подзадач. Исполнитель подзадачи = исполнитель родительской заявки.
 type WorkloadBucket struct {
-	UserID uuid.UUID `json:"userId"`
-	Name   string    `json:"name"`
-	Active int       `json:"active"`
-	Total  int       `json:"total"`
+	UserID         uuid.UUID `json:"userId"`
+	Name           string    `json:"name"`
+	ActiveTasks    int       `json:"activeTasks"`
+	ActiveSubtasks int       `json:"activeSubtasks"`
+	ClosedTasks    int       `json:"closedTasks"`
+	ClosedSubtasks int       `json:"closedSubtasks"`
 }
 
 // TrendPoint — точка динамики заявок: создано и решено за бакет.

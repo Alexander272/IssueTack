@@ -340,48 +340,154 @@ func (r *StatisticsRepo) GetStatisticsByOwner(ctx context.Context, q models.Stat
 	return data, nil
 }
 
-// GetStatisticsWorkload возвращает нагрузку по исполнителям за период: total —
-// заявки, созданные за период и назначенные исполнителю, active — из них ещё активные.
+// GetStatisticsWorkload возвращает нагрузку по исполнителям за период: каждый бакет
+// несёт два столбца (active/closed), каждый — stack из задач и подзадач. Исполнитель
+// подзадачи считается исполнителем родительской заявки (JOIN по ticket_id).
 func (r *StatisticsRepo) GetStatisticsWorkload(ctx context.Context, q models.StatisticsQuery) ([]*models.WorkloadBucket, error) {
-	from, to := q.Filter.From, q.Filter.To
-	w := &whereBuilder{}
-	w.statisticsWhere(q)
-	fromPh, toPh := w.rangeArgs(from, to)
+	// 1. Инициализируем твой билдер. idx=2 резервирует $1 и $2 под from/to.
+	w := &whereBuilder{idx: 2}
 
-	// 0 (или отрицательное) — без LIMIT: сортировка нужна только для порядка строк,
-	// обрезать хвост нельзя (см. комментарий в GetStatisticsByOwner).
+	// Базовое условие realm_id
+	w.add(fmt.Sprintf("t.realm_id = $%d", w.idx+1))
+	w.args = append(w.args, q.Scope.RealmID)
+	w.idx++
+
+	// Scope условия
+	if !q.Scope.AllRealm {
+		disj := make([]string, 0, 3)
+		if q.Scope.AssigneeID != nil {
+			w.idx++
+			disj = append(disj, fmt.Sprintf("t.assignee_id = $%d", w.idx))
+			w.args = append(w.args, *q.Scope.AssigneeID)
+		}
+		if q.Scope.RequesterID != nil {
+			w.idx++
+			creator := w.idx
+			w.idx++
+			owner := w.idx
+			disj = append(disj, fmt.Sprintf("(t.creator_id = $%d OR t.owner_id = $%d)", creator, owner))
+			w.args = append(w.args, *q.Scope.RequesterID, *q.Scope.RequesterID)
+		}
+		if len(q.Scope.GroupIDs) > 0 {
+			w.args = append(w.args, toAny(q.Scope.GroupIDs)...)
+			disj = append(disj, "t.group_id IN ("+w.place(len(q.Scope.GroupIDs))+")")
+		}
+		if len(disj) == 0 {
+			w.add("FALSE")
+		} else {
+			w.add("(" + strings.Join(disj, " OR ") + ")")
+		}
+	}
+
+	// Refinements
+	inList(w, "t.assignee_id", q.Filter.AssigneeIDs)
+	inList(w, "t.category_id", q.Filter.CategoryIDs)
+	inList(w, "t.group_id", q.Filter.GroupIDs)
+	inList(w, "t.site_id", q.Filter.SiteIDs)
+
+	scopeCond := strings.Join(w.clauses, " AND ")
+
+	// 2. Подготовка плейсхолдеров для статусов
+	activeStatuses := []models.TicketStatus{"open", "in_progress", "pending", "on_hold"}
+	closedStatuses := []models.TicketStatus{"resolved", "closed", "cancelled"}
+
+	w.args = append(w.args, toAny(activeStatuses)...)
+	activePh := w.place(len(activeStatuses))
+
+	w.args = append(w.args, toAny(closedStatuses)...)
+	closedPh := w.place(len(closedStatuses))
+
+	// Limit
 	limitClause := ""
 	if q.Limit > 0 {
 		w.idx++
-		limitPh := fmt.Sprintf("$%d", w.idx)
+		limitClause = fmt.Sprintf("LIMIT $%d", w.idx)
 		w.args = append(w.args, q.Limit)
-		limitClause = fmt.Sprintf(" LIMIT %s", limitPh)
 	}
 
-	query := fmt.Sprintf(`SELECT
-			u.id::text,
-			COALESCE(NULLIF(TRIM(COALESCE(u.last_name, '') || ' ' || COALESCE(u.first_name, '')), ''), u.username) AS name,
-			COUNT(*) FILTER (WHERE t.status IN ('open', 'in_progress', 'pending', 'on_hold')) AS active,
-			COUNT(*) AS total
-		FROM %s t
-		JOIN %s u ON t.assignee_id = u.id
-		WHERE %s AND t.created_at >= %s AND t.created_at < %s
-		GROUP BY u.id, u.last_name, u.first_name, u.username
-		ORDER BY total DESC, active DESC, name ASC%s`,
-		Tables.Tickets, Tables.Users, strings.Join(w.clauses, " AND "), fromPh, toPh, limitClause,
+	// 3. Оптимизированный запрос с ПОДЗАПРОСОМ для финальной агрегации
+	// Это полностью устраняет конфликты GROUP BY и ORDER BY в PostgreSQL
+	query := fmt.Sprintf(`
+		WITH TicketStats AS (
+			SELECT 
+				t.assignee_id AS user_id,
+				COUNT(*) FILTER (WHERE t.status IN (%s)) AS active_tasks,
+				COUNT(*) FILTER (WHERE t.status IN (%s)) AS closed_tasks,
+				0::bigint AS active_subtasks,
+				0::bigint AS closed_subtasks
+			FROM %s t
+			WHERE t.created_at >= $1 AND t.created_at < $2
+			  AND %s
+			GROUP BY t.assignee_id
+		),
+		SubtaskStats AS (
+			SELECT 
+				t.assignee_id AS user_id,
+				0::bigint AS active_tasks,
+				0::bigint AS closed_tasks,
+				COUNT(*) FILTER (WHERE st.status IN (%s)) AS active_subtasks,
+				COUNT(*) FILTER (WHERE st.status IN (%s)) AS closed_subtasks
+			FROM %s st
+			JOIN %s t ON t.id = st.ticket_id
+			WHERE t.created_at >= $1 AND t.created_at < $2
+			  AND %s
+			GROUP BY t.assignee_id
+		),
+		CombinedStats AS (
+			SELECT * FROM TicketStats
+			UNION ALL
+			SELECT * FROM SubtaskStats
+		)
+		SELECT 
+			user_id::text,
+			name,
+			active_tasks,
+			closed_tasks,
+			active_subtasks,
+			closed_subtasks
+		FROM (
+			SELECT 
+				u.id AS user_id,
+				COALESCE(NULLIF(TRIM(COALESCE(u.last_name, '') || ' ' || COALESCE(u.first_name, '')), ''), u.username) AS name,
+				SUM(cs.active_tasks)::bigint AS active_tasks,
+				SUM(cs.closed_tasks)::bigint AS closed_tasks,
+				SUM(cs.active_subtasks)::bigint AS active_subtasks,
+				SUM(cs.closed_subtasks)::bigint AS closed_subtasks
+			FROM %s u
+			JOIN CombinedStats cs ON cs.user_id = u.id
+			GROUP BY u.id, u.last_name, u.first_name, u.username
+		) AS aggregated
+		WHERE (active_tasks + closed_tasks + active_subtasks + closed_subtasks) > 0
+		ORDER BY 
+			(active_tasks + closed_tasks + active_subtasks + closed_subtasks) DESC,
+			(active_tasks + active_subtasks) DESC,
+			name ASC
+		%s
+	`,
+		// TicketStats args
+		activePh, closedPh, Tables.Tickets, scopeCond,
+		// SubtaskStats args
+		activePh, closedPh, Tables.Subtasks, Tables.Tickets, scopeCond,
+		// Final aggregation
+		Tables.Users,
+		limitClause,
 	)
 
-	rows, err := r.db.Query(ctx, query, w.args...)
+	// 4. Собираем финальный массив аргументов: [from, to] + [все аргументы из билдера]
+	args := []any{q.Filter.From, q.Filter.To}
+	args = append(args, w.args...)
+
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
 	defer rows.Close()
 
-	data := []*models.WorkloadBucket{}
+	data := make([]*models.WorkloadBucket, 0)
 	for rows.Next() {
 		bucket := &models.WorkloadBucket{}
 		var idStr string
-		if err := rows.Scan(&idStr, &bucket.Name, &bucket.Active, &bucket.Total); err != nil {
+		if err := rows.Scan(&idStr, &bucket.Name, &bucket.ActiveTasks, &bucket.ClosedTasks, &bucket.ActiveSubtasks, &bucket.ClosedSubtasks); err != nil {
 			return nil, MapError(fmt.Errorf("scan row error: %w", err))
 		}
 		if id, err := uuid.Parse(idStr); err == nil {
@@ -389,9 +495,11 @@ func (r *StatisticsRepo) GetStatisticsWorkload(ctx context.Context, q models.Sta
 		}
 		data = append(data, bucket)
 	}
+
 	if err := rows.Err(); err != nil {
 		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
 	}
+
 	return data, nil
 }
 
