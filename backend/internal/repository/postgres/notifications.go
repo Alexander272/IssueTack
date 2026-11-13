@@ -389,25 +389,26 @@ func (r *notificationRepository) HasDeadlineReminder(ctx context.Context, userID
 
 // CanSendReminder проверяет, можно ли отправить периодическое напоминание.
 // Возвращает true, если ранее не отправляли ИЛИ отправляли давно (sent_at < now-minInterval).
+//
+// Атомарность: INSERT ... ON CONFLICT DO UPDATE с WHERE-условием на sent_at.
 func (r *notificationRepository) CanSendReminder(ctx context.Context, ticketID uuid.UUID, event string, minInterval time.Duration) (bool, error) {
 	cutoff := time.Now().Add(-minInterval)
-	var ok bool
-	query := fmt.Sprintf(`UPDATE %s SET sent_at = NOW()
-		WHERE ticket_id = $1 AND event = $2 AND sent_at < $3
+	query := fmt.Sprintf(`
+		INSERT INTO %s (ticket_id, event, sent_at)
+		VALUES ($1, $2, NOW())
+		ON CONFLICT (ticket_id, event) DO UPDATE
+		SET sent_at = NOW()
+		WHERE reminder_last_sent.sent_at < $3
 		RETURNING TRUE`, Tables.ReminderLastSent)
+
+	var ok bool
 	err := r.db.QueryRow(ctx, query, ticketID, event, cutoff).Scan(&ok)
 	if err == pgx.ErrNoRows {
-		insert := fmt.Sprintf(`INSERT INTO %s (ticket_id, event, sent_at)
-			VALUES ($1, $2, NOW())
-			ON CONFLICT (ticket_id, event) DO NOTHING`, Tables.ReminderLastSent)
-		res, err2 := r.db.Exec(ctx, insert, ticketID, event)
-		if err2 != nil {
-			return false, MapError(fmt.Errorf("failed to upsert reminder_last_sent: %w", err2))
-		}
-		return res.RowsAffected() == 1, nil
+		// Строка существует, но sent_at >= cutoff — уже было отправлено недавно
+		return false, nil
 	}
 	if err != nil {
-		return false, MapError(fmt.Errorf("failed to update reminder_last_sent: %w", err))
+		return false, MapError(fmt.Errorf("failed to upsert reminder_last_sent: %w", err))
 	}
-	return ok, nil
+	return true, nil
 }
