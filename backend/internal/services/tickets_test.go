@@ -1480,12 +1480,11 @@ func TestTicketService_Update_Creator_SetClosed_Success(t *testing.T) {
 	mockRepo.AssertExpectations(t)
 }
 
-// TestTicketService_Update_CustomerCreator_NotOwner_Cancel_Success — автор без групп,
-// не владелец и без write/work-доступа, всё равно может отменить свою заявку:
-// isOwnerOrCreator пропускает его в режим ownerOnly, а ownerTransitionAllowed
-// разрешает open → cancelled.
-func TestTicketService_Update_CustomerCreator_NotOwner_Cancel_Success(t *testing.T) {
-	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+// TestTicketService_Update_CreatorNotOwner_Cancel_Denied — автор без групп,
+// не владелец заявки, не может её отменить: права owner-переходов есть только
+// у владельца, а не у автора.
+func TestTicketService_Update_CreatorNotOwner_Cancel_Denied(t *testing.T) {
+	mockRepo, _, _, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
 
 	actorID := uuid.New()
 	ownerID := uuid.New()
@@ -1505,6 +1504,43 @@ func TestTicketService_Update_CustomerCreator_NotOwner_Cancel_Success(t *testing
 		Creator: models.UserShort{ID: actorID},
 		Owner:   &models.UserShort{ID: ownerID},
 		Group:   &models.GroupShort{ID: groupID, Name: "Test Group"},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	// Автор без групп — «заказчик»: ни управляемых, ни членских групп.
+	mockGroups.On("GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, actorID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+	mockRepo.AssertExpectations(t)
+}
+
+// TestTicketService_Update_CreatorWithoutOwner_Cancel_Success — автор без групп
+// и без владельца может отменить свою заявку: ownerTransitionAllowed разрешает
+// open → cancelled для автора, когда владелец не задан.
+func TestTicketService_Update_CreatorWithoutOwner_Cancel_Success(t *testing.T) {
+	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	groupID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Status:   models.StatusCancelled,
+		Provided: map[string]bool{"status": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:      ticketID,
+		Title:   "Original Ticket",
+		Status:  models.StatusOpen,
+		Creator: models.UserShort{ID: actorID},
+		// Owner не задан
+		Group: &models.GroupShort{ID: groupID, Name: "Test Group"},
 	}
 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)

@@ -36,9 +36,10 @@ export const InfoBar = ({ task }: Props) => {
 	const capabilities = useAppSelector(getCurrentCapabilities)
 	const hasNoGroups = useAppSelector(getHasNoGroups)
 	const isCreator = currentUserId != null && currentUserId === task.creator?.id
-	// «Владелец» решений — сам владелец заявки или её автор: автор ведёт заявку теми
-	// же тремя решениями (отмена/подтверждение/возврат).
-	const isOwner = isCreator || (currentUserId != null && currentUserId === task.owner?.id)
+	// «Владелец» решений — владелец заявки, или автор если владелец не задан.
+	// Если заказчик задан, только он имеет права владельца (отмена/подтверждение/возврат).
+	const isOwner = (currentUserId != null && currentUserId === task.owner?.id) ||
+		(!task.owner && isCreator)
 	const isAssignee = currentUserId != null && currentUserId === task.assignee?.id
 	const isManager = Boolean(task.access?.isManager) || capabilities.isRealmAdmin
 	// Меню «Изменить статус» — только «рабочим» и менеджерам: исполнителю (заявку

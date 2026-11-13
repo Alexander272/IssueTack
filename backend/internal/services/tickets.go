@@ -674,12 +674,11 @@ func (s *TicketService) updateTicket(
 				if loadErr != nil {
 					return fmt.Errorf("failed to load ticket for access check: %w", loadErr)
 				}
-				// Автор заявки, как и владелец, сохраняет ограниченный доступ к ней
-				// даже без write/work-прав (безгрупповой автор — «заказчик»): ему
-				// доступны решения по статусам через ownerTransitionAllowed и правка
-				// своих полей через canEditFields. Менеджерские права (write/группа)
-				// сюда не попадают — они прошли CheckAccess выше.
-				if !s.isOwnerOrCreator(old, dto.Actor.ID) {
+				// Владелец заявки сохраняет ограниченный доступ к ней даже без
+				// write/work-прав: ему доступны решения по статусам через
+				// ownerTransitionAllowed. Автор без владельца остаётся «заказчиком»
+				// своей заявки (см. canEditFields ниже).
+				if !s.isOwnerOnlyOrCreatorWithoutOwner(old, dto.Actor.ID) {
 					return err
 				}
 				ownerOnly = true
@@ -1329,11 +1328,14 @@ func (s *TicketService) isOwner(ticket *models.Ticket, actorID uuid.UUID) bool {
 	return ticket.Owner != nil && ticket.Owner.ID == actorID
 }
 
-// isOwnerOrCreator — владелец заявки или её автор. Оба получают «решения владельца»
-// (отмена/подтверждение/возврат), когда у них нет write/work-доступа: заказчик —
-// по владению, безгрупповой автор — как заказчик своей же заявки (см. Update).
-func (s *TicketService) isOwnerOrCreator(ticket *models.Ticket, actorID uuid.UUID) bool {
-	return s.isOwner(ticket, actorID) || ticket.Creator.ID == actorID
+// isOwnerOnlyOrCreatorWithoutOwner — владелец заявки, или автор без владельца.
+// Если заказчик задан, то «решения владельца» доступны только ему, а не автору.
+// Если владельца нет — автор остаётся «заказчиком» своей заявки.
+func (s *TicketService) isOwnerOnlyOrCreatorWithoutOwner(ticket *models.Ticket, actorID uuid.UUID) bool {
+	if ticket.Owner != nil {
+		return ticket.Owner.ID == actorID
+	}
+	return ticket.Creator.ID == actorID
 }
 
 // canEditFields определяет, может ли пользователь править не-статусные поля тикета
@@ -1627,7 +1629,7 @@ func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *mode
 		// Закрытая/отменённая заявка — «замороженная»: вернуть её в активные статусы
 		// нельзя никому (даже исполнителю с work-доступом). Разрешён лишь взаимообмен
 		// closed⇄cancelled автору/менеджеру группы/владельцу.
-		if isCreatorOrMgr || isOwner {
+		if isOwner || (ticket.Owner == nil && isCreatorOrMgr) {
 			if current == models.StatusClosed {
 				add(models.StatusCancelled)
 			} else {
@@ -1636,11 +1638,12 @@ func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *mode
 		}
 
 	case current == models.StatusResolved:
-		if isCreatorOrMgr || isOwner {
+		// Подтверждение решения — только владелец или (если нет владельца) автор/менеджер.
+		if isOwner || (ticket.Owner == nil && isCreatorOrMgr) {
 			add(models.StatusClosed)
 		}
-		// Возврат в работу доступен владельцу и автору (как и ownerTransitionAllowed).
-		if hasWrite || hasWork || isOwner || isCreator {
+		// Возврат в работу — владелец, или (если нет владельца) автор, или write/work-доступ.
+		if hasWrite || hasWork || isOwner || (ticket.Owner == nil && isCreator) {
 			add(models.StatusInProgress)
 		}
 		if hasWrite || hasWork {
@@ -1650,7 +1653,8 @@ func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *mode
 				}
 			}
 		}
-		if isCreatorOrMgr {
+		// Отмена решения — только автор/менеджер, или (если нет владельца) владелец.
+		if isCreatorOrMgr || (ticket.Owner == nil && isOwner) {
 			add(models.StatusCancelled)
 		}
 
@@ -1666,7 +1670,7 @@ func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *mode
 				add(models.StatusResolved)
 			}
 		}
-		if isCreatorOrMgr || isOwner {
+		if isOwner || (ticket.Owner == nil && isCreatorOrMgr) {
 			add(models.StatusCancelled)
 		}
 	}
