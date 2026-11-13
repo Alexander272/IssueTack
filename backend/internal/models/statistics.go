@@ -107,10 +107,11 @@ func (q StatisticsQuery) WithDimension(dim string) StatisticsQuery {
 type StatisticsTicketsQuery struct {
 	Scope     StatisticsScope
 	Filter    *StatisticsFilter
-	Dimension string // assignee|owner|category|site|group
+	Dimension string // assignee|owner|category|site|group|status
 	PersonID  *uuid.UUID
 	OwnerNone bool // owner_id IS NULL — бакет «Без заказчика»
 	BucketID  *uuid.UUID // category_id/site_id/group_id — для не-person измерений
+	StatusID  string // статус заявки — для разрез по статусу
 	// StatusGroup — кольцо диаграммы: "" (внутреннее — все заявки), active
 	// (open/in_progress/pending/on_hold), closed (resolved/closed/cancelled).
 	StatusGroup string

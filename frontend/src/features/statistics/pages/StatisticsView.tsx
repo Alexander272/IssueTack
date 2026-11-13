@@ -26,6 +26,7 @@ import { OwnerWorkloadChart } from '../components/OwnerWorkloadChart'
 import { StatisticsTicketsModal } from '../components/StatisticsTicketsModal'
 import { DEFAULT_TOP_N } from '../components/TopNSelect'
 import { StatisticsFilters } from '../components/StatisticsFilters'
+import { STATUS_MAP } from '@/features/tasks/constants/taskMaps'
 
 // refinementKeys — имена query-параметров URL, в которых хранится состояние панели
 // фильтров. Повторяющиеся параметры (?assigneeId=a&assigneeId=b) сохраняют
@@ -134,20 +135,34 @@ export const StatisticsView: FC = () => {
 		[assigneeBuckets],
 	)
 
-	const openCategory = useCallback((bucketId: string) => {
-		const name = stats?.byCategory?.find(bucket => bucket.id === bucketId)?.name ?? ''
-		setDrilldown({ dimension: 'category', bucketId, bucketName: name, ring: '' })
-	}, [stats?.byCategory])
+	const openCategory = useCallback(
+		(bucketId: string) => {
+			const name = stats?.byCategory?.find(bucket => bucket.id === bucketId)?.name ?? ''
+			setDrilldown({ dimension: 'category', bucketId, bucketName: name, ring: '' })
+		},
+		[stats?.byCategory],
+	)
 
-	const openSite = useCallback((bucketId: string) => {
-		const name = stats?.bySite?.find(bucket => bucket.id === bucketId)?.name ?? ''
-		setDrilldown({ dimension: 'site', bucketId, bucketName: name, ring: '' })
-	}, [stats?.bySite])
+	const openSite = useCallback(
+		(bucketId: string) => {
+			const name = stats?.bySite?.find(bucket => bucket.id === bucketId)?.name ?? ''
+			setDrilldown({ dimension: 'site', bucketId, bucketName: name, ring: '' })
+		},
+		[stats?.bySite],
+	)
 
-	const openGroup = useCallback((bucketId: string) => {
-		const name = stats?.byGroup?.find(bucket => bucket.id === bucketId)?.name ?? ''
-		setDrilldown({ dimension: 'group', bucketId, bucketName: name, ring: '' })
-	}, [stats?.byGroup])
+	const openGroup = useCallback(
+		(bucketId: string) => {
+			const name = stats?.byGroup?.find(bucket => bucket.id === bucketId)?.name ?? ''
+			setDrilldown({ dimension: 'group', bucketId, bucketName: name, ring: '' })
+		},
+		[stats?.byGroup],
+	)
+
+	const openStatus = useCallback((status: string) => {
+		const name = STATUS_MAP[status as 'open']?.label ?? status
+		setDrilldown({ dimension: 'status', bucketId: status, bucketName: name, ring: '' })
+	}, [])
 
 	const openKpi = useCallback((cardKey: 'total' | 'active' | 'overdue' | 'resolved') => {
 		setDrilldown({ type: 'kpi', cardKey })
@@ -211,7 +226,7 @@ export const StatisticsView: FC = () => {
 					<TrendChart points={stats?.trend ?? []} isLoading={isFetching} />
 				</Grid>
 				<Grid size={{ xs: 12, lg: 4 }}>
-					<StatusChart buckets={stats?.byStatus ?? []} isLoading={isFetching} />
+					<StatusChart buckets={stats?.byStatus ?? []} isLoading={isFetching} onBarClick={openStatus} />
 				</Grid>
 			</Grid>
 

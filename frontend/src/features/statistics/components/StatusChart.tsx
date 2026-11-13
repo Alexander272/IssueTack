@@ -10,6 +10,7 @@ import { getChartColorFromText } from '../utils/color'
 interface Props {
 	buckets: IStatusBucket[]
 	isLoading: boolean
+	onBarClick?: (status: string) => void
 }
 
 const ORDER: TicketStatus[] = [...ACTIVE_STATUSES, 'resolved', 'closed', 'cancelled']
@@ -31,7 +32,7 @@ const statusColor = (status: TicketStatus) => {
 	return getChartColorFromText(hex, tone?.saturation, tone?.lightness)
 }
 
-export const StatusChart: FC<Props> = ({ buckets, isLoading }) => {
+export const StatusChart: FC<Props> = ({ buckets, isLoading, onBarClick }) => {
 	const counts = new Map(buckets.map(bucket => [bucket.status, bucket.count]))
 	const data = ORDER.filter(status => (counts.get(status) ?? 0) > 0).map(status => ({
 		id: status,
@@ -39,6 +40,13 @@ export const StatusChart: FC<Props> = ({ buckets, isLoading }) => {
 		label: STATUS_MAP[status]?.label ?? status,
 		color: statusColor(status),
 	}))
+
+	const handleItemClick = (_event: unknown, item: { dataIndex: number }) => {
+		if (!onBarClick || item.dataIndex == null) return
+		const sector = data[item.dataIndex]
+		if (!sector) return
+		onBarClick(sector.id)
+	}
 
 	return (
 		<Paper sx={{ p: 3, border: '1px solid #e5e7eb', borderRadius: '12px', height: '100%' }} elevation={0}>
@@ -64,6 +72,7 @@ export const StatusChart: FC<Props> = ({ buckets, isLoading }) => {
 						},
 					]}
 					margin={{ top: 8, bottom: 8, left: 8, right: 8 }}
+					onItemClick={handleItemClick}
 				/>
 			)}
 		</Paper>

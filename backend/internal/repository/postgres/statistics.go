@@ -615,6 +615,12 @@ func (r *StatisticsRepo) GetStatisticsTickets(ctx context.Context, q models.Stat
 		} else {
 			eq(w, "t.owner_id", q.PersonID)
 		}
+	case "status":
+		if q.StatusID != "" {
+			w.idx++
+			w.add(fmt.Sprintf("t.status = $%d", w.idx))
+			w.args = append(w.args, q.StatusID)
+		}
 	default: // assignee
 		eq(w, "t.assignee_id", q.PersonID)
 	}

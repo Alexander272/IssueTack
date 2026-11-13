@@ -36,6 +36,7 @@ const DIMENSION_LABELS: Record<StatisticsDrilldownDimension, string> = {
 	category: 'категория',
 	site: 'площадка',
 	group: 'группа',
+	status: 'статус',
 }
 
 // StatisticsTicketsModal — drill-down статистики: список заявок, стоящих за

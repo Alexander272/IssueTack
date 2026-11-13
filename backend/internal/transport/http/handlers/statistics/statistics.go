@@ -50,7 +50,7 @@ type statisticsTicketsQuery struct {
 	From        string `form:"from"`
 	To          string `form:"to"`
 	Granularity string `form:"granularity" binding:"omitempty,oneof=day week month"`
-	Dimension   string `form:"dim" binding:"required,oneof=assignee owner category site group"`
+	Dimension   string `form:"dim" binding:"required,oneof=assignee owner category site group status"`
 	ID          string `form:"id"`
 	Ring        string `form:"ring" binding:"omitempty,oneof=active closed"`
 	Limit       int    `form:"limit" binding:"omitempty,min=1,max=100"`
@@ -59,11 +59,11 @@ type statisticsTicketsQuery struct {
 
 // kpiTicketsQuery — параметры запроса списка KPI-карточки.
 type kpiTicketsQuery struct {
-	From     string `form:"from"`
-	To       string `form:"to"`
-	CardKey  string `form:"cardKey" binding:"required,oneof=total active overdue resolved"`
-	Limit    int    `form:"limit" binding:"omitempty,min=1,max=100"`
-	Offset   int    `form:"offset" binding:"min=0"`
+	From    string `form:"from"`
+	To      string `form:"to"`
+	CardKey string `form:"cardKey" binding:"required,oneof=total active overdue resolved"`
+	Limit   int    `form:"limit" binding:"omitempty,min=1,max=100"`
+	Offset  int    `form:"offset" binding:"min=0"`
 }
 
 // buildFilter собирает фильтр статистики: период + уточнения + актор. Общий для
@@ -168,12 +168,6 @@ func (h *Handler) getTicketsList(c *gin.Context) {
 		return
 	}
 
-	id, err := uuid.Parse(query.ID)
-	if err != nil {
-		response.SendError(c, fmt.Errorf("%w: invalid id", models.ErrInvalidInput))
-		return
-	}
-
 	drill := models.StatisticsTicketsQuery{
 		Filter:      filter,
 		Dimension:   query.Dimension,
@@ -181,17 +175,30 @@ func (h *Handler) getTicketsList(c *gin.Context) {
 		Limit:       query.Limit,
 		Offset:      query.Offset,
 	}
-	switch query.Dimension {
-	case "owner":
-		if id == uuid.Nil {
-			drill.OwnerNone = true
-		} else {
-			drill.PersonID = &id
+	if query.Dimension == "status" {
+		drill.StatusID = query.ID
+	} else {
+		id, err := uuid.Parse(query.ID)
+		if err != nil {
+			response.SendError(c, fmt.Errorf("%w: invalid id", models.ErrInvalidInput))
+			return
 		}
-	case "assignee":
-		drill.PersonID = &id
-	case "category", "site", "group":
-		drill.BucketID = &id
+
+		switch query.Dimension {
+		case "owner":
+			if id == uuid.Nil {
+				drill.OwnerNone = true
+			} else {
+				drill.PersonID = &id
+			}
+		case "assignee":
+			drill.PersonID = &id
+		case "category", "site", "group":
+			drill.BucketID = &id
+		default:
+			response.SendError(c, fmt.Errorf("%w: invalid dimension", models.ErrInvalidInput))
+			return
+		}
 	}
 
 	data, total, err := h.service.GetTickets(c.Request.Context(), drill)
