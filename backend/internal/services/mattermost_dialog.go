@@ -211,6 +211,93 @@ func (s *MattermostService) dialogOwnerID(ctx context.Context, realmID uuid.UUID
 	return nil
 }
 
+// dialogManagerState определяет, является ли пользователь (по MM id) менеджером
+// или исполнителем области в контексте диалога создания заявки: менеджер —
+// начальник области (realm-wide) или управляющий хотя бы одной группой,
+// исполнитель — участник хотя одной группы. Оба статуса открывают расширенные
+// поля (приоритет/исполнитель); у чистого заявителя без групп их нет.
+func (s *MattermostService) dialogManagerState(ctx context.Context, realmID uuid.UUID, mmUserID string) (bool, bool, error) {
+	user, err := s.resolveOrCreateUser(ctx, realmID, mmUserID, nil)
+	if err != nil {
+		return false, false, err
+	}
+	isManager := s.isRealmSupervisor(ctx, user.ID, realmID)
+	if !isManager {
+		managed, err := s.groups.GetManagedGroups(ctx, user.ID, &realmID)
+		if err != nil {
+			return false, false, err
+		}
+		isManager = len(managed) > 0
+	}
+	memberGroups, err := s.groups.GetMemberGroups(ctx, user.ID, &realmID)
+	if err != nil {
+		return false, false, err
+	}
+	isExecutor := !isManager && len(memberGroups) > 0
+	return isManager, isExecutor, nil
+}
+
+// dialogPriorityOptions собирает опции селекта приоритета для диалога создания
+// заявки: значение элемента — snake_case-приоритет, текст — человекочитаемая
+// подпись, как в веб-форме (PRIORITY_MAP).
+func dialogPriorityOptions() []*model.PostActionOptions {
+	return []*model.PostActionOptions{
+		{Text: "Низкий", Value: "low"},
+		{Text: "Средний", Value: "medium"},
+		{Text: "Высокий", Value: "high"},
+		{Text: "Критичный", Value: "urgent"},
+	}
+}
+
+// dialogPriorityElement строит select «Приоритет» для диалога создания заявки.
+// Поле доступно менеджерам и исполнителям (см. dialogManagerState) — у чистого
+// заявителя без групп секция не рендерится вовсе.
+func (s *MattermostService) dialogPriorityElement(ctx context.Context, realmID uuid.UUID) *mattermost.DialogElement {
+	return &mattermost.DialogElement{
+		DisplayName: "Приоритет",
+		Name:        "priority",
+		Type:        "select",
+		Options:     dialogPriorityOptions(),
+		Optional:    true,
+	}
+}
+
+// dialogAssigneeElement строит select «Исполнитель» для диалога создания
+// заявки. Список — исполнители realm (участники групп, MembershipExecutors):
+// любой активный исполнитель может быть назначен исполнителем заявки (выбор
+// валидируется в TicketService.Create — validateRealmExecutor). Пустой список —
+// невалидный элемент, поле не показываем.
+func (s *MattermostService) dialogAssigneeElement(ctx context.Context, realmID uuid.UUID, mmUserID string) *mattermost.DialogElement {
+	executors, err := s.users.GetByMembership(ctx, realmID, models.MembershipExecutors)
+	if err != nil {
+		logger.Warn("failed load executors for dialog assignee",
+			logger.StringAttr("realm_id", realmID.String()),
+			logger.ErrAttr(err),
+		)
+		return nil
+	}
+	active := make([]*models.UserData, 0, len(executors))
+	for _, u := range executors {
+		if u != nil && u.IsActive {
+			active = append(active, u)
+		}
+	}
+	if len(active) == 0 {
+		return nil
+	}
+	opts := make([]*model.PostActionOptions, 0, len(active))
+	for _, u := range active {
+		opts = append(opts, &model.PostActionOptions{Text: customerLabel(u), Value: u.ID.String()})
+	}
+	return &mattermost.DialogElement{
+		DisplayName: "Исполнитель",
+		Name:        "assigneeId",
+		Type:        "select",
+		Options:     opts,
+		Optional:    true,
+	}
+}
+
 // HandleDialogOpen открывает диалог создания заявки для пользователя,
 // нажавшего кнопку «Создать заявку». Подгружает категории/площадки realm
 // и формирует поля диалога; в State передаёт канал и id кнопочного поста,
@@ -282,6 +369,26 @@ func (s *MattermostService) HandleDialogOpen(ctx context.Context, input *models.
 
 	if ownerEl := s.ownerSelectElement(ctx, realmID, input.UserID); ownerEl != nil {
 		elements = append(elements, *ownerEl)
+	}
+
+	// Приоритет и исполнитель — менеджерам (начальнику области и управляющим
+	// группами) и исполнителям (участникам групп): зеркало веб-формы создания
+	// (TaskCreateForm — секция «Расширенные настройки» у менеджера,
+	// «Настройки заявки» у исполнителя). У чистого заявителя без групп полей
+	// нет — заявка создаётся на него с дефолтами категории.
+	isManager, isExecutor, err := s.dialogManagerState(ctx, realmID, input.UserID)
+	if err != nil {
+		return fmt.Errorf("failed resolve dialog user: %w", err)
+	}
+	if isManager || isExecutor {
+		if priorityEl := s.dialogPriorityElement(ctx, realmID); priorityEl != nil {
+			elements = append(elements, *priorityEl)
+		}
+	}
+	if isManager || isExecutor {
+		if assigneeEl := s.dialogAssigneeElement(ctx, realmID, input.UserID); assigneeEl != nil {
+			elements = append(elements, *assigneeEl)
+		}
 	}
 
 	if err := s.most.Dialog.Open(settings.BotToken, mattermost.OpenRequest{
@@ -368,6 +475,18 @@ func (s *MattermostService) HandleDialogSubmission(ctx context.Context, submissi
 					dto.Priority = cat.Priority
 				}
 			}
+		}
+	}
+
+	// Приоритет и исполнитель приходят из диалога только у менеджера/исполнителя;
+	// проверка прав/валидности выполняется в TicketService.Create (при отсутствии
+	// coarse-прав — через applyExecutorCreateRestrictions/validateRealmExecutor).
+	if rawPriority, ok := submission.Submission["priority"].(string); ok && rawPriority != "" {
+		dto.Priority = models.Priority(rawPriority)
+	}
+	if rawAssignee, ok := submission.Submission["assigneeId"].(string); ok && rawAssignee != "" {
+		if id, err := uuid.Parse(rawAssignee); err == nil {
+			dto.AssigneeID = &id
 		}
 	}
 

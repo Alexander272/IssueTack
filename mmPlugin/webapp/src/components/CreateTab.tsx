@@ -279,7 +279,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		if (!siteId) {
 			errors.siteId = 'Обязательное поле'
 		}
-		if (isManager && !priority) {
+		if ((isManager || isExecutor) && !priority) {
 			errors.priority = 'Обязательное поле'
 		}
 		setFieldErrors(errors)
@@ -309,6 +309,8 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 			} else if (isExecutor) {
 				if (ownerId) payload.ownerId = ownerId
 				if (assigneeId) payload.assigneeId = assigneeId
+				if (priority) payload.priority = priority
+				if (dueDate) payload.dueDate = dueDate
 			}
 			const res = await createTicket(scope, payload)
 			// Заявка создана — черновик больше не нужен, а поля очищаем, чтобы
@@ -544,6 +546,39 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 								))}
 							</select>
 							{customers.length === 0 ? <span className='it-f-label__hint'>Нет заказчиков</span> : null}
+						</label>
+
+						<div className='it-f-label'>
+							<span className='it-f-label__text'>Приоритет</span>
+							<select
+								className={`it-f${fieldErrors.priority ? ' it-f--error' : ''}`}
+								value={priority}
+								onChange={e => {
+									setPriority(e.target.value)
+									clearFieldError('priority')
+								}}
+							>
+								<option value=''>— Не указан —</option>
+								{PRIORITY_ORDER.map(v => (
+									<option key={v} value={v}>
+										{PRIORITY_LABELS[v]}
+									</option>
+								))}
+							</select>
+							{fieldErrors.priority ? <span className='it-f__err'>{fieldErrors.priority}</span> : null}
+						</div>
+
+						<label className='it-f-label'>
+							<span className='it-f-label__text'>Исполнитель</span>
+							<select className='it-f' value={assigneeId} onChange={e => setAssigneeId(e.target.value)}>
+								<option value=''>— Не указан —</option>
+								{executors.map(u => (
+									<option key={u.id} value={u.id}>
+										{pluginUserLabel(u)}
+									</option>
+								))}
+							</select>
+							{executors.length === 0 ? <span className='it-f-label__hint'>Нет исполнителей</span> : null}
 						</label>
 
 						<label className='it-f-label'>
