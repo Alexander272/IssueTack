@@ -1653,8 +1653,8 @@ func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *mode
 				}
 			}
 		}
-		// Отмена решения — только автор/менеджер, или (если нет владельца) владелец.
-		if isCreatorOrMgr || (ticket.Owner == nil && isOwner) {
+		// Отмена решения — только владелец, или (если нет владельца) автор/менеджер.
+		if isOwner || (ticket.Owner == nil && isCreatorOrMgr) {
 			add(models.StatusCancelled)
 		}
 
