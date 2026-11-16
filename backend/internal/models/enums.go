@@ -50,6 +50,7 @@ const (
 	ActionDueDateRejected    ActivityType = "due_date_rejected"  // Срок не перенесён (запрос отклонён)
 	ActionSiteChanged        ActivityType = "site_changed"       // Изменена площадка
 	ActionCategoryChanged    ActivityType = "category_changed"   // Изменена категория
+	ActionNotifiersChanged   ActivityType = "notifiers_changed"  // Изменён список наблюдателей
 	ActionCommentAdded       ActivityType = "comment_added"
 )
 
@@ -58,7 +59,7 @@ func (a ActivityType) IsValid() bool {
 	case ActionCreated, ActionClosed, ActionTitleChanged, ActionDescriptionChanged, ActionStatusChanged,
 		ActionPriorityChanged, ActionAssigned, ActionAssignChanged, ActionOwnerChanged, ActionGroupChanged,
 		ActionGroupAssigned, ActionManagerChanged, ActionDueDateChanged, ActionDueDateRequested, ActionDueDateApproved,
-		ActionDueDateRejected, ActionSiteChanged, ActionCategoryChanged, ActionCommentAdded:
+		ActionDueDateRejected, ActionSiteChanged, ActionCategoryChanged, ActionNotifiersChanged, ActionCommentAdded:
 		return true
 	}
 	return false

@@ -14,100 +14,103 @@ import { SectionCard } from './SectionCard'
 
 type Props = {
 	number?: number
-	/** Id текущего пользователя для самоназначения исполнителем (только исполнитель). */
+	title?: string
+	subtitle?: string
+	/** Id текущего пользователя для самоназначения исполнителем (чекбокс в форме создания). */
 	currentUserId?: string | null
+	/** Автор заявки — исключается из «Уведомлять» (по умолчанию = currentUserId). */
+	creatorId?: string | null
+	showOwner?: boolean
+	showDueDate?: boolean
+	showNotifiers?: boolean
+	/** Показывать подпись поля «Уведомлять» (скрыть, если заголовок секции уже «Уведомлять»). */
+	showNotifierFieldLabel?: boolean
 }
 
-export const CustomerAndDateSection = ({ number = 4, currentUserId = null }: Props) => {
+export const CustomerAndDateSection = ({
+	number = 4,
+	title = 'Заказчик и сроки',
+	subtitle = 'Укажите заказчика и желаемый срок выполнения. При необходимости назначьте себя исполнителем',
+	currentUserId = null,
+	creatorId,
+	showOwner = true,
+	showDueDate = true,
+	showNotifiers = true,
+	showNotifierFieldLabel = true,
+}: Props) => {
 	const { control } = useFormContext<FormValues>()
 	const { data: customersData } = useGetRealmUsersQuery('all')
 	const customers = useMemo(() => customersData?.data ?? [], [customersData])
 	const ownerId = useWatch({ control, name: 'ownerId' })
+	const excludedNotifierIds = [creatorId ?? currentUserId, ownerId]
 
 	return (
-		<SectionCard
-			number={number}
-			title='Заказчик и сроки'
-			subtitle='Укажите заказчика и желаемый срок выполнения. При необходимости назначьте себя исполнителем'
-		>
-			<Box>
-				<Typography variant='caption' sx={fieldLabelSx}>
-					Заказчик
-				</Typography>
-				<Controller
-					control={control}
-					name='ownerId'
-					render={({ field }) => (
-						<CustomerSelector
-							options={customers}
-							value={field.value}
-							onChange={field.onChange}
-							placeholder='Не указан'
-							noOptionsText='Нет заказчиков'
-						/>
-					)}
-				/>
-			</Box>
+		<SectionCard number={number} title={title} subtitle={subtitle}>
+			{showOwner && (
+				<Box>
+					<Typography variant='caption' sx={fieldLabelSx}>
+						Заказчик
+					</Typography>
+					<Controller
+						control={control}
+						name='ownerId'
+						render={({ field }) => (
+							<CustomerSelector
+								options={customers}
+								value={field.value}
+								onChange={field.onChange}
+								placeholder='Не указан'
+								noOptionsText='Нет пользователей'
+							/>
+						)}
+					/>
+				</Box>
+			)}
 
-			<Box sx={{ mt: 1 }}>
-				<Typography variant='caption' sx={fieldLabelSx}>
-					Уведомлять
-				</Typography>
-				<Controller
-					control={control}
-					name='notifierIds'
-					render={({ field }) => (
-						<NotifierSelector
-							options={customers}
-							value={field.value ?? []}
-							onChange={field.onChange}
-							excludeIds={[currentUserId, ownerId]}
-							limitTags={3}
-							sx={{
-								'& .MuiInputBase-root': {
-									height: 40,
-									flexWrap: 'nowrap',
-									overflow: 'hidden',
-									py: '4px !important',
-								},
-								'& .MuiAutocomplete-tag': {
-									height: 24,
-									maxWidth: '130px',
-									my: 0,
-								},
-								// Скрываем все чипсы, когда поле в фокусе (идет поиск/ввод текста)
-								'& .MuiInputBase-root.Mui-focused .MuiAutocomplete-tag': {
-									display: 'none',
-								},
-								'& .MuiAutocomplete-input': {
-									minWidth: '30px !important',
-									py: '0 !important',
-								},
-							}}
-						/>
+			{showNotifiers && (
+				<Box sx={{ mt: 1 }}>
+					{showNotifierFieldLabel && (
+						<Typography variant='caption' sx={fieldLabelSx}>
+							Уведомлять
+						</Typography>
 					)}
-				/>
-			</Box>
 
-			<Box sx={{ mt: 1 }}>
-				<Typography variant='caption' sx={fieldLabelSx}>
-					Срок выполнения
-				</Typography>
-				<Controller
-					control={control}
-					name='dueDate'
-					render={({ field }) => (
-						<DateTimePicker
-							value={field.value ? dayjs(field.value) : null}
-							onChange={date =>
-								field.onChange(date ? (field.value ? date : date.endOf('day')).toISOString() : null)
-							}
-							slots={{ textField: DateTextField }}
-							slotProps={{ textField: { fullWidth: true } }}
-						/>
-					)}
-				/>
-			</Box>
+					<Controller
+						control={control}
+						name='notifierIds'
+						render={({ field }) => (
+							<NotifierSelector
+								options={customers}
+								value={field.value ?? []}
+								onChange={field.onChange}
+								excludeIds={excludedNotifierIds}
+							/>
+						)}
+					/>
+				</Box>
+			)}
+
+			{showDueDate && (
+				<Box sx={{ mt: 1 }}>
+					<Typography variant='caption' sx={fieldLabelSx}>
+						Срок выполнения
+					</Typography>
+					<Controller
+						control={control}
+						name='dueDate'
+						render={({ field }) => (
+							<DateTimePicker
+								value={field.value ? dayjs(field.value) : null}
+								onChange={date =>
+									field.onChange(date ? (field.value ? date : date.endOf('day')).toISOString() : null)
+								}
+								slots={{ textField: DateTextField }}
+								slotProps={{ textField: { fullWidth: true } }}
+							/>
+						)}
+					/>
+				</Box>
+			)}
 
 			{currentUserId && (
 				<Box sx={{ mt: 1 }}>

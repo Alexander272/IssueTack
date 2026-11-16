@@ -9,11 +9,10 @@ import { useAppSelector } from '@/hooks/redux'
 import { getCurrentCapabilities, getHasNoGroups, getIsManager } from '@/features/user/userSlice'
 import { useGetAllCategoriesQuery } from '@/features/categories/categoriesApiSlice'
 import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
-import { useGetRealmUsersQuery } from '@/features/user/usersApiSlice'
 import { useUpdateTaskMutation } from '../../tasksApiSlice'
 import { AdvancedSettingsSection } from '../TaskCreateForm/AdvancedSettingsSection'
 import { CategoryAndSiteSection } from '../TaskCreateForm/CategoryAndSiteSection'
-import { NotifierSelector } from '../TaskCreateForm/NotifierSelector'
+import { CustomerAndDateSection } from '../TaskCreateForm/CustomerAndDateSection'
 import { SectionCard } from '../TaskCreateForm/SectionCard'
 import { fieldLabelSx } from '../TaskCreateForm/styles'
 
@@ -86,15 +85,14 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 	const hasNoGroups = useAppSelector(getHasNoGroups)
 	const capabilities = useAppSelector(getCurrentCapabilities)
 	const canEditNotifiers = !hasNoGroups
+	const canEditOwnerAndDueDate = !isManager && canEditNotifiers && task.status === 'open'
 
 	const [updateTask, { isLoading }] = useUpdateTaskMutation()
 	const { data: categoriesData } = useGetAllCategoriesQuery()
 	const { data: sitesData } = useGetAllSitesQuery()
-	const { data: allUsersData } = useGetRealmUsersQuery('all', { skip: !canEditNotifiers })
 
 	const categories = useMemo(() => categoriesData?.data ?? [], [categoriesData])
 	const sites = useMemo(() => sitesData?.data ?? [], [sitesData])
-	const allUsers = useMemo(() => allUsersData?.data ?? [], [allUsersData])
 
 	// Заголовок/описание может править только создатель/менеджер группы/владелец
 	// (canEditFields). Начальник области (task.access.isAdmin) правит через форму
@@ -188,25 +186,19 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 						)}
 
 						{!isManager && canEditNotifiers && (
-							<SectionCard number={3} title='Уведомлять'>
-								<Box>
-									<Typography variant='caption' sx={fieldLabelSx}>
-										Уведомлять
-									</Typography>
-									<Controller
-										control={methods.control}
-										name='notifierIds'
-										render={({ field }) => (
-											<NotifierSelector
-												options={allUsers}
-												value={field.value ?? []}
-												onChange={field.onChange}
-												excludeIds={[task.creator.id, task.owner?.id]}
-											/>
-										)}
-									/>
-								</Box>
-							</SectionCard>
+							<CustomerAndDateSection
+								number={3}
+								creatorId={task.creator.id}
+								title={canEditOwnerAndDueDate ? 'Заказчик, сроки и уведомления' : 'Уведомлять'}
+								subtitle={
+									canEditOwnerAndDueDate
+										? 'Пока задача новая, можно изменить заказчика, срок и список уведомляемых'
+										: ''
+								}
+								showOwner={canEditOwnerAndDueDate}
+								showDueDate={canEditOwnerAndDueDate}
+								showNotifierFieldLabel={canEditOwnerAndDueDate}
+							/>
 						)}
 
 						<Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, pt: 1, pb: !embedded ? 2 : 0 }}>

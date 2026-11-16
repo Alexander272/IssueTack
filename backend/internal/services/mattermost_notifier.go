@@ -344,6 +344,7 @@ var changeTagLabels = map[models.ActivityType]string{
 	models.ActionDueDateChanged:     "Срок",
 	models.ActionSiteChanged:        "Площадка",
 	models.ActionCategoryChanged:    "Категория",
+	models.ActionNotifiersChanged:   "Наблюдатели",
 }
 
 // changesSummary превращает сводку изменений тикета (поле data.changes) в многострочный
@@ -406,6 +407,8 @@ func (n *mattermostNotifier) changeLine(userID uuid.UUID, ch *models.FieldChange
 		return "Площадка: изменена", true
 	case models.ActionCategoryChanged:
 		return "Категория: изменена", true
+	case models.ActionNotifiersChanged:
+		return "Наблюдатели: изменены", true
 	}
 
 	label, ok := changeTagLabels[ch.Tag]

@@ -3566,6 +3566,8 @@ func TestTicketService_Update_WithNotifiers_Syncs(t *testing.T) {
 	mockUsers.On("GetByID", mock.Anything, notifierID).Return(&models.UserData{ID: notifierID, IsActive: true, Realms: []*models.UserRealm{activeRealmMembership(realmID)}}, nil)
 	mockRepo.On("Update", mock.Anything, nil, mock.Anything).Return(nil)
 	mockRepo.On("SyncNotifiers", mock.Anything, nil, ticketID, actorID, []uuid.UUID{notifierID}).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
 	dto := &models.TicketDTO{
 		ID:          &ticketID,
@@ -3577,8 +3579,8 @@ func TestTicketService_Update_WithNotifiers_Syncs(t *testing.T) {
 	err := svc.Update(context.Background(), dto)
 	require.NoError(t, err)
 	mockRepo.AssertCalled(t, "SyncNotifiers", mock.Anything, nil, ticketID, actorID, []uuid.UUID{notifierID})
-	mockLogs.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
-	mockNotifications.AssertNotCalled(t, "TicketUpdated", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	mockLogs.AssertExpectations(t)
+	mockNotifications.AssertExpectations(t)
 }
 
 func TestTicketService_GetAccessFlags_NotifierReadOnlyCannotTake(t *testing.T) {

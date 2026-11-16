@@ -941,6 +941,9 @@ func (s *TicketService) updateTicket(
 			if err := s.validateAndPrepareNotifiers(ctx, dto, oldTicket); err != nil {
 				return err
 			}
+			if ch, ok := notifierIDsChange(oldTicket.Notifiers, dto.NotifierIDs); ok {
+				changes = append(changes, ch)
+			}
 		}
 
 		if err := s.repo.Update(ctx, newTx, dto); err != nil {
@@ -1590,6 +1593,50 @@ func (s *TicketService) validateAndPrepareNotifiers(ctx context.Context, dto *mo
 
 	dto.NotifierIDs = uniq
 	return nil
+}
+
+func formatNotifierIDs(ids []uuid.UUID) string {
+	if len(ids) == 0 {
+		return "none"
+	}
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, id.String())
+	}
+	return strings.Join(out, ",")
+}
+
+func notifierIDsChange(old []models.UserShort, newIDs []uuid.UUID) (*models.FieldChange, bool) {
+	oldSet := make(map[string]struct{}, len(old))
+	for _, u := range old {
+		oldSet[u.ID.String()] = struct{}{}
+	}
+	newSet := make(map[string]struct{}, len(newIDs))
+	for _, id := range newIDs {
+		newSet[id.String()] = struct{}{}
+	}
+	if len(oldSet) == len(newSet) {
+		same := true
+		for id := range oldSet {
+			if _, ok := newSet[id]; !ok {
+				same = false
+				break
+			}
+		}
+		if same {
+			return nil, false
+		}
+	}
+
+	oldIDs := make([]uuid.UUID, 0, len(old))
+	for _, u := range old {
+		oldIDs = append(oldIDs, u.ID)
+	}
+	return &models.FieldChange{
+		Tag:    models.ActionNotifiersChanged,
+		OldVal: formatNotifierIDs(oldIDs),
+		NewVal: formatNotifierIDs(newIDs),
+	}, true
 }
 
 // GetAccessFlags вычисляет флаги доступа к тикету для пользователя

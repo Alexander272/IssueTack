@@ -50,6 +50,7 @@ export const FIELD_META: Record<string, FieldMeta> = {
 	closed: meta('Закрытие', 'изменил дату закрытия', CalendarClock, '#6b7280', 'date'),
 	site_changed: meta('Площадка', 'изменил площадку', Building2, '#14b8a6', 'plain'),
 	category_changed: meta('Категория', 'изменил категорию', Layers, '#a855f7', 'plain'),
+	notifiers_changed: meta('Наблюдатели', 'изменил наблюдателей', Users, '#6366f1', 'plain'),
 	title: meta('Заголовок', 'изменил заголовок', Pencil, '#6b7280', 'diff'),
 	status: meta('Статус', 'изменил статус', ArrowRightLeft, '#3b82f6', 'status'),
 	priority: meta('Приоритет', 'изменил приоритет', Flag, '#f59e0b', 'priority'),
