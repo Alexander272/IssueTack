@@ -152,32 +152,10 @@ export const AdvancedSettingsSection = ({
 							name='notifierIds'
 							render={({ field }) => (
 								<NotifierSelector
-									limitTags={2}
 									options={allUsers}
 									value={field.value ?? []}
 									onChange={field.onChange}
 									excludeIds={[creatorId, selectedOwnerId]}
-									sx={{
-										'& .MuiInputBase-root': {
-											height: 40,
-											flexWrap: 'nowrap',
-											overflow: 'hidden',
-											py: '4px !important',
-										},
-										'& .MuiAutocomplete-tag': {
-											height: 24,
-											maxWidth: '130px',
-											my: 0,
-										},
-										// Скрываем все чипсы, когда поле в фокусе (идет поиск/ввод текста)
-										'& .MuiInputBase-root.Mui-focused .MuiAutocomplete-tag': {
-											display: 'none',
-										},
-										'& .MuiAutocomplete-input': {
-											minWidth: '30px !important',
-											py: '0 !important',
-										},
-									}}
 								/>
 							)}
 						/>

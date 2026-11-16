@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react'
-import { Autocomplete, TextField, type SxProps } from '@mui/material'
 
 import type { IUserData } from '@/features/user/types/user'
+import { SelectWithFilter } from '@/components/SelectWithFilter/SelectWithFilter'
 
 type Props = {
 	options: IUserData[]
@@ -9,19 +9,23 @@ type Props = {
 	onChange: (ids: string[]) => void
 	/** Пользователи, которых нельзя выбрать (автор, заказчик и т.п.). */
 	excludeIds?: Array<string | null | undefined>
-	limitTags?: number
 	disabled?: boolean
-	sx?: SxProps
 }
 
-export const NotifierSelector = ({ options, value, onChange, excludeIds, limitTags, disabled, sx }: Props) => {
-	const excluded = useMemo(
-		() => new Set((excludeIds ?? []).filter((id): id is string => Boolean(id))),
-		[excludeIds],
+export const NotifierSelector = ({ options, value, onChange, excludeIds, disabled }: Props) => {
+	const excluded = useMemo(() => new Set((excludeIds ?? []).filter((id): id is string => Boolean(id))), [excludeIds])
+	const userOptions = useMemo(
+		() =>
+			options.map(u => ({
+				id: u.id,
+				label: `${u.lastName} ${u.firstName} (${u.username})`,
+			})),
+		[options],
 	)
+
 	const filteredOptions = useMemo(
-		() => (excluded.size ? options.filter(u => !excluded.has(u.id)) : options),
-		[options, excluded],
+		() => (excluded.size ? userOptions.filter(u => !excluded.has(u.id)) : userOptions),
+		[userOptions, excluded],
 	)
 	const cleanedValue = useMemo(() => value.filter(id => !excluded.has(id)), [value, excluded])
 
@@ -32,18 +36,12 @@ export const NotifierSelector = ({ options, value, onChange, excludeIds, limitTa
 	const selected = filteredOptions.filter(u => cleanedValue.includes(u.id))
 
 	return (
-		<Autocomplete
-			multiple
-			options={filteredOptions}
-			limitTags={limitTags}
-			disableCloseOnSelect
-			getOptionLabel={u => `${u.lastName} ${u.firstName} (${u.username})`}
-			value={selected}
-			onChange={(_, v) => onChange(v.map(u => u.id))}
+		<SelectWithFilter
+			placeholder='Выберите пользователей'
+			values={selected}
+			options={userOptions}
+			onChange={v => onChange(v.map(u => u.id))}
 			disabled={disabled}
-			noOptionsText='Нет пользователей'
-			renderInput={params => <TextField {...params} size='small' placeholder='Выберите пользователей' />}
-			sx={sx}
 		/>
 	)
 }
