@@ -678,16 +678,50 @@ func TestNotificationService_NotifyDeadlineSoon_FiresReachedThresholds(t *testin
 	mockRepo.On("GetSettings", mock.Anything, assigneeID).Return(&models.NotificationSettings{UserID: assigneeID, Settings: settingsRaw}, nil)
 	mockRepo.On("HasDeadlineReminder", mock.Anything, assigneeID, ticket.ID, 60).Return(false, nil).Once()
 	mockRepo.On("HasDeadlineReminder", mock.Anything, assigneeID, ticket.ID, 30).Return(false, nil).Once()
-	mockNotifier.On("Notify", mock.Anything, assigneeID, mock.Anything, mock.Anything).Return(true, nil).Twice()
+	mockNotifier.On("Notify", mock.Anything, assigneeID, mock.Anything, mock.Anything).Return(true, nil).Once()
 	mockRepo.On("Create", mock.Anything, nil, mock.MatchedBy(func(dto *models.CreateNotificationDTO) bool {
 		return dto.Type == string(models.NotificationDeadlineSoon)
-	})).Return(nil).Twice()
+	})).Return(nil).Once()
 
 	err = svc.NotifyDeadlineSoon(context.Background(), ticket)
 	assert.NoError(t, err)
 	mockRepo.AssertNotCalled(t, "HasDeadlineReminder", mock.Anything, assigneeID, ticket.ID, 15)
 	mockNotifier.AssertExpectations(t)
 	mockRepo.AssertExpectations(t)
+}
+
+func TestNotificationService_NotifyDeadlineSoon_SingleNotificationWhenSeveralThresholdsReached(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	assigneeID := uuid.New()
+	due := time.Now().Add(20 * time.Hour)
+	ticket := &models.Ticket{
+		ID:       uuid.New(),
+		Title:    "Soon Ticket",
+		Assignee: &models.UserShort{ID: assigneeID},
+		DueDate:  &due,
+	}
+	settingsRaw, err := json.Marshal(&models.NotificationSettingsPayload{
+		Enabled:           true,
+		Categories:        []models.CategoryNotificationSetting{},
+		Groups:            []models.GroupNotificationSetting{},
+		DeadlineReminders: []int{2880, 1440, 360},
+	})
+	require.NoError(t, err)
+	mockRepo.On("GetSettings", mock.Anything, assigneeID).Return(&models.NotificationSettings{UserID: assigneeID, Settings: settingsRaw}, nil)
+	// Дедлайн в 20h (1200 мин) попадает одновременно в пороги 2880 («за 2 дня») и 1440
+	// («за 1 день») — должно уйти только одно уведомление, по ближайшему (самому тесному) порогу.
+	mockRepo.On("HasDeadlineReminder", mock.Anything, assigneeID, ticket.ID, 2880).Return(false, nil).Once()
+	mockRepo.On("HasDeadlineReminder", mock.Anything, assigneeID, ticket.ID, 1440).Return(false, nil).Once()
+
+	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID)
+
+	err = svc.NotifyDeadlineSoon(context.Background(), ticket)
+	assert.NoError(t, err)
+	mockRepo.AssertNotCalled(t, "HasDeadlineReminder", mock.Anything, assigneeID, ticket.ID, 360)
+	mockNotifier.AssertNumberOfCalls(t, "Notify", 1)
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
 }
 
 func TestNotificationService_NotifyDeadlineSoon_NoAssignee(t *testing.T) {

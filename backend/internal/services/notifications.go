@@ -690,6 +690,9 @@ func (s *NotificationService) GetActiveByPriorityGlobal(ctx context.Context, pri
 // осталось не больше порога; дедупликация — по существующей строке с тем же remind_before
 // (см. HasDeadlineReminder). Дата срабатывания каждого порога приходит по мере приближения
 // срока: на первом прогоне cron порог «догоняет», далее тикет покидает выборку после дедлайна.
+// Если срок одновременно попадает в окно нескольких порогов (дедлайн уже внутри них) —
+// уведомление уходит только по ближайшему (самому тесному) достигнутому неотправленному
+// порогу: по одной заявке не должно приходить несколько уведомлений о том же самом сроке.
 func (s *NotificationService) NotifyDeadlineSoon(ctx context.Context, ticket *models.Ticket) error {
 	if ticket.Assignee == nil || ticket.DueDate == nil {
 		return nil
@@ -701,6 +704,12 @@ func (s *NotificationService) NotifyDeadlineSoon(ctx context.Context, ticket *mo
 	}
 
 	now := time.Now()
+	// Несколько порогов могут оказаться «достигнутыми» одновременно (дедлайн уже находится
+	// внутри окна любого из них). От одной заявки уходит только одно уведомление — по
+	// ближайшему (самому тесному) достигнутому и ещё не отправленному порогу; остальные
+	// «догнались» вместе с ним и дублировать не нужно.
+	bestBefore := 0
+	fired := false
 	for _, before := range reminders {
 		if before <= 0 {
 			continue
@@ -716,33 +725,40 @@ func (s *NotificationService) NotifyDeadlineSoon(ctx context.Context, ticket *mo
 		if sent {
 			continue
 		}
-
-		data, err := json.Marshal(map[string]any{
-			"ticket_id":     ticket.ID.String(),
-			"title":         ticket.Title,
-			"remind_before": before,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to marshal deadline reminder data: %w", err)
+		if !fired || before < bestBefore {
+			bestBefore = before
+			fired = true
 		}
-
-		dto := &models.CreateNotificationDTO{
-			Type:  string(models.NotificationDeadlineSoon),
-			Title: "Подходит срок задачи",
-			Body:  ticket.Title,
-			Data:  data,
-		}
-		delivered := s.deliver(ctx, ticket, []uuid.UUID{ticket.Assignee.ID}, dto)
-		s.persistForUsers(ctx, delivered, dto)
-
-		logger.Info("deadline soon notification processed",
-			logger.StringAttr("ticket_id", ticket.ID.String()),
-			logger.StringAttr("title", ticket.Title),
-			logger.IntAttr("remind_before", before),
-			logger.StringAttr("assignee", ticket.Assignee.ID.String()),
-			logger.IntAttr("delivered", len(delivered)),
-		)
 	}
+	if !fired {
+		return nil
+	}
+
+	data, err := json.Marshal(map[string]any{
+		"ticket_id":     ticket.ID.String(),
+		"title":         ticket.Title,
+		"remind_before": bestBefore,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal deadline reminder data: %w", err)
+	}
+
+	dto := &models.CreateNotificationDTO{
+		Type:  string(models.NotificationDeadlineSoon),
+		Title: "Подходит срок задачи",
+		Body:  ticket.Title,
+		Data:  data,
+	}
+	delivered := s.deliver(ctx, ticket, []uuid.UUID{ticket.Assignee.ID}, dto)
+	s.persistForUsers(ctx, delivered, dto)
+
+	logger.Info("deadline soon notification processed",
+		logger.StringAttr("ticket_id", ticket.ID.String()),
+		logger.StringAttr("title", ticket.Title),
+		logger.IntAttr("remind_before", bestBefore),
+		logger.StringAttr("assignee", ticket.Assignee.ID.String()),
+		logger.IntAttr("delivered", len(delivered)),
+	)
 	return nil
 }
 
