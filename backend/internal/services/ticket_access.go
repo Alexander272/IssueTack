@@ -69,6 +69,9 @@ type TicketAccessChecker interface {
 	// владении (заказчик): он не автор, не исполнитель, не участник/менеджер группы
 	// и не начальник области. Нужен, чтобы заказчик не получал «взять в работу».
 	ownerReadOnly(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) (bool, error)
+	// notifierReadOnly сообщает, что доступ пользователя к заявке держится только на
+	// членстве в списке «Уведомлять». Наблюдатель не получает «взять в работу».
+	notifierReadOnly(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) (bool, error)
 	// IsCustomer сообщает, что пользователь в области тикета — «заказчик», а не
 	// «рабочий»: у него нет ни управляемых, ни членских групп, и он не начальник
 	// области. Такой пользователь не становится рабочим даже будучи автором заявки —
@@ -173,16 +176,19 @@ func (s *TicketAccessService) checkTicketAttributes(ctx context.Context, ticket 
 	// TicketService.Update). Право на комментарий owner'у выдаётся отдельно в
 	// CommentService.Create, чтобы не расширять CheckWorkAccess.
 	isOwner := ticket.Owner != nil && ticket.Owner.ID == userID
+	// Наблюдатели (список «Уведомлять») получают read-доступ к заявке как заказчик.
+	// Право вести заявку (write/delete/work) им не даётся.
+	isNotifier := hasTicketNotifier(ticket, userID)
 
 	// Тикет без группы: группа не может ни расширить, ни сузить доступ, поэтому
-	// решение принимается по автору, исполнителю и заказчику. Создателю доступны и
-	// чтение, и правка — иначе он не смог бы отредактировать собственную
-	// внегрупповую заявку; заказчику — только чтение. Автор-«заказчик» (без групп)
-	// правку не получает: его роль в work-модели — не рабочая (см. IsCustomer).
+	// решение принимается по автору, исполнителю, заказчику и наблюдателям. Создателю
+	// доступны и чтение, и правка — иначе он не смог бы отредактировать собственную
+	// внегрупповую заявку; заказчику/наблюдателю — только чтение. Автор-«заказчик»
+	// (без групп) правку не получает: его роль в work-модели — не рабочая (см. IsCustomer).
 	if ticket.Group == nil {
 		switch action {
 		case string(access.Read):
-			if isCreator || isAssignee || isOwner {
+			if isCreator || isAssignee || isOwner || isNotifier {
 				return nil
 			}
 		case string(access.Write):
@@ -204,7 +210,7 @@ func (s *TicketAccessService) checkTicketAttributes(ctx context.Context, ticket 
 
 	switch action {
 	case string(access.Read):
-		if isCreator || isAssignee || isOwner {
+		if isCreator || isAssignee || isOwner || isNotifier {
 			return nil
 		}
 		isMember, err := s.groups.IsMember(ctx, ticket.Group.ID, userID)
@@ -232,6 +238,16 @@ func (s *TicketAccessService) checkTicketAttributes(ctx context.Context, ticket 
 	return models.ErrPermissionDenied
 }
 
+// hasTicketNotifier сообщает, есть ли пользователь в списке «Уведомлять» заявки.
+func hasTicketNotifier(ticket *models.Ticket, userID uuid.UUID) bool {
+	for i := range ticket.Notifiers {
+		if ticket.Notifiers[i].ID == userID {
+			return true
+		}
+	}
+	return false
+}
+
 // checkGroupManager возвращает nil, если пользователь управляет группой тикета.
 func (s *TicketAccessService) checkGroupManager(ctx context.Context, groupID uuid.UUID, userID uuid.UUID) error {
 	managed, err := s.groups.GetManagedGroups(ctx, userID, nil)
@@ -257,6 +273,39 @@ func (s *TicketAccessService) ownerReadOnly(ctx context.Context, ticket *models.
 		return false, nil
 	}
 	if ticket.Creator.ID == userID {
+		return false, nil
+	}
+	if ticket.Assignee != nil && ticket.Assignee.ID == userID {
+		return false, nil
+	}
+	if ticket.Group != nil {
+		member, err := s.groups.IsMember(ctx, ticket.Group.ID, userID)
+		if err != nil {
+			return false, fmt.Errorf("failed to check membership: %w", err)
+		}
+		if member || s.checkGroupManager(ctx, ticket.Group.ID, userID) == nil {
+			return false, nil
+		}
+	}
+	supervisor, err := s.IsRealmSupervisor(ctx, userID, ticketRealm(ticket))
+	if err != nil {
+		return false, err
+	}
+	return !supervisor, nil
+}
+
+// notifierReadOnly сообщает, что доступ пользователя к заявке держится только на
+// членстве в списке «Уведомлять»: не автор, не исполнитель, не владелец, не участник
+// и не менеджер группы, не начальник области. Как и заказчик с read-only доступом,
+// наблюдатель не может «взять в работу» заявку — это рабочая роль.
+func (s *TicketAccessService) notifierReadOnly(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) (bool, error) {
+	if !hasTicketNotifier(ticket, userID) {
+		return false, nil
+	}
+	if ticket.Creator.ID == userID {
+		return false, nil
+	}
+	if ticket.Owner != nil && ticket.Owner.ID == userID {
 		return false, nil
 	}
 	if ticket.Assignee != nil && ticket.Assignee.ID == userID {
@@ -310,10 +359,11 @@ func (s *TicketAccessService) IsCustomer(ctx context.Context, ticket *models.Tic
 }
 
 // CanAttachToTicket проверяет право прикрепить файл к заявке. Кроме «рабочего»
-// доступа (CheckWorkAccess) вложение разрешено заказчику — автору-без-групп или
-// владельцу: приложить файл к своей активной заявке — часть сценария заказчика,
-// поэтому здесь он не отсекается, в отличие от подзадач и внутренних комментариев.
-// Замороженные заявки (resolved/closed/cancelled) закрыты и для заказчика.
+// доступа (CheckWorkAccess) вложение разрешено заказчику — автору-без-групп,
+// владельцу или наблюдателю из списка «Уведомлять»: приложить файл к своей
+// активной заявке — часть сценария заинтересованного участника, поэтому здесь он
+// не отсекается, в отличие от подзадач и внутренних комментариев. Замороженные
+// заявки (resolved/closed/cancelled) закрыты и для них.
 func (s *TicketAccessService) CanAttachToTicket(ctx context.Context, dto *models.AccessCheckDTO) error {
 	workErr := s.CheckWorkAccess(ctx, dto)
 	if workErr == nil {
@@ -330,7 +380,8 @@ func (s *TicketAccessService) CanAttachToTicket(ctx context.Context, dto *models
 
 	isCreator := ticket.Creator.ID == dto.UserID
 	isOwner := ticket.Owner != nil && ticket.Owner.ID == dto.UserID
-	if !isCreator && !isOwner {
+	isNotifier := hasTicketNotifier(ticket, dto.UserID)
+	if !isCreator && !isOwner && !isNotifier {
 		return workErr
 	}
 	return nil

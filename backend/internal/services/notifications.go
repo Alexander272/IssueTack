@@ -371,6 +371,10 @@ func (s *NotificationService) TicketCreated(ctx context.Context, ticket *models.
 		}
 	}
 
+	// Владелец (заказчик) и наблюдатели («Уведомлять»), если указаны при создании,
+	// получают уведомление о новой заявке.
+	addOwnerAndNotifiers(recipients, ticket, &actorID)
+
 	// Создатель тикета не уведомляется о собственном действии.
 	delete(recipients, actorID)
 
@@ -452,10 +456,10 @@ func (s *NotificationService) TicketUpdated(ctx context.Context, ticket *models.
 		recipients[ticket.Assignee.ID] = struct{}{}
 	}
 
-	// Заказчик (owner) уведомляется только о смене статуса: изменения приоритета, срока
-	// и прочих полей до него не доходят. Автор изменения исключается ниже общим delete.
-	if hasStatusChange(changes) && ticket.Owner != nil {
-		recipients[ticket.Owner.ID] = struct{}{}
+	// При смене статуса заказчик (owner) и наблюдатели («Уведомлять») получают
+	// уведомление об изменении заявки. Автор изменения исключается ниже.
+	if hasStatusChange(changes) {
+		addOwnerAndNotifiers(recipients, ticket, &actorID)
 	}
 
 	// Если изменён статус задачи — уведомляем подписчиков категории на событие «Изменение статуса».
@@ -525,6 +529,9 @@ func (s *NotificationService) TicketDeleted(ctx context.Context, ticket *models.
 		recipients[id] = struct{}{}
 	}
 
+	// Заказчик (owner) и наблюдатели («Уведомлять») получают уведомление об удалении заявки.
+	addOwnerAndNotifiers(recipients, ticket, nil)
+
 	if len(recipients) == 0 {
 		return nil
 	}
@@ -584,6 +591,9 @@ func (s *NotificationService) TicketCommented(ctx context.Context, c *models.Not
 		}
 	}
 
+	// Заказчик (owner) и наблюдатели («Уведомлять») получают уведомление о новом комментарии.
+	addOwnerAndNotifiers(recipients, ticket, &c.ActorID)
+
 	delete(recipients, c.ActorID)
 
 	if len(recipients) == 0 {
@@ -633,6 +643,9 @@ func (s *NotificationService) AttachmentAdded(ctx context.Context, ticket *model
 			recipients[id] = struct{}{}
 		}
 	}
+
+	// Заказчик (owner) и наблюдатели («Уведомлять») получают уведомление о новом вложении.
+	addOwnerAndNotifiers(recipients, ticket, &actorID)
 
 	delete(recipients, actorID)
 
@@ -1028,6 +1041,29 @@ func (s *NotificationService) deliver(ctx context.Context, ticket *models.Ticket
 }
 
 // recipientsToSlice превращает множество получателей в слайс.
+
+// addOwnerAndNotifiers добавляет заказчика (owner) и наблюдателей («Уведомлять»)
+// в набор получателей, исключая автора действия (если передан). Используется для
+// событий, по которым владелец и наблюдатели получают уведомления как заинтересованные
+// участники заявки.
+func addOwnerAndNotifiers(recipients map[uuid.UUID]struct{}, ticket *models.Ticket, exclude *uuid.UUID) {
+	if ticket == nil {
+		return
+	}
+	if ticket.Owner != nil {
+		if exclude == nil || ticket.Owner.ID != *exclude {
+			recipients[ticket.Owner.ID] = struct{}{}
+		}
+	}
+	for i := range ticket.Notifiers {
+		id := ticket.Notifiers[i].ID
+		if exclude != nil && id == *exclude {
+			continue
+		}
+		recipients[id] = struct{}{}
+	}
+}
+
 func recipientsToSlice(recipients map[uuid.UUID]struct{}) []uuid.UUID {
 	ids := make([]uuid.UUID, 0, len(recipients))
 	for id := range recipients {

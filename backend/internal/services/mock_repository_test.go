@@ -255,6 +255,28 @@ func (m *MockTicketsRepo) CountNotClosedByCategory(ctx context.Context, category
 	args := m.Called(ctx, categoryID)
 	return args.Int(0), args.Error(1)
 }
+func (m *MockTicketsRepo) GetNotifiers(ctx context.Context, ticketID uuid.UUID) ([]models.UserShort, error) {
+	args := m.Called(ctx, ticketID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]models.UserShort), args.Error(1)
+}
+func (m *MockTicketsRepo) GetNotifierIDs(ctx context.Context, ticketID uuid.UUID) ([]uuid.UUID, error) {
+	args := m.Called(ctx, ticketID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
+func (m *MockTicketsRepo) SyncNotifiers(ctx context.Context, tx postgres.Tx, ticketID uuid.UUID, actorID uuid.UUID, userIDs []uuid.UUID) error {
+	args := m.Called(ctx, tx, ticketID, actorID, userIDs)
+	return args.Error(0)
+}
+func (m *MockTicketsRepo) IsNotifier(ctx context.Context, ticketID, userID uuid.UUID) (bool, error) {
+	args := m.Called(ctx, ticketID, userID)
+	return args.Bool(0), args.Error(1)
+}
 func (m *MockTicketsRepo) GetStatisticsSummary(ctx context.Context, query models.StatisticsQuery) (*models.StatisticsSummary, error) {
 	args := m.Called(ctx, query)
 	if args.Get(0) == nil {
@@ -1213,6 +1235,11 @@ func (m *MockTicketAccessChecker) CanAdministerTickets(ctx context.Context, user
 }
 
 func (m *MockTicketAccessChecker) ownerReadOnly(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) (bool, error) {
+	args := m.Called(ctx, ticket, userID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockTicketAccessChecker) notifierReadOnly(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) (bool, error) {
 	args := m.Called(ctx, ticket, userID)
 	return args.Bool(0), args.Error(1)
 }

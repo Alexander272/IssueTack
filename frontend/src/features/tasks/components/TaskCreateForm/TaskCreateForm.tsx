@@ -35,6 +35,7 @@ const EMPTY_FORM: FormValues = {
 	siteId: '',
 	dueDate: null,
 	subtasks: [],
+	notifierIds: [],
 }
 
 export type TaskCreateFormHandle = { requestReset: () => void }
@@ -161,6 +162,7 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 					subtasks: data.subtasks
 						.map(s => ({ title: s.title.trim(), description: s.description.trim() }))
 						.filter(s => s.title.length > 0),
+					notifierIds: isManager || isExecutor ? data.notifierIds ?? [] : undefined,
 				}
 
 				try {
@@ -220,7 +222,7 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 
 							{isExecutor && <CustomerAndDateSection currentUserId={currentUserId} />}
 
-							{isManager && <AdvancedSettingsSection />}
+							{isManager && <AdvancedSettingsSection creatorId={currentUserId} />}
 
 							<Box
 								sx={{

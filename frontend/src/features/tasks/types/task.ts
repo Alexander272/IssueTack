@@ -70,6 +70,7 @@ export interface ITask {
 	updatedAt: string
 	subtasks?: ISubtask[]
 	attachments?: IAttachment[]
+	notifiers?: IUserShort[]
 	access?: IAccessFlags
 	/** Запрос исполнителя на перенос срока (только когда есть pending-решение менеджера). */
 	dueDateRequest?: IDueDateRequest | null
@@ -133,6 +134,8 @@ export interface ITaskDTO {
 	resolvedAt?: string | null
 	/** Подзадачи, создаваемые вместе с заявкой (автор, статус, приоритет и порядок проставит бэкенд). */
 	subtasks?: ISubtaskCreateDTO[]
+	/** Наблюдатели заявки (список «Уведомлять»). При обновлении — полная замена, если передано. */
+	notifierIds?: string[]
 }
 
 export interface ISubtask {

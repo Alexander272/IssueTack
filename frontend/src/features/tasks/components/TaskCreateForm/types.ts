@@ -16,6 +16,7 @@ export interface FormValues {
 	siteId: string
 	dueDate: string | null
 	subtasks: SubtaskFormValues[]
+	notifierIds: string[]
 }
 
 export type Props = {

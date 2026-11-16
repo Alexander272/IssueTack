@@ -6,12 +6,14 @@ import { toast } from 'react-toastify'
 import type { ITask, ITaskDTO } from '../../types/task'
 import type { FormValues } from './types'
 import { useAppSelector } from '@/hooks/redux'
-import { getIsManager, getCurrentCapabilities } from '@/features/user/userSlice'
+import { getCurrentCapabilities, getHasNoGroups, getIsManager } from '@/features/user/userSlice'
 import { useGetAllCategoriesQuery } from '@/features/categories/categoriesApiSlice'
 import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
+import { useGetRealmUsersQuery } from '@/features/user/usersApiSlice'
 import { useUpdateTaskMutation } from '../../tasksApiSlice'
 import { AdvancedSettingsSection } from '../TaskCreateForm/AdvancedSettingsSection'
 import { CategoryAndSiteSection } from '../TaskCreateForm/CategoryAndSiteSection'
+import { NotifierSelector } from '../TaskCreateForm/NotifierSelector'
 import { SectionCard } from '../TaskCreateForm/SectionCard'
 import { fieldLabelSx } from '../TaskCreateForm/styles'
 
@@ -81,14 +83,18 @@ const EditDescriptionSection = ({ readOnly }: { readOnly: boolean }) => {
 
 export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChange }: Props) => {
 	const isManager = useAppSelector(getIsManager)
+	const hasNoGroups = useAppSelector(getHasNoGroups)
 	const capabilities = useAppSelector(getCurrentCapabilities)
+	const canEditNotifiers = !hasNoGroups
 
 	const [updateTask, { isLoading }] = useUpdateTaskMutation()
 	const { data: categoriesData } = useGetAllCategoriesQuery()
 	const { data: sitesData } = useGetAllSitesQuery()
+	const { data: allUsersData } = useGetRealmUsersQuery('all', { skip: !canEditNotifiers })
 
 	const categories = useMemo(() => categoriesData?.data ?? [], [categoriesData])
 	const sites = useMemo(() => sitesData?.data ?? [], [sitesData])
+	const allUsers = useMemo(() => allUsersData?.data ?? [], [allUsersData])
 
 	// Заголовок/описание может править только создатель/менеджер группы/владелец
 	// (canEditFields). Начальник области (task.access.isAdmin) правит через форму
@@ -111,6 +117,8 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 			assigneeId: task.assignee?.id ?? null,
 			siteId: task.site.id,
 			dueDate: task.dueDate ?? null,
+			subtasks: [],
+			notifierIds: (task.notifiers ?? []).map(u => u.id),
 		},
 		mode: 'onTouched',
 	})
@@ -136,6 +144,7 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 				assigneeId: data.assigneeId || null,
 				managerId: task.manager?.id ?? null,
 				dueDate: data.dueDate || null,
+				...(canEditNotifiers ? { notifierIds: data.notifierIds ?? [] } : {}),
 			}
 
 			try {
@@ -174,7 +183,30 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 								isAdmin={task.access?.isAdmin ?? false}
 								isManager={task.access?.isManager ?? false}
 								canEditDueDate={Boolean(task.access?.isManager) || capabilities.isRealmAdmin}
+								creatorId={task.creator.id}
 							/>
+						)}
+
+						{!isManager && canEditNotifiers && (
+							<SectionCard number={3} title='Уведомлять'>
+								<Box>
+									<Typography variant='caption' sx={fieldLabelSx}>
+										Уведомлять
+									</Typography>
+									<Controller
+										control={methods.control}
+										name='notifierIds'
+										render={({ field }) => (
+											<NotifierSelector
+												options={allUsers}
+												value={field.value ?? []}
+												onChange={field.onChange}
+												excludeIds={[task.creator.id, task.owner?.id]}
+											/>
+										)}
+									/>
+								</Box>
+							</SectionCard>
 						)}
 
 						<Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, pt: 1, pb: !embedded ? 2 : 0 }}>

@@ -532,9 +532,19 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		}
 	}
 
+	if err := s.validateAndPrepareNotifiers(ctx, dto, nil); err != nil {
+		return err
+	}
+
 	err = s.tx.WithinTransaction(ctx, func(newTx postgres.Tx) error {
 		if err := s.repo.Create(ctx, newTx, dto); err != nil {
 			return fmt.Errorf("failed to create ticket. error: %w", err)
+		}
+
+		if dto.HasField("notifierIds") {
+			if err := s.repo.SyncNotifiers(ctx, newTx, *dto.ID, dto.Actor.ID, dto.NotifierIDs); err != nil {
+				return fmt.Errorf("failed to sync ticket notifiers: %w", err)
+			}
 		}
 
 		if len(dto.Subtasks) > 0 {
@@ -927,8 +937,20 @@ func (s *TicketService) updateTicket(
 			return err
 		}
 
+		if dto.HasField("notifierIds") {
+			if err := s.validateAndPrepareNotifiers(ctx, dto, oldTicket); err != nil {
+				return err
+			}
+		}
+
 		if err := s.repo.Update(ctx, newTx, dto); err != nil {
 			return fmt.Errorf("failed to update ticket. error: %w", err)
+		}
+
+		if dto.HasField("notifierIds") {
+			if err := s.repo.SyncNotifiers(ctx, newTx, *dto.ID, dto.Actor.ID, dto.NotifierIDs); err != nil {
+				return fmt.Errorf("failed to sync ticket notifiers: %w", err)
+			}
 		}
 
 		if len(changes) > 0 {
@@ -997,14 +1019,21 @@ func (s *TicketService) Take(ctx context.Context, dto *models.TakeTicketDTO) err
 		return err
 	}
 
-	// Заказчик (owner) с доступом только по владению не может «взять заявку»: его
-	// роль — просмотр/комментарий/решения владельца (см. ownerReadOnly). Автор без
-	// групп (IsCustomer) — тоже заказчик, а не рабочий, поэтому «взять» ему нельзя.
+	// Заказчик (owner) и наблюдатель («Уведомлять») с доступом только по чтению
+	// не могут «взять заявку»: их роль — просмотр/комментарий/решения владельца.
+	// Автор без групп (IsCustomer) — тоже заказчик, а не рабочий, поэтому «взять» ему нельзя.
 	ownerReadOnly, err := s.access.ownerReadOnly(ctx, ticket, dto.Actor.ID)
 	if err != nil {
 		return err
 	}
 	if ownerReadOnly {
+		return models.ErrPermissionDenied
+	}
+	notifierReadOnly, err := s.access.notifierReadOnly(ctx, ticket, dto.Actor.ID)
+	if err != nil {
+		return err
+	}
+	if notifierReadOnly {
 		return models.ErrPermissionDenied
 	}
 	if ticket.Creator.ID == dto.Actor.ID {
@@ -1488,6 +1517,81 @@ var activeStatuses = []models.TicketStatus{
 	models.StatusOnHold,
 }
 
+
+// validateAndPrepareNotifiers проверяет и нормализует список наблюдателей
+// («Уведомлять») заявки: поле обрабатывается как полная замена только если оно
+// передано в запросе. Менять список могут только «исполнитель и выше» (участник
+// группы, менеджер группы или начальник области) — то есть пользователь, который
+// в области тикета не является «заказчиком» (IsCustomer == false). Каждый
+// наблюдатель должен быть активным пользователем и активным участником области
+// тикета. Дубликаты и пустые id отбрасываются.
+func (s *TicketService) validateAndPrepareNotifiers(ctx context.Context, dto *models.TicketDTO, oldTicket *models.Ticket) error {
+	if !dto.HasField("notifierIds") {
+		return nil
+	}
+	if dto.Actor == nil {
+		return models.ErrPermissionDenied
+	}
+
+	var realmID uuid.UUID
+	switch {
+	case oldTicket != nil && oldTicket.RealmID != nil:
+		realmID = *oldTicket.RealmID
+	case dto.RealmID != nil:
+		realmID = *dto.RealmID
+	default:
+		return models.ErrInvalidInput
+	}
+
+	checkTicket := oldTicket
+	if checkTicket == nil {
+		// На создании тикета ещё нет — достаточно знать область для проверки роли
+		// «заказчик/не заказчик» (IsCustomer смотрит на группы/членство в реалме).
+		checkTicket = &models.Ticket{RealmID: &realmID}
+	} else if checkTicket.RealmID == nil {
+		t := *checkTicket
+		t.RealmID = &realmID
+		checkTicket = &t
+	}
+
+	customer, err := s.access.IsCustomer(ctx, checkTicket, dto.Actor.ID)
+	if err != nil {
+		return fmt.Errorf("failed to check notifier edit permission: %w", err)
+	}
+	if customer {
+		return models.ErrPermissionDenied
+	}
+
+	if len(dto.NotifierIDs) == 0 {
+		dto.NotifierIDs = []uuid.UUID{}
+		return nil
+	}
+
+	seen := make(map[uuid.UUID]struct{}, len(dto.NotifierIDs))
+	uniq := make([]uuid.UUID, 0, len(dto.NotifierIDs))
+	for _, id := range dto.NotifierIDs {
+		if id == uuid.Nil {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+
+		u, err := s.users.GetByID(ctx, id)
+		if err != nil || u == nil || !u.IsActive {
+			return models.ErrInvalidInput
+		}
+		if !hasActiveRealmMembership(u, realmID) {
+			return models.ErrInvalidInput
+		}
+		uniq = append(uniq, id)
+	}
+
+	dto.NotifierIDs = uniq
+	return nil
+}
+
 // GetAccessFlags вычисляет флаги доступа к тикету для пользователя
 // (чтение, запись, удаление, работа) и список доступных ему переходов по статусам.
 // Реалм не принимается: все проверки внутри берут его из ticket.RealmID (см.
@@ -1507,13 +1611,17 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 	// CanTake — заявку можно «взять в работу»: она активна (не resolved/closed/cancelled)
 	// и «забираема» — исполнителя нет совсем, либо исполнитель — другой пользователь,
 	// а заявка ещё в статусе open (см. Take). Кнопка не показывается «не-рабочим»:
-	// чистому заказчику (ownerReadOnly) и автору-без-групп (IsCustomer) — их роль
-	// просмотр/комментарий/решения, а не работа.
+	// чистому заказчику (ownerReadOnly), наблюдателю (notifierReadOnly) и
+	// автору-без-групп (IsCustomer) — их роль просмотр/комментарий/решения, а не работа.
 	ownerReadOnly, err := s.access.ownerReadOnly(ctx, ticket, userID)
 	if err != nil {
 		return nil, err
 	}
-	nonWorker := ownerReadOnly
+	notifierReadOnly, err := s.access.notifierReadOnly(ctx, ticket, userID)
+	if err != nil {
+		return nil, err
+	}
+	nonWorker := ownerReadOnly || notifierReadOnly
 	if !nonWorker && ticket.Creator.ID == userID {
 		customer, err := s.access.IsCustomer(ctx, ticket, userID)
 		if err != nil {

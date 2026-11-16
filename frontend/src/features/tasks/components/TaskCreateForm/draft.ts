@@ -6,7 +6,7 @@ import type { FormValues } from './types'
 // подхватить чужой черновик. Вложения (File) не сохраняются — их нельзя
 // сериализовать.
 
-const VERSION = 1
+const VERSION = 2
 
 function draftKey(realmId: string, userId: string) {
 	return `@issueTrack/taskCreateDraft:${realmId}:${userId}`
@@ -32,7 +32,9 @@ function isFormValues(value: unknown): value is FormValues {
 		typeof v.siteId === 'string' &&
 		(v.dueDate === null || typeof v.dueDate === 'string') &&
 		Array.isArray(v.subtasks) &&
-		v.subtasks.every(isSubtask)
+		v.subtasks.every(isSubtask) &&
+		Array.isArray(v.notifierIds) &&
+		v.notifierIds.every((id: unknown) => typeof id === 'string')
 	)
 }
 
@@ -74,5 +76,6 @@ export function hasDraftContent(values: FormValues, filesCount: number): boolean
 	if (filesCount > 0) return true
 	if (values.title?.trim() || values.description?.trim()) return true
 	if (values.categoryId || values.groupId || values.ownerId || values.assigneeId || values.dueDate) return true
+	if ((values.notifierIds ?? []).length > 0) return true
 	return (values.subtasks ?? []).some(s => s?.title?.trim() || s?.description?.trim())
 }

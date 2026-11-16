@@ -38,6 +38,7 @@ type Ticket struct {
 
 	Subtasks    []*Subtask    `json:"subtasks,omitempty"`
 	Attachments []*Attachment `json:"attachments,omitempty"`
+	Notifiers   []UserShort   `json:"notifiers,omitempty"`
 	Access      *AccessFlags  `json:"access,omitempty"`
 }
 
@@ -144,6 +145,11 @@ type TicketDTO struct {
 	// Подзадачи, создаваемые вместе с заявкой (используется только при Create;
 	// при Update — запланированные значения игнорируются).
 	Subtasks []*SubtaskDTO `json:"subtasks,omitempty"`
+
+	// Наблюдатели заявки (список «Уведомлять»): получают уведомления по ключевым
+	// событиям как владелец и получают read-доступ к заявке. При Update
+	// обрабатывается как полная замена, если поле передано в запросе.
+	NotifierIDs []uuid.UUID `json:"notifierIds,omitempty"`
 
 	// Поля, переданные в запросе (заполняется при UnmarshalJSON). Позволяет делать partial update.
 	Provided map[string]bool `json:"-"`

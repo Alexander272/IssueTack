@@ -9,6 +9,7 @@ import { useGetAllCategoriesQuery } from '@/features/categories/categoriesApiSli
 import { useGetAllGroupsQuery } from '@/features/groups/groupsApiSlice'
 import { useGetRealmUsersQuery } from '@/features/user/usersApiSlice'
 import { CustomerSelector } from './CustomerSelector'
+import { NotifierSelector } from './NotifierSelector'
 import { SectionCard } from './SectionCard'
 import { PriorityCard } from './PriorityCard'
 import { fieldLabelSx } from './styles'
@@ -22,6 +23,8 @@ type Props = {
 	isManager?: boolean
 	/** Можно ли менять срок: только менеджер группы заявки или админ реалма. */
 	canEditDueDate?: boolean
+	/** Автор заявки — исключается из списка «Уведомлять». */
+	creatorId?: string | null
 }
 
 export const AdvancedSettingsSection = ({
@@ -30,20 +33,24 @@ export const AdvancedSettingsSection = ({
 	isAdmin = true,
 	isManager = true,
 	canEditDueDate = true,
+	creatorId = null,
 }: Props) => {
 	const { control, setValue } = useFormContext<FormValues>()
 	const { data: categoriesData } = useGetAllCategoriesQuery()
 	const { data: groupsData } = useGetAllGroupsQuery()
 	const { data: ownersData } = useGetRealmUsersQuery('all')
 	const { data: executorsData } = useGetRealmUsersQuery('executors')
+	const { data: allUsersData } = useGetRealmUsersQuery('all')
 
 	const categories = useMemo(() => categoriesData?.data ?? [], [categoriesData])
 	const groups = useMemo(() => groupsData?.data ?? [], [groupsData])
 	const owners = useMemo(() => ownersData?.data ?? [], [ownersData])
 	const executors = useMemo(() => executorsData?.data ?? [], [executorsData])
+	const allUsers = useMemo(() => allUsersData?.data ?? [], [allUsersData])
 
 	const selectedCategoryId = useWatch({ control, name: 'categoryId' })
 	const selectedGroupId = useWatch({ control, name: 'groupId' })
+	const selectedOwnerId = useWatch({ control, name: 'ownerId' })
 
 	// Авто-назначение должно срабатывать только когда пользователь реально меняет
 	// категорию/группу. При восстановлении черновика categoryId/groupId уже
@@ -116,16 +123,62 @@ export const AdvancedSettingsSection = ({
 					/>
 				</Box>
 
-				<Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
+				<Box
+					sx={{
+						display: 'grid',
+						gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) minmax(0, 1fr)' },
+						gap: 2,
+					}}
+				>
 					<Box>
 						<Typography variant='caption' sx={fieldLabelSx}>
-							Заявитель
+							Заказчик
 						</Typography>
 						<Controller
 							control={control}
 							name='ownerId'
 							render={({ field }) => (
 								<CustomerSelector options={owners} value={field.value} onChange={field.onChange} />
+							)}
+						/>
+					</Box>
+
+					<Box>
+						<Typography variant='caption' sx={fieldLabelSx}>
+							Уведомлять
+						</Typography>
+						<Controller
+							control={control}
+							name='notifierIds'
+							render={({ field }) => (
+								<NotifierSelector
+									limitTags={2}
+									options={allUsers}
+									value={field.value ?? []}
+									onChange={field.onChange}
+									excludeIds={[creatorId, selectedOwnerId]}
+									sx={{
+										'& .MuiInputBase-root': {
+											height: 40,
+											flexWrap: 'nowrap',
+											overflow: 'hidden',
+											py: '4px !important',
+										},
+										'& .MuiAutocomplete-tag': {
+											height: 24,
+											maxWidth: '130px',
+											my: 0,
+										},
+										// Скрываем все чипсы, когда поле в фокусе (идет поиск/ввод текста)
+										'& .MuiInputBase-root.Mui-focused .MuiAutocomplete-tag': {
+											display: 'none',
+										},
+										'& .MuiAutocomplete-input': {
+											minWidth: '30px !important',
+											py: '0 !important',
+										},
+									}}
+								/>
 							)}
 						/>
 					</Box>
@@ -176,7 +229,7 @@ export const AdvancedSettingsSection = ({
 						/>
 					</Box>
 
-					<Box>
+					<Box sx={{ gridColumn: { xs: 'span 1', sm: 'span 2' } }}>
 						<Typography variant='caption' sx={fieldLabelSx}>
 							Срок выполнения
 						</Typography>
