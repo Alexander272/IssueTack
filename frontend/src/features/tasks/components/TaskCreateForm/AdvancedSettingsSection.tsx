@@ -20,20 +20,25 @@ type Props = {
 	number?: number
 	autoAssign?: boolean
 	isAdmin?: boolean
-	isManager?: boolean
 	/** Можно ли менять срок: только менеджер группы заявки или админ реалма. */
 	canEditDueDate?: boolean
+	/** Можно ли выбирать исполнителя: менеджер группы/админ реалма или исполнитель области. */
+	canPickAssignee?: boolean
 	/** Автор заявки — исключается из списка «Уведомлять». */
 	creatorId?: string | null
+	title?: string
+	subtitle?: string
 }
 
 export const AdvancedSettingsSection = ({
 	number = 4,
 	autoAssign = true,
 	isAdmin = true,
-	isManager = true,
 	canEditDueDate = true,
+	canPickAssignee = true,
 	creatorId = null,
+	title = 'Расширенные настройки',
+	subtitle = '',
 }: Props) => {
 	const { control, setValue } = useFormContext<FormValues>()
 	const { data: categoriesData } = useGetAllCategoriesQuery()
@@ -89,7 +94,7 @@ export const AdvancedSettingsSection = ({
 	}, [selectedGroupId, groups, autoAssign, setValue])
 
 	return (
-		<SectionCard number={number} title='Расширенные настройки' subtitle='Доступно менеджерам'>
+		<SectionCard number={number} title={title} subtitle={subtitle}>
 			<Stack sx={{ gap: 2 }}>
 				<Box>
 					<Typography variant='caption' sx={fieldLabelSx}>
@@ -177,7 +182,7 @@ export const AdvancedSettingsSection = ({
 									disabled={!isAdmin}
 									noOptionsText='Нет групп'
 									renderInput={params => (
-										<TextField {...params} size='small' placeholder='Авто (по категории)' />
+										<TextField {...params} size='small' placeholder={autoAssign ? 'Авто (по категории)' : 'Выберите группу'} />
 									)}
 								/>
 							)}
@@ -197,10 +202,10 @@ export const AdvancedSettingsSection = ({
 									getOptionLabel={u => `${u.lastName} ${u.firstName} (${u.username})`}
 									value={executors.find(u => u.id === field.value) ?? null}
 									onChange={(_, value) => field.onChange(value?.id ?? null)}
-									disabled={!isAdmin && !isManager}
+									disabled={!canPickAssignee}
 									noOptionsText='Нет исполнителей'
 									renderInput={params => (
-										<TextField {...params} size='small' placeholder='Авто (по группе)' />
+										<TextField {...params} size='small' placeholder={autoAssign ? 'Авто (по группе)' : 'Выберите исполнителя'} />
 									)}
 								/>
 							)}

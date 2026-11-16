@@ -29,6 +29,16 @@ const (
 	PriorityUrgent Priority = "urgent"
 )
 
+// IsValid сообщает, что значение приоритета является допустимым (не мусор).
+func (p Priority) IsValid() bool {
+	switch p {
+	case PriorityLow, PriorityMedium, PriorityHigh, PriorityUrgent:
+		return true
+	default:
+		return false
+	}
+}
+
 type ActivityType string
 
 const (

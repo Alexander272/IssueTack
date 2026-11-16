@@ -588,13 +588,10 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 	return nil
 }
 
-// applyExecutorCreateRestrictions применяет ограничения при создании заявки исполнителем
-// (участником группы, не имеющим полных прав). Заказчик необязателен: если он не указан,
-// им становится создатель (подстановка в Create). Группа и приоритет
-// принудительно берутся из категории. Исполнителем исполнитель может
-// назначить только себя (явно — на любую группу, включая чужую; чужой id из тела
-// отбрасывается). Если категория принадлежит одной из групп исполнителя, заявку и без
-// явного выбора назначают на него, иначе исполнитель подбирается системой по умолчанию.
+// applyExecutorCreateRestrictions нормализует и валидирует поля заявки, создаваемой
+// исполнителем (участником группы, без coarse-прав CanCreateTicket). Исполнителю
+// разрешено выбирать исполнителя (любого активного исполнителя реалма), приоритет,
+// группу и срок; при отсутствии явного выбора применяются дефолты категории/группы.
 func (s *TicketService) applyExecutorCreateRestrictions(ctx context.Context, dto *models.TicketDTO, memberGroups []uuid.UUID) error {
 	if dto.RealmID == nil {
 		return fmt.Errorf("realm is required")
@@ -608,17 +605,48 @@ func (s *TicketService) applyExecutorCreateRestrictions(ctx context.Context, dto
 		return fmt.Errorf("category has no group")
 	}
 
-	dto.GroupID = &category.GroupID
-	dto.Priority = category.Priority
-
-	// Исполнитель может назначить исполнителем только себя — на любую группу, в т.ч. чужую
-	// (берёт заявку на себя). Чужой id из тела доверять нельзя: без этой отбраковки он
-	// прошёл бы в autoAssign и подставился бы ответственным группы уже чужой.
-	if dto.AssigneeID != nil && *dto.AssigneeID != dto.CreatorID {
-		dto.AssigneeID = nil
+	// Группа: исполнитель может выбрать любую группу реалма; по умолчанию — группа категории.
+	if dto.GroupID == nil || *dto.GroupID == uuid.Nil {
+		dto.GroupID = &category.GroupID
 	}
-	if containsUUID(memberGroups, category.GroupID) && dto.AssigneeID == nil {
+
+	// Приоритет: принимает выбранное валидное значение, иначе — приоритет категории.
+	if !dto.Priority.IsValid() {
+		dto.Priority = category.Priority
+	}
+
+	// Исполнитель: можно назначить любого активного исполнителя реалма (участника
+	// хотя бы одной группы в реалме). Невалидный выбор отклоняется.
+	if dto.AssigneeID != nil {
+		if err := s.validateRealmExecutor(ctx, *dto.AssigneeID, *dto.RealmID); err != nil {
+			return err
+		}
+	} else if containsUUID(memberGroups, category.GroupID) {
+		// Категория ведёт в группу исполнителя и явного выбора нет — назначаем его.
 		dto.AssigneeID = &dto.CreatorID
+	}
+	return nil
+}
+
+// validateRealmExecutor проверяет, что пользователь — активный исполнитель области:
+// активен, состоит в области и является участником хотя бы одной группы области.
+func (s *TicketService) validateRealmExecutor(ctx context.Context, userID, realmID uuid.UUID) error {
+	if userID == uuid.Nil {
+		return models.ErrInvalidInput
+	}
+	u, err := s.users.GetByID(ctx, userID)
+	if err != nil || u == nil || !u.IsActive {
+		return models.ErrInvalidInput
+	}
+	if !hasActiveRealmMembership(u, realmID) {
+		return models.ErrInvalidInput
+	}
+	memberGroups, err := s.groups.GetMemberGroups(ctx, userID, &realmID)
+	if err != nil {
+		return fmt.Errorf("failed to get member groups: %w", err)
+	}
+	if len(memberGroups) == 0 {
+		return models.ErrInvalidInput
 	}
 	return nil
 }
@@ -818,17 +846,13 @@ func (s *TicketService) updateTicket(
 			}
 		}
 
-		// Тонкие права операций: смена группы заявки доступна только начальнику
-		// области, смена исполнителя — начальнику области или менеджеру группы
-		// тикета. Начальником области считается пользователь с realm-wide правами
-		// управления областью (IsRealmSupervisor), а не обладатель ticket:write:
-		// последнее есть у рядовых сотрудников и заявителей, и по нему они не должны
-		// ни переносить заявку в другую группу, ни переназначать чужую. Менеджер
-		// (manager_id) определяется менеджером группы автоматически — ручное
-		// изменение запрещено всем. Эти ограничения действуют поверх прочих прав —
-		// независимо от assignedOnly/ownerOnly и права правки полей (canEditFields).
-		// Эхо текущего значения (фронт передаёт его в каждом запросе) не создаёт
-		// change и проходит беспрепятственно.
+		// Тонкие права операций: смена группы и исполнителя доступна начальнику области,
+		// менеджеру группы тикета или исполнителю области (участнику групп). Исполнителю
+		// можно назначать любого активного исполнителя реалма. Менеджер (manager_id)
+		// определяется менеджером группы автоматически — ручное изменение запрещено всем.
+		// Эти ограничения действуют поверх прочих прав — независимо от assignedOnly/
+		// ownerOnly и права правки полей (canEditFields). Эхо текущего значения не
+		// создаёт change и проходит беспрепятственно.
 		isAdmin, err := s.access.CanAdministerTickets(ctx, dto.Actor.ID, oldTicket)
 		if err != nil {
 			return fmt.Errorf("failed to check admin access: %w", err)
@@ -836,7 +860,24 @@ func (s *TicketService) updateTicket(
 		for _, change := range changes {
 			switch change.Tag {
 			case models.ActionGroupChanged, models.ActionGroupAssigned:
-				if !isAdmin {
+				if isAdmin {
+					continue
+				}
+				isManager, mgrErr := s.isManagerOfGroup(ctx, oldTicket.Group, dto.Actor.ID)
+				if mgrErr != nil {
+					return mgrErr
+				}
+				if isManager {
+					continue
+				}
+				if oldTicket.RealmID == nil {
+					return models.ErrPermissionDenied
+				}
+				memberGroups, mgrErr := s.groups.GetMemberGroups(ctx, dto.Actor.ID, oldTicket.RealmID)
+				if mgrErr != nil {
+					return fmt.Errorf("failed to get member groups: %w", mgrErr)
+				}
+				if len(memberGroups) == 0 {
 					return models.ErrPermissionDenied
 				}
 			case models.ActionAssigned, models.ActionAssignChanged:
@@ -847,8 +888,21 @@ func (s *TicketService) updateTicket(
 				if mgrErr != nil {
 					return mgrErr
 				}
-				if !isManager {
+				if isManager {
+					continue
+				}
+				if oldTicket.RealmID == nil || dto.AssigneeID == nil {
 					return models.ErrPermissionDenied
+				}
+				memberGroups, mgrErr := s.groups.GetMemberGroups(ctx, dto.Actor.ID, oldTicket.RealmID)
+				if mgrErr != nil {
+					return fmt.Errorf("failed to get member groups: %w", mgrErr)
+				}
+				if len(memberGroups) == 0 {
+					return models.ErrPermissionDenied
+				}
+				if err := s.validateRealmExecutor(ctx, *dto.AssigneeID, *oldTicket.RealmID); err != nil {
+					return err
 				}
 			case models.ActionManagerChanged:
 				return models.ErrPermissionDenied
@@ -1519,7 +1573,6 @@ var activeStatuses = []models.TicketStatus{
 	models.StatusPending,
 	models.StatusOnHold,
 }
-
 
 // validateAndPrepareNotifiers проверяет и нормализует список наблюдателей
 // («Уведомлять») заявки: поле обрабатывается как полная замена только если оно

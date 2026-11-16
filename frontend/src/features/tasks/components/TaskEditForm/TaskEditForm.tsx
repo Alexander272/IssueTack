@@ -179,7 +179,6 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 								number={3}
 								autoAssign={false}
 								isAdmin={task.access?.isAdmin ?? false}
-								isManager={task.access?.isManager ?? false}
 								canEditDueDate={Boolean(task.access?.isManager) || capabilities.isRealmAdmin}
 								creatorId={task.creator.id}
 							/>

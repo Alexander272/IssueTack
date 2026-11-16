@@ -18,7 +18,6 @@ import { getRealm } from '@/features/realms/realmSlice'
 import { CategoryAndSiteSection } from './CategoryAndSiteSection'
 import { DescriptionSection } from './DescriptionSection'
 import { AdvancedSettingsSection } from './AdvancedSettingsSection'
-import { CustomerAndDateSection } from './CustomerAndDateSection'
 import { SubtasksCreationSection } from './SubtasksCreationSection'
 import { clearDraft, hasDraftContent, loadDraft, saveDraft } from './draft'
 
@@ -148,7 +147,7 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 					title: data.title.trim(),
 					description: data.description,
 					status: 'open',
-					priority: isManager ? data.priority : category?.priority || 'medium',
+					priority: data.priority || category?.priority || 'medium',
 					realmId: realm.id,
 					siteId: data.siteId,
 					categoryId: data.categoryId,
@@ -162,7 +161,7 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 					subtasks: data.subtasks
 						.map(s => ({ title: s.title.trim(), description: s.description.trim() }))
 						.filter(s => s.title.length > 0),
-					notifierIds: isManager || isExecutor ? data.notifierIds ?? [] : undefined,
+					notifierIds: isManager || isExecutor ? (data.notifierIds ?? []) : undefined,
 				}
 
 				try {
@@ -220,9 +219,20 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 
 							{(isManager || isExecutor) && <SubtasksCreationSection />}
 
-							{isExecutor && <CustomerAndDateSection currentUserId={currentUserId} />}
+							{isManager && (
+								<AdvancedSettingsSection creatorId={currentUserId} title='Настройки заявки' />
+							)}
 
-							{isManager && <AdvancedSettingsSection creatorId={currentUserId} />}
+							{isExecutor && (
+								<AdvancedSettingsSection
+									autoAssign={false}
+									isAdmin={false}
+									canEditDueDate
+									canPickAssignee
+									creatorId={currentUserId}
+									title='Настройки заявки'
+								/>
+							)}
 
 							<Box
 								sx={{
