@@ -19,11 +19,14 @@ import { DateTextField } from '@/components/DatePicker/DatePicker'
 type Props = {
 	number?: number
 	autoAssign?: boolean
-	isAdmin?: boolean
 	/** Можно ли менять срок: только менеджер группы заявки или админ реалма. */
 	canEditDueDate?: boolean
 	/** Можно ли выбирать исполнителя: менеджер группы/админ реалма или исполнитель области. */
 	canPickAssignee?: boolean
+	/** Можно ли менять приоритет: только менеджер группы или админ реалма. */
+	canEditPriority?: boolean
+	/** Можно ли менять группу: только менеджер группы или админ реалма. */
+	canEditGroup?: boolean
 	/** Автор заявки — исключается из списка «Уведомлять». */
 	creatorId?: string | null
 	title?: string
@@ -33,9 +36,10 @@ type Props = {
 export const AdvancedSettingsSection = ({
 	number = 4,
 	autoAssign = true,
-	isAdmin = true,
 	canEditDueDate = true,
 	canPickAssignee = true,
+	canEditPriority = true,
+	canEditGroup = true,
 	creatorId = null,
 	title = 'Расширенные настройки',
 	subtitle = '',
@@ -70,6 +74,12 @@ export const AdvancedSettingsSection = ({
 		prevCategoryId.current = selectedCategoryId
 		const cat = categories.find(c => c.id === selectedCategoryId)
 		setValue('groupId', cat?.groupId ?? null)
+		// Авто-приоритет из категории: подставляется дефолт категории при смене
+		// категории — как и группа, приоритет берётся из выбранной категории.
+		const catPriority = cat?.priority
+		if (catPriority) {
+			setValue('priority', catPriority)
+		}
 		// Автосрок из категории: форма показывает тот же дефолт, который бэкенд
 		// применил бы сам, пока dueDate пуст (только на создании — autoAssign).
 		// Срок ставится на конец выбранного дня, как и при ручном выборе даты.
@@ -121,6 +131,7 @@ export const AdvancedSettingsSection = ({
 										value={value}
 										selected={value === field.value}
 										onSelect={v => field.onChange(v)}
+										disabled={!canEditPriority}
 									/>
 								))}
 							</Box>
@@ -179,7 +190,7 @@ export const AdvancedSettingsSection = ({
 									getOptionLabel={o => o.name}
 									value={groups.find(g => g.id === field.value) ?? null}
 									onChange={(_, value) => field.onChange(value?.id ?? null)}
-									disabled={!isAdmin}
+									disabled={!canEditGroup}
 									noOptionsText='Нет групп'
 									renderInput={params => (
 										<TextField {...params} size='small' placeholder={autoAssign ? 'Авто (по категории)' : 'Выберите группу'} />

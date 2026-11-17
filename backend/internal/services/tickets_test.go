@@ -273,6 +273,44 @@ func TestTicketService_Get_CreatedOrOwned_Regular(t *testing.T) {
 	assert.Equal(t, 0, total)
 }
 
+// TestTicketService_Get_MyTickets_ExplicitScope_NoGroupFallback: «Мои заявки» плагина
+// (PluginListMine) задаёт CreatedOrOwnedBy напрямую, без mode. Такой явный скоуп
+// «автор ИЛИ заказчик (либо наблюдатель)» не должен дополняться групповым fallback'ом:
+// WHERE (creator OR owner OR notifier) AND (group IN (...) OR ungrouped-assigned)
+// отсекал бы заявки авторов, созданных в группах, где их самого нет (например,
+// исполнитель, создавший заявку через категорию).
+func TestTicketService_Get_MyTickets_ExplicitScope_NoGroupFallback(t *testing.T) {
+	mockRepo, _, mockSubtasks, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+	actorID := uuid.New()
+	req := &models.TicketFilter{
+		Actor:            &models.Actor{ID: actorID, Name: "test"},
+		CreatedOrOwnedBy: &actorID,
+		Limit:            20,
+		Offset:           0,
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+
+	expected := []*models.Ticket{{ID: uuid.New(), Title: "Ticket 1"}}
+	expectedFilter := &models.TicketFilter{
+		Actor:            &models.Actor{ID: actorID, Name: "test"},
+		CreatedOrOwnedBy: &actorID,
+		Limit:            20,
+		Offset:           0,
+	}
+	mockRepo.On("Get", mock.Anything, expectedFilter).Return(expected, 0, nil)
+	mockSubtasks.On("GetByTicketIDs", mock.Anything, mock.Anything).Return((map[uuid.UUID][]*models.Subtask)(nil), nil)
+
+	got, total, err := svc.Get(context.Background(), req)
+	assert.NoError(t, err)
+	assert.Equal(t, expected, got)
+	assert.Equal(t, 0, total)
+	mockGroups.AssertNotCalled(t, "GetManagedGroups", mock.Anything, actorID, (*uuid.UUID)(nil))
+	mockGroups.AssertNotCalled(t, "GetMemberGroups", mock.Anything, actorID, (*uuid.UUID)(nil))
+}
+
 // TestTicketService_Get_Readable_Regular: режим readable (поиск заявки по номеру
 // в Mattermost-боте) даёт scope «автор ИЛИ заказчик ИЛИ исполнитель ИЛИ группа»,
 // а не только группы актора — иначе создатель вне группы тикета получал «заявка
@@ -430,8 +468,9 @@ func TestTicketService_Create_CategoryDefaultDueDays(t *testing.T) {
 	assert.WithinDuration(t, time.Now().UTC().AddDate(0, 0, days), *dto.DueDate, time.Minute)
 }
 
-// TestTicketService_Create_CategoryDefaultDueDays_NotManager проверяет, что непривилегированному
-// создателю автоматический срок из категории не проставляется.
+// TestTicketService_Create_CategoryDefaultDueDays_NotManager проверяет, что
+// автоматический срок из категории проставляется всем создателям (свойство
+// категории, а не право пользователя). canSetDueDate гейтит только ручную установку.
 func TestTicketService_Create_CategoryDefaultDueDays_NotManager(t *testing.T) {
 	mockRepo, mockLogs, _, _, mockNotifications, mockGroups, mockPolicies, svc := ticketServiceFixtures()
 	mockCategories := new(MockCategoriesRepo)
@@ -468,7 +507,14 @@ func TestTicketService_Create_CategoryDefaultDueDays_NotManager(t *testing.T) {
 
 	err := svc.Create(context.Background(), dto)
 	require.NoError(t, err)
-	assert.Nil(t, dto.DueDate)
+	// Автосрок применён: 3 дня от текущего времени (UTC, конец дня).
+	assert.NotNil(t, dto.DueDate)
+	// Проверяем, что дата примерно через 3 дня (допуск 1 час на время выполнения теста).
+	expectedDays := 3 * 24 * time.Hour
+	now := time.Now().UTC()
+	diff := dto.DueDate.Sub(now)
+	assert.Greater(t, diff, expectedDays-1*time.Hour)
+	assert.Less(t, diff, expectedDays+24*time.Hour)
 }
 
 func TestTicketService_Create_WithSubtasks_Success(t *testing.T) {

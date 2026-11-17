@@ -212,8 +212,10 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 	const prevCategoryId = useRef(categoryId)
 	const prevGroupId = useRef(groupId)
 
+	// Эффект 1: категория → группа + приоритет + срок (менеджер И исполнитель).
+	// Исполнитель создаёт заявку и должен получать те же авто-подстановки, что и менеджер.
 	useEffect(() => {
-		if (!isManager) return
+		if (!(isManager || isExecutor)) return
 		if (prevCategoryId.current === categoryId) return
 		prevCategoryId.current = categoryId
 		const cat = categories.find(c => c.id === categoryId)
@@ -223,7 +225,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		// поле срока, а категория без автосрока его сбрасывает, иначе в форме
 		// остался бы срок предыдущей категории.
 		setDueDate(cat?.defaultDueDays != null ? pluginDueDateFromCategory(cat.defaultDueDays) : '')
-	}, [categoryId, categories, isManager])
+	}, [categoryId, categories, isManager, isExecutor])
 
 	useEffect(() => {
 		if (!isManager) return

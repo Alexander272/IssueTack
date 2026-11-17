@@ -155,7 +155,14 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 			groupIDs = unionGroupIDs(managed, member)
 		}
 		req.MyWork = &models.MyWorkFilter{UserID: req.Actor.ID, GroupIDs: groupIDs}
-	} else if !canViewAll {
+		// Явный авторский скоуп (CreatedOrOwnedBy) не получает группового fallback'а:
+		// он уже сужает заявки по автору/заказчику/наблюдателю (плагин «Мои заявки»,
+		// PluginListMine ставит его напрямую без mode). Добавление группового scope
+		// дало бы AND со строкой (creator OR owner OR notifier) и отсеяло бы заявки
+		// авторов, созданных в группах, где их самого нет (например, через категорию).
+		// Режимы created/created_or_owned/readable задают эти скоупы в ветках ниже,
+		// поэтому чинить нужно только «plain»-обзор без mode.
+	} else if req.CreatedOrOwnedBy == nil && !canViewAll {
 		managed, err := s.groups.GetManagedGroups(ctx, req.Actor.ID, nil)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to get managed groups: %w", err)
@@ -519,9 +526,9 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		return models.ErrPermissionDenied
 	}
 
-	// 2. Если срок не указан вручную, но пользователь имеет право его устанавливать,
-	// и у категории есть срок по умолчанию — применяем его автоматически.
-	if dto.DueDate == nil && canSetDueDate && dto.CategoryID != uuid.Nil {
+	// 2. Автосрок из категории применяется всем (свойство категории, а не право
+	// пользователя). canSetDueDate гейтит только ручную установку срока.
+	if dto.DueDate == nil && dto.CategoryID != uuid.Nil {
 		category, err := s.categories.GetByID(ctx, &models.GetCategoryByIdDTO{ID: dto.CategoryID, RealmID: *dto.RealmID})
 		if err != nil {
 			return fmt.Errorf("failed to get category: %w", err)

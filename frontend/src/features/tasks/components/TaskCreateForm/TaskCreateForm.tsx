@@ -225,10 +225,11 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 
 							{isExecutor && (
 								<AdvancedSettingsSection
-									autoAssign={false}
-									isAdmin={false}
-									canEditDueDate
-									canPickAssignee
+									autoAssign={true}
+									canEditDueDate={true}
+									canPickAssignee={true}
+									canEditPriority={true}
+									canEditGroup={false}
 									creatorId={currentUserId}
 									title='Настройки заявки'
 								/>
