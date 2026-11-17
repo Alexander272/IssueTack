@@ -1,17 +1,14 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import { Box, Button, Typography, Tab, Tabs, useTheme } from '@mui/material'
-import { useNavigate } from 'react-router'
 import { ArchiveIcon, InboxIcon, PlusIcon } from 'lucide-mui'
 
 import type { GroupByField } from '../constants/taskMaps'
 import { statusOptionsFor } from '../constants/taskMaps'
 import type { FilterValues } from '../components/filters'
-import type { ITask, ITaskFilter } from '../types/task'
-import { AppRoutes } from '@/pages/router/routes'
+import type { ITaskFilter } from '../types/task'
 import { PermRules } from '@/features/access/constants/permissions'
 import { useAppSelector } from '@/hooks/redux'
 import { useCan } from '@/features/access/utils/can'
-import { useGetTasksQuery } from '../tasksApiSlice'
 import { getHasNoGroups, getIsManager } from '@/features/user/userSlice'
 import { useDebounce } from '@/hooks/useDebounce'
 import { TaskFilters } from '../components/filters'
@@ -55,7 +52,6 @@ const PAGE_DESC: Record<Mode, string> = {
 
 export const TaskList = ({ mode = 'created' }: Props) => {
 	const { palette } = useTheme()
-	const navigate = useNavigate()
 	const canCreate = useCan(PermRules.Tasks.Write)
 	const isManager = useAppSelector(getIsManager)
 	const hasNoGroups = useAppSelector(getHasNoGroups)
@@ -82,7 +78,9 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 	const clampHiddenFields = useCallback(
 		(f: FilterValues): FilterValues => {
 			if (!hasNoGroups) return f
-			const hasHidden = f.groupEnabled || Object.values(f).some(v => v !== undefined && v !== false && v !== DEFAULT_FILTERS.sort)
+			const hasHidden =
+				f.groupEnabled ||
+				Object.values(f).some(v => v !== undefined && v !== false && v !== DEFAULT_FILTERS.sort)
 			if (!hasHidden) return f
 			return {
 				...DEFAULT_FILTERS,
@@ -151,13 +149,6 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 		[effectiveFilters, mode, page, isArchive, numberFilter, debouncedSearch],
 	)
 
-	const { data, isFetching } = useGetTasksQuery(queryFilter)
-
-	const tasks = data?.data ?? []
-	const total = data?.total ?? 0
-
-	const totalPages = isArchive ? Math.ceil(total / rowsPerPage) || 1 : 1
-
 	const handleFilterChange = useCallback((patch: Partial<FilterValues>) => {
 		setFilters(prev => ({ ...prev, ...patch }))
 		setPage(0)
@@ -168,13 +159,6 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 		setPage(0)
 		localStorage.removeItem(STORAGE_KEY)
 	}, [STORAGE_KEY])
-
-	const handleTaskClick = useCallback(
-		(task: ITask) => {
-			navigate(`${AppRoutes.Tasks}/${task.id}`)
-		},
-		[navigate],
-	)
 
 	const handlePageChange = useCallback((p: number) => setPage(p - 1), [])
 
@@ -248,17 +232,13 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 			/>
 
 			<TaskListView
-				tasks={tasks}
-				isFetching={isFetching}
-				total={total}
+				filters={queryFilter}
 				isArchive={isArchive}
 				groupBy={effectiveFilters.groupBy as GroupByField}
 				groupEnabled={!isArchive && effectiveFilters.groupEnabled}
-				onTaskClick={handleTaskClick}
 				sort={effectiveFilters.sort}
 				onSortChange={sort => handleFilterChange({ sort })}
 				page={page}
-				totalPages={totalPages}
 				onPageChange={handlePageChange}
 			/>
 

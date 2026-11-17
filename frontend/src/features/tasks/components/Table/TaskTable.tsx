@@ -1,3 +1,4 @@
+import { useCallback, useMemo } from 'react'
 import {
 	Table,
 	TableBody,
@@ -20,13 +21,15 @@ import { TaskTableEmpty } from './TaskTableEmpty'
 import { TaskTableBody } from './TaskTableBody'
 import { TaskTableGrouped } from './TaskTableGrouped'
 import { TaskCardList } from './TaskCardList'
+import { AppRoutes } from '@/pages/router/routes'
+import { useNavigate } from 'react-router'
 
 interface Props {
 	tasks: ITask[]
 	groupBy: GroupByField
 	groupEnabled: boolean
-	onTaskClick: (task: ITask) => void
 	sort: string
+	isArchive: boolean
 	onSortChange: (sort: string) => void
 }
 
@@ -36,21 +39,49 @@ const COLUMNS: readonly Column[] = [
 	{ field: 'title', label: 'Тема', sortable: true },
 	{ field: 'owner', label: 'Заказчик', sortable: true, width: 180 },
 	{ field: 'site', label: 'Площадка', sortable: true, width: 180 },
+	{ field: 'createdAt', label: 'Создана', sortable: true, width: 130 },
 	{ field: 'dueDate', label: 'Срок', sortable: true, width: 140 },
+	{ field: 'closedAt', label: 'Закрыта', sortable: true, width: 140 },
 	{ field: 'priority', label: 'Приоритет', sortable: true, width: 130 },
 	{ field: 'assignee', label: 'Исполнитель', sortable: true, width: 180 },
 	{ field: 'status', label: 'Статус', sortable: true, width: 130 },
-	{ field: 'subtasks', label: 'Подзадачи', sortable: false, width: 130 },
+	{ field: 'subtasks', label: 'Подзадачи', sortable: false, width: 100 },
 ]
 // Колонки, скрываемые у «обычного пользователя» без групп: срок и приоритет ему не нужны.
 const GROUPLESS_HIDDEN_FIELDS = new Set(['dueDate', 'priority'])
 
-export const TaskTable = ({ tasks, groupBy, groupEnabled, onTaskClick, sort, onSortChange }: Props) => {
+export const TaskTable = ({ tasks, groupBy, groupEnabled, sort, isArchive, onSortChange }: Props) => {
+	const navigate = useNavigate()
 	const theme = useTheme()
 	const isMobile = useMediaQuery(theme.breakpoints.down('md'))
 	const hasNoGroups = useAppSelector(getHasNoGroups)
 
-	const columns = hasNoGroups ? COLUMNS.filter(col => !GROUPLESS_HIDDEN_FIELDS.has(col.field)) : COLUMNS
+	const columns = useMemo(() => {
+		return COLUMNS.filter(col => {
+			// Разделяем колонки для обычного режима и архива
+			if (isArchive && col.field === 'dueDate') return false
+			if (!isArchive && col.field === 'closedAt') return false
+
+			// Скрываем колонки, ненужные обычному пользователю
+			if (hasNoGroups && GROUPLESS_HIDDEN_FIELDS.has(col.field)) {
+				return false
+			}
+			// Скрываем колонку, по которой идёт активная группировка —
+			// заголовок группы уже несёт эту информацию
+			if (groupEnabled && col.field === groupBy) {
+				return false
+			}
+			return true
+		})
+	}, [hasNoGroups, groupEnabled, groupBy, isArchive])
+
+	const handleTaskClick = useCallback(
+		(task: ITask) => {
+			navigate(`${AppRoutes.Tasks}/${task.id}`)
+		},
+		[navigate],
+	)
+
 	const tableMinWidth = columns.reduce((sum, col) => sum + (col.width ?? 240), 0)
 
 	const currentBase = sort.replace(/_(asc|desc)$/, '')
@@ -65,7 +96,9 @@ export const TaskTable = ({ tasks, groupBy, groupEnabled, onTaskClick, sort, onS
 	}
 
 	if (isMobile) {
-		return <TaskCardList tasks={tasks} groupBy={groupBy} groupEnabled={groupEnabled} onTaskClick={onTaskClick} />
+		return (
+			<TaskCardList tasks={tasks} groupBy={groupBy} groupEnabled={groupEnabled} onTaskClick={handleTaskClick} />
+		)
 	}
 
 	const headRow = (
@@ -122,9 +155,9 @@ export const TaskTable = ({ tasks, groupBy, groupEnabled, onTaskClick, sort, onS
 	const body = !tasks.length ? (
 		<TaskTableEmpty columnsCount={columnsCount} />
 	) : !groupEnabled ? (
-		<TaskTableBody tasks={tasks} onTaskClick={onTaskClick} />
+		<TaskTableBody tasks={tasks} onTaskClick={handleTaskClick} isArchive={isArchive} />
 	) : (
-		<TaskTableGrouped tasks={tasks} groupBy={groupBy} onTaskClick={onTaskClick} columnsCount={columnsCount} />
+		<TaskTableGrouped tasks={tasks} groupBy={groupBy} onTaskClick={handleTaskClick} columnsCount={columnsCount} />
 	)
 
 	return (
