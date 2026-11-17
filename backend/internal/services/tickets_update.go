@@ -17,7 +17,8 @@ import (
 // Update обновляет поля тикета с учётом прав доступа и правил переходов по статусам.
 // Пользователь с work-доступом может менять только статус; «чистый» владелец —
 // только допустимые переходы из трёх (отменить, принять решение, вернуть в работу);
-// статус closed можно поставить только из resolved.
+// статус closed можно поставить только из resolved. Тело — updateTicket в переданной
+// транзакции; уведомления подписчиков отправляет после коммита.
 func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error {
 	var changes []*models.FieldChange
 	err := s.tx.WithinTransaction(ctx, func(newTx postgres.Tx) error {
@@ -396,8 +397,7 @@ func (s *TicketService) updateTicket(
 	return changes, err
 }
 
-// notifyTicketUpdated — уведомление об изменениях заявки. Вызывается только после
-
+// hasActiveRealmMembership — есть ли у пользователя активное членство в области.
 func hasActiveRealmMembership(u *models.UserData, realmID uuid.UUID) bool {
 	for _, membership := range u.Realms {
 		if membership != nil && membership.RealmID == realmID && membership.IsActive {
@@ -407,6 +407,13 @@ func hasActiveRealmMembership(u *models.UserData, realmID uuid.UUID) bool {
 	return false
 }
 
+// validateAndPrepareNotifiers проверяет и нормализует список наблюдателей
+// («Уведомлять») заявки: поле обрабатывается как полная замена только если оно
+// передано в запросе. Менять список могут только «исполнитель и выше» (участник
+// группы, менеджер группы или начальник области) — то есть пользователь, который
+// в области тикета не является «заказчиком» (IsCustomer == false). Каждый
+// наблюдатель должен быть активным пользователем и активным участником области
+// тикета. Дубликаты и пустые id отбрасываются.
 func (s *TicketService) validateAndPrepareNotifiers(ctx context.Context, dto *models.TicketDTO, oldTicket *models.Ticket) error {
 	if !dto.HasField("notifierIds") {
 		return nil
@@ -518,11 +525,8 @@ func notifierIDsChange(old []models.UserShort, newIDs []uuid.UUID) (*models.Fiel
 	}, true
 }
 
-// GetAccessFlags вычисляет флаги доступа к тикету для пользователя
-// (чтение, запись, удаление, работа) и список доступных ему переходов по статусам.
-// Реалм не принимается: все проверки внутри берут его из ticket.RealmID (см.
-// TicketAccessService.CheckAccessOnTicket), поэтому клиентский realm-заголовок
-
+// notifyTicketUpdated — уведомление об изменениях заявки. Вызывается только после
+// коммита: получатели не должны узнать об изменении, которое откатилось.
 func (s *TicketService) notifyTicketUpdated(ctx context.Context, dto *models.TicketDTO, changes []*models.FieldChange) {
 	if len(changes) == 0 {
 		return
@@ -537,12 +541,9 @@ func (s *TicketService) notifyTicketUpdated(ctx context.Context, dto *models.Tic
 	}
 }
 
-// Take — «взять заявку в работу»: пользователь назначает себя исполнителем
-// (assignee) и переводит заявку в статус in_progress. Разрешено, если заявка
-// активна (не resolved/closed/cancelled), пользователь имеет read-доступ и заявка
-// «забираема» — не имеет исполнителя вовсе, либо исполнитель — другой пользователь,
-// а заявка ещё в статусе open. Если исполнитель уже является текущим пользователем —
-
+// notifyBestEffort отправляет уведомление после фикса тикета. Ошибки
+// уведомления не должны превращать уже совершённую операцию в 500 для клиента,
+// но обязательно сигнализируются разработчику (error_bot) и в лог.
 func (s *TicketService) notifyBestEffort(action string, entityID uuid.UUID, entity string, notifyErr error) {
 	if notifyErr == nil {
 		return

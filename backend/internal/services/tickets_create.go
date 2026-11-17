@@ -248,7 +248,7 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 // applyExecutorCreateRestrictions нормализует и валидирует поля заявки, создаваемой
 // исполнителем (участником группы, без coarse-прав CanCreateTicket). Исполнителю
 // разрешено выбирать исполнителя (любого активного исполнителя реалма), приоритет,
-
+// группу и срок; при отсутствии явного выбора применяются дефолты категории/группы.
 func (s *TicketService) applyExecutorCreateRestrictions(ctx context.Context, dto *models.TicketDTO, memberGroups []uuid.UUID) error {
 	if dto.RealmID == nil {
 		return fmt.Errorf("realm is required")

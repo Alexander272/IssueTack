@@ -138,7 +138,7 @@ func (s *TicketService) Take(ctx context.Context, dto *models.TakeTicketDTO) err
 // Transfer передаёт заявку от текущего исполнителя другому участнику той же
 // группы. Только текущий исполнитель (assignee) может передать заявку; статус
 // при передаче не меняется. Замороженные (resolved/closed/cancelled) заявки
-
+// передавать нельзя.
 func (s *TicketService) Transfer(ctx context.Context, dto *models.TransferTicketDTO) error {
 	ticket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
 	if err != nil {

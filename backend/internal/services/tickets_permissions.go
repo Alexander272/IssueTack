@@ -166,6 +166,9 @@ func (s *TicketService) validateOwnerSelection(ctx context.Context, actorID, rea
 	if err != nil || u == nil || !u.IsActive {
 		return models.ErrInvalidInput
 	}
+	// Заказчик — участник именно этой области: GetByID отдаёт все членства, и
+	// пользователь из другого realm (или с деактивированным членством) не должен
+	// становиться заказчиком — владение даёт read-доступ к заявке чужой области.
 	if !hasActiveRealmMembership(u, realmID) {
 		return models.ErrInvalidInput
 	}
@@ -328,7 +331,7 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 // статуса. Логика отражает модель доступа: владелец без write/work получает только три перехода
 // (см. ownerTransitionAllowed), исполнитель с work-доступом — активные статусы и resolved
 // (при отсутствии незакрытых подзадач), закрытие/отмена активного тикета — только
-
+// автору/менеджеру группы (владелец может отменить активный тикет).
 func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) []models.TicketStatus {
 	hasWrite := s.access.CheckAccessOnTicket(ctx, ticket, userID, string(access.Write)) == nil
 	isCreator := ticket.Creator.ID == userID
@@ -425,16 +428,12 @@ func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *mode
 	return allowed
 }
 
+// isOwnerOnlyOrCreatorWithoutOwner — владелец заявки, или автор без владельца.
+// Если заказчик задан, то «решения владельца» доступны только ему, а не автору.
+// Если владельца нет — автор остаётся «заказчиком» своей заявки.
 func (s *TicketService) isOwnerOnlyOrCreatorWithoutOwner(ticket *models.Ticket, actorID uuid.UUID) bool {
 	if ticket.Owner != nil {
 		return ticket.Owner.ID == actorID
 	}
 	return ticket.Creator.ID == actorID
 }
-
-// canEditFields определяет, может ли пользователь править не-статусные поля тикета
-// (заголовок/описание/приоритет/срок/группа/исполнитель и т.п.): создатель или
-// менеджер группы — всегда; владелец — только пока заявка ещё в статусе open
-// (не взята в работу). Начальника области это НЕ включает — он правит чужие заявки
-// через отдельный режим adminOnlyEdit в Update (все поля кроме заголовка/описания).
-// Политика Casbin write сама право правки полей не даёт, поэтому write-пользователи
