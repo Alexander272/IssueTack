@@ -424,6 +424,202 @@
     color: var(--center-channel-color, #3d3c40);
 }
 
+/* Список наблюдателей «Уведомлять» в форме создания плагина: чекбоксы в
+   прокручиваемой рамке (аналог мультиселекта веб-формы). Нативный multiple-select
+   в модалке не влезает по высоте, чекбоксы + скролл — компактнее и стилистичнее. */
+.it-f-multi {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 160px;
+    overflow-y: auto;
+    padding: 10px;
+    border: 1px solid rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.16);
+    border-radius: 4px;
+    background: var(--center-channel-bg, #fff);
+}
+
+.it-f-multi__item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--center-channel-color, #3d3c40);
+    cursor: pointer;
+}
+
+.it-f-select-wrapper {
+    position: relative;
+    width: 100%;
+    font-size: 13px;
+}
+
+/* Триггер-инпут */
+.it-f-select-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 38px;
+    padding: 6px 12px;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    background-color: #fff;
+    cursor: pointer;
+    user-select: none;
+    transition: border-color 0.15s ease;
+}
+
+.it-f-select-trigger:hover:not(.is-disabled) {
+    border-color: #8c959f;
+}
+
+.it-f-select-trigger.is-open {
+    border-color: #1976d2;
+    box-shadow: 0 0 0 1px #1976d2;
+}
+
+.it-f-select-trigger.is-disabled {
+    background-color: #f6f8fa;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.it-f-select-trigger__text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #24292e;
+}
+
+.it-f-select-trigger__placeholder {
+    color: #8c959f;
+}
+
+/* Бейдж +N */
+.it-f-select-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 6px;
+    padding: 0 6px;
+    height: 22px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    color: #1976d2;
+    background-color: rgba(25, 118, 210, 0.08);
+    border: 1px solid rgba(25, 118, 210, 0.2);
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+/* Выпадающее окно (Popper) */
+.it-f-select-popper {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    width: 100%;
+    background-color: #fff;
+    border: 1px solid #e1e4e8;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(149, 157, 165, 0.2);
+    color: #24292e;
+    z-index: 1310;
+    overflow: hidden;
+}
+
+/* Строка поиска */
+.it-f-select-search {
+    display: flex;
+    align-items: center;
+    padding: 8px 16px;
+    border-bottom: 1px solid #eaecef;
+}
+
+.it-f-select-search__icon {
+    color: #6e7781;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+.it-f-select-search__input {
+    width: 100%;
+    border: none;
+    outline: none;
+    font-size: 13px;
+    color: #24292e;
+    background: transparent;
+}
+
+/* Список опций (аналог ListboxComponent с высотой ~8 элементов) */
+.it-f-select-listbox {
+    max-height: 312px;
+    /* 8 элементов * 39px */
+    overflow-y: auto;
+    padding: 4px 0;
+}
+
+.it-f-select-option {
+    padding: 8px 8px 0 8px;
+    margin: 2px 6px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+}
+
+.it-f-select-option:hover {
+    background-color: rgba(0, 0, 0, 0.04);
+}
+
+.it-f-select-option__row {
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+/* Кастомный чекбокс */
+.it-f-select-checkbox {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 20px;
+    min-width: 20px;
+    height: 20px;
+    margin-right: 12px;
+    margin-left: 4px;
+    border-radius: 4px;
+    border: 1px solid #afafaf;
+    color: #1976d2;
+    background-color: #fff;
+}
+
+.it-f-select-checkbox.is-checked {
+    border-color: #1976d2;
+}
+
+.it-f-select-option__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.it-f-select-option__divider {
+    height: 1px;
+    background-color: #eaecef;
+    margin-top: 8px;
+}
+
+.it-f-select-option:last-child .it-f-select-option__divider {
+    display: none;
+}
+
+.it-f-select-empty {
+    padding: 16px;
+    text-align: center;
+    color: #6e7781;
+}
+
 /* Карточки приоритета в «Расширенных настройках» менеджера — как PriorityCard
 в вебе: цветной кружок + заголовок сверху, описание снизу. */
 .it-f-priority {

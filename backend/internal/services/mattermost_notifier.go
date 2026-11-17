@@ -178,6 +178,7 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 	if action != "" {
 		// «Задача №12 обновлена: title» — действие идёт после номера.
 		text := fmt.Sprintf("**%s%s %s: %s**", prefix, number, action, title)
+		text += creatorLine(ticket)
 		if ticket.Owner != nil {
 			if label := userShortLabel(ticket.Owner); label != "" {
 				text += "\nЗаказчик: " + label
@@ -211,6 +212,7 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 		} else {
 			text += "\n" + title
 		}
+		text += creatorLine(ticket)
 		if ticket.Owner != nil {
 			if label := userShortLabel(ticket.Owner); label != "" {
 				text += "\nЗаказчик: " + label
@@ -223,6 +225,7 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 		}
 	} else {
 		text = fmt.Sprintf("**%s%s: %s**", prefix, number, title)
+		text += creatorLine(ticket)
 		if ticket.Owner != nil {
 			if label := userShortLabel(ticket.Owner); label != "" {
 				text += "\nЗаказчик: " + label
@@ -268,6 +271,24 @@ func userShortLabel(u *models.UserShort) string {
 		return u.Username
 	}
 	return name
+}
+
+// creatorLine собирает строку «Создатель» для DM. Создателя и заказчика
+// показывает только когда это разные люди: если заявитель создал заявку сам,
+// его фамилия уже стоит в строке «Заказчик» и второй раз не нужна (та же логика,
+// что в Participants веб-приложения).
+func creatorLine(ticket *models.Ticket) string {
+	if ticket == nil || ticket.Creator.ID == uuid.Nil {
+		return ""
+	}
+	if ticket.Owner != nil && ticket.Owner.ID == ticket.Creator.ID {
+		return ""
+	}
+	label := userShortLabel(&ticket.Creator)
+	if label == "" {
+		return ""
+	}
+	return "\nСоздатель: " + label
 }
 
 func (n *mattermostNotifier) resolveUserName(ctx context.Context, id uuid.UUID) string {

@@ -616,6 +616,19 @@ func (s *MattermostService) myTicketCard(t *models.Ticket, user *models.UserData
 	if t.Site != nil && t.Site.Name != "" {
 		fields = append(fields, mattermost.AttachmentField{Title: "Площадка", Value: t.Site.Name, Short: true})
 	}
+	// Участники — как в карточке заявки и в вебе: заказчик показывается всегда,
+	// создатель — только когда это другой человек. Иначе у заявки, созданной
+	// заявителем для себя, одна и та же фамилия стояла бы двумя строками.
+	if t.Owner != nil {
+		if label := cardUserLabel(t.Owner); label != "" {
+			fields = append(fields, mattermost.AttachmentField{Title: "Заказчик", Value: label, Short: true})
+		}
+	}
+	if t.Creator.ID != uuid.Nil && (t.Owner == nil || t.Owner.ID != t.Creator.ID) {
+		if label := cardUserLabel(&t.Creator); label != "" {
+			fields = append(fields, mattermost.AttachmentField{Title: "Создатель", Value: label, Short: true})
+		}
+	}
 
 	titleLink := pluginDeepLink(t.ID)
 	if s.showWebLink(user, t.RealmID) {
@@ -631,6 +644,19 @@ func (s *MattermostService) myTicketCard(t *models.Ticket, user *models.UserData
 		Buttons:   s.myTicketActionButtons(t, user.ID, from),
 	}
 	return card
+}
+
+// cardUserLabel — подпись участника в карточке: username, а без него — ФИО.
+// Карточки короткие, поэтому логин читается лучше полного имени (так же
+// подписаны заказчик и исполнитель в карточке заявки).
+func cardUserLabel(u *models.UserShort) string {
+	if u == nil {
+		return ""
+	}
+	if u.Username != "" {
+		return u.Username
+	}
+	return strings.TrimSpace(u.LastName + " " + u.FirstName)
 }
 
 // cardSummary — описание заявки для карточки в посте. Текст схлопывается в одну
@@ -1076,6 +1102,27 @@ func (s *MattermostService) ticketCard(detail *models.PluginTicketDetail) matter
 		fields = append(fields, mattermost.AttachmentField{
 			Title: "Заказчик", Value: detail.Owner.Username, Short: true,
 		})
+	}
+	// Создатель — только когда он не совпадает с заказчиком (как в вебе).
+	if detail.Creator.ID != uuid.Nil && (detail.Owner == nil || detail.Owner.ID != detail.Creator.ID) {
+		if label := detail.Creator.Username; label != "" {
+			fields = append(fields, mattermost.AttachmentField{
+				Title: "Создатель", Value: label, Short: true,
+			})
+		}
+	}
+	if len(detail.Notifiers) > 0 {
+		names := make([]string, 0, len(detail.Notifiers))
+		for _, n := range detail.Notifiers {
+			if n.Username != "" {
+				names = append(names, n.Username)
+			}
+		}
+		if len(names) > 0 {
+			fields = append(fields, mattermost.AttachmentField{
+				Title: "Уведомлять", Value: strings.Join(names, ", "), Short: true,
+			})
+		}
 	}
 	if len(detail.Attachments) > 0 {
 		fields = append(fields, mattermost.AttachmentField{

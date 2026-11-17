@@ -265,22 +265,36 @@ export default function TicketDetail({ scope, ticketId, onBack, onChanged, backL
                     ) : null}
                     {detail.description ? <div className='it-ticket-detail__desc'>{detail.description}</div> : null}
                     <div className='it-ticket-detail__meta'>
-                        {userName(detail.creator) ? (
+                        {detail.creator && detail.creator.id !== detail.owner?.id ? (
+                            <div className='it-ticket-detail__row'>
+                                <span className='it-ticket-detail__label'>Создатель</span>
+                                <span className='it-ticket-detail__value'>{userName(detail.creator)}</span>
+                            </div>
+                        ) : null}
+                        {detail.owner ? (
                             <div className='it-ticket-detail__row'>
                                 <span className='it-ticket-detail__label'>Заказчик</span>
-                                <span className='it-ticket-detail__value'>{userName(detail.creator)}</span>
+                                <span className='it-ticket-detail__value'>{userName(detail.owner)}</span>
+                            </div>
+                        ) : null}
+                        {detail.assignee ? (
+                            <div className='it-ticket-detail__row'>
+                                <span className='it-ticket-detail__label'>Исполнитель</span>
+                                <span className='it-ticket-detail__value'>{userName(detail.assignee)}</span>
+                            </div>
+                        ) : null}
+                        {detail.notifiers && detail.notifiers.length > 0 ? (
+                            <div className='it-ticket-detail__row'>
+                                <span className='it-ticket-detail__label'>Наблюдатели</span>
+                                <span className='it-ticket-detail__value'>
+                                    {detail.notifiers.map(u => userName(u)).filter(n => n && n !== '—').join(', ')}
+                                </span>
                             </div>
                         ) : null}
                         {detail.site && detail.site.name ? (
                             <div className='it-ticket-detail__row'>
                                 <span className='it-ticket-detail__label'>Площадка</span>
                                 <span className='it-ticket-detail__value'>{detail.site.name}</span>
-                            </div>
-                        ) : null}
-                        {userName(detail.assignee) ? (
-                            <div className='it-ticket-detail__row'>
-                                <span className='it-ticket-detail__label'>Исполнитель</span>
-                                <span className='it-ticket-detail__value'>{userName(detail.assignee)}</span>
                             </div>
                         ) : null}
                         <div className='it-ticket-detail__row'>

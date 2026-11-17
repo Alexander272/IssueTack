@@ -364,6 +364,21 @@ func (h *Handler) handlePluginCreateTicket(c *gin.Context) {
 		input.DueDate = dueDate
 	}
 
+	// Наблюдатели передаются повторяющимся полем notifierIds (как files[]).
+	// Пустое значение не считается ошибкой — это «никого не выбрали».
+	for _, raw := range c.PostFormArray("notifierIds") {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			response.SendError(c, models.ErrInvalidInput)
+			return
+		}
+		input.NotifierIDs = append(input.NotifierIDs, id)
+	}
+
 	files := c.Request.MultipartForm.File["files"]
 	if len(files) > maxPluginFiles {
 		response.SendError(c, models.ErrInvalidInput)

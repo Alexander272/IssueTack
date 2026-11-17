@@ -128,6 +128,8 @@ export interface PluginTicketDetail {
     creator?: PluginUserShort;
     owner?: PluginUserShort;
     assignee?: PluginUserShort;
+    // Наблюдатели («Уведомлять») — участники, получающие уведомления по заявке.
+    notifiers?: PluginUserShort[];
     link?: string;
     deepLink?: string;
     attachments?: PluginAttachment[];

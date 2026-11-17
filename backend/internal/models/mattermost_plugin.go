@@ -103,6 +103,10 @@ type PluginCreateTicketInput struct {
 	AssigneeID  uuid.UUID
 	OwnerID     uuid.UUID
 	DueDate     *time.Time
+	// NotifierIDs — наблюдатели («Уведомлять»), выбранные в форме. Пустой список
+	// означает «никого не уведомлять» и неотличим от «поле не передано», что для
+	// создания одно и то же.
+	NotifierIDs []uuid.UUID
 	Files       []PluginFile
 }
 
@@ -163,8 +167,11 @@ type PluginTicketDetail struct {
 	Creator     UserShort      `json:"creator"`
 	Owner       *UserShort     `json:"owner,omitempty"`
 	Assignee    *UserShort     `json:"assignee,omitempty"`
-	Link        string         `json:"link"`
-	DeepLink    string         `json:"deepLink"`
+	// Notifiers — список «Уведомлять»: наблюдатели получают уведомления по
+	// ключевым событиям заявки (в вебе это блок «Наблюдатели» в Participants).
+	Notifiers []UserShort `json:"notifiers,omitempty"`
+	Link      string      `json:"link"`
+	DeepLink  string      `json:"deepLink"`
 	// Attachments — вложенные к заявке файлы (не к комментариям).
 	Attachments []*PluginAttachment `json:"attachments,omitempty"`
 	// Флаги действий текущего пользователя (формулы те же, что в InfoBar
