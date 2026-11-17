@@ -179,6 +179,59 @@ func TestCommentService_Create_NonOwnerWithoutWorkAccess_Denied(t *testing.T) {
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 }
 
+func TestCommentService_Create_NotifierWithoutWorkAccess_ExternalComment_Allowed(t *testing.T) {
+	mockRepo, mockAccess, mockTickets, mockUsers, _, _, svc := commentServiceFixtures()
+
+	notifierID := uuid.New()
+	ticket := commentTicket(uuid.New(), uuid.New())
+	ticket.Notifiers = []models.UserShort{{ID: notifierID}}
+
+	dto := &models.CreateCommentDTO{
+		Text:     "комментарий наблюдателя",
+		TicketID: ticket.ID,
+		UserID:   notifierID,
+		Realm:    ticket.RealmID.String(),
+	}
+
+	// GetSummary вызывается в Create (проверка доступа) и в notifyOwnerViaMattermost.
+	mockTickets.On("GetSummary", mock.Anything, ticket.ID).Return(ticket, nil).Twice()
+	mockAccess.On("CheckWorkAccess", mock.Anything, mock.Anything).Return(models.ErrPermissionDenied)
+	mockRepo.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(func(c *models.Comment) bool {
+		return c.UserID != nil && *c.UserID == notifierID && !c.IsInternal
+	})).Return(nil)
+	// У владельца нет MattermostID — DM-уведомление владельцу не отправляется.
+	mockUsers.On("GetByID", mock.Anything, ticket.Owner.ID).Return(&models.UserData{ID: ticket.Owner.ID}, nil)
+
+	comment, err := svc.Create(context.Background(), nil, dto)
+	assert.NoError(t, err)
+	assert.NotNil(t, comment)
+	assert.Equal(t, dto.Text, comment.Text)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestCommentService_Create_NotifierWithoutWorkAccess_InternalComment_Denied(t *testing.T) {
+	mockRepo, mockAccess, mockTickets, _, _, _, svc := commentServiceFixtures()
+
+	notifierID := uuid.New()
+	ticket := commentTicket(uuid.New(), uuid.New())
+	ticket.Notifiers = []models.UserShort{{ID: notifierID}}
+
+	dto := &models.CreateCommentDTO{
+		Text:       "внутренний",
+		TicketID:   ticket.ID,
+		UserID:     notifierID,
+		Realm:      ticket.RealmID.String(),
+		IsInternal: true,
+	}
+
+	mockTickets.On("GetSummary", mock.Anything, ticket.ID).Return(ticket, nil)
+	mockAccess.On("CheckWorkAccess", mock.Anything, mock.Anything).Return(models.ErrPermissionDenied)
+
+	_, err := svc.Create(context.Background(), nil, dto)
+	assert.ErrorIs(t, err, models.ErrPermissionDenied)
+	mockRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything, mock.Anything)
+}
+
 func TestCommentService_Create_Internal_NoDM(t *testing.T) {
 	mockRepo, mockAccess, mockTickets, mockUsers, _, mockSender, svc := commentServiceFixtures()
 

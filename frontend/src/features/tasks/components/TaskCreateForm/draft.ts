@@ -33,7 +33,9 @@ function isFormValues(value: unknown): value is FormValues {
 		(v.dueDate === null || typeof v.dueDate === 'string') &&
 		Array.isArray(v.subtasks) &&
 		v.subtasks.every(isSubtask) &&
-		(v.equipmentId === null || typeof v.equipmentId === 'string')
+		(v.equipmentId === null || typeof v.equipmentId === 'string') &&
+		Array.isArray(v.notifierIds) &&
+		v.notifierIds.every((id: unknown) => typeof id === 'string')
 	)
 }
 
@@ -75,5 +77,6 @@ export function hasDraftContent(values: FormValues, filesCount: number): boolean
 	if (filesCount > 0) return true
 	if (values.title?.trim() || values.description?.trim()) return true
 	if (values.categoryId || values.groupId || values.ownerId || values.assigneeId || values.dueDate) return true
+	if ((values.notifierIds ?? []).length > 0) return true
 	return (values.subtasks ?? []).some(s => s?.title?.trim() || s?.description?.trim())
 }

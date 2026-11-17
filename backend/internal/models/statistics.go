@@ -48,13 +48,34 @@ func (s StatisticsScope) IsManagerial() bool {
 // (created_at / resolved_at в диапазоне), Active и Overdue характеризуют текущее
 // состояние видимых заявок и от периода не зависят. TotalPrev и ResolvedPrev —
 // те же периодные метрики за предыдущее окно той же длины, для расчёта дельт.
+// Subtasks — подзадачи в разрезе KPI-карточки (свои цифры у каждой).
 type StatisticsSummary struct {
-	Total        int `json:"total"`
-	Active       int `json:"active"`
-	Overdue      int `json:"overdue"`
-	Resolved     int `json:"resolved"`
-	TotalPrev    int `json:"totalPrev"`
-	ResolvedPrev int `json:"resolvedPrev"`
+	Total        int                       `json:"total"`
+	Active       int                       `json:"active"`
+	Overdue      int                       `json:"overdue"`
+	Resolved     int                       `json:"resolved"`
+	TotalPrev    int                       `json:"totalPrev"`
+	ResolvedPrev int                       `json:"resolvedPrev"`
+	Subtasks     StatisticsSummarySubtasks `json:"subtasks"`
+}
+
+// StatisticsSubtasks — подзадачи одной KPI-карточки: WithSubtasks — сколько заявок
+// карточки имеют хотя бы одну подзадачу, TotalSubtasks — сколько подзадач у этих
+// заявок суммарно.
+type StatisticsSubtasks struct {
+	WithSubtasks  int `json:"withSubtasks"`
+	TotalSubtasks int `json:"totalSubtasks"`
+}
+
+// StatisticsSummarySubtasks — блок подзадач для каждой KPI-карточки. Цифры не общие:
+// у «Просроченные» считаются только просроченные заявки, у «Решено» — решённые за
+// период и т.д. Отдельная структура, а не карта, чтобы блок всегда был заполнен и
+// фронт не проверял nil.
+type StatisticsSummarySubtasks struct {
+	Total    StatisticsSubtasks `json:"total"`
+	Active   StatisticsSubtasks `json:"active"`
+	Overdue  StatisticsSubtasks `json:"overdue"`
+	Resolved StatisticsSubtasks `json:"resolved"`
 }
 
 // StatisticsQuery — вход запроса к слою данных статистики: вычисленный срез доступа
@@ -78,16 +99,19 @@ func (q StatisticsQuery) WithDimension(dim string) StatisticsQuery {
 }
 
 // StatisticsTicketsQuery — вход drill-down статистики: клик по сектору
-// двухкольцевой диаграммы («Нагрузка исполнителей» / «Задачи от заказчиков»).
+// двухкольцевой диаграммы («Нагрузка исполнителей» / «Задачи от заказчиков»)
+// или по столбцу графика категорий/площадок/групп.
 // Scope и Filter те же, что у агрегатов, поэтому список совпадает с числом в
 // секции — тот же период и те же уточнения фильтра. Dimension задаёт поле
-// человека: assignee — t.assignee_id, owner — t.owner_id.
+// группировки: assignee/owner/category/site/group.
 type StatisticsTicketsQuery struct {
 	Scope     StatisticsScope
 	Filter    *StatisticsFilter
-	Dimension string // assignee|owner
+	Dimension string // assignee|owner|category|site|group|status
 	PersonID  *uuid.UUID
 	OwnerNone bool // owner_id IS NULL — бакет «Без заказчика»
+	BucketID  *uuid.UUID // category_id/site_id/group_id — для не-person измерений
+	StatusID  string // статус заявки — для разрез по статусу
 	// StatusGroup — кольцо диаграммы: "" (внутреннее — все заявки), active
 	// (open/in_progress/pending/on_hold), closed (resolved/closed/cancelled).
 	StatusGroup string
@@ -120,12 +144,15 @@ type StatisticsBreakdownBucket struct {
 	Active int       `json:"active"`
 }
 
-// WorkloadBucket — нагрузка на исполнителя за период.
+// WorkloadBucket — нагрузка на исполнителя за период: два столбца (active/closed),
+// каждый — stack из задач и подзадач. Исполнитель подзадачи = исполнитель родительской заявки.
 type WorkloadBucket struct {
-	UserID uuid.UUID `json:"userId"`
-	Name   string    `json:"name"`
-	Active int       `json:"active"`
-	Total  int       `json:"total"`
+	UserID         uuid.UUID `json:"userId"`
+	Name           string    `json:"name"`
+	ActiveTasks    int       `json:"activeTasks"`
+	ActiveSubtasks int       `json:"activeSubtasks"`
+	ClosedTasks    int       `json:"closedTasks"`
+	ClosedSubtasks int       `json:"closedSubtasks"`
 }
 
 // TrendPoint — точка динамики заявок: создано и решено за бакет.
@@ -146,4 +173,25 @@ type TicketStatistics struct {
 	BySite     []*StatisticsBucket          `json:"bySite"`
 	ByOwner    []*StatisticsBreakdownBucket `json:"byOwner"`
 	Workload   []*WorkloadBucket            `json:"workload"`
+}
+
+// KpiCardKey — тип KPI-карточки: total (новые за период), active (активные на конец периода),
+// overdue (просроченные), resolved (решённые за период).
+type KpiCardKey string
+
+const (
+	KpiTotal    KpiCardKey = "total"
+	KpiActive   KpiCardKey = "active"
+	KpiOverdue  KpiCardKey = "overdue"
+	KpiResolved KpiCardKey = "resolved"
+)
+
+// StatisticsKpiQuery — вход запроса списка заявок для KPI-карточки.
+// Scope и Filter те же, что у агрегатов, CardKey задаёт тип выборки.
+type StatisticsKpiQuery struct {
+	Scope   StatisticsScope
+	Filter  *StatisticsFilter
+	CardKey KpiCardKey
+	Limit   int
+	Offset  int
 }

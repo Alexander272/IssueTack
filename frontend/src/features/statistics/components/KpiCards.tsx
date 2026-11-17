@@ -11,11 +11,13 @@ import {
 	TrendingUpIcon,
 } from 'lucide-mui'
 
-import type { IStatisticsSummary } from '../types/statistics'
+import type { IStatisticsSubtasks, IStatisticsSummary } from '../types/statistics'
 
 interface Props {
 	summary?: IStatisticsSummary
 	isLoading: boolean
+	onCardClick?: (cardKey: 'total' | 'active' | 'overdue' | 'resolved') => void
+	showOverdue?: boolean
 }
 
 type DeltaTone = 'up' | 'down' | 'flat'
@@ -52,6 +54,44 @@ const Subtitle: FC<{ children: ReactNode; color?: string }> = ({ children, color
 	</Box>
 )
 
+const SubtaskInfo: FC<{ stats?: IStatisticsSubtasks; baseValue: number }> = ({ stats, baseValue }) => {
+	const withSubtasks = stats?.withSubtasks ?? 0
+	const totalSubtasks = stats?.totalSubtasks ?? 0
+	const pct = baseValue > 0 ? Math.round((withSubtasks / baseValue) * 100) : 0
+
+	return (
+		<Box
+			sx={{
+				borderTop: '1px solid #f3f4f6',
+				mt: 1,
+				pt: 1,
+				fontSize: '0.75rem',
+				lineHeight: 1.5,
+			}}
+		>
+			<Box sx={{ color: '#4b5563' }}>
+				<Box component='span' sx={{ color: '#6b7280' }}>
+					с подзадачами:
+				</Box>{' '}
+				<Box component='span' sx={{ fontWeight: 600, color: '#111827' }}>
+					{withSubtasks}
+				</Box>{' '}
+				<Box component='span' sx={{ color: '#6b7280' }}>
+					({pct}%)
+				</Box>
+			</Box>
+			<Box sx={{ color: '#4b5563' }}>
+				<Box component='span' sx={{ color: '#6b7280' }}>
+					всего подзадач:
+				</Box>{' '}
+				<Box component='span' sx={{ fontWeight: 600, color: '#1d4ed8' }}>
+					{totalSubtasks}
+				</Box>
+			</Box>
+		</Box>
+	)
+}
+
 const renderDelta = (d: Delta | null, suffix: string): ReactNode => {
 	if (!d) return <Subtitle>нет данных за прошлый период</Subtitle>
 	const Icon = DELTA_ICON[d.tone]
@@ -86,8 +126,10 @@ const resolveSubtitle = (key: 'total' | 'active' | 'overdue' | 'resolved', s: IS
 				</Subtitle>
 			)
 		}
-		case 'active':
-			return <Subtitle>{s.overdue > 0 ? `из них просрочено ${s.overdue}` : 'просроченных нет'}</Subtitle>
+		case 'active': {
+			const activeShare = share(s.active, s.total)
+			return <Subtitle>{activeShare ? `${activeShare} от созданных` : 'нет данных за период'}</Subtitle>
+		}
 		case 'overdue': {
 			const overdueShare = share(s.overdue, s.active)
 			return <Subtitle>{overdueShare ? `${overdueShare} от активных` : 'активных нет'}</Subtitle>
@@ -102,14 +144,37 @@ const cards = [
 	{ key: 'resolved', label: 'Решено', color: '#4caf50', icon: CheckCircleIcon },
 ] as const
 
-export const KpiCards: FC<Props> = ({ summary, isLoading }) => {
+export const KpiCards: FC<Props> = ({ summary, isLoading, onCardClick, showOverdue = false }) => {
+	const visibleCards = cards.filter(card => showOverdue || card.key !== 'overdue')
+	const gridSizes = visibleCards.length === 3 ? { xs: 12, sm: 4, md: 4 } : { xs: 12, sm: 6, md: 3 }
+
 	return (
-		<Grid container spacing={3} sx={{ mb: 4 }}>
-			{cards.map(card => {
+		<Grid container spacing={2} sx={{ mb: 2 }}>
+			{visibleCards.map(card => {
 				const Icon = card.icon
+				const value = summary?.[card.key] ?? 0
+				const hasData = summary && value > 0
 				return (
-					<Grid key={card.key} size={{ xs: 12, sm: 6, md: 3 }}>
-						<Paper sx={{ py: 2, px: 3, border: '1px solid #e5e7eb', borderRadius: '12px' }} elevation={0}>
+					<Grid key={card.key} size={gridSizes}>
+						<Paper
+							sx={{
+								py: 2,
+								px: 3,
+								border: '1px solid #e5e7eb',
+								borderRadius: '12px',
+								cursor: hasData && onCardClick ? 'pointer' : 'default',
+								transition: 'box-shadow 0.2s, transform 0.2s',
+								...(hasData &&
+									onCardClick && {
+										'&:hover': {
+											boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+											transform: 'translateY(-2px)',
+										},
+									}),
+							}}
+							elevation={0}
+							onClick={() => hasData && onCardClick?.(card.key)}
+						>
 							<Box
 								sx={{
 									display: 'flex',
@@ -126,7 +191,7 @@ export const KpiCards: FC<Props> = ({ summary, isLoading }) => {
 										<Skeleton variant='text' width={64} height={40} />
 									) : (
 										<Typography variant='h4' sx={{ color: card.color, fontWeight: 'bold' }}>
-											{summary?.[card.key] ?? 0}
+											{value}
 										</Typography>
 									)}
 									{!isLoading && summary && resolveSubtitle(card.key, summary)}
@@ -146,6 +211,9 @@ export const KpiCards: FC<Props> = ({ summary, isLoading }) => {
 									<Icon sx={{ color: card.color, fontSize: 26 }} />
 								</Box>
 							</Box>
+							{!isLoading && summary && (
+								<SubtaskInfo stats={summary.subtasks?.[card.key]} baseValue={value} />
+							)}
 						</Paper>
 					</Grid>
 				)

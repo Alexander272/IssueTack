@@ -406,7 +406,8 @@ func (s *MattermostService) PluginContext(ctx context.Context, scope models.Plug
 	// ИЛИ управляет группой) открывает «Расширенные настройки», наличие групп
 	// членства — секцию исполнителя «Заказчик». Ошибки загрузки не роняют
 	// контекст: пользователь просто увидит базовую форму (права всё равно
-	// финально проверяет TicketService.Create).
+	// финально проверяет TicketService.Create). Исполнитель (участник групп)
+	// теперь может выбрать исполнителя, приоритет и срок — как в веб-форме.
 	isManager := s.isRealmSupervisor(ctx, user.ID, settings.RealmID)
 	memberGroups, err := s.groups.GetMemberGroups(ctx, user.ID, &settings.RealmID)
 	if err != nil {
@@ -603,9 +604,10 @@ func (s *MattermostService) PluginCreateTicket(ctx context.Context, input *model
 	// Категория подставляет группу и приоритет по умолчанию, но только если
 	// менеджер не выбрал их явно в форме. Дальше ролевые ограничения применяет
 	// TicketService.Create: для пользователя без полных прав группа/приоритет
-	// всё равно принудительно берутся из категории, заказчик необязателен
-	// (по умолчанию им становится создатель), а исполнителем можно назначить
-	// только себя.
+	// берутся из категории, заказчик необязателен (по умолчанию им становится
+	// создатель), а исполнителем можно назначить любого активного исполнителя
+	// реалма (в т.ч. себя — «беру заявку на себя», даже если категория ведёт в
+	// чужую группу).
 	if input.CategoryID != uuid.Nil {
 		dto.CategoryID = input.CategoryID
 		cat, err := s.categories.GetByID(ctx, &models.GetCategoryByIdDTO{ID: input.CategoryID, RealmID: settings.RealmID})

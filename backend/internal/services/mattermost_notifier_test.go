@@ -561,7 +561,7 @@ func TestMattermostNotifier_SendsUpdatedDM_AssignedToRecipient(t *testing.T) {
 	mockSender.AssertExpectations(t)
 }
 
-// Тот же DM остальным получателям (менеджер/подписчики): нейтральная строка без id.
+// Тот же DM остальным получателям (менеджер/подписчики): имя исполнителя без сырых id.
 func TestMattermostNotifier_SendsUpdatedDM_AssignedOtherRecipient(t *testing.T) {
 	mockMMRepo, mockUsers, mockSender, svc := mattermostNotifierServiceFixtures()
 
@@ -588,8 +588,9 @@ func TestMattermostNotifier_SendsUpdatedDM_AssignedOtherRecipient(t *testing.T) 
 
 	mockMMRepo.On("GetByRealm", mock.Anything, realmID).Return(&models.RealmMattermost{RealmID: realmID, BotToken: "bt", BotUserID: "bb", IsActive: true}, nil)
 	mockUsers.On("GetByID", mock.Anything, userID).Return(&models.UserData{ID: userID, MattermostID: &mmID}, nil)
+	mockUsers.On("GetByID", mock.Anything, assigneeID).Return(&models.UserData{ID: assigneeID, FirstName: "Пётр", LastName: "Сидоров", Username: "sidorov"}, nil)
 	mockSender.On("Send", "bt", "bb", mmID, mock.MatchedBy(func(msg string) bool {
-		return assert.Contains(t, msg, "Исполнитель: изменён") &&
+		return assert.Contains(t, msg, "Исполнитель: Сидоров Пётр") &&
 			assert.NotContains(t, msg, assigneeID.String()) &&
 			assert.NotContains(t, msg, userID.String()) &&
 			assert.NotContains(t, msg, "Вам назначена")

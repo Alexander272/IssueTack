@@ -99,6 +99,9 @@ func (s *TicketService) logValues(ctx context.Context, old *models.Ticket, chang
 				oldVal = logEntityName(old.Category.Name, old.Category.ID)
 			}
 			newVal = s.resolveCategoryLabel(ctx, old, c.NewVal)
+		case models.ActionNotifiersChanged:
+			oldVal = logNotifierUsers(old.Notifiers)
+			newVal = resolveNotifierLabels(ctx, s.users, c.NewVal)
 		default:
 			oldVal = c.OldVal
 			newVal = c.NewVal
@@ -107,6 +110,26 @@ func (s *TicketService) logValues(ctx context.Context, old *models.Ticket, chang
 		newMap[string(c.Tag)] = newVal
 	}
 	return oldMap, newMap
+}
+
+// renameLogTags переносит значения снапшота под другим тегом. Журнал может назвать
+// изменение точнее, чем исходный тег DTO (due_date_changed → due_date_approved при
+// утверждении запроса на перенос срока); уведомления и Mattermost при этом получают
+// исходный []*FieldChange, поэтому их формат не меняется.
+func renameLogTags(oldMap, newMap map[string]string, alias map[models.ActivityType]models.ActivityType) {
+	for from, to := range alias {
+		if from == to {
+			continue
+		}
+		if v, ok := oldMap[string(from)]; ok {
+			delete(oldMap, string(from))
+			oldMap[string(to)] = v
+		}
+		if v, ok := newMap[string(from)]; ok {
+			delete(newMap, string(from))
+			newMap[string(to)] = v
+		}
+	}
 }
 
 // logTicketUser — имя пользователя тикета по тегу изменения (старая сторона).
@@ -164,6 +187,39 @@ func (s *TicketService) resolveCategoryLabel(ctx context.Context, old *models.Ti
 		return raw
 	}
 	return logEntityName(c.Name, c.ID)
+}
+
+// logNotifierUsers — список имён наблюдателей тикета для журнала; пустой — "none".
+func logNotifierUsers(users []models.UserShort) string {
+	if len(users) == 0 {
+		return "none"
+	}
+	names := make([]string, 0, len(users))
+	for _, u := range users {
+		names = append(names, logPersonName(u.FirstName, u.LastName, u.Username, u.ID))
+	}
+	return strings.Join(names, ", ")
+}
+
+// resolveNotifierLabels резолвит список id наблюдателей (comma-separated или "none")
+// в имена. При ошибке резолва конкретного пользователя в списке остаётся его id.
+func resolveNotifierLabels(ctx context.Context, users Users, raw string) string {
+	if raw == "" || raw == "none" {
+		return "none"
+	}
+	parts := strings.Split(raw, ",")
+	names := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		names = append(names, resolveUserLabel(ctx, users, p))
+	}
+	if len(names) == 0 {
+		return "none"
+	}
+	return strings.Join(names, ", ")
 }
 
 // logUserLabel — ФИО пользователя для точечных лог-мест (снапшот Delete): по id,

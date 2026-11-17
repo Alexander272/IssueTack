@@ -1,28 +1,32 @@
 import { useCallback, useMemo, useState, type FC } from 'react'
-import dayjs from 'dayjs'
-import { Box, Grid, Typography } from '@mui/material'
+import { Box, Grid, Stack, Typography } from '@mui/material'
 import { useSearchParams } from 'react-router'
+import dayjs from 'dayjs'
 
-import { useAppSelector } from '@/hooks/redux'
-import { getIsManager } from '@/features/user/userSlice'
-import { PeriodPicker } from '@/components/Period/Period'
-import { getPresetDates } from '@/components/Period/utils'
 import type { DateRange } from '@/components/Period/types'
-import { useGetTicketStatisticsQuery } from '../statisticsApiSlice'
-import { KpiCards } from '../components/KpiCards'
-import { TrendChart } from '../components/TrendChart'
-import { StatusChart } from '../components/StatusChart'
-import { BreakdownChart } from '../components/BreakdownChart'
-import { NestedDonut, type IDonutBucket } from '../components/NestedDonut'
-import { StatisticsTicketsModal } from '../components/StatisticsTicketsModal'
-import { DEFAULT_TOP_N } from '../components/TopNSelect'
-import { StatisticsFilters } from '../components/StatisticsFilters'
 import type {
 	IStatisticsFilter,
 	IStatisticsRefinements,
 	StatisticsDrilldownDimension,
 	StatisticsDrilldownRing,
 } from '../types/statistics'
+import type { IDonutBucket } from '../components/NestedDonut'
+import { useAppSelector } from '@/hooks/redux'
+import { getIsManager } from '@/features/user/userSlice'
+import { PeriodPicker } from '@/components/Period/Period'
+import { getPresetDates } from '@/components/Period/utils'
+import { useGetTicketStatisticsQuery } from '../statisticsApiSlice'
+import { KpiCards } from '../components/KpiCards'
+import { KpiTicketsModal } from '../components/KpiTicketsModal'
+import { TrendChart } from '../components/TrendChart'
+import { StatusChart } from '../components/StatusChart'
+import { BreakdownChart } from '../components/BreakdownChart'
+import { ExecutorWorkloadChart } from '../components/ExecutorWorkloadChart'
+import { OwnerWorkloadChart } from '../components/OwnerWorkloadChart'
+import { StatisticsTicketsModal } from '../components/StatisticsTicketsModal'
+import { DEFAULT_TOP_N } from '../components/TopNSelect'
+import { StatisticsFilters } from '../components/StatisticsFilters'
+import { STATUS_MAP } from '@/features/tasks/constants/taskMaps'
 
 // refinementKeys — имена query-параметров URL, в которых хранится состояние панели
 // фильтров. Повторяющиеся параметры (?assigneeId=a&assigneeId=b) сохраняют
@@ -38,6 +42,13 @@ interface IDrilldown {
 	ring: StatisticsDrilldownRing
 }
 
+interface IKpiDrilldown {
+	type: 'kpi'
+	cardKey: 'total' | 'active' | 'overdue' | 'resolved'
+}
+
+type Drilldown = IDrilldown | IKpiDrilldown | null
+
 export const StatisticsView: FC = () => {
 	const isManager = useAppSelector(getIsManager)
 	const [range, setRange] = useState<DateRange>(() => getPresetDates('month', 'month', 1))
@@ -45,8 +56,13 @@ export const StatisticsView: FC = () => {
 	// сворачивается в «Прочие» (см. NestedDonut).
 	const [topNAssignee, setTopNAssignee] = useState(DEFAULT_TOP_N)
 	const [topNOwner, setTopNOwner] = useState(DEFAULT_TOP_N)
-	const [drilldown, setDrilldown] = useState<IDrilldown | null>(null)
+	const [drilldown, setDrilldown] = useState<Drilldown>(null)
 	const [searchParams, setSearchParams] = useSearchParams()
+
+	// Показывать ли карточку «Просроченные» — по умолчанию скрыта, включается кликом.
+	const [showOverdue, setShowOverdue] = useState(false)
+
+	const toggleOverdue = () => setShowOverdue(prev => !prev)
 
 	const refinements = useMemo<IStatisticsRefinements>(
 		() => ({
@@ -95,22 +111,13 @@ export const StatisticsView: FC = () => {
 			(stats?.workload ?? []).map(item => ({
 				id: item.userId,
 				name: item.name,
-				total: item.total,
-				active: item.active,
+				total: item.activeTasks + item.closedTasks + item.activeSubtasks + item.closedSubtasks,
+				active: item.activeTasks + item.activeSubtasks,
 			})),
 		[stats?.workload],
 	)
 	const ownerBuckets = useMemo<IDonutBucket[]>(() => stats?.byOwner ?? [], [stats?.byOwner])
 
-	// Клик по сектору открывает список заявок этого человека. Имя берём из уже
-	// загруженных бакетов (диаграмма отдаёт только id), чтобы не ходить на бэкенд.
-	const openAssignee = useCallback(
-		(bucketId: string, ring: StatisticsDrilldownRing) => {
-			const name = assigneeBuckets.find(bucket => bucket.id === bucketId)?.name ?? ''
-			setDrilldown({ dimension: 'assignee', bucketId, bucketName: name, ring })
-		},
-		[assigneeBuckets],
-	)
 	const openOwner = useCallback(
 		(bucketId: string, ring: StatisticsDrilldownRing) => {
 			const name = ownerBuckets.find(bucket => bucket.id === bucketId)?.name ?? ''
@@ -119,8 +126,50 @@ export const StatisticsView: FC = () => {
 		[ownerBuckets],
 	)
 
+	// Клик по столбцу workload: ring = 'active' | 'closed' (совпадает с API)
+	const openAssigneeWorkload = useCallback(
+		(bucketId: string, ring: 'active' | 'closed') => {
+			const name = assigneeBuckets.find(bucket => bucket.id === bucketId)?.name ?? ''
+			setDrilldown({ dimension: 'assignee', bucketId, bucketName: name, ring: ring as StatisticsDrilldownRing })
+		},
+		[assigneeBuckets],
+	)
+
+	const openCategory = useCallback(
+		(bucketId: string) => {
+			const name = stats?.byCategory?.find(bucket => bucket.id === bucketId)?.name ?? ''
+			setDrilldown({ dimension: 'category', bucketId, bucketName: name, ring: '' })
+		},
+		[stats?.byCategory],
+	)
+
+	const openSite = useCallback(
+		(bucketId: string) => {
+			const name = stats?.bySite?.find(bucket => bucket.id === bucketId)?.name ?? ''
+			setDrilldown({ dimension: 'site', bucketId, bucketName: name, ring: '' })
+		},
+		[stats?.bySite],
+	)
+
+	const openGroup = useCallback(
+		(bucketId: string) => {
+			const name = stats?.byGroup?.find(bucket => bucket.id === bucketId)?.name ?? ''
+			setDrilldown({ dimension: 'group', bucketId, bucketName: name, ring: '' })
+		},
+		[stats?.byGroup],
+	)
+
+	const openStatus = useCallback((status: string) => {
+		const name = STATUS_MAP[status as 'open']?.label ?? status
+		setDrilldown({ dimension: 'status', bucketId: status, bucketName: name, ring: '' })
+	}, [])
+
+	const openKpi = useCallback((cardKey: 'total' | 'active' | 'overdue' | 'resolved') => {
+		setDrilldown({ type: 'kpi', cardKey })
+	}, [])
+
 	return (
-		<Box sx={{ flexGrow: 1, overflow: 'auto', p: 3 }}>
+		<Box sx={{ flexGrow: 1, overflow: 'auto', p: 2 }}>
 			<Box
 				sx={{
 					display: 'flex',
@@ -129,15 +178,36 @@ export const StatisticsView: FC = () => {
 					justifyContent: 'space-between',
 					alignItems: { xs: 'flex-start', sm: 'center' },
 					gap: { xs: 2, sm: 1 },
-					mb: 4,
+					mb: 3,
 				}}
 			>
 				<Box sx={{ flexGrow: { xs: 0, sm: 1 } }}>
 					<Typography variant='h5' sx={{ fontWeight: 'bold', color: '#1f2937' }}>
 						Статистика
 					</Typography>
-					<Typography variant='body2' sx={{ color: '#6b7280', display: { xs: 'none', sm: 'block' } }}>
+					<Typography
+						variant='body2'
+						sx={{
+							color: '#6b7280',
+							display: { xs: 'none', sm: 'block' },
+							cursor: 'pointer',
+							userSelect: 'none',
+							width: 'fit-content',
+						}}
+						onClick={toggleOverdue}
+					>
 						Показатели заявок за выбранный период
+						<Box
+							component='span'
+							sx={{
+								ml: 1,
+								fontSize: '0.75rem',
+								color: showOverdue ? '#16a34a' : '#9ca3af',
+								opacity: showOverdue ? 1 : 0.6,
+							}}
+						>
+							{showOverdue ? '✓' : '•'}
+						</Box>
 					</Typography>
 				</Box>
 				<PeriodPicker value={range} onChange={setRange} />
@@ -149,77 +219,109 @@ export const StatisticsView: FC = () => {
 				/>
 			</Box>
 
-			<KpiCards summary={stats?.summary} isLoading={isFetching} />
+			<KpiCards summary={stats?.summary} isLoading={isFetching} onCardClick={openKpi} showOverdue={showOverdue} />
 
-			<Grid container spacing={3} sx={{ mb: 3 }}>
+			<Grid container spacing={2} sx={{ mb: 2 }}>
 				<Grid size={{ xs: 12, lg: 8 }}>
 					<TrendChart points={stats?.trend ?? []} isLoading={isFetching} />
 				</Grid>
 				<Grid size={{ xs: 12, lg: 4 }}>
-					<StatusChart buckets={stats?.byStatus ?? []} isLoading={isFetching} />
+					<StatusChart buckets={stats?.byStatus ?? []} isLoading={isFetching} onBarClick={openStatus} />
 				</Grid>
 			</Grid>
 
-			<Grid container spacing={3} sx={{ mb: isManager ? 3 : 0 }}>
-				{/* Менеджеру три в ряд с 900px (md), не-менеджеру две по 6; lg всплывает из md. */}
-				<Grid size={{ xs: 12, md: isManager ? 4 : 6 }}>
-					<BreakdownChart title='По категориям' buckets={stats?.byCategory ?? []} isLoading={isFetching} />
-				</Grid>
-				<Grid size={{ xs: 12, md: isManager ? 4 : 6 }}>
-					<BreakdownChart
-						title='По площадкам'
-						buckets={stats?.bySite ?? []}
-						color='#27b05c'
-						isLoading={isFetching}
-					/>
-				</Grid>
-				{isManager && (
-					<Grid size={{ xs: 12, md: 4 }}>
+			{isManager ? (
+				<Grid container spacing={2} sx={{ mb: 2 }}>
+					{/* Левая колонка: длинный график по категориям */}
+					<Grid size={{ xs: 12, md: 6 }}>
 						<BreakdownChart
-							title='По группам'
-							buckets={stats?.byGroup ?? []}
-							color='#ff9800'
+							title='По категориям'
+							buckets={stats?.byCategory ?? []}
 							isLoading={isFetching}
+							onBarClick={openCategory}
 						/>
 					</Grid>
-				)}
-			</Grid>
+
+					{/* Правая колонка: два компактных графика друг под другом */}
+					<Grid size={{ xs: 12, md: 6 }}>
+						<Stack spacing={2}>
+							<BreakdownChart
+								title='По площадкам'
+								buckets={stats?.bySite ?? []}
+								color='#27b05c'
+								isLoading={isFetching}
+								onBarClick={openSite}
+							/>
+							<BreakdownChart
+								title='По группам'
+								buckets={stats?.byGroup ?? []}
+								color='#ff9800'
+								isLoading={isFetching}
+								onBarClick={openGroup}
+							/>
+						</Stack>
+					</Grid>
+				</Grid>
+			) : (
+				<Grid container spacing={2}>
+					<Grid size={{ xs: 12, md: 6 }}>
+						<BreakdownChart
+							title='По категориям'
+							buckets={stats?.byCategory ?? []}
+							isLoading={isFetching}
+							onBarClick={openCategory}
+						/>
+					</Grid>
+					<Grid size={{ xs: 12, md: 6 }}>
+						<BreakdownChart
+							title='По площадкам'
+							buckets={stats?.bySite ?? []}
+							color='#27b05c'
+							isLoading={isFetching}
+							onBarClick={openSite}
+						/>
+					</Grid>
+				</Grid>
+			)}
 
 			{isManager && (
-				<Grid container spacing={3}>
+				<Grid container spacing={2}>
 					<Grid size={{ xs: 12, lg: 6 }}>
-						<NestedDonut
+						<ExecutorWorkloadChart
 							title='Нагрузка исполнителей'
-							buckets={assigneeBuckets}
+							buckets={stats?.workload ?? []}
 							topN={topNAssignee}
 							onTopNChange={setTopNAssignee}
 							isLoading={isFetching}
-							onSliceClick={openAssignee}
+							onBarClick={openAssigneeWorkload}
 						/>
 					</Grid>
 					<Grid size={{ xs: 12, lg: 6 }}>
-						<NestedDonut
+						<OwnerWorkloadChart
 							title='Задачи от заказчиков'
 							buckets={ownerBuckets}
 							topN={topNOwner}
 							onTopNChange={setTopNOwner}
 							isLoading={isFetching}
-							onSliceClick={openOwner}
+							onBarClick={openOwner}
 						/>
 					</Grid>
 				</Grid>
 			)}
 
-			{drilldown && (
-				<StatisticsTicketsModal
-					dimension={drilldown.dimension}
-					bucketId={drilldown.bucketId}
-					bucketName={drilldown.bucketName}
-					ring={drilldown.ring}
-					filter={query}
-					onClose={() => setDrilldown(null)}
-				/>
-			)}
+			{drilldown &&
+				('type' in drilldown && drilldown.type === 'kpi' ? (
+					<KpiTicketsModal cardKey={drilldown.cardKey} filter={query} onClose={() => setDrilldown(null)} />
+				) : (
+					<StatisticsTicketsModal
+						dimension={(drilldown as IDrilldown).dimension}
+						bucketId={(drilldown as IDrilldown).bucketId}
+						bucketName={(drilldown as IDrilldown).bucketName}
+						ring={(drilldown as IDrilldown).ring}
+						filter={query}
+						onClose={() => setDrilldown(null)}
+					/>
+				))}
 		</Box>
 	)
 }

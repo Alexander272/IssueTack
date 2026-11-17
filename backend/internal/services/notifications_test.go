@@ -678,16 +678,50 @@ func TestNotificationService_NotifyDeadlineSoon_FiresReachedThresholds(t *testin
 	mockRepo.On("GetSettings", mock.Anything, assigneeID).Return(&models.NotificationSettings{UserID: assigneeID, Settings: settingsRaw}, nil)
 	mockRepo.On("HasDeadlineReminder", mock.Anything, assigneeID, ticket.ID, 60).Return(false, nil).Once()
 	mockRepo.On("HasDeadlineReminder", mock.Anything, assigneeID, ticket.ID, 30).Return(false, nil).Once()
-	mockNotifier.On("Notify", mock.Anything, assigneeID, mock.Anything, mock.Anything).Return(true, nil).Twice()
+	mockNotifier.On("Notify", mock.Anything, assigneeID, mock.Anything, mock.Anything).Return(true, nil).Once()
 	mockRepo.On("Create", mock.Anything, nil, mock.MatchedBy(func(dto *models.CreateNotificationDTO) bool {
 		return dto.Type == string(models.NotificationDeadlineSoon)
-	})).Return(nil).Twice()
+	})).Return(nil).Once()
 
 	err = svc.NotifyDeadlineSoon(context.Background(), ticket)
 	assert.NoError(t, err)
 	mockRepo.AssertNotCalled(t, "HasDeadlineReminder", mock.Anything, assigneeID, ticket.ID, 15)
 	mockNotifier.AssertExpectations(t)
 	mockRepo.AssertExpectations(t)
+}
+
+func TestNotificationService_NotifyDeadlineSoon_SingleNotificationWhenSeveralThresholdsReached(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	assigneeID := uuid.New()
+	due := time.Now().Add(20 * time.Hour)
+	ticket := &models.Ticket{
+		ID:       uuid.New(),
+		Title:    "Soon Ticket",
+		Assignee: &models.UserShort{ID: assigneeID},
+		DueDate:  &due,
+	}
+	settingsRaw, err := json.Marshal(&models.NotificationSettingsPayload{
+		Enabled:           true,
+		Categories:        []models.CategoryNotificationSetting{},
+		Groups:            []models.GroupNotificationSetting{},
+		DeadlineReminders: []int{2880, 1440, 360},
+	})
+	require.NoError(t, err)
+	mockRepo.On("GetSettings", mock.Anything, assigneeID).Return(&models.NotificationSettings{UserID: assigneeID, Settings: settingsRaw}, nil)
+	// Дедлайн в 20h (1200 мин) попадает одновременно в пороги 2880 («за 2 дня») и 1440
+	// («за 1 день») — должно уйти только одно уведомление, по ближайшему (самому тесному) порогу.
+	mockRepo.On("HasDeadlineReminder", mock.Anything, assigneeID, ticket.ID, 2880).Return(false, nil).Once()
+	mockRepo.On("HasDeadlineReminder", mock.Anything, assigneeID, ticket.ID, 1440).Return(false, nil).Once()
+
+	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID)
+
+	err = svc.NotifyDeadlineSoon(context.Background(), ticket)
+	assert.NoError(t, err)
+	mockRepo.AssertNotCalled(t, "HasDeadlineReminder", mock.Anything, assigneeID, ticket.ID, 360)
+	mockNotifier.AssertNumberOfCalls(t, "Notify", 1)
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
 }
 
 func TestNotificationService_NotifyDeadlineSoon_NoAssignee(t *testing.T) {
@@ -894,6 +928,181 @@ func TestNotificationService_NotifyReminderUrgent_Success(t *testing.T) {
 
 	err := svc.NotifyReminderUrgent(context.Background(), ticket, time.Hour)
 
+	require.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
+}
+
+func TestNotificationService_TicketCreated_NotifiesOwnerAndNotifiers(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	actorID := uuid.New()
+	ownerID := uuid.New()
+	notifierID := uuid.New()
+	ticket := &models.Ticket{
+		ID:        uuid.New(),
+		Title:     "Created ticket",
+		Owner:     &models.UserShort{ID: ownerID},
+		Notifiers: []models.UserShort{{ID: notifierID}},
+	}
+
+	expectDeliverAndPersist(mockRepo, mockNotifier, ownerID, notifierID)
+
+	err := svc.TicketCreated(context.Background(), ticket, actorID)
+	require.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
+}
+
+func TestNotificationService_TicketCreated_ActorExcludedFromOwnerAndNotifiers(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	actorID := uuid.New()
+	otherNotifierID := uuid.New()
+	ticket := &models.Ticket{
+		ID:        uuid.New(),
+		Title:     "Created ticket",
+		Owner:     &models.UserShort{ID: actorID},
+		Notifiers: []models.UserShort{{ID: actorID}, {ID: otherNotifierID}},
+	}
+
+	expectDeliverAndPersist(mockRepo, mockNotifier, otherNotifierID)
+
+	err := svc.TicketCreated(context.Background(), ticket, actorID)
+	require.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
+}
+
+func TestNotificationService_TicketUpdated_StatusChange_NotifiesOwnerAndNotifiers(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	actorID := uuid.New()
+	ownerID := uuid.New()
+	notifierID := uuid.New()
+	ticket := &models.Ticket{
+		ID:        uuid.New(),
+		Title:     "Updated ticket",
+		Owner:     &models.UserShort{ID: ownerID},
+		Notifiers: []models.UserShort{{ID: notifierID}},
+	}
+	changes := []*models.FieldChange{{Tag: models.ActionStatusChanged, OldVal: "open", NewVal: "in_progress"}}
+
+	expectDeliverAndPersist(mockRepo, mockNotifier, ownerID, notifierID)
+
+	err := svc.TicketUpdated(context.Background(), ticket, actorID, changes)
+	require.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
+}
+
+func TestNotificationService_TicketCommented_NotifiesOwnerAndNotifiers(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	actorID := uuid.New()
+	ownerID := uuid.New()
+	notifierID := uuid.New()
+	ticket := &models.Ticket{
+		ID:        uuid.New(),
+		Title:     "Comment ticket",
+		Owner:     &models.UserShort{ID: ownerID},
+		Notifiers: []models.UserShort{{ID: notifierID}},
+	}
+
+	expectDeliverAndPersist(mockRepo, mockNotifier, ownerID, notifierID)
+
+	err := svc.TicketCommented(context.Background(), &models.NotificationCommentDTO{
+		Ticket:      ticket,
+		ActorID:     actorID,
+		CommentText: "текст",
+		AuthorLabel: "Автор",
+	})
+	require.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
+}
+
+func TestNotificationService_AttachmentAdded_NotifiesOwnerAndNotifiers(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	actorID := uuid.New()
+	ownerID := uuid.New()
+	notifierID := uuid.New()
+	ticket := &models.Ticket{
+		ID:        uuid.New(),
+		Title:     "Attachment ticket",
+		Owner:     &models.UserShort{ID: ownerID},
+		Notifiers: []models.UserShort{{ID: notifierID}},
+	}
+
+	expectDeliverAndPersist(mockRepo, mockNotifier, ownerID, notifierID)
+
+	err := svc.AttachmentAdded(context.Background(), ticket, actorID)
+	require.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
+}
+
+func TestNotificationService_TicketDeleted_NotifiesOwnerAndNotifiers(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	ownerID := uuid.New()
+	notifierID := uuid.New()
+	categoryID := uuid.New()
+	ticket := &models.Ticket{
+		ID:        uuid.New(),
+		Title:     "Deleted ticket",
+		Owner:     &models.UserShort{ID: ownerID},
+		Notifiers: []models.UserShort{{ID: notifierID}},
+		Category:  &models.CategoryShort{ID: categoryID},
+	}
+
+	mockRepo.On("GetResponsibleByCategory", mock.Anything, categoryID).Return([]uuid.UUID{}, nil)
+	expectDeliverAndPersist(mockRepo, mockNotifier, ownerID, notifierID)
+
+	err := svc.TicketDeleted(context.Background(), ticket)
+	require.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
+}
+
+func TestNotificationService_NotifyOverdue_DoesNotNotifyNotifiers(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	assigneeID := uuid.New()
+	notifierID := uuid.New()
+	ticket := &models.Ticket{
+		ID:        uuid.New(),
+		Title:     "Overdue task",
+		Assignee:  &models.UserShort{ID: assigneeID},
+		Notifiers: []models.UserShort{{ID: notifierID}},
+	}
+
+	mockRepo.On("HasNotification", mock.Anything, assigneeID, ticket.ID, string(models.NotificationTicketOverdue)).Return(false, nil).Once()
+	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID)
+
+	err := svc.NotifyOverdue(context.Background(), ticket)
+	require.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
+}
+
+func TestNotificationService_NotifyReminderHigh_DoesNotNotifyNotifiers(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	assigneeID := uuid.New()
+	notifierID := uuid.New()
+	ticket := &models.Ticket{
+		ID:        uuid.New(),
+		Title:     "High priority task",
+		Assignee:  &models.UserShort{ID: assigneeID},
+		Notifiers: []models.UserShort{{ID: notifierID}},
+	}
+
+	mockRepo.On("CanSendReminder", mock.Anything, ticket.ID, models.EventReminderHigh, reminderDedupInterval(3*time.Hour)).Return(true, nil).Once()
+	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID)
+
+	err := svc.NotifyReminderHigh(context.Background(), ticket, 3*time.Hour)
 	require.NoError(t, err)
 	mockRepo.AssertExpectations(t)
 	mockNotifier.AssertExpectations(t)

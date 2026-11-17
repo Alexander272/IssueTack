@@ -123,9 +123,12 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		return fmt.Errorf("group is required")
 	}
 
+	// Заказчик необязателен: если он не указан, заявка выполняется для создателя.
+	// Подстановка обязательна — колонка tickets.owner_id в БД NOT NULL, поэтому
+	// пустой заказчик из формы не должен уходить в INSERT как NULL.
 	// Серверная часть правила выбора заказчика (P2): явный заказчик должен быть
 	// выбран разрешённым пользователем (менеджер/исполнитель) и быть активным
-	// участником области — иначе заявка с чужим заказчиком не создаётся.
+	// пользователем области — иначе заявка с чужим заказчиком не создаётся.
 	if dto.OwnerID != nil {
 		if dto.RealmID == nil {
 			return models.ErrInvalidInput
@@ -134,7 +137,6 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 			return err
 		}
 	}
-
 	if dto.OwnerID == nil {
 		dto.OwnerID = &dto.CreatorID
 	}
@@ -143,40 +145,63 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		return fmt.Errorf("auto-assign: %w", err)
 	}
 
-	// Срок выполнения может ставить менеджер группы, начальник области или
-	// исполнитель (участник хотя бы одной группы реалма). Автосрок из категории
-	// применяется только тому, кто вправе задать срок вручную. Права проверяем
-	// лишь когда срок действительно нужен (задан явно или у категории есть
-	// автосрок), иначе создание заявки без срока делало бы лишние запросы в БД.
-	var defaultDueDays *int
-	if dto.DueDate == nil && dto.CategoryID != uuid.Nil {
+	canSetDueDate := false
+
+	isManager, err := s.isManagerOfGroup(ctx, &models.GroupShort{ID: *dto.GroupID}, dto.Actor.ID)
+	if err != nil {
+		return fmt.Errorf("failed to check manager access: %w", err)
+	}
+
+	supervisor, err := s.access.IsRealmSupervisor(ctx, dto.Actor.ID, realmStr)
+	if err != nil {
+		return fmt.Errorf("failed to check supervisor access: %w", err)
+	}
+
+	if isManager || supervisor {
+		canSetDueDate = true
+	} else {
+		// Проверяем, является ли пользователь "исполнителем" (участником хотя бы одной группы в реалме)
+		// Мы делаем этот запрос только если пользователь не менеджер и не супервизор, чтобы сэкономить ресурсы
+		memberGroups, err := s.groups.GetMemberGroups(ctx, dto.Actor.ID, dto.RealmID)
+		if err != nil {
+			return fmt.Errorf("failed to get member groups for due date check: %w", err)
+		}
+		if len(memberGroups) > 0 {
+			canSetDueDate = true
+		}
+	}
+
+	// 1. Если пользователь пытается вручную установить срок, но не имеет прав — блокируем
+	if dto.DueDate != nil && !canSetDueDate {
+		return models.ErrPermissionDenied
+	}
+
+	// 2. Если срок не указан вручную, но пользователь имеет право его устанавливать,
+	// и у категории есть срок по умолчанию — применяем его автоматически.
+	if dto.DueDate == nil && canSetDueDate && dto.CategoryID != uuid.Nil {
 		category, err := s.categories.GetByID(ctx, &models.GetCategoryByIdDTO{ID: dto.CategoryID, RealmID: *dto.RealmID})
 		if err != nil {
 			return fmt.Errorf("failed to get category: %w", err)
 		}
 		if category.DefaultDueDays != nil && *category.DefaultDueDays > 0 {
-			defaultDueDays = category.DefaultDueDays
+			dd := time.Now().UTC().AddDate(0, 0, *category.DefaultDueDays)
+			dto.DueDate = &dd
 		}
 	}
 
-	if dto.DueDate != nil || defaultDueDays != nil {
-		canSetDueDate, err := s.canSetDueDateOnCreate(ctx, dto)
-		if err != nil {
-			return err
-		}
-
-		if dto.DueDate != nil && !canSetDueDate {
-			return models.ErrPermissionDenied
-		}
-		if dto.DueDate == nil && canSetDueDate {
-			dd := time.Now().UTC().AddDate(0, 0, *defaultDueDays)
-			dto.DueDate = &dd
-		}
+	if err := s.validateAndPrepareNotifiers(ctx, dto, nil); err != nil {
+		return err
 	}
 
 	err = s.tx.WithinTransaction(ctx, func(newTx postgres.Tx) error {
 		if err := s.repo.Create(ctx, newTx, dto); err != nil {
 			return fmt.Errorf("failed to create ticket. error: %w", err)
+		}
+
+		if dto.HasField("notifierIds") {
+			if err := s.repo.SyncNotifiers(ctx, newTx, *dto.ID, dto.Actor.ID, dto.NotifierIDs); err != nil {
+				return fmt.Errorf("failed to sync ticket notifiers: %w", err)
+			}
 		}
 
 		if len(dto.Subtasks) > 0 {
@@ -220,13 +245,10 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 	return nil
 }
 
-// applyExecutorCreateRestrictions применяет ограничения при создании заявки исполнителем
-// (участником группы, не имеющим полных прав). Заказчик необязателен: если он не указан,
-// им становится создатель (подстановка в Create). Группа и приоритет
-// принудительно берутся из категории. Исполнителем исполнитель может
-// назначить только себя (явно — на любую группу, включая чужую; чужой id из тела
-// отбрасывается). Если категория принадлежит одной из групп исполнителя, заявку и без
-// явного выбора назначают на него, иначе исполнитель подбирается системой по умолчанию.
+// applyExecutorCreateRestrictions нормализует и валидирует поля заявки, создаваемой
+// исполнителем (участником группы, без coarse-прав CanCreateTicket). Исполнителю
+// разрешено выбирать исполнителя (любого активного исполнителя реалма), приоритет,
+
 func (s *TicketService) applyExecutorCreateRestrictions(ctx context.Context, dto *models.TicketDTO, memberGroups []uuid.UUID) error {
 	if dto.RealmID == nil {
 		return fmt.Errorf("realm is required")
@@ -240,21 +262,53 @@ func (s *TicketService) applyExecutorCreateRestrictions(ctx context.Context, dto
 		return fmt.Errorf("category has no group")
 	}
 
-	dto.GroupID = &category.GroupID
-	dto.Priority = category.Priority
-
-	// Исполнитель может назначить исполнителем только себя — на любую группу, в т.ч. чужую
-	// (берёт заявку на себя). Чужой id из тела доверять нельзя: без этой отбраковки он
-	// прошёл бы в autoAssign и подставился бы ответственным группы уже чужой.
-	if dto.AssigneeID != nil && *dto.AssigneeID != dto.CreatorID {
-		dto.AssigneeID = nil
+	// Группа: исполнитель может выбрать любую группу реалма; по умолчанию — группа категории.
+	if dto.GroupID == nil || *dto.GroupID == uuid.Nil {
+		dto.GroupID = &category.GroupID
 	}
-	if containsUUID(memberGroups, category.GroupID) && dto.AssigneeID == nil {
+
+	// Приоритет: принимает выбранное валидное значение, иначе — приоритет категории.
+	if !dto.Priority.IsValid() {
+		dto.Priority = category.Priority
+	}
+
+	// Исполнитель: можно назначить любого активного исполнителя реалма (участника
+	// хотя бы одной группы в реалме). Невалидный выбор отклоняется.
+	if dto.AssigneeID != nil {
+		if err := s.validateRealmExecutor(ctx, *dto.AssigneeID, *dto.RealmID); err != nil {
+			return err
+		}
+	} else if containsUUID(memberGroups, category.GroupID) {
+		// Категория ведёт в группу исполнителя и явного выбора нет — назначаем его.
 		dto.AssigneeID = &dto.CreatorID
 	}
 	return nil
 }
 
+// validateRealmExecutor проверяет, что пользователь — активный исполнитель области:
+// активен, состоит в области и является участником хотя бы одной группы области.
+func (s *TicketService) validateRealmExecutor(ctx context.Context, userID, realmID uuid.UUID) error {
+	if userID == uuid.Nil {
+		return models.ErrInvalidInput
+	}
+	u, err := s.users.GetByID(ctx, userID)
+	if err != nil || u == nil || !u.IsActive {
+		return models.ErrInvalidInput
+	}
+	if !hasActiveRealmMembership(u, realmID) {
+		return models.ErrInvalidInput
+	}
+	memberGroups, err := s.groups.GetMemberGroups(ctx, userID, &realmID)
+	if err != nil {
+		return fmt.Errorf("failed to get member groups: %w", err)
+	}
+	if len(memberGroups) == 0 {
+		return models.ErrInvalidInput
+	}
+	return nil
+}
+
+// containsUUID сообщает, есть ли target в values.
 func containsUUID(values []uuid.UUID, target uuid.UUID) bool {
 	for _, v := range values {
 		if v == target {

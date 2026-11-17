@@ -34,10 +34,12 @@ export const API = {
 	activityLog: {
 		base: '/activity-log' as const,
 		byEntity: (entityId: string) => `/activity-log?entityId=${entityId}` as const,
+		byParent: (parentId: string) => `/activity-log?parentId=${parentId}` as const,
 	},
 	statistics: {
 		tickets: '/statistics/tickets' as const,
 		ticketsList: '/statistics/tickets/list' as const,
+		kpiTickets: '/statistics/kpi/tickets' as const,
 	},
 
 	categories: {
@@ -59,6 +61,9 @@ export const API = {
 		take: (id: string) => `/tickets/${id}/take` as const,
 		transfer: (id: string) => `/tickets/${id}/transfer` as const,
 		subscription: (id: string) => `/tickets/${id}/subscription` as const,
+		dueDateRequests: (ticketId: string) => `/tickets/${ticketId}/due-date-requests` as const,
+		dueDateRequestDecide: (ticketId: string, requestId: string) =>
+			`/tickets/${ticketId}/due-date-requests/${requestId}/decide` as const,
 	},
 	favorites: {
 		base: '/favorites' as const,

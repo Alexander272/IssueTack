@@ -47,6 +47,10 @@ type Tickets interface {
 	CloseResolved(ctx context.Context, cutoff time.Time) (int64, error)
 	CountNotClosedByGroup(ctx context.Context, groupID uuid.UUID) (int, error)
 	CountNotClosedByCategory(ctx context.Context, categoryID uuid.UUID) (int, error)
+	GetNotifiers(ctx context.Context, ticketID uuid.UUID) ([]models.UserShort, error)
+	GetNotifierIDs(ctx context.Context, ticketID uuid.UUID) ([]uuid.UUID, error)
+	SyncNotifiers(ctx context.Context, tx Tx, ticketID uuid.UUID, actorID uuid.UUID, userIDs []uuid.UUID) error
+	IsNotifier(ctx context.Context, ticketID, userID uuid.UUID) (bool, error)
 }
 
 type nullableTicketAssoc struct {
@@ -299,6 +303,12 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 
 	assoc.assign(ticket)
 
+	notifiers, err := r.GetNotifiers(ctx, req.ID)
+	if err != nil {
+		return nil, err
+	}
+	ticket.Notifiers = notifiers
+
 	return ticket, nil
 }
 
@@ -443,4 +453,111 @@ func (r *TicketRepo) CountNotClosedByCategory(ctx context.Context, categoryID uu
 		return 0, MapError(fmt.Errorf("failed to count not closed tickets by category: %w", err))
 	}
 	return count, nil
+}
+
+// GetNotifiers возвращает пользователей из списка «Уведомлять» заявки.
+func (r *TicketRepo) GetNotifiers(ctx context.Context, ticketID uuid.UUID) ([]models.UserShort, error) {
+	query := fmt.Sprintf(`SELECT u.id, u.username, u.first_name, u.last_name, u.internal_number
+		FROM %s tn
+		JOIN %s u ON u.id = tn.user_id
+		WHERE tn.ticket_id = $1
+		ORDER BY tn.created_at ASC, u.last_name ASC, u.first_name ASC`,
+		Tables.TicketNotifiers, Tables.Users,
+	)
+
+	rows, err := r.db.Query(ctx, query, ticketID)
+	if err != nil {
+		return nil, MapError(fmt.Errorf("failed to get ticket notifiers: %w", err))
+	}
+	defer rows.Close()
+
+	notifiers := []models.UserShort{}
+	for rows.Next() {
+		var u models.UserShort
+		if err := rows.Scan(&u.ID, &u.Username, &u.FirstName, &u.LastName, &u.InternalNumber); err != nil {
+			return nil, MapError(fmt.Errorf("failed to scan ticket notifier: %w", err))
+		}
+		notifiers = append(notifiers, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("ticket notifiers rows error: %w", err))
+	}
+	return notifiers, nil
+}
+
+// GetNotifierIDs возвращает идентификаторы пользователей из списка «Уведомлять».
+func (r *TicketRepo) GetNotifierIDs(ctx context.Context, ticketID uuid.UUID) ([]uuid.UUID, error) {
+	query := fmt.Sprintf(`SELECT user_id FROM %s WHERE ticket_id = $1`, Tables.TicketNotifiers)
+
+	rows, err := r.db.Query(ctx, query, ticketID)
+	if err != nil {
+		return nil, MapError(fmt.Errorf("failed to get ticket notifier ids: %w", err))
+	}
+	defer rows.Close()
+
+	ids := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, MapError(fmt.Errorf("failed to scan ticket notifier id: %w", err))
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("ticket notifier ids rows error: %w", err))
+	}
+	return ids, nil
+}
+
+// SyncNotifiers полностью заменяет список «Уведомлять» заявки переданным набором
+// пользователей. Пустой список очищает наблюдателей. Дубликаты игнорируются.
+func (r *TicketRepo) SyncNotifiers(ctx context.Context, tx Tx, ticketID uuid.UUID, actorID uuid.UUID, userIDs []uuid.UUID) error {
+	exec := r.getExec(tx)
+
+	delQuery := fmt.Sprintf(`DELETE FROM %s WHERE ticket_id = $1`, Tables.TicketNotifiers)
+	if _, err := exec.Exec(ctx, delQuery, ticketID); err != nil {
+		return MapError(fmt.Errorf("failed to clear ticket notifiers: %w", err))
+	}
+	if len(userIDs) == 0 {
+		return nil
+	}
+
+	// Дедупликация и отсев nil-uuid на стороне приложения, чтобы не плодить
+	// лишние конфликты/ошибки в БД.
+	seen := make(map[uuid.UUID]struct{}, len(userIDs))
+	uniq := make([]uuid.UUID, 0, len(userIDs))
+	for _, id := range userIDs {
+		if id == uuid.Nil {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		uniq = append(uniq, id)
+	}
+	if len(uniq) == 0 {
+		return nil
+	}
+
+	query := fmt.Sprintf(`INSERT INTO %s (ticket_id, user_id, added_by)
+		SELECT $1, uid, $2 FROM UNNEST($3::uuid[]) AS uid
+		ON CONFLICT (ticket_id, user_id) DO NOTHING`, Tables.TicketNotifiers)
+
+	if _, err := exec.Exec(ctx, query, ticketID, actorID, uniq); err != nil {
+		return MapError(fmt.Errorf("failed to insert ticket notifiers: %w", err))
+	}
+	return nil
+}
+
+// IsNotifier сообщает, состоит ли пользователь в списке «Уведомлять» заявки.
+func (r *TicketRepo) IsNotifier(ctx context.Context, ticketID, userID uuid.UUID) (bool, error) {
+	query := fmt.Sprintf(`SELECT EXISTS(SELECT 1 FROM %s WHERE ticket_id = $1 AND user_id = $2)`,
+		Tables.TicketNotifiers)
+
+	var exists bool
+	if err := r.db.QueryRow(ctx, query, ticketID, userID).Scan(&exists); err != nil {
+		return false, MapError(fmt.Errorf("failed to check ticket notifier: %w", err))
+	}
+	return exists, nil
 }

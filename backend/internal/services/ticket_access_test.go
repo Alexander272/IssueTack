@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func accessServiceFixtures() (*MockGroupsRepo, *MockAccessPolicies, *TicketAccessService) {
@@ -414,3 +415,132 @@ func TestTicketAccessService_CanCreateSubtask_CustomerDenied(t *testing.T) {
 		assert.True(t, ok)
 	})
 }
+
+func TestTicketAccessService_CheckAccessOnTicket_NotifierReadAllowed(t *testing.T) {
+	mockRepo := new(MockTicketsRepo)
+	mockGroups := new(MockGroupsRepo)
+	mockPolicies := new(MockAccessPolicies)
+	svc := NewTicketAccessService(mockRepo, mockGroups, mockPolicies)
+
+	userID := uuid.New()
+	realmID := uuid.New()
+	groupID := uuid.New()
+	ticket := &models.Ticket{
+		ID:        uuid.New(),
+		RealmID:   &realmID,
+		Group:     &models.GroupShort{ID: groupID},
+		Creator:   models.UserShort{ID: uuid.New()},
+		Notifiers: []models.UserShort{{ID: userID}},
+	}
+
+	mockGroups.On("GetManagedGroups", mock.Anything, userID, &realmID).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, userID, &realmID).Return([]uuid.UUID{}, nil)
+
+	err := svc.CheckAccessOnTicket(context.Background(), ticket, userID, "read")
+	require.NoError(t, err)
+}
+
+func TestTicketAccessService_CheckAccessOnTicket_NotifierWriteDenied(t *testing.T) {
+	mockRepo := new(MockTicketsRepo)
+	mockGroups := new(MockGroupsRepo)
+	mockPolicies := new(MockAccessPolicies)
+	svc := NewTicketAccessService(mockRepo, mockGroups, mockPolicies)
+
+	userID := uuid.New()
+	realmID := uuid.New()
+	groupID := uuid.New()
+	ticket := &models.Ticket{
+		ID:        uuid.New(),
+		RealmID:   &realmID,
+		Group:     &models.GroupShort{ID: groupID},
+		Creator:   models.UserShort{ID: uuid.New()},
+		Notifiers: []models.UserShort{{ID: userID}},
+	}
+
+	// checkGroupManager (write/delete в групповой заявке) проверяет управляемые группы без realm-фильтра.
+	mockGroups.On("GetManagedGroups", mock.Anything, userID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+	mockPolicies.On("Enforce", userID.String(), realmID.String(), "category", "write").Return(false, nil)
+	mockPolicies.On("Enforce", userID.String(), realmID.String(), "site", "write").Return(false, nil)
+
+	err := svc.CheckAccessOnTicket(context.Background(), ticket, userID, "write")
+	require.ErrorIs(t, err, models.ErrPermissionDenied)
+}
+
+func TestTicketAccessService_CanAttachToTicket_NotifierAllowedOnActive(t *testing.T) {
+	mockRepo := new(MockTicketsRepo)
+	mockGroups := new(MockGroupsRepo)
+	mockPolicies := new(MockAccessPolicies)
+	svc := NewTicketAccessService(mockRepo, mockGroups, mockPolicies)
+
+	userID := uuid.New()
+	realmID := uuid.New()
+	ticketID := uuid.New()
+	ticket := &models.Ticket{
+		ID:        ticketID,
+		RealmID:   &realmID,
+		Status:    models.StatusOpen,
+		Creator:   models.UserShort{ID: uuid.New()},
+		Notifiers: []models.UserShort{{ID: userID}},
+	}
+
+	// CheckWorkAccess и CanAttachToTicket загружают тикет отдельно.
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(ticket, nil).Twice()
+	mockGroups.On("GetManagedGroups", mock.Anything, userID, &realmID).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, userID, &realmID).Return([]uuid.UUID{}, nil)
+	mockPolicies.On("Enforce", userID.String(), realmID.String(), "category", "write").Return(false, nil)
+	mockPolicies.On("Enforce", userID.String(), realmID.String(), "site", "write").Return(false, nil)
+
+	err := svc.CanAttachToTicket(context.Background(), &models.AccessCheckDTO{TicketID: ticketID, UserID: userID})
+	require.NoError(t, err)
+}
+
+func TestTicketAccessService_CanCreateSubtask_NotifierOnlyDenied(t *testing.T) {
+	mockRepo := new(MockTicketsRepo)
+	mockGroups := new(MockGroupsRepo)
+	mockPolicies := new(MockAccessPolicies)
+	svc := NewTicketAccessService(mockRepo, mockGroups, mockPolicies)
+
+	userID := uuid.New()
+	realmID := uuid.New()
+	ticketID := uuid.New()
+	ticket := &models.Ticket{
+		ID:        ticketID,
+		RealmID:   &realmID,
+		Status:    models.StatusOpen,
+		Creator:   models.UserShort{ID: uuid.New()},
+		Notifiers: []models.UserShort{{ID: userID}},
+	}
+
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(ticket, nil)
+	mockPolicies.On("Enforce", userID.String(), realmID.String(), "category", "write").Return(false, nil)
+	mockPolicies.On("Enforce", userID.String(), realmID.String(), "site", "write").Return(false, nil)
+	mockGroups.On("GetManagedGroups", mock.Anything, userID, &realmID).Return([]uuid.UUID{}, nil)
+
+	ok, err := svc.CanCreateSubtask(context.Background(), userID, ticketID)
+	require.NoError(t, err)
+	assert.False(t, ok)
+}
+
+func TestTicketAccessService_NotifierReadOnly(t *testing.T) {
+	mockRepo := new(MockTicketsRepo)
+	mockGroups := new(MockGroupsRepo)
+	mockPolicies := new(MockAccessPolicies)
+	svc := NewTicketAccessService(mockRepo, mockGroups, mockPolicies)
+
+	userID := uuid.New()
+	realmID := uuid.New()
+	ticket := &models.Ticket{
+		ID:        uuid.New(),
+		RealmID:   &realmID,
+		Creator:   models.UserShort{ID: uuid.New()},
+		Notifiers: []models.UserShort{{ID: userID}},
+	}
+
+	mockPolicies.On("Enforce", userID.String(), realmID.String(), "category", "write").Return(false, nil)
+	mockPolicies.On("Enforce", userID.String(), realmID.String(), "site", "write").Return(false, nil)
+
+	ro, err := svc.notifierReadOnly(context.Background(), ticket, userID)
+	require.NoError(t, err)
+	assert.True(t, ro)
+}
+

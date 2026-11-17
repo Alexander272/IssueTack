@@ -38,20 +38,25 @@ type Ticket struct {
 
 	Subtasks    []*Subtask      `json:"subtasks,omitempty"`
 	Attachments []*Attachment   `json:"attachments,omitempty"`
+	Notifiers   []UserShort     `json:"notifiers,omitempty"`
 	Access      *AccessFlags    `json:"access,omitempty"`
 	Equipment   *EquipmentShort `json:"equipment,omitempty"`
 }
 
 type AccessFlags struct {
-	CanRead         bool           `json:"canRead"`
-	CanWrite        bool           `json:"canWrite"`
-	CanDelete       bool           `json:"canDelete"`
-	CanWork         bool           `json:"canWork"`
-	CanTake         bool           `json:"canTake"`
-	CanEditFields   bool           `json:"canEditFields"`
-	IsAdmin         bool           `json:"isAdmin"`
-	IsManager       bool           `json:"isManager"`
-	AllowedStatuses []TicketStatus `json:"allowedStatuses"`
+	CanRead       bool `json:"canRead"`
+	CanWrite      bool `json:"canWrite"`
+	CanDelete     bool `json:"canDelete"`
+	CanWork       bool `json:"canWork"`
+	CanTake       bool `json:"canTake"`
+	CanEditFields bool `json:"canEditFields"`
+	IsAdmin       bool `json:"isAdmin"`
+	IsManager     bool `json:"isManager"`
+	// CanRequestDueDate — исполнитель может запросить перенос срока (при установленном сроке).
+	CanRequestDueDate bool `json:"canRequestDueDate"`
+	// CanDecideDueDate — менеджер группы/начальник области может утверждать/отклонять запросы переноса срока.
+	CanDecideDueDate bool           `json:"canDecideDueDate"`
+	AllowedStatuses  []TicketStatus `json:"allowedStatuses"`
 }
 
 type GetTicketByIdDTO struct {
@@ -150,6 +155,11 @@ type TicketDTO struct {
 	Subtasks []*SubtaskDTO `json:"subtasks,omitempty"`
 
 	EquipmentID *uuid.UUID `json:"equipmentId" db:"equipment_id"`
+
+	// Наблюдатели заявки (список «Уведомлять»): получают уведомления по ключевым
+	// событиям как владелец и получают read-доступ к заявке. При Update
+	// обрабатывается как полная замена, если поле передано в запросе.
+	NotifierIDs []uuid.UUID `json:"notifierIds,omitempty"`
 
 	// Поля, переданные в запросе (заполняется при UnmarshalJSON). Позволяет делать partial update.
 	Provided map[string]bool `json:"-"`

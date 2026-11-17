@@ -1,5 +1,5 @@
 import { Box, Typography } from '@mui/material'
-import { UserPlus, User, Users, Wrench, Briefcase } from 'lucide-mui'
+import { Bell, UserPlus, User, Users, Wrench, Briefcase } from 'lucide-mui'
 import type { ReactNode } from 'react'
 
 import { Avatar } from '@/components/Avatar'
@@ -112,7 +112,7 @@ export const Participants = ({ task }: Props) => {
 				) : null}
 				{task.owner && (
 					<UserRow
-						label='Заявитель'
+						label='Заказчик'
 						icon={<User sx={{ fontSize: 14 }} />}
 						name={getUserName(task.owner)}
 						sub={task.site?.name}
@@ -167,6 +167,43 @@ export const Participants = ({ task }: Props) => {
 						name={getUserName(task.manager)}
 						userId={task.manager.id}
 					/>
+				)}
+				{(task.notifiers?.length ?? 0) > 0 && (
+					<Box>
+						<Typography
+							sx={{
+								fontSize: '0.75rem',
+								color: '#9ca3af',
+								mb: 0.5,
+								display: 'flex',
+								alignItems: 'center',
+								gap: 0.5,
+							}}
+						>
+							<Bell sx={{ fontSize: 14 }} /> Уведомлять
+						</Typography>
+						<Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+							{task.notifiers!.map(u => (
+								<Box key={u.id} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+									<Avatar size={28} bgcolor={getAvatarColor(u.id)}>
+										{getInitials(getUserName(u))}
+									</Avatar>
+									<Typography
+										sx={{
+											fontSize: '0.8125rem',
+											fontWeight: 500,
+											color: '#1f2937',
+											overflow: 'hidden',
+											textOverflow: 'ellipsis',
+											whiteSpace: 'nowrap',
+										}}
+									>
+										{getUserName(u)}
+									</Typography>
+								</Box>
+							))}
+						</Box>
+					</Box>
 				)}
 			</Box>
 		</Box>

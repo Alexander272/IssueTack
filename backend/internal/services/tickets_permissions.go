@@ -166,14 +166,10 @@ func (s *TicketService) validateOwnerSelection(ctx context.Context, actorID, rea
 	if err != nil || u == nil || !u.IsActive {
 		return models.ErrInvalidInput
 	}
-	for _, r := range u.Realms {
-		if r.RealmID == realmID && r.IsActive {
-			return nil
-		}
+	if !hasActiveRealmMembership(u, realmID) {
+		return models.ErrInvalidInput
 	}
-	// Не участник области (или членство неактивно) — выбирать его заказчиком нельзя:
-	// иначе заявка уходила бы человеку, который не видит область.
-	return models.ErrInvalidInput
+	return nil
 }
 
 // validateAssigneeForAssign проверяет, что смена исполнителя для пользователя с
@@ -254,13 +250,17 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 	// CanTake — заявку можно «взять в работу»: она активна (не resolved/closed/cancelled)
 	// и «забираема» — исполнителя нет совсем, либо исполнитель — другой пользователь,
 	// а заявка ещё в статусе open (см. Take). Кнопка не показывается «не-рабочим»:
-	// чистому заказчику (ownerReadOnly) и автору-без-групп (IsCustomer) — их роль
-	// просмотр/комментарий/решения, а не работа.
+	// чистому заказчику (ownerReadOnly), наблюдателю (notifierReadOnly) и
+	// автору-без-групп (IsCustomer) — их роль просмотр/комментарий/решения, а не работа.
 	ownerReadOnly, err := s.access.ownerReadOnly(ctx, ticket, userID)
 	if err != nil {
 		return nil, err
 	}
-	nonWorker := ownerReadOnly
+	notifierReadOnly, err := s.access.notifierReadOnly(ctx, ticket, userID)
+	if err != nil {
+		return nil, err
+	}
+	nonWorker := ownerReadOnly || notifierReadOnly
 	if !nonWorker && ticket.Creator.ID == userID {
 		customer, err := s.access.IsCustomer(ctx, ticket, userID)
 		if err != nil {
@@ -303,6 +303,23 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 
 	flags.AllowedStatuses = s.computeAllowedStatuses(ctx, ticket, userID)
 
+	// CanRequestDueDate — исполнитель (assignee) может запросить перенос срока заявки.
+	// Запрос имеет смысл при установленном сроке и при отсутствии уже pending-запроса
+	// (лимит — один на тикет, enforced в БД через partial unique index).
+	flags.CanRequestDueDate = false
+	if !isTicketInactive(ticket.Status) && ticket.DueDate != nil &&
+		ticket.Assignee != nil && ticket.Assignee.ID == userID {
+		// Ошибку чтения нельзя трактовать как «запроса нет»: иначе кнопка висела бы,
+		// а создание падало бы на том же запросе (или, хуже, дублировало pending).
+		if existing, reqErr := s.dueRequests.GetPendingByTicket(ctx, ticket.ID); reqErr == nil && existing == nil {
+			flags.CanRequestDueDate = true
+		}
+	}
+
+	// CanDecideDueDate — утверждать/отклонять запросы может менеджер группы или
+	// начальник области (realm supervisor) — те же, кому backend разрешает править срок.
+	flags.CanDecideDueDate = isManager || isAdmin
+
 	return flags, nil
 }
 
@@ -311,7 +328,7 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 // статуса. Логика отражает модель доступа: владелец без write/work получает только три перехода
 // (см. ownerTransitionAllowed), исполнитель с work-доступом — активные статусы и resolved
 // (при отсутствии незакрытых подзадач), закрытие/отмена активного тикета — только
-// автору/менеджеру группы (владелец может отменить активный тикет).
+
 func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) []models.TicketStatus {
 	hasWrite := s.access.CheckAccessOnTicket(ctx, ticket, userID, string(access.Write)) == nil
 	isCreator := ticket.Creator.ID == userID
@@ -359,7 +376,7 @@ func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *mode
 		// Закрытая/отменённая заявка — «замороженная»: вернуть её в активные статусы
 		// нельзя никому (даже исполнителю с work-доступом). Разрешён лишь взаимообмен
 		// closed⇄cancelled автору/менеджеру группы/владельцу.
-		if isCreatorOrMgr || isOwner {
+		if isOwner || (ticket.Owner == nil && isCreatorOrMgr) {
 			if current == models.StatusClosed {
 				add(models.StatusCancelled)
 			} else {
@@ -368,11 +385,12 @@ func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *mode
 		}
 
 	case current == models.StatusResolved:
-		if isCreatorOrMgr || isOwner {
+		// Подтверждение решения — только владелец или (если нет владельца) автор/менеджер.
+		if isOwner || (ticket.Owner == nil && isCreatorOrMgr) {
 			add(models.StatusClosed)
 		}
-		// Возврат в работу доступен владельцу и автору (как и ownerTransitionAllowed).
-		if hasWrite || hasWork || isOwner || isCreator {
+		// Возврат в работу — владелец, или (если нет владельца) автор, или write/work-доступ.
+		if hasWrite || hasWork || isOwner || (ticket.Owner == nil && isCreator) {
 			add(models.StatusInProgress)
 		}
 		if hasWrite || hasWork {
@@ -382,7 +400,8 @@ func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *mode
 				}
 			}
 		}
-		if isCreatorOrMgr {
+		// Отмена решения — только владелец, или (если нет владельца) автор/менеджер.
+		if isOwner || (ticket.Owner == nil && isCreatorOrMgr) {
 			add(models.StatusCancelled)
 		}
 
@@ -398,10 +417,24 @@ func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *mode
 				add(models.StatusResolved)
 			}
 		}
-		if isCreatorOrMgr || isOwner {
+		if isOwner || (ticket.Owner == nil && isCreatorOrMgr) {
 			add(models.StatusCancelled)
 		}
 	}
 
 	return allowed
 }
+
+func (s *TicketService) isOwnerOnlyOrCreatorWithoutOwner(ticket *models.Ticket, actorID uuid.UUID) bool {
+	if ticket.Owner != nil {
+		return ticket.Owner.ID == actorID
+	}
+	return ticket.Creator.ID == actorID
+}
+
+// canEditFields определяет, может ли пользователь править не-статусные поля тикета
+// (заголовок/описание/приоритет/срок/группа/исполнитель и т.п.): создатель или
+// менеджер группы — всегда; владелец — только пока заявка ещё в статусе open
+// (не взята в работу). Начальника области это НЕ включает — он правит чужие заявки
+// через отдельный режим adminOnlyEdit в Update (все поля кроме заголовка/описания).
+// Политика Casbin write сама право правки полей не даёт, поэтому write-пользователи

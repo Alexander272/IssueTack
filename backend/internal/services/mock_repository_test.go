@@ -255,6 +255,28 @@ func (m *MockTicketsRepo) CountNotClosedByCategory(ctx context.Context, category
 	args := m.Called(ctx, categoryID)
 	return args.Int(0), args.Error(1)
 }
+func (m *MockTicketsRepo) GetNotifiers(ctx context.Context, ticketID uuid.UUID) ([]models.UserShort, error) {
+	args := m.Called(ctx, ticketID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]models.UserShort), args.Error(1)
+}
+func (m *MockTicketsRepo) GetNotifierIDs(ctx context.Context, ticketID uuid.UUID) ([]uuid.UUID, error) {
+	args := m.Called(ctx, ticketID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
+func (m *MockTicketsRepo) SyncNotifiers(ctx context.Context, tx postgres.Tx, ticketID uuid.UUID, actorID uuid.UUID, userIDs []uuid.UUID) error {
+	args := m.Called(ctx, tx, ticketID, actorID, userIDs)
+	return args.Error(0)
+}
+func (m *MockTicketsRepo) IsNotifier(ctx context.Context, ticketID, userID uuid.UUID) (bool, error) {
+	args := m.Called(ctx, ticketID, userID)
+	return args.Bool(0), args.Error(1)
+}
 func (m *MockTicketsRepo) GetStatisticsSummary(ctx context.Context, query models.StatisticsQuery) (*models.StatisticsSummary, error) {
 	args := m.Called(ctx, query)
 	if args.Get(0) == nil {
@@ -299,6 +321,14 @@ func (m *MockTicketsRepo) GetStatisticsTrend(ctx context.Context, query models.S
 }
 
 func (m *MockTicketsRepo) GetStatisticsTickets(ctx context.Context, query models.StatisticsTicketsQuery) ([]*models.Ticket, int, error) {
+	args := m.Called(ctx, query)
+	if args.Get(0) == nil {
+		return nil, args.Int(1), args.Error(2)
+	}
+	return args.Get(0).([]*models.Ticket), args.Int(1), args.Error(2)
+}
+
+func (m *MockTicketsRepo) GetKpiTickets(ctx context.Context, query models.StatisticsKpiQuery) ([]*models.Ticket, int, error) {
 	args := m.Called(ctx, query)
 	if args.Get(0) == nil {
 		return nil, args.Int(1), args.Error(2)
@@ -360,6 +390,27 @@ func (m *MockTicketsService) Delete(ctx context.Context, dto *models.DeleteTicke
 func (m *MockTicketsService) AutoCloseResolved(ctx context.Context, delay time.Duration) (int64, error) {
 	args := m.Called(ctx, delay)
 	return args.Get(0).(int64), args.Error(1)
+}
+func (m *MockTicketsService) CreateDueDateRequest(ctx context.Context, dto *models.CreateDueDateRequestDTO) (*models.DueDateRequest, error) {
+	args := m.Called(ctx, dto)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.DueDateRequest), args.Error(1)
+}
+func (m *MockTicketsService) GetDueDateRequest(ctx context.Context, dto *models.GetDueDateRequestDTO) (*models.DueDateRequest, error) {
+	args := m.Called(ctx, dto)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.DueDateRequest), args.Error(1)
+}
+func (m *MockTicketsService) DecideDueDateRequest(ctx context.Context, dto *models.DecideDueDateRequestDTO) (*models.DueDateRequest, error) {
+	args := m.Called(ctx, dto)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.DueDateRequest), args.Error(1)
 }
 func (m *MockTicketsService) UploadAttachment(ctx context.Context, tx postgres.Tx, dto *models.UploadAttachmentDTO) (*models.Attachment, error) {
 	args := m.Called(ctx, tx, dto)
@@ -818,6 +869,14 @@ func (m *MockNotificationService) AttachmentAdded(ctx context.Context, ticket *m
 	args := m.Called(ctx, ticket, actorID)
 	return args.Error(0)
 }
+func (m *MockNotificationService) NotifyDueDateRequested(ctx context.Context, ticket *models.Ticket, request *models.DueDateRequest) error {
+	args := m.Called(ctx, ticket, request)
+	return args.Error(0)
+}
+func (m *MockNotificationService) NotifyDueDateDecided(ctx context.Context, ticket *models.Ticket, request *models.DueDateRequest) error {
+	args := m.Called(ctx, ticket, request)
+	return args.Error(0)
+}
 func (m *MockNotificationService) NotifyOverdue(ctx context.Context, ticket *models.Ticket) error {
 	args := m.Called(ctx, ticket)
 	return args.Error(0)
@@ -1176,6 +1235,11 @@ func (m *MockTicketAccessChecker) CanAdministerTickets(ctx context.Context, user
 }
 
 func (m *MockTicketAccessChecker) ownerReadOnly(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) (bool, error) {
+	args := m.Called(ctx, ticket, userID)
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockTicketAccessChecker) notifierReadOnly(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) (bool, error) {
 	args := m.Called(ctx, ticket, userID)
 	return args.Bool(0), args.Error(1)
 }

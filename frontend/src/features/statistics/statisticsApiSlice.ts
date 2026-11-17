@@ -2,9 +2,15 @@ import { toast } from 'react-toastify'
 
 import type { IBaseFetchError } from '@/app/types/error'
 import type { ITask } from '@/features/tasks/types/task'
-import type { IStatisticsFilter, IStatisticsTicketsFilter, ITicketStatistics } from './types/statistics'
+import type { IStatisticsFilter, IStatisticsTicketsFilter, ITicketStatistics, KpiCardKey } from './types/statistics'
 import { API } from '@/app/api'
 import { apiSlice } from '@/app/apiSlice'
+
+interface IKpiTicketsFilter extends IStatisticsFilter {
+	cardKey: KpiCardKey
+	limit?: number
+	offset?: number
+}
 
 const statisticsApiSlice = apiSlice.injectEndpoints({
 	overrideExisting: false,
@@ -47,7 +53,25 @@ const statisticsApiSlice = apiSlice.injectEndpoints({
 				}
 			},
 		}),
+
+		// Список заявок для KPI-карточек
+		getKpiTickets: builder.query<{ data: ITask[]; total?: number }, IKpiTicketsFilter>({
+			query: params => ({
+				url: API.statistics.kpiTickets,
+				method: 'GET',
+				params,
+			}),
+			providesTags: (_result, _error, arg) => [{ type: 'Statistics', id: `KPI-${arg.cardKey}` }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
 	}),
 })
 
-export const { useGetTicketStatisticsQuery, useGetStatisticsTicketsQuery } = statisticsApiSlice
+export const { useGetTicketStatisticsQuery, useGetStatisticsTicketsQuery, useGetKpiTicketsQuery } = statisticsApiSlice

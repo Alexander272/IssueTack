@@ -6,10 +6,11 @@ import { toast } from 'react-toastify'
 import type { ITask, ITaskDTO } from '../../types/task'
 import type { FormValues } from './types'
 import { useAppSelector } from '@/hooks/redux'
-import { getIsManager, getCurrentCapabilities } from '@/features/user/userSlice'
+import { getCurrentCapabilities, getHasNoGroups, getIsManager } from '@/features/user/userSlice'
 import { useUpdateTaskMutation } from '../../tasksApiSlice'
 import { AdvancedSettingsSection } from '../TaskCreateForm/AdvancedSettingsSection'
 import { CategoryAndSiteSection } from '../TaskCreateForm/CategoryAndSiteSection'
+import { CustomerAndDateSection } from '../TaskCreateForm/CustomerAndDateSection'
 import { SectionCard } from '../TaskCreateForm/SectionCard'
 import { fieldLabelSx } from '../TaskCreateForm/styles'
 
@@ -79,7 +80,10 @@ const EditDescriptionSection = ({ readOnly }: { readOnly: boolean }) => {
 
 export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChange }: Props) => {
 	const isManager = useAppSelector(getIsManager)
+	const hasNoGroups = useAppSelector(getHasNoGroups)
 	const capabilities = useAppSelector(getCurrentCapabilities)
+	const canEditNotifiers = !hasNoGroups
+	const canEditOwnerAndDueDate = !isManager && canEditNotifiers && task.status === 'open'
 
 	const [updateTask, { isLoading }] = useUpdateTaskMutation()
 
@@ -105,6 +109,7 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 			siteId: task.site.id,
 			dueDate: task.dueDate ?? null,
 			subtasks: [],
+			notifierIds: (task.notifiers ?? []).map(u => u.id),
 			equipmentId: task.equipment?.id ?? null,
 		},
 		mode: 'onTouched',
@@ -132,6 +137,7 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 				managerId: task.manager?.id ?? null,
 				dueDate: data.dueDate || null,
 				equipmentId: data.equipmentId || null,
+				...(canEditNotifiers ? { notifierIds: data.notifierIds ?? [] } : {}),
 			}
 
 			try {
@@ -168,8 +174,24 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 								number={3}
 								autoAssign={false}
 								isAdmin={task.access?.isAdmin ?? false}
-								isManager={task.access?.isManager ?? false}
 								canEditDueDate={Boolean(task.access?.isManager) || capabilities.isRealmAdmin}
+								creatorId={task.creator.id}
+							/>
+						)}
+
+						{!isManager && canEditNotifiers && (
+							<CustomerAndDateSection
+								number={3}
+								creatorId={task.creator.id}
+								title={canEditOwnerAndDueDate ? 'Заказчик, сроки и уведомления' : 'Уведомлять'}
+								subtitle={
+									canEditOwnerAndDueDate
+										? 'Пока задача новая, можно изменить заказчика, срок и список уведомляемых'
+										: ''
+								}
+								showOwner={canEditOwnerAndDueDate}
+								showDueDate={canEditOwnerAndDueDate}
+								showNotifierFieldLabel={canEditOwnerAndDueDate}
 							/>
 						)}
 

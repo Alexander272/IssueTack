@@ -129,6 +129,12 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 		prefix = "Важная задача"
 	case string(models.NotificationTicketReminderUrgent):
 		prefix = "Срочная задача!"
+	case string(models.NotificationTicketDueDateRequested):
+		prefix = "Запрос на перенос срока"
+	case string(models.NotificationTicketDueDateApproved):
+		prefix, action = "Задача", "срок перенесён"
+	case string(models.NotificationTicketDueDateRejected):
+		prefix, action = "Задача", "запрос отклонён"
 	default:
 		prefix = "Уведомление"
 	}
@@ -145,6 +151,30 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 
 	links := n.links(ctx, user, ticket)
 
+	// Детали переноса срока для типов, связанных с запросом/решениями по сроку.
+	dueDateDetails := ""
+	switch notif.Type {
+	case string(models.NotificationTicketDueDateRequested), string(models.NotificationTicketDueDateApproved), string(models.NotificationTicketDueDateRejected):
+		var payload struct {
+			ProposedDueDate string `json:"proposed_due_date"`
+			Reason          string `json:"reason"`
+		}
+		if len(notif.Data) > 0 {
+			if err := json.Unmarshal(notif.Data, &payload); err != nil {
+				payload = struct {
+					ProposedDueDate string `json:"proposed_due_date"`
+					Reason          string `json:"reason"`
+				}{}
+			}
+		}
+		if proposed := strings.TrimSpace(payload.ProposedDueDate); proposed != "" {
+			dueDateDetails = fmt.Sprintf("\nНовый срок: %s", proposed)
+		}
+		if reason := strings.TrimSpace(payload.Reason); reason != "" {
+			dueDateDetails += fmt.Sprintf("\nПричина: %s", reason)
+		}
+	}
+
 	if action != "" {
 		// «Задача №12 обновлена: title» — действие идёт после номера.
 		text := fmt.Sprintf("**%s%s %s: %s**", prefix, number, action, title)
@@ -153,14 +183,20 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 				text += "\nЗаказчик: " + label
 			}
 		}
+		if ticket.Assignee != nil {
+			if label := userShortLabel(ticket.Assignee); label != "" {
+				text += "\nИсполнитель: " + label
+			}
+		}
 		if notif.Type == string(models.NotificationTicketOverdue) && ticket.DueDate != nil {
 			text += fmt.Sprintf("\nДедлайн: %s", ticket.DueDate.Format("02.01.2006 15:04"))
 		}
 		if notif.Type == string(models.NotificationTicketUpdated) {
-			if details := n.changesSummary(user.ID, notif.Data); details != "" {
+			if details := n.changesSummary(ctx, user.ID, notif.Data); details != "" {
 				text += "\n\n" + details
 			}
 		}
+		text += dueDateDetails
 		return text + links
 	}
 
@@ -180,11 +216,21 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 				text += "\nЗаказчик: " + label
 			}
 		}
+		if ticket.Assignee != nil {
+			if label := userShortLabel(ticket.Assignee); label != "" {
+				text += "\nИсполнитель: " + label
+			}
+		}
 	} else {
 		text = fmt.Sprintf("**%s%s: %s**", prefix, number, title)
 		if ticket.Owner != nil {
 			if label := userShortLabel(ticket.Owner); label != "" {
 				text += "\nЗаказчик: " + label
+			}
+		}
+		if ticket.Assignee != nil {
+			if label := userShortLabel(ticket.Assignee); label != "" {
+				text += "\nИсполнитель: " + label
 			}
 		}
 	}
@@ -194,7 +240,7 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 	}
 
 	if notif.Type == string(models.NotificationTicketUpdated) {
-		if details := n.changesSummary(user.ID, notif.Data); details != "" {
+		if details := n.changesSummary(ctx, user.ID, notif.Data); details != "" {
 			text += "\n\n" + details
 		}
 	}
@@ -205,11 +251,33 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 		}
 	}
 
+	if notif.Type == string(models.NotificationTicketDueDateRequested) || notif.Type == string(models.NotificationTicketDueDateApproved) || notif.Type == string(models.NotificationTicketDueDateRejected) {
+		text += dueDateDetails
+	}
+
 	return text + links
 }
 
-// userShortLabel собирает «Фамилия Имя» заказчика для DM; без ФИО — username.
+// userShortLabel собирает «Фамилия Имя» пользователя для DM; без ФИО — username.
 func userShortLabel(u *models.UserShort) string {
+	if u == nil {
+		return ""
+	}
+	name := strings.TrimSpace(u.LastName + " " + u.FirstName)
+	if name == "" {
+		return u.Username
+	}
+	return name
+}
+
+func (n *mattermostNotifier) resolveUserName(ctx context.Context, id uuid.UUID) string {
+	if n.users == nil || id == uuid.Nil {
+		return ""
+	}
+	u, err := n.users.GetByID(ctx, id)
+	if err != nil || u == nil {
+		return ""
+	}
 	name := strings.TrimSpace(u.LastName + " " + u.FirstName)
 	if name == "" {
 		return u.Username
@@ -309,11 +377,12 @@ var changeTagLabels = map[models.ActivityType]string{
 	models.ActionDueDateChanged:     "Срок",
 	models.ActionSiteChanged:        "Площадка",
 	models.ActionCategoryChanged:    "Категория",
+	models.ActionNotifiersChanged:   "Наблюдатели",
 }
 
 // changesSummary превращает сводку изменений тикета (поле data.changes) в многострочный
 // текст вида «• поле: старое → новое». Возвращает пустую строку, если изменений нет.
-func (n *mattermostNotifier) changesSummary(userID uuid.UUID, data json.RawMessage) string {
+func (n *mattermostNotifier) changesSummary(ctx context.Context, userID uuid.UUID, data json.RawMessage) string {
 	if len(data) == 0 {
 		return ""
 	}
@@ -329,7 +398,7 @@ func (n *mattermostNotifier) changesSummary(userID uuid.UUID, data json.RawMessa
 	}
 	lines := make([]string, 0, len(changes))
 	for _, ch := range changes {
-		if line, ok := n.changeLine(userID, ch); ok {
+		if line, ok := n.changeLine(ctx, userID, ch); ok {
 			lines = append(lines, line)
 		}
 	}
@@ -338,13 +407,14 @@ func (n *mattermostNotifier) changesSummary(userID uuid.UUID, data json.RawMessa
 
 // changeLine превращает одно изменение тикета в строку сводки. При передаче заявки
 // новому исполнителю пишем «Вам назначена задача.» без id, остальным получателям —
-// нейтрально. Поля с id (заказчик/начальник/группа/категория/площадка) выводятся без
-// значений. Неизвестный тег строку не даёт, чтобы в DM не просочился английский тег.
-func (n *mattermostNotifier) changeLine(userID uuid.UUID, ch *models.FieldChange) (string, bool) {
+// имя нового исполнителя. Поля с id (заказчик/начальник/группа/категория/площадка)
+// выводятся без значений. Неизвестный тег строку не даёт, чтобы в DM не просочился
+// английский тег.
+func (n *mattermostNotifier) changeLine(ctx context.Context, userID uuid.UUID, ch *models.FieldChange) (string, bool) {
 	switch ch.Tag {
 	case models.ActionAssigned, models.ActionAssignChanged:
 		if ch.NewVal == "" || ch.NewVal == "none" {
-			return "", false
+			return "Исполнитель: не назначен", true
 		}
 		newAssigneeID, err := uuid.Parse(ch.NewVal)
 		if err != nil {
@@ -353,11 +423,14 @@ func (n *mattermostNotifier) changeLine(userID uuid.UUID, ch *models.FieldChange
 		if newAssigneeID == userID {
 			return "Вам назначена задача.", true
 		}
-		verb := "назначен"
-		if ch.Tag == models.ActionAssignChanged {
-			verb = "изменён"
+		label := n.resolveUserName(ctx, newAssigneeID)
+		if label == "" {
+			if ch.Tag == models.ActionAssignChanged {
+				return "Исполнитель: изменён", true
+			}
+			return "Исполнитель: назначен", true
 		}
-		return "Исполнитель: " + verb, true
+		return "Исполнитель: " + label, true
 
 	case models.ActionOwnerChanged:
 		return "Заказчик: изменён", true
@@ -371,6 +444,8 @@ func (n *mattermostNotifier) changeLine(userID uuid.UUID, ch *models.FieldChange
 		return "Площадка: изменена", true
 	case models.ActionCategoryChanged:
 		return "Категория: изменена", true
+	case models.ActionNotifiersChanged:
+		return "Наблюдатели: изменены", true
 	}
 
 	label, ok := changeTagLabels[ch.Tag]

@@ -120,12 +120,20 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 		}
 	} else {
 		if err := s.ticketAccess.CheckWorkAccess(ctx, check); err != nil {
-			// Заказчик (owner) — полноправный участник заявки, но не «рабочий»: он
-			// может комментировать активную заявку, не получая work-доступа (иначе
-			// получил бы и смену статусов в обход ownerTransitionAllowed). Внутренние
-			// комментарии остаются за исполнителем/менеджером группы, поэтому owner
-			// пропускается только для внешних комментариев.
-			if dto.IsInternal || ticket.Owner == nil || ticket.Owner.ID != dto.UserID {
+			// Заказчик (owner) и наблюдатель («Уведомлять») — полноправные участники
+			// заявки по чтению, но не «рабочие»: они могут оставлять внешний комментарий
+			// к активной заявке, не получая work-доступа (иначе получили бы и смену
+			// статусов в обход ownerTransitionAllowed). Внутренние комментарии остаются
+			// за исполнителем/менеджером группы.
+			isOwner := ticket.Owner != nil && ticket.Owner.ID == dto.UserID
+			isNotifier := false
+			for i := range ticket.Notifiers {
+				if ticket.Notifiers[i].ID == dto.UserID {
+					isNotifier = true
+					break
+				}
+			}
+			if dto.IsInternal || (!isOwner && !isNotifier) {
 				return nil, err
 			}
 		}

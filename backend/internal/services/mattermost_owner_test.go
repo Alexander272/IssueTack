@@ -44,7 +44,9 @@ type ownerOpts struct {
 	// categories/sites — справочники диалога; для проверки порядка полей.
 	categories []*models.Category
 	sites      []*models.Site
-	mmUserID   string
+	// executors — исполнители realm для select «Исполнитель» в диалоге.
+	executors []*models.UserData
+	mmUserID  string
 }
 
 func ownerService(t *testing.T, opts ownerOpts) *ownerFixture {
@@ -81,6 +83,12 @@ func ownerService(t *testing.T, opts ownerOpts) *ownerFixture {
 		all = opts.customers
 	}
 	users.On("GetAll", mock.Anything, mock.Anything).Return(all, nil)
+
+	executors := opts.executors
+	if executors == nil {
+		executors = []*models.UserData{{ID: uuid.New(), Username: "ex", IsActive: true}}
+	}
+	users.On("GetByMembership", mock.Anything, realmID, models.MembershipExecutors).Return(executors, nil)
 
 	access.On("IsRealmSupervisor", mock.Anything, userID, realmID.String()).Return(opts.role.isSupervisor, nil)
 
@@ -273,26 +281,31 @@ func TestDialogOpen_OwnerSelect_SkipsInactive(t *testing.T) {
 
 // TestDialogOpen_FieldOrder закрепляет порядок полей диалога: он повторяет
 // форму создания заявки (веб TaskCreateForm и плагин CreateTab) —
-// Категория → Площадка → Заголовок → Описание → Заказчик.
+// Категория → Площадка → Заголовок → Описание → Заказчик → Приоритет → Исполнитель
+// (у менеджера; у исполнителя состав совпадает с веб-формой — секция
+// «Настройки заявки» вместо «Расширенных настроек»).
 func TestDialogOpen_FieldOrder(t *testing.T) {
+	executorID := uuid.New()
 	f := ownerService(t, ownerOpts{
 		role:      ownerRole{isSupervisor: true},
 		customers: []*models.UserData{{ID: uuid.New(), Username: "client", IsActive: true}},
 		categories: []*models.Category{
 			{ID: uuid.New(), Name: "Оборудование"},
 		},
-		sites: []*models.Site{{ID: uuid.New(), Name: "Головной офис"}},
+		sites:     []*models.Site{{ID: uuid.New(), Name: "Головной офис"}},
+		executors: []*models.UserData{{ID: executorID, Username: "executor", IsActive: true}},
 	})
 
 	elements := f.openDialog(t)
-	require.Len(t, elements, 5)
+	require.Len(t, elements, 7)
 	assert.Equal(t,
-		[]string{"categoryId", "siteId", "title", "description", "ownerId"},
-		[]string{elements[0].Name, elements[1].Name, elements[2].Name, elements[3].Name, elements[4].Name})
+		[]string{"categoryId", "siteId", "title", "description", "ownerId", "priority", "assigneeId"},
+		[]string{elements[0].Name, elements[1].Name, elements[2].Name, elements[3].Name, elements[4].Name, elements[5].Name, elements[6].Name})
 }
 
-// TestDialogOpen_FieldOrder_PlainRequester — у чистого заявителя поля «Заказчик»
-// нет, остальные идут в том же порядке.
+// TestDialogOpen_FieldOrder_PlainRequester — у чистого заявителя без групп нет
+// ни заказчика, ни приоритета/исполнителя: заявка создаётся на него с дефолтами
+// категории, расширенные поля секции не рендерятся.
 func TestDialogOpen_FieldOrder_PlainRequester(t *testing.T) {
 	f := ownerService(t, ownerOpts{
 		role:       ownerRole{},
@@ -305,6 +318,76 @@ func TestDialogOpen_FieldOrder_PlainRequester(t *testing.T) {
 	assert.Equal(t,
 		[]string{"categoryId", "siteId", "title", "description"},
 		[]string{elements[0].Name, elements[1].Name, elements[2].Name, elements[3].Name})
+}
+
+// TestDialogOpen_PriorityAndAssignee_ForManager — у менеджера (начальник области)
+// в диалоге есть селект «Приоритет» и «Исполнитель», как в веб-форме.
+func TestDialogOpen_PriorityAndAssignee_ForManager(t *testing.T) {
+	executorID := uuid.New()
+	f := ownerService(t, ownerOpts{
+		role:      ownerRole{isSupervisor: true},
+		customers: []*models.UserData{{ID: uuid.New(), Username: "client", IsActive: true}},
+		categories: []*models.Category{
+			{ID: uuid.New(), Name: "Оборудование"},
+		},
+		sites:     []*models.Site{{ID: uuid.New(), Name: "Головной офис"}},
+		executors: []*models.UserData{{ID: executorID, Username: "executor", IsActive: true}},
+	})
+
+	elements := f.openDialog(t)
+	priorityEl := dialogElement(t, elements, "priority")
+	require.NotNil(t, priorityEl, "менеджер видит выбор приоритета")
+	assert.Equal(t, "select", priorityEl.Type)
+	require.Len(t, priorityEl.Options, 4)
+	assert.Equal(t, "low", priorityEl.Options[0].Value)
+	assert.Equal(t, "urgent", priorityEl.Options[3].Value)
+
+	assigneeEl := dialogElement(t, elements, "assigneeId")
+	require.NotNil(t, assigneeEl, "менеджер видит выбор исполнителя")
+	assert.Equal(t, "select", assigneeEl.Type)
+	require.Len(t, assigneeEl.Options, 1)
+	assert.Equal(t, executorID.String(), assigneeEl.Options[0].Value)
+}
+
+// TestDialogOpen_PriorityAndAssignee_ForExecutor — у исполнителя (участника
+// группы) поля те же, что у менеджера: он сам может выбрать исполнителя, приоритет
+// и срок (зеркало секции «Настройки заявки» в веб-форме).
+func TestDialogOpen_PriorityAndAssignee_ForExecutor(t *testing.T) {
+	executorID := uuid.New()
+	f := ownerService(t, ownerOpts{
+		role:      ownerRole{memberGroups: []uuid.UUID{uuid.New()}},
+		customers: []*models.UserData{{ID: uuid.New(), Username: "client", IsActive: true}},
+		categories: []*models.Category{
+			{ID: uuid.New(), Name: "Оборудование"},
+		},
+		sites:     []*models.Site{{ID: uuid.New(), Name: "Головной офис"}},
+		executors: []*models.UserData{{ID: executorID, Username: "executor", IsActive: true}},
+	})
+
+	elements := f.openDialog(t)
+	assert.NotNil(t, dialogElement(t, elements, "priority"))
+	assert.NotNil(t, dialogElement(t, elements, "assigneeId"))
+}
+
+func TestDialogSubmit_SetsPriorityAndAssignee(t *testing.T) {
+	executorID := uuid.New()
+	f := ownerService(t, ownerOpts{
+		role:      ownerRole{isSupervisor: true},
+		customers: []*models.UserData{{ID: uuid.New(), Username: "client", IsActive: true}},
+		categories: []*models.Category{
+			{ID: uuid.New(), Name: "Оборудование"},
+		},
+		sites:     []*models.Site{{ID: uuid.New(), Name: "Головной офис"}},
+		executors: []*models.UserData{{ID: executorID, Username: "executor", IsActive: true}},
+	})
+
+	dto := f.submitDialog(t, map[string]interface{}{
+		"priority":   "high",
+		"assigneeId": executorID.String(),
+	})
+	require.NotNil(t, dto.AssigneeID)
+	assert.Equal(t, executorID, *dto.AssigneeID, "исполнитель из диалога сохраняется в заявке")
+	assert.Equal(t, models.PriorityHigh, dto.Priority, "приоритет из диалога сохраняется в заявке")
 }
 
 func TestDialogSubmit_SetsOwnerFromSelection(t *testing.T) {

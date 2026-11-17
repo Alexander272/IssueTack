@@ -9,8 +9,6 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
-	"github.com/Alexander272/IssueTrack/backend/pkg/error_bot"
-	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/google/uuid"
 )
 
@@ -28,6 +26,7 @@ type TicketService struct {
 	access        TicketAccessChecker
 	users         Users
 	sites         Sites
+	dueRequests   repository.DueDateRequests
 }
 
 // NewTicketService создаёт новый сервис тикетов на основе переданных зависимостей.
@@ -44,22 +43,24 @@ func NewTicketService(deps *TicketDeps) *TicketService {
 		access:        deps.Access,
 		users:         deps.Users,
 		sites:         deps.Sites,
+		dueRequests:   deps.DueDateRequests,
 	}
 }
 
 // TicketDeps — зависимости, необходимые для создания TicketService.
 type TicketDeps struct {
-	Repo          repository.Tickets
-	TxManager     TransactionManager
-	Logs          ActivityLog
-	Subtasks      Subtasks
-	Attachments   Attachments
-	Notifications Notifications
-	Groups        Groups
-	Categories    Categories
-	Access        TicketAccessChecker
-	Users         Users
-	Sites         Sites
+	Repo            repository.Tickets
+	TxManager       TransactionManager
+	Logs            ActivityLog
+	Subtasks        Subtasks
+	Attachments     Attachments
+	Notifications   Notifications
+	Groups          Groups
+	Categories      Categories
+	Access          TicketAccessChecker
+	Users           Users
+	Sites           Sites
+	DueDateRequests repository.DueDateRequests
 }
 
 // Tickets — интерфейс сервиса тикетов: описывает чтение, создание,
@@ -96,6 +97,12 @@ type Tickets interface {
 	UploadAttachment(ctx context.Context, tx postgres.Tx, dto *models.UploadAttachmentDTO) (*models.Attachment, error)
 	// AutoCloseResolved закрывает resolved-тикеты по истечении задержки и возвращает их количество.
 	AutoCloseResolved(ctx context.Context, delay time.Duration) (int64, error)
+	// CreateDueDateRequest создаёт запрос исполнителем на перенос срока заявки.
+	CreateDueDateRequest(ctx context.Context, dto *models.CreateDueDateRequestDTO) (*models.DueDateRequest, error)
+	// GetDueDateRequest возвращает активный (pending) запрос тикета на перенос срока.
+	GetDueDateRequest(ctx context.Context, dto *models.GetDueDateRequestDTO) (*models.DueDateRequest, error)
+	// DecideDueDateRequest принимает решение менеджера по запросу на перенос срока.
+	DecideDueDateRequest(ctx context.Context, dto *models.DecideDueDateRequestDTO) (*models.DueDateRequest, error)
 }
 
 // Get возвращает список тикетов и общее количество с учётом прав актора:
@@ -297,20 +304,9 @@ func (s *TicketService) GetByID(ctx context.Context, req *models.GetTicketByIdDT
 	return data, nil
 }
 
-// notifyBestEffort отправляет уведомление после фикса тикета. Ошибки
-// уведомления не должны превращать уже совершённую операцию в 500 для клиента,
-// но обязательно сигнализируются разработчику (error_bot) и в лог.
-func (s *TicketService) notifyBestEffort(action string, entityID uuid.UUID, entity string, notifyErr error) {
-	if notifyErr == nil {
-		return
-	}
-	errMsg := fmt.Sprintf("failed to send notification (%s): %v", action, notifyErr)
-	logger.Error(errMsg,
-		logger.StringAttr("entity_id", entityID.String()),
-		logger.StringAttr("entity", entity),
-	)
-	error_bot.Send(nil, errMsg, map[string]string{
-		action:      entity,
-		"entity_id": entityID.String(),
-	})
-}
+// активен, состоит в области и является участником хотя бы одной группы области.
+
+// транзакции; уведомления подписчиков отправляет после коммита.
+// по переносу срока и смену срока одной транзакцией).
+// коммита: получатели не должны узнать об изменении, которое откатилось.
+// отказ (нет смысла брать собственную заявку).

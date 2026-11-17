@@ -9,6 +9,7 @@ import { useGetAllCategoriesQuery } from '@/features/categories/categoriesApiSli
 import { useGetAllGroupsQuery } from '@/features/groups/groupsApiSlice'
 import { useGetRealmUsersQuery } from '@/features/user/usersApiSlice'
 import { CustomerSelector } from './CustomerSelector'
+import { NotifierSelector } from './NotifierSelector'
 import { SectionCard } from './SectionCard'
 import { PriorityCard } from './PriorityCard'
 import { fieldLabelSx } from './styles'
@@ -19,31 +20,42 @@ type Props = {
 	number?: number
 	autoAssign?: boolean
 	isAdmin?: boolean
-	isManager?: boolean
 	/** Можно ли менять срок: только менеджер группы заявки или админ реалма. */
 	canEditDueDate?: boolean
+	/** Можно ли выбирать исполнителя: менеджер группы/админ реалма или исполнитель области. */
+	canPickAssignee?: boolean
+	/** Автор заявки — исключается из списка «Уведомлять». */
+	creatorId?: string | null
+	title?: string
+	subtitle?: string
 }
 
 export const AdvancedSettingsSection = ({
 	number = 4,
 	autoAssign = true,
 	isAdmin = true,
-	isManager = true,
 	canEditDueDate = true,
+	canPickAssignee = true,
+	creatorId = null,
+	title = 'Расширенные настройки',
+	subtitle = '',
 }: Props) => {
 	const { control, setValue } = useFormContext<FormValues>()
 	const { data: categoriesData } = useGetAllCategoriesQuery()
 	const { data: groupsData } = useGetAllGroupsQuery()
 	const { data: ownersData } = useGetRealmUsersQuery('all')
 	const { data: executorsData } = useGetRealmUsersQuery('executors')
+	const { data: allUsersData } = useGetRealmUsersQuery('all')
 
 	const categories = useMemo(() => categoriesData?.data ?? [], [categoriesData])
 	const groups = useMemo(() => groupsData?.data ?? [], [groupsData])
 	const owners = useMemo(() => ownersData?.data ?? [], [ownersData])
 	const executors = useMemo(() => executorsData?.data ?? [], [executorsData])
+	const allUsers = useMemo(() => allUsersData?.data ?? [], [allUsersData])
 
 	const selectedCategoryId = useWatch({ control, name: 'categoryId' })
 	const selectedGroupId = useWatch({ control, name: 'groupId' })
+	const selectedOwnerId = useWatch({ control, name: 'ownerId' })
 
 	// Авто-назначение должно срабатывать только когда пользователь реально меняет
 	// категорию/группу. При восстановлении черновика categoryId/groupId уже
@@ -82,7 +94,7 @@ export const AdvancedSettingsSection = ({
 	}, [selectedGroupId, groups, autoAssign, setValue])
 
 	return (
-		<SectionCard number={number} title='Расширенные настройки' subtitle='Доступно менеджерам'>
+		<SectionCard number={number} title={title} subtitle={subtitle}>
 			<Stack sx={{ gap: 2 }}>
 				<Box>
 					<Typography variant='caption' sx={fieldLabelSx}>
@@ -116,16 +128,40 @@ export const AdvancedSettingsSection = ({
 					/>
 				</Box>
 
-				<Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
+				<Box
+					sx={{
+						display: 'grid',
+						gridTemplateColumns: { xs: 'minmax(0, 1fr)', sm: 'minmax(0, 1fr) minmax(0, 1fr)' },
+						gap: 2,
+					}}
+				>
 					<Box>
 						<Typography variant='caption' sx={fieldLabelSx}>
-							Заявитель
+							Заказчик
 						</Typography>
 						<Controller
 							control={control}
 							name='ownerId'
 							render={({ field }) => (
 								<CustomerSelector options={owners} value={field.value} onChange={field.onChange} />
+							)}
+						/>
+					</Box>
+
+					<Box>
+						<Typography variant='caption' sx={fieldLabelSx}>
+							Уведомлять
+						</Typography>
+						<Controller
+							control={control}
+							name='notifierIds'
+							render={({ field }) => (
+								<NotifierSelector
+									options={allUsers}
+									value={field.value ?? []}
+									onChange={field.onChange}
+									excludeIds={[creatorId, selectedOwnerId]}
+								/>
 							)}
 						/>
 					</Box>
@@ -146,7 +182,7 @@ export const AdvancedSettingsSection = ({
 									disabled={!isAdmin}
 									noOptionsText='Нет групп'
 									renderInput={params => (
-										<TextField {...params} size='small' placeholder='Авто (по категории)' />
+										<TextField {...params} size='small' placeholder={autoAssign ? 'Авто (по категории)' : 'Выберите группу'} />
 									)}
 								/>
 							)}
@@ -166,17 +202,17 @@ export const AdvancedSettingsSection = ({
 									getOptionLabel={u => `${u.lastName} ${u.firstName} (${u.username})`}
 									value={executors.find(u => u.id === field.value) ?? null}
 									onChange={(_, value) => field.onChange(value?.id ?? null)}
-									disabled={!isAdmin && !isManager}
+									disabled={!canPickAssignee}
 									noOptionsText='Нет исполнителей'
 									renderInput={params => (
-										<TextField {...params} size='small' placeholder='Авто (по группе)' />
+										<TextField {...params} size='small' placeholder={autoAssign ? 'Авто (по группе)' : 'Выберите исполнителя'} />
 									)}
 								/>
 							)}
 						/>
 					</Box>
 
-					<Box>
+					<Box sx={{ gridColumn: { xs: 'span 1', sm: 'span 2' } }}>
 						<Typography variant='caption' sx={fieldLabelSx}>
 							Срок выполнения
 						</Typography>

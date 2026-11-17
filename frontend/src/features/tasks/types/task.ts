@@ -47,6 +47,10 @@ export interface IAccessFlags {
 	isAdmin: boolean
 	isManager: boolean
 	allowedStatuses: TicketStatus[]
+	/** Могут ли текущий пользователь-исполнитель запросить перенос срока (при установленном сроке). */
+	canRequestDueDate?: boolean
+	/** Могут ли текущий пользователь (менеджер группы/начальник области) утверждать или отклонять запрос переноса срока. */
+	canDecideDueDate?: boolean
 }
 
 export interface ITask {
@@ -71,8 +75,27 @@ export interface ITask {
 	updatedAt: string
 	subtasks?: ISubtask[]
 	attachments?: IAttachment[]
+	notifiers?: IUserShort[]
 	access?: IAccessFlags
+	/** Запрос исполнителя на перенос срока (только когда есть pending-решение менеджера). */
+	dueDateRequest?: IDueDateRequest | null
 	equipment?: IEquipmentShort | null
+}
+
+// Запрос исполнителя на перенос срока заявки (статус pending → approved/rejected).
+export interface IDueDateRequest {
+	id: string
+	ticketId: string
+	requesterId: string
+	requester?: IUserShort | null
+	currentDueDate?: string | null
+	proposedDueDate: string
+	reason: string
+	status: 'pending' | 'approved' | 'rejected'
+	decidedBy?: string | null
+	decidedAt?: string | null
+	decisionComment?: string | null
+	createdAt: string
 }
 
 export interface ITaskFilter {
@@ -124,6 +147,8 @@ export interface ITaskDTO {
 	resolvedAt?: string | null
 	/** Подзадачи, создаваемые вместе с заявкой (автор, статус, приоритет и порядок проставит бэкенд). */
 	subtasks?: ISubtaskCreateDTO[]
+	/** Наблюдатели заявки (список «Уведомлять»). При обновлении — полная замена, если передано. */
+	notifierIds?: string[]
 	equipmentId?: string | null
 }
 

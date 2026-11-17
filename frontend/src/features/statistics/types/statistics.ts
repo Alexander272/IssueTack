@@ -1,3 +1,8 @@
+export interface IStatisticsSubtasks {
+	withSubtasks: number
+	totalSubtasks: number
+}
+
 export interface IStatisticsSummary {
 	total: number
 	active: number
@@ -5,7 +10,10 @@ export interface IStatisticsSummary {
 	resolved: number
 	totalPrev: number
 	resolvedPrev: number
+	subtasks: Record<KpiCardKey, IStatisticsSubtasks>
 }
+
+export type KpiCardKey = 'total' | 'active' | 'overdue' | 'resolved'
 
 export interface IStatisticsBucket {
 	id: string
@@ -21,8 +29,10 @@ export interface IStatusBucket {
 export interface IWorkloadBucket {
 	userId: string
 	name: string
-	active: number
-	total: number
+	activeTasks: number
+	activeSubtasks: number
+	closedTasks: number
+	closedSubtasks: number
 }
 
 // IByOwnerBucket — разрез по заказчику. active/total нужны для двухкольцевой
@@ -54,7 +64,7 @@ export interface ITicketStatistics {
 export type StatisticsGranularity = 'day' | 'week' | 'month'
 
 // Разрез drill-down статистики: кого показать — исполнителя или заказчика.
-export type StatisticsDrilldownDimension = 'assignee' | 'owner'
+export type StatisticsDrilldownDimension = 'assignee' | 'owner' | 'category' | 'site' | 'group' | 'status'
 
 // Кольцо диаграммы: пусто — внутреннее (все заявки), active — внешнее активное,
 // closed — внешнее закрытое. Значения совпадают с параметром `ring` API.

@@ -150,17 +150,18 @@ func NewServices(deps *Deps) *Services {
 	// Тикеты собираются до своих потребителей (comments/subscriptions/favorites),
 	// чтобы те зависели от сервиса — владельца агрегата тикетов, а не от репозитория.
 	tickets := NewTicketService(&TicketDeps{
-		Repo:          deps.Repo.Tickets,
-		TxManager:     transaction,
-		Logs:          logs,
-		Subtasks:      subtasks,
-		Attachments:   attachments,
-		Notifications: notifications,
-		Groups:        groups,
-		Categories:    categories,
-		Access:        access,
-		Users:         users,
-		Sites:         sites,
+		Repo:            deps.Repo.Tickets,
+		TxManager:       transaction,
+		Logs:            logs,
+		Subtasks:        subtasks,
+		Attachments:     attachments,
+		Notifications:   notifications,
+		Groups:          groups,
+		Categories:      categories,
+		Access:          access,
+		Users:           users,
+		Sites:           sites,
+		DueDateRequests: deps.Repo.DueDateRequests,
 	})
 
 	// Оборудование заводит заявку в 1C:ERP при выдаче/возврате, а заявку создаёт

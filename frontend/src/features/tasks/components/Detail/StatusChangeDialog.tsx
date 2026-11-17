@@ -1,34 +1,61 @@
 import { useState } from 'react'
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from '@mui/material'
+import { DateTimePicker } from '@mui/x-date-pickers'
+import dayjs, { Dayjs } from 'dayjs'
+
+import { DateTextField } from '@/components/DatePicker/DatePicker'
 
 interface Props {
 	open: boolean
 	statusLabel: string
-	onSubmit: (text: string) => void
+	showDueDateField?: boolean
+	currentDueDate?: string | null
+	onSubmit: (text: string, dueDate?: string | null) => void
 	onCancel: () => void
 }
 
-export const StatusChangeDialog = ({ open, statusLabel, onSubmit, onCancel }: Props) => {
+export const StatusChangeDialog = ({
+	open,
+	statusLabel,
+	showDueDateField = false,
+	currentDueDate,
+	onSubmit,
+	onCancel,
+}: Props) => {
 	const [text, setText] = useState('')
 	const [submitted, setSubmitted] = useState(false)
+	const [dueDateIso, setDueDateIso] = useState<string | null>(currentDueDate ?? null)
 
 	const handleSubmit = () => {
 		if (!text.trim() || submitted) return
 		setSubmitted(true)
-		onSubmit(text.trim())
+		onSubmit(text.trim(), dueDateIso)
 		setText('')
 	}
 
 	const handleClose = () => {
 		setText('')
 		setSubmitted(false)
+		setDueDateIso(currentDueDate ?? null)
 		onCancel()
+	}
+
+	const handleDateChange = (newDate: Dayjs | null) => {
+		if (!newDate) {
+			setDueDateIso(null)
+			return
+		}
+
+		// Если срок уже был задан, сохраняем точное время.
+		// Если это новый срок, округляем до конца выбранного дня.
+		const iso = currentDueDate ? newDate.toISOString() : newDate.endOf('day').toISOString()
+		setDueDateIso(iso)
 	}
 
 	return (
 		<Dialog open={open} onClose={handleClose} maxWidth='sm' fullWidth>
 			<DialogTitle sx={{ fontSize: '1rem' }}>Комментарий к смене статуса</DialogTitle>
-			<DialogContent>
+			<DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
 				<TextField
 					autoFocus
 					multiline
@@ -44,10 +71,19 @@ export const StatusChangeDialog = ({ open, statusLabel, onSubmit, onCancel }: Pr
 					}}
 					fullWidth
 					sx={{
-						mt: 1,
-						'& .MuiOutlinedInput-root': { borderRadius: '8px', fontSize: '0.8125rem' },
+						'& .MuiOutlinedInput-root': { borderRadius: '8px' },
 					}}
 				/>
+				{showDueDateField && (
+					<DateTimePicker
+						label='Новый срок'
+						value={dueDateIso ? dayjs(dueDateIso) : null}
+						onChange={handleDateChange}
+						minDateTime={dayjs()}
+						slots={{ textField: DateTextField }}
+						slotProps={{ textField: { fullWidth: true, size: 'small' } }}
+					/>
+				)}
 			</DialogContent>
 			<DialogActions sx={{ px: 3, pb: 2 }}>
 				<Button onClick={handleClose} sx={{ textTransform: 'none' }}>

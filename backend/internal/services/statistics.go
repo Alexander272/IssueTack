@@ -26,6 +26,8 @@ type Statistics interface {
 	// GetTickets — drill-down статистики: заявки, стоящие за сектором диаграммы
 	// (нагрузка исполнителя / задачи от заказчика) с учётом того же среза и периода.
 	GetTickets(ctx context.Context, query models.StatisticsTicketsQuery) ([]*models.Ticket, int, error)
+	// GetKpiTickets — список заявок для KPI-карточки (total/active/overdue/resolved).
+	GetKpiTickets(ctx context.Context, query models.StatisticsKpiQuery) ([]*models.Ticket, int, error)
 }
 
 // StatisticsService реализует Statistics.
@@ -167,17 +169,26 @@ func (s *StatisticsService) Get(ctx context.Context, filter *models.StatisticsFi
 // фильтра те же, что у агрегатов, поэтому список совпадает с числом в секции.
 // Как и Get, требует актора: без него срез доступа не вычислить.
 func (s *StatisticsService) GetTickets(ctx context.Context, query models.StatisticsTicketsQuery) ([]*models.Ticket, int, error) {
-	if query.Filter == nil || query.Filter.Actor == nil {
-		return nil, 0, models.ErrPermissionDenied
-	}
-
-	scope, err := s.resolveScope(ctx, query.Filter.Actor.ID, query.Filter.RealmID)
+	scope, err := s.resolveScopeForTickets(ctx, query.Filter)
 	if err != nil {
 		return nil, 0, err
 	}
 	query.Scope = scope
 
 	return s.repo.GetStatisticsTickets(ctx, query)
+}
+
+// GetKpiTickets — список заявок для KPI-карточки. CardKey задаёт тип выборки:
+// total (созданные за период), active (активные), overdue (просроченные),
+// resolved (решённые за период). Срез доступа считается так же, как у агрегатов.
+func (s *StatisticsService) GetKpiTickets(ctx context.Context, query models.StatisticsKpiQuery) ([]*models.Ticket, int, error) {
+	scope, err := s.resolveScopeForTickets(ctx, query.Filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	query.Scope = scope
+
+	return s.repo.GetKpiTickets(ctx, query)
 }
 
 // resolveScope определяет срез видимых актору заявок. Приоритет ролей:
@@ -217,6 +228,15 @@ func (s *StatisticsService) resolveScope(ctx context.Context, userID uuid.UUID, 
 
 	scope.RequesterID = &userID
 	return scope, nil
+}
+
+// resolveScopeForTickets проверяет фильтр/актора и вычисляет срез доступа.
+// Возвращает ошибку при отсутствии актора, иначе — scope.
+func (s *StatisticsService) resolveScopeForTickets(ctx context.Context, filter *models.StatisticsFilter) (models.StatisticsScope, error) {
+	if filter == nil || filter.Actor == nil {
+		return models.StatisticsScope{}, models.ErrPermissionDenied
+	}
+	return s.resolveScope(ctx, filter.Actor.ID, filter.RealmID)
 }
 
 // autoGranularity выбирает шаг бакетов динамики по длине периода.

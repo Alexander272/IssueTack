@@ -9,8 +9,9 @@ import (
 )
 
 // TestReadableBy фиксирует scope поиска заявки по номеру: заявка доступна, если
-// пользователь её автор, заказчик, исполнитель ИЛИ она в его группе. Именно
-// отсутствие ветки creator_id и ломало «№N текст» у заявителя вне группы тикета.
+// пользователь её автор, заказчик, исполнитель, наблюдатель («Уведомлять»)
+// ИЛИ она в его группе. Именно отсутствие ветки creator_id и ломало «№N текст»
+// у заявителя вне группы тикета.
 func TestReadableBy(t *testing.T) {
 	userID, groupA, groupB := uuid.New(), uuid.New(), uuid.New()
 
@@ -19,8 +20,8 @@ func TestReadableBy(t *testing.T) {
 		w.readableBy(&models.MyWorkFilter{UserID: userID, GroupIDs: []uuid.UUID{groupA, groupB}})
 
 		assert.Len(t, w.clauses, 1)
-		assert.Equal(t, "(t.creator_id = $1 OR t.owner_id = $1 OR t.assignee_id = $1 OR t.group_id IN ($2,$3))", w.clauses[0])
-		assert.Equal(t, []any{userID, groupA, groupB}, w.args)
+		assert.Equal(t, "(t.creator_id = $1 OR t.owner_id = $1 OR t.assignee_id = $1 OR EXISTS (SELECT 1 FROM ticket_notifiers tn WHERE tn.ticket_id = t.id AND tn.user_id = $2) OR t.group_id IN ($3,$4))", w.clauses[0])
+		assert.Equal(t, []any{userID, userID, groupA, groupB}, w.args)
 	})
 
 	t.Run("without groups", func(t *testing.T) {
@@ -28,13 +29,35 @@ func TestReadableBy(t *testing.T) {
 		w.readableBy(&models.MyWorkFilter{UserID: userID})
 
 		assert.Len(t, w.clauses, 1)
-		assert.Equal(t, "(t.creator_id = $1 OR t.owner_id = $1 OR t.assignee_id = $1)", w.clauses[0])
-		assert.Equal(t, []any{userID}, w.args)
+		assert.Equal(t, "(t.creator_id = $1 OR t.owner_id = $1 OR t.assignee_id = $1 OR EXISTS (SELECT 1 FROM ticket_notifiers tn WHERE tn.ticket_id = t.id AND tn.user_id = $2))", w.clauses[0])
+		assert.Equal(t, []any{userID, userID}, w.args)
 	})
 
 	t.Run("nil filter adds nothing", func(t *testing.T) {
 		w := &whereBuilder{}
 		w.readableBy(nil)
+		assert.Empty(t, w.clauses)
+		assert.Empty(t, w.args)
+	})
+}
+
+// TestCreatorOrOwner фиксирует scope «автор ИЛИ заказчик ИЛИ наблюдатель»: заявка
+// видна создателю, владельцу (owner) и пользователю из списка «Уведомлять».
+func TestCreatorOrOwner(t *testing.T) {
+	userID := uuid.New()
+
+	t.Run("includes notifier", func(t *testing.T) {
+		w := &whereBuilder{}
+		w.creatorOrOwner(&userID)
+
+		assert.Len(t, w.clauses, 1)
+		assert.Equal(t, "(t.creator_id = $1 OR t.owner_id = $2 OR EXISTS (SELECT 1 FROM ticket_notifiers tn WHERE tn.ticket_id = t.id AND tn.user_id = $3))", w.clauses[0])
+		assert.Equal(t, []any{userID, userID, userID}, w.args)
+	})
+
+	t.Run("nil filter adds nothing", func(t *testing.T) {
+		w := &whereBuilder{}
+		w.creatorOrOwner(nil)
 		assert.Empty(t, w.clauses)
 		assert.Empty(t, w.args)
 	})

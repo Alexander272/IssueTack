@@ -31,14 +31,21 @@ func (s *TicketService) Take(ctx context.Context, dto *models.TakeTicketDTO) err
 		return err
 	}
 
-	// Заказчик (owner) с доступом только по владению не может «взять заявку»: его
-	// роль — просмотр/комментарий/решения владельца (см. ownerReadOnly). Автор без
-	// групп (IsCustomer) — тоже заказчик, а не рабочий, поэтому «взять» ему нельзя.
+	// Заказчик (owner) и наблюдатель («Уведомлять») с доступом только по чтению
+	// не могут «взять заявку»: их роль — просмотр/комментарий/решения владельца.
+	// Автор без групп (IsCustomer) — тоже заказчик, а не рабочий, поэтому «взять» ему нельзя.
 	ownerReadOnly, err := s.access.ownerReadOnly(ctx, ticket, dto.Actor.ID)
 	if err != nil {
 		return err
 	}
 	if ownerReadOnly {
+		return models.ErrPermissionDenied
+	}
+	notifierReadOnly, err := s.access.notifierReadOnly(ctx, ticket, dto.Actor.ID)
+	if err != nil {
+		return err
+	}
+	if notifierReadOnly {
 		return models.ErrPermissionDenied
 	}
 	if ticket.Creator.ID == dto.Actor.ID {
@@ -131,7 +138,7 @@ func (s *TicketService) Take(ctx context.Context, dto *models.TakeTicketDTO) err
 // Transfer передаёт заявку от текущего исполнителя другому участнику той же
 // группы. Только текущий исполнитель (assignee) может передать заявку; статус
 // при передаче не меняется. Замороженные (resolved/closed/cancelled) заявки
-// передавать нельзя.
+
 func (s *TicketService) Transfer(ctx context.Context, dto *models.TransferTicketDTO) error {
 	ticket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
 	if err != nil {
