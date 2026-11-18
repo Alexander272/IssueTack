@@ -27,6 +27,7 @@ type TicketService struct {
 	users         Users
 	sites         Sites
 	dueRequests   repository.DueDateRequests
+	favorites     FavoriteCleaner
 }
 
 // NewTicketService создаёт новый сервис тикетов на основе переданных зависимостей.
@@ -44,7 +45,15 @@ func NewTicketService(deps *TicketDeps) *TicketService {
 		users:         deps.Users,
 		sites:         deps.Sites,
 		dueRequests:   deps.DueDateRequests,
+		favorites:     deps.Favorites,
 	}
+}
+
+// FavoriteCleaner — узкий срез репозитория избранного, нужный тикетам: снятие
+// «закреплённых» (temporary) при заморозке заявки. Тикетам не нужны остальные
+// операции избранного, поэтому полный repository.TicketFavorites сюда не тянем.
+type FavoriteCleaner interface {
+	DeleteTemporaryByTickets(ctx context.Context, tx postgres.Tx, ticketIDs []uuid.UUID) error
 }
 
 // TicketDeps — зависимости, необходимые для создания TicketService.
@@ -61,6 +70,7 @@ type TicketDeps struct {
 	Users           Users
 	Sites           Sites
 	DueDateRequests repository.DueDateRequests
+	Favorites       FavoriteCleaner
 }
 
 // Tickets — интерфейс сервиса тикетов: описывает чтение, создание,

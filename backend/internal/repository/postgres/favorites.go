@@ -21,23 +21,18 @@ func NewFavoriteRepo(db *pgxpool.Pool, tr Transaction) *favoriteRepository {
 	}
 }
 
-// TempFavoriteView — временное избранное на resolved/closed заявке (для джоба очистки).
-type TempFavoriteView struct {
-	ID         uuid.UUID
-	UserID     uuid.UUID
-	TicketID   uuid.UUID
-	Status     models.TicketStatus
-	AssigneeID *uuid.UUID
-	RealmID    *uuid.UUID
-}
-
 type TicketFavorites interface {
 	Add(ctx context.Context, tx Tx, dto *models.FavoriteDTO) error
 	Remove(ctx context.Context, tx Tx, ticketID uuid.UUID, userID uuid.UUID, favoriteType models.FavoriteType) error
 	Exists(ctx context.Context, ticketID uuid.UUID, userID uuid.UUID, favoriteType models.FavoriteType) (bool, error)
 	GetByUser(ctx context.Context, userID uuid.UUID, favoriteType models.FavoriteType) ([]*models.TicketFavorite, error)
-	GetTemporaryExpired(ctx context.Context) ([]*TempFavoriteView, error)
-	DeleteByIDs(ctx context.Context, tx Tx, ids []uuid.UUID) error
+	// DeleteTemporaryByTickets снимает «закреплённые» (temporary) всех пользователей
+	// с указанных заявок. Вызывается при заморозке заявки (resolved/closed/cancelled)
+	// в той же транзакции, что и смена статуса.
+	DeleteTemporaryByTickets(ctx context.Context, tx Tx, ticketIDs []uuid.UUID) error
+	// DeleteTemporaryOnInactive — страховочная очистка джобом: снимает temporary
+	// со всех заявок в «замороженных» статусах. Возвращает число удалённых записей.
+	DeleteTemporaryOnInactive(ctx context.Context) (int64, error)
 }
 
 func (r *favoriteRepository) Add(ctx context.Context, tx Tx, dto *models.FavoriteDTO) error {
@@ -97,45 +92,33 @@ func (r *favoriteRepository) GetByUser(ctx context.Context, userID uuid.UUID, fa
 	return data, nil
 }
 
-func (r *favoriteRepository) GetTemporaryExpired(ctx context.Context) ([]*TempFavoriteView, error) {
-	query := fmt.Sprintf(`
-		SELECT f.id, f.user_id, f.ticket_id, t.status, t.assignee_id, t.realm_id
-		FROM %s f
-		JOIN %s t ON t.id = f.ticket_id
-		WHERE f.type = $1 AND t.status IN ($2, $3)`,
-		Tables.TicketFavorites, Tables.Tickets,
-	)
-
-	rows, err := r.db.Query(ctx, query, models.FavoriteTypeTemporary, models.StatusResolved, models.StatusClosed)
-	if err != nil {
-		return nil, MapError(fmt.Errorf("failed to get temporary favorites for cleanup: %w", err))
-	}
-	defer rows.Close()
-
-	var data []*TempFavoriteView
-	for rows.Next() {
-		var v TempFavoriteView
-		if err := rows.Scan(&v.ID, &v.UserID, &v.TicketID, &v.Status, &v.AssigneeID, &v.RealmID); err != nil {
-			return nil, MapError(fmt.Errorf("scan row error: %w", err))
-		}
-		data = append(data, &v)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
-	}
-
-	return data, nil
-}
-
-func (r *favoriteRepository) DeleteByIDs(ctx context.Context, tx Tx, ids []uuid.UUID) error {
-	if len(ids) == 0 {
+func (r *favoriteRepository) DeleteTemporaryByTickets(ctx context.Context, tx Tx, ticketIDs []uuid.UUID) error {
+	if len(ticketIDs) == 0 {
 		return nil
 	}
 
-	query := fmt.Sprintf(`DELETE FROM %s WHERE id = ANY($1)`, Tables.TicketFavorites)
-	_, err := r.getExec(tx).Exec(ctx, query, ids)
-	if err != nil {
-		return MapError(fmt.Errorf("failed to delete favorites: %w", err))
+	query := fmt.Sprintf(`DELETE FROM %s WHERE type = $1 AND ticket_id = ANY($2)`, Tables.TicketFavorites)
+	if _, err := r.getExec(tx).Exec(ctx, query, models.FavoriteTypeTemporary, ticketIDs); err != nil {
+		return MapError(fmt.Errorf("failed to delete temporary favorites: %w", err))
 	}
 	return nil
+}
+
+func (r *favoriteRepository) DeleteTemporaryOnInactive(ctx context.Context) (int64, error) {
+	query := fmt.Sprintf(`
+		DELETE FROM %s f
+		USING %s t
+		WHERE t.id = f.ticket_id
+			AND f.type = $1
+			AND t.status IN ($2, $3, $4)`,
+		Tables.TicketFavorites, Tables.Tickets,
+	)
+
+	cmd, err := r.db.Exec(ctx, query,
+		models.FavoriteTypeTemporary, models.StatusResolved, models.StatusClosed, models.StatusCancelled,
+	)
+	if err != nil {
+		return 0, MapError(fmt.Errorf("failed to delete temporary favorites on inactive tickets: %w", err))
+	}
+	return cmd.RowsAffected(), nil
 }

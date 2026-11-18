@@ -243,9 +243,12 @@ func (m *MockTicketsRepo) Delete(ctx context.Context, tx postgres.Tx, dto *model
 	args := m.Called(ctx, tx, dto)
 	return args.Error(0)
 }
-func (m *MockTicketsRepo) CloseResolved(ctx context.Context, cutoff time.Time) (int64, error) {
-	args := m.Called(ctx, cutoff)
-	return args.Get(0).(int64), args.Error(1)
+func (m *MockTicketsRepo) CloseResolved(ctx context.Context, tx postgres.Tx, cutoff time.Time) ([]uuid.UUID, error) {
+	args := m.Called(ctx, tx, cutoff)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
 }
 func (m *MockTicketsRepo) CountNotClosedByGroup(ctx context.Context, groupID uuid.UUID) (int, error) {
 	args := m.Called(ctx, groupID)
@@ -1133,6 +1136,30 @@ func (m *mockTransactionManager) WithinTransaction(ctx context.Context, fn func(
 	return fn(nil)
 }
 
+// fakeFavoriteCleaner — записывающий двойник FavoriteCleaner: проверяет, что
+// temporary-пины снимаются при заморозке (и не трогаются в остальных случаях).
+type fakeFavoriteCleaner struct {
+	calls [][]uuid.UUID
+	err   error
+}
+
+func (f *fakeFavoriteCleaner) DeleteTemporaryByTickets(_ context.Context, _ postgres.Tx, ticketIDs []uuid.UUID) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.calls = append(f.calls, append([]uuid.UUID(nil), ticketIDs...))
+	return nil
+}
+
+// ticketIDs возвращает все id, переданные в очистку, в порядке вызовов.
+func (f *fakeFavoriteCleaner) ticketIDs() []uuid.UUID {
+	ids := []uuid.UUID{}
+	for _, call := range f.calls {
+		ids = append(ids, call...)
+	}
+	return ids
+}
+
 type MockAccessPolicies struct {
 	mock.Mock
 }
@@ -1512,16 +1539,13 @@ func (m *MockTicketFavoritesRepo) GetByUser(ctx context.Context, userID uuid.UUI
 	}
 	return args.Get(0).([]*models.TicketFavorite), args.Error(1)
 }
-func (m *MockTicketFavoritesRepo) GetTemporaryExpired(ctx context.Context) ([]*postgres.TempFavoriteView, error) {
-	args := m.Called(ctx)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]*postgres.TempFavoriteView), args.Error(1)
-}
-func (m *MockTicketFavoritesRepo) DeleteByIDs(ctx context.Context, tx postgres.Tx, ids []uuid.UUID) error {
-	args := m.Called(ctx, tx, ids)
+func (m *MockTicketFavoritesRepo) DeleteTemporaryByTickets(ctx context.Context, tx postgres.Tx, ticketIDs []uuid.UUID) error {
+	args := m.Called(ctx, tx, ticketIDs)
 	return args.Error(0)
+}
+func (m *MockTicketFavoritesRepo) DeleteTemporaryOnInactive(ctx context.Context) (int64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(int64), args.Error(1)
 }
 
 type MockChecklistsRepo struct {

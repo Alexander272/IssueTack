@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -15,6 +16,13 @@ import (
 )
 
 func ticketServiceFixtures() (*MockTicketsRepo, *MockActivityLogService, *MockSubtaskService, *MockAttachmentService, *MockNotificationService, *MockGroupsRepo, *MockAccessPolicies, *TicketService) {
+	repo, logs, subtasks, attachments, notifications, groups, policies, svc, _ := ticketServiceFixturesWithFavorites()
+	return repo, logs, subtasks, attachments, notifications, groups, policies, svc
+}
+
+// ticketServiceFixturesWithFavorites — те же зависимости плюс записывающий двойник
+// очистки избранного: тестам заморозки нужно проверить, что temporary-пины сняты.
+func ticketServiceFixturesWithFavorites() (*MockTicketsRepo, *MockActivityLogService, *MockSubtaskService, *MockAttachmentService, *MockNotificationService, *MockGroupsRepo, *MockAccessPolicies, *TicketService, *fakeFavoriteCleaner) {
 	mockRepo := new(MockTicketsRepo)
 	mockLogs := new(MockActivityLogService)
 	mockSubtasks := new(MockSubtaskService)
@@ -23,6 +31,7 @@ func ticketServiceFixtures() (*MockTicketsRepo, *MockActivityLogService, *MockSu
 	mockGroups := new(MockGroupsRepo)
 	mockPolicies := new(MockAccessPolicies)
 	mockUsers := new(MockUserService)
+	favorites := &fakeFavoriteCleaner{}
 
 	svc := NewTicketService(&TicketDeps{
 		Repo:          mockRepo,
@@ -35,8 +44,9 @@ func ticketServiceFixtures() (*MockTicketsRepo, *MockActivityLogService, *MockSu
 		Categories:    new(MockCategoriesRepo),
 		Access:        NewTicketAccessService(mockRepo, mockGroups, mockPolicies),
 		Users:         mockUsers,
+		Favorites:     favorites,
 	})
-	return mockRepo, mockLogs, mockSubtasks, mockAttachments, mockNotifications, mockGroups, mockPolicies, svc
+	return mockRepo, mockLogs, mockSubtasks, mockAttachments, mockNotifications, mockGroups, mockPolicies, svc, favorites
 }
 
 // markUserAsEmployee помечает пользователя «рабочим»: у него есть хотя бы одна
@@ -1553,6 +1563,111 @@ func TestTicketService_Update_Assignee_SetResolved_Success(t *testing.T) {
 	mockRepo.AssertExpectations(t)
 }
 
+// Переход в «замороженный» статус снимает temporary-пины заявки у всех
+// пользователей — иначе пин остаётся навсегда (кнопка «Открепить» скрыта).
+func TestTicketService_Update_Resolve_CleansTemporaryFavorites(t *testing.T) {
+	mockRepo, mockLogs, mockSubtasks, _, mockNotifications, _, mockPolicies, svc, favorites := ticketServiceFixturesWithFavorites()
+
+	actorID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Status:   models.StatusResolved,
+		Provided: map[string]bool{"status": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:       ticketID,
+		Title:    "Original Ticket",
+		Status:   models.StatusInProgress,
+		Creator:  models.UserShort{ID: uuid.New()},
+		Assignee: &models.UserShort{ID: actorID},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockSubtasks.On("GetUnresolvedCount", mock.Anything, ticketID).Return(0, nil)
+	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{ticketID}, favorites.ticketIDs())
+}
+
+// Обычная смена статуса (в активный) пины не трогает.
+func TestTicketService_Update_ActiveStatus_KeepsTemporaryFavorites(t *testing.T) {
+	mockRepo, mockLogs, _, _, mockNotifications, _, mockPolicies, svc, favorites := ticketServiceFixturesWithFavorites()
+
+	actorID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Status:   models.StatusPending,
+		Provided: map[string]bool{"status": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:       ticketID,
+		Title:    "Original Ticket",
+		Status:   models.StatusInProgress,
+		Creator:  models.UserShort{ID: uuid.New()},
+		Assignee: &models.UserShort{ID: actorID},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	mockNotifications.On("TicketUpdated", mock.Anything, mock.AnythingOfType("*models.Ticket"), actorID, mock.Anything).Return(nil)
+
+	err := svc.Update(context.Background(), dto)
+	assert.NoError(t, err)
+	assert.Empty(t, favorites.ticketIDs())
+}
+
+// Сбой очистки откатывает и смену статуса: иначе заявка осталась бы замороженной
+// с пином, который нельзя снять из UI.
+func TestTicketService_Update_Resolve_CleanupError(t *testing.T) {
+	mockRepo, mockLogs, mockSubtasks, _, _, _, mockPolicies, svc, favorites := ticketServiceFixturesWithFavorites()
+
+	actorID := uuid.New()
+	ticketID := uuid.New()
+	dto := &models.TicketDTO{
+		ID:       &ticketID,
+		Actor:    &models.Actor{ID: actorID, Name: "test"},
+		Status:   models.StatusResolved,
+		Provided: map[string]bool{"status": true},
+	}
+
+	oldTicket := &models.Ticket{
+		ID:       ticketID,
+		Title:    "Original Ticket",
+		Status:   models.StatusInProgress,
+		Creator:  models.UserShort{ID: uuid.New()},
+		Assignee: &models.UserShort{ID: actorID},
+	}
+
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(oldTicket, nil)
+	mockSubtasks.On("GetUnresolvedCount", mock.Anything, ticketID).Return(0, nil)
+	mockRepo.On("Update", mock.Anything, nil, dto).Return(nil)
+	mockLogs.On("Create", mock.Anything, nil, mock.Anything).Return(nil)
+	favorites.err = errors.New("favorites are unavailable")
+
+	err := svc.Update(context.Background(), dto)
+	assert.Error(t, err)
+}
+
 func TestTicketService_Update_Resolve_UnresolvedSubtasks_Denied(t *testing.T) {
 	mockRepo, _, mockSubtasks, _, _, _, mockPolicies, svc := ticketServiceFixtures()
 
@@ -2359,14 +2474,40 @@ func TestTicketService_AutoCloseResolved_Disabled(t *testing.T) {
 }
 
 func TestTicketService_AutoCloseResolved_Success(t *testing.T) {
-	mockRepo, _, _, _, _, _, _, svc := ticketServiceFixtures()
+	mockRepo, _, _, _, _, _, _, svc, favorites := ticketServiceFixturesWithFavorites()
 
-	mockRepo.On("CloseResolved", mock.Anything, mock.Anything).Return(int64(3), nil)
+	closedIDs := []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}
+	mockRepo.On("CloseResolved", mock.Anything, nil, mock.Anything).Return(closedIDs, nil)
 
 	n, err := svc.AutoCloseResolved(context.Background(), 24*time.Hour)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(3), n)
+	// Temporary-пины закрываемых заявок снимаются в той же транзакции.
+	assert.ElementsMatch(t, closedIDs, favorites.ticketIDs())
 	mockRepo.AssertExpectations(t)
+}
+
+func TestTicketService_AutoCloseResolved_NoTickets(t *testing.T) {
+	mockRepo, _, _, _, _, _, _, svc, favorites := ticketServiceFixturesWithFavorites()
+
+	mockRepo.On("CloseResolved", mock.Anything, nil, mock.Anything).Return([]uuid.UUID{}, nil)
+
+	n, err := svc.AutoCloseResolved(context.Background(), 24*time.Hour)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), n)
+	assert.Empty(t, favorites.ticketIDs())
+}
+
+func TestTicketService_AutoCloseResolved_CleanupError(t *testing.T) {
+	mockRepo, _, _, _, _, _, _, svc, favorites := ticketServiceFixturesWithFavorites()
+
+	closedIDs := []uuid.UUID{uuid.New()}
+	mockRepo.On("CloseResolved", mock.Anything, nil, mock.Anything).Return(closedIDs, nil)
+	favorites.err = errors.New("favorites are unavailable")
+
+	n, err := svc.AutoCloseResolved(context.Background(), 24*time.Hour)
+	assert.Error(t, err)
+	assert.Equal(t, int64(0), n)
 }
 
 func TestTicketService_Delete_Success(t *testing.T) {

@@ -44,7 +44,7 @@ type Tickets interface {
 	Create(ctx context.Context, tx Tx, dto *models.TicketDTO) error
 	Update(ctx context.Context, tx Tx, dto *models.TicketDTO) error
 	Delete(ctx context.Context, tx Tx, dto *models.DeleteTicketDTO) error
-	CloseResolved(ctx context.Context, cutoff time.Time) (int64, error)
+	CloseResolved(ctx context.Context, tx Tx, cutoff time.Time) ([]uuid.UUID, error)
 	CountNotClosedByGroup(ctx context.Context, groupID uuid.UUID) (int, error)
 	CountNotClosedByCategory(ctx context.Context, categoryID uuid.UUID) (int, error)
 	GetNotifiers(ctx context.Context, ticketID uuid.UUID) ([]models.UserShort, error)
@@ -421,15 +421,32 @@ func (r *TicketRepo) Delete(ctx context.Context, tx Tx, dto *models.DeleteTicket
 	return nil
 }
 
-func (r *TicketRepo) CloseResolved(ctx context.Context, cutoff time.Time) (int64, error) {
+// CloseResolved закрывает «зависшие» resolved-заявки и возвращает их идентификаторы:
+// по ним сервис в той же транзакции снимает temporary-пины. Список id нужен именно
+// транзакции, а не вызывающему: без него очистку пришлось бы делать отдельным запросом.
+func (r *TicketRepo) CloseResolved(ctx context.Context, tx Tx, cutoff time.Time) ([]uuid.UUID, error) {
 	query := fmt.Sprintf(`UPDATE %s SET status='closed', closed_at=COALESCE(closed_at, NOW()), updated_at=NOW()
-		WHERE status='resolved' AND resolved_at IS NOT NULL AND resolved_at <= $1`, Tables.Tickets)
+		WHERE status='resolved' AND resolved_at IS NOT NULL AND resolved_at <= $1
+		RETURNING id`, Tables.Tickets)
 
-	cmd, err := r.db.Exec(ctx, query, cutoff)
+	rows, err := r.getExec(tx).Query(ctx, query, cutoff)
 	if err != nil {
-		return 0, MapError(fmt.Errorf("failed to auto-close resolved tickets: %w", err))
+		return nil, MapError(fmt.Errorf("failed to auto-close resolved tickets: %w", err))
 	}
-	return cmd.RowsAffected(), nil
+	defer rows.Close()
+
+	ids := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, MapError(fmt.Errorf("scan closed ticket id: %w", err))
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
+	}
+	return ids, nil
 }
 
 // CountNotClosedByGroup возвращает количество незакрытых заявок в группе.

@@ -313,12 +313,29 @@ func (s *TicketService) Delete(ctx context.Context, dto *models.DeleteTicketDTO)
 
 // AutoCloseResolved автоматически закрывает resolved-тикеты с истёкшей
 // задержкой и возвращает количество закрытых. При неположительной задержке
-// ничего не делает.
+// ничего не делает. Temporary-пины закрываемых заявок снимаются в той же
+// транзакции — автозакрытие идёт мимо TicketService.Update.
 func (s *TicketService) AutoCloseResolved(ctx context.Context, delay time.Duration) (int64, error) {
 	if delay <= 0 {
 		return 0, nil
 	}
 
 	cutoff := time.Now().Add(-delay)
-	return s.repo.CloseResolved(ctx, cutoff)
+
+	var closed int64
+	err := s.tx.WithinTransaction(ctx, func(newTx postgres.Tx) error {
+		ids, err := s.repo.CloseResolved(ctx, newTx, cutoff)
+		if err != nil {
+			return err
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+		if err := s.favorites.DeleteTemporaryByTickets(ctx, newTx, ids); err != nil {
+			return fmt.Errorf("failed to cleanup favorites of auto-closed tickets: %w", err)
+		}
+		closed = int64(len(ids))
+		return nil
+	})
+	return closed, err
 }

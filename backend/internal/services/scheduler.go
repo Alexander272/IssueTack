@@ -37,10 +37,10 @@ type SchedulerDeps struct {
 	Notifications Notifications
 	Favorites     TicketFavorites
 	// EquipmentReturns — репозиторий оборудования для напоминаний о сроке возврата.
-	EquipmentReturns EquipmentDueReturns
-	MMRepo           repository.Mattermost
-	Users            Users
-	MMSender         mattermostSender
+	EquipmentReturns       EquipmentDueReturns
+	MMRepo                 repository.Mattermost
+	Users                  Users
+	MMSender               mattermostSender
 	EquipmentPeriodicTasks *EquipmentPeriodicTaskService
 }
 
@@ -272,8 +272,10 @@ func (s *SchedulerService) notifyDeadlineSoonJob(ctx context.Context) {
 	}
 }
 
-// favoriteCleanupJob — фоновая задача cron: удаляет автоматически истёкшие «закреплённые»
-// (temporary) избранные по правилам CleanupTemporary.
+// favoriteCleanupJob — фоновая задача cron: страховочная очистка «закреплённых»
+// (temporary) избранных на «замороженных» заявках. Основная очистка идёт в момент
+// смены статуса (TicketService.Update / AutoCloseResolved), джоб добирает строки,
+// оставшиеся от прежних версий и пропущенных запусков.
 func (s *SchedulerService) favoriteCleanupJob(ctx context.Context) {
 	if s.favorites == nil {
 		return

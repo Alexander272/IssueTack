@@ -2,11 +2,11 @@ package services
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
-	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -88,89 +88,24 @@ func TestFavoriteService_IsFavorite(t *testing.T) {
 	assert.True(t, ok)
 }
 
-func TestFavoriteService_CleanupTemporary_ResolvedAssignee(t *testing.T) {
+func TestFavoriteService_CleanupTemporary_DeletesOnInactive(t *testing.T) {
 	mockRepo, _, _, svc := favoriteServiceFixtures()
 
-	assigneeID := uuid.New()
-	favID := uuid.New()
-	v := &postgres.TempFavoriteView{
-		ID: favID, UserID: assigneeID, TicketID: uuid.New(),
-		Status: models.StatusResolved, AssigneeID: &assigneeID,
-	}
-	mockRepo.On("GetTemporaryExpired", mock.Anything).Return([]*postgres.TempFavoriteView{v}, nil)
-	mockRepo.On("DeleteByIDs", mock.Anything, nil, []uuid.UUID{favID}).Return(nil)
+	mockRepo.On("DeleteTemporaryOnInactive", mock.Anything).Return(int64(3), nil)
 
 	n, err := svc.CleanupTemporary(context.Background())
 	assert.NoError(t, err)
-	assert.Equal(t, 1, n)
+	assert.Equal(t, 3, n)
 	mockRepo.AssertExpectations(t)
 }
 
-func TestFavoriteService_CleanupTemporary_ClosedSupervisor(t *testing.T) {
-	mockRepo, _, mockAccess, svc := favoriteServiceFixtures()
-
-	supervisorID := uuid.New()
-	realmID := uuid.New()
-	favID := uuid.New()
-	v := &postgres.TempFavoriteView{
-		ID: favID, UserID: supervisorID, TicketID: uuid.New(),
-		Status: models.StatusClosed, RealmID: &realmID,
-	}
-	mockRepo.On("GetTemporaryExpired", mock.Anything).Return([]*postgres.TempFavoriteView{v}, nil)
-	mockAccess.On("IsRealmSupervisor", mock.Anything, supervisorID, realmID.String()).Return(true, nil)
-	mockRepo.On("DeleteByIDs", mock.Anything, nil, []uuid.UUID{favID}).Return(nil)
-
-	n, err := svc.CleanupTemporary(context.Background())
-	assert.NoError(t, err)
-	assert.Equal(t, 1, n)
-	mockRepo.AssertExpectations(t)
-}
-
-func TestFavoriteService_CleanupTemporary_ClosedNotSupervisor(t *testing.T) {
-	mockRepo, _, mockAccess, svc := favoriteServiceFixtures()
-
-	userID := uuid.New()
-	realmID := uuid.New()
-	v := &postgres.TempFavoriteView{
-		ID: uuid.New(), UserID: userID, TicketID: uuid.New(),
-		Status: models.StatusClosed, RealmID: &realmID,
-	}
-	mockRepo.On("GetTemporaryExpired", mock.Anything).Return([]*postgres.TempFavoriteView{v}, nil)
-	mockAccess.On("IsRealmSupervisor", mock.Anything, userID, realmID.String()).Return(false, nil)
-
-	n, err := svc.CleanupTemporary(context.Background())
-	assert.NoError(t, err)
-	assert.Equal(t, 0, n)
-	mockRepo.AssertNotCalled(t, "DeleteByIDs", mock.Anything, mock.Anything, mock.Anything)
-	mockRepo.AssertExpectations(t)
-}
-
-func TestFavoriteService_CleanupTemporary_ResolvedNotAssignee(t *testing.T) {
+func TestFavoriteService_CleanupTemporary_Error(t *testing.T) {
 	mockRepo, _, _, svc := favoriteServiceFixtures()
 
-	assigneeID := uuid.New()
-	otherID := uuid.New()
-	v := &postgres.TempFavoriteView{
-		ID: uuid.New(), UserID: otherID, TicketID: uuid.New(),
-		Status: models.StatusResolved, AssigneeID: &assigneeID,
-	}
-	mockRepo.On("GetTemporaryExpired", mock.Anything).Return([]*postgres.TempFavoriteView{v}, nil)
+	mockRepo.On("DeleteTemporaryOnInactive", mock.Anything).Return(int64(0), errors.New("db is down"))
 
 	n, err := svc.CleanupTemporary(context.Background())
-	assert.NoError(t, err)
+	assert.Error(t, err)
 	assert.Equal(t, 0, n)
-	mockRepo.AssertNotCalled(t, "DeleteByIDs", mock.Anything, mock.Anything, mock.Anything)
-	mockRepo.AssertExpectations(t)
-}
-
-func TestFavoriteService_CleanupTemporary_None(t *testing.T) {
-	mockRepo, _, _, svc := favoriteServiceFixtures()
-
-	mockRepo.On("GetTemporaryExpired", mock.Anything).Return([]*postgres.TempFavoriteView{}, nil)
-
-	n, err := svc.CleanupTemporary(context.Background())
-	assert.NoError(t, err)
-	assert.Equal(t, 0, n)
-	mockRepo.AssertNotCalled(t, "DeleteByIDs", mock.Anything, mock.Anything, mock.Anything)
 	mockRepo.AssertExpectations(t)
 }

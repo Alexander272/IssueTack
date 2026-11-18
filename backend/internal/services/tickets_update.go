@@ -394,6 +394,16 @@ func (s *TicketService) updateTicket(
 			return fmt.Errorf("failed to update ticket. error: %w", err)
 		}
 
+		// «Замороженная» заявка (resolved/closed/cancelled) не может быть закреплена:
+		// пин на ней не имеет смысла, а снять его из UI нельзя (кнопка скрыта).
+		// Поэтому temporary снимаются у всех пользователей в той же транзакции, что
+		// и смена статуса. Ошибка откатывает и статус — иначе пин остался бы навсегда.
+		if dto.HasField("status") && dto.Status != oldTicket.Status && isTicketInactive(dto.Status) {
+			if err := s.favorites.DeleteTemporaryByTickets(ctx, newTx, []uuid.UUID{*dto.ID}); err != nil {
+				return fmt.Errorf("failed to cleanup ticket favorites: %w", err)
+			}
+		}
+
 		if dto.HasField("notifierIds") {
 			if err := s.repo.SyncNotifiers(ctx, newTx, *dto.ID, dto.Actor.ID, dto.NotifierIDs); err != nil {
 				return fmt.Errorf("failed to sync ticket notifiers: %w", err)

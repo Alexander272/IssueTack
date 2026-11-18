@@ -162,6 +162,7 @@ func NewServices(deps *Deps) *Services {
 		Users:           users,
 		Sites:           sites,
 		DueDateRequests: deps.Repo.DueDateRequests,
+		Favorites:       deps.Repo.TicketFavorites,
 	})
 
 	// Оборудование заводит заявку в 1C:ERP при выдаче/возврате, а заявку создаёт
