@@ -1,4 +1,5 @@
 import type { IUserShort } from '@/features/user/types/user'
+import type { IComment } from './comment'
 
 export type TicketStatus = 'open' | 'in_progress' | 'pending' | 'on_hold' | 'resolved' | 'closed' | 'cancelled'
 
@@ -46,6 +47,12 @@ export interface IAccessFlags {
 	canEditFields: boolean
 	isAdmin: boolean
 	isManager: boolean
+	/** Решения владельца: отменить новую заявку (open → cancelled). */
+	canCancel: boolean
+	/** Решения владельца: подтвердить решение (resolved → closed). */
+	canConfirm: boolean
+	/** Решения владельца: вернуть в работу (resolved → in_progress). */
+	canReopen: boolean
 	allowedStatuses: TicketStatus[]
 	/** Могут ли текущий пользователь-исполнитель запросить перенос срока (при установленном сроке). */
 	canRequestDueDate?: boolean
@@ -75,6 +82,7 @@ export interface ITask {
 	updatedAt: string
 	subtasks?: ISubtask[]
 	attachments?: IAttachment[]
+	comments?: IComment[]
 	notifiers?: IUserShort[]
 	access?: IAccessFlags
 	/** Отключает уведомления заказчику и скрывает заявку из его списка заявок. */

@@ -19,6 +19,7 @@ import { DescriptionSection } from './DescriptionSection'
 import { AdvancedSettingsSection } from './AdvancedSettingsSection'
 import { SubtasksCreationSection } from './SubtasksCreationSection'
 import { clearDraft, hasDraftContent, loadDraft, saveDraft } from './draft'
+import { buildCreateDTO, type CreateRole } from './dto'
 import { CustomerAndDateSection } from './CustomerAndDateSection'
 
 // EMPTY_FORM — исходные значения формы. reset() обязан сбрасывать именно к ним,
@@ -49,6 +50,10 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 		const capabilities = useAppSelector(getCurrentCapabilities)
 		const userSiteId = useAppSelector(getUserSiteId)
 		const isExecutor = !isManager && capabilities.memberGroupIds.length > 0
+		// Роль формы: от неё зависит и состав секций ниже, и набор полей в DTO
+		// (см. buildCreateDTO). Одна формула вместо повторов isManager/isExecutor
+		// на каждое поле.
+		const role: CreateRole = isManager ? 'manager' : isExecutor ? 'executor' : 'customer'
 
 		const [createTask, { isLoading: isCreating }] = useCreateTaskMutation()
 		const [uploadAttachment, { isLoading: isUploading }] = useUploadAttachmentMutation()
@@ -151,34 +156,13 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 					return
 				}
 
-				const dto: ITaskDTO = {
-					id: null,
-					title: data.title.trim(),
-					description: data.description,
-					status: 'open',
-					priority: data.priority || category?.priority || 'medium',
+				const dto: ITaskDTO = buildCreateDTO({
+					data,
+					category,
+					role,
 					realmId: realm.id,
-					siteId: data.siteId,
-					categoryId: data.categoryId,
-					creatorId: currentUserId,
-					ownerId: isManager || isExecutor ? data.ownerId || null : null,
-					groupId: isManager ? data.groupId || null : category?.groupId || null,
-					assigneeId: isManager || isExecutor ? data.assigneeId || null : null,
-					managerId: null,
-					dueDate: isManager || isExecutor ? data.dueDate || null : null,
-					closedAt: null,
-					subtasks: data.subtasks
-						.map(s => ({ title: s.title.trim(), description: s.description.trim() }))
-						.filter(s => s.title.length > 0),
-					equipmentId: data.equipmentId || null,
-					notifierIds:
-						isManager || isExecutor
-							? (data.notifierIds ?? [])
-							: data.notifierIds?.length
-								? data.notifierIds
-								: undefined,
-					ownerMuted: isManager ? Boolean(data.ownerMuted && data.ownerId) : undefined,
-				}
+					currentUserId,
+				})
 
 				try {
 					const result = await createTask(dto).unwrap()

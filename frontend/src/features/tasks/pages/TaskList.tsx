@@ -62,6 +62,8 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 	const canCreate = useCan(PermRules.Tasks.Write)
 	const isManager = useAppSelector(getIsManager)
 	const hasNoGroups = useAppSelector(getHasNoGroups)
+	const navigate = useNavigate()
+	const [searchParams] = useSearchParams()
 
 	// Фильтр по оборудованию приходит ссылкой (?equipmentId=…, кнопка «Показать все»
 	// в карточке единицы) и живёт в адресе, а не в localStorage: сохранённый фильтр
@@ -201,15 +203,8 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 		[effectiveFilters, listMode, page, isArchive, numberFilter, debouncedSearch, urlEquipmentId],
 	)
 
-	const { data, isFetching } = useGetTasksQuery(queryFilter)
-
 	// Название единицы для чипа фильтра: едет в ссылке, чтобы не тянуть запрос.
 	const equipmentLabel = urlEquipmentId ? urlEquipmentName : undefined
-
-	const tasks = data?.data ?? []
-	const total = data?.total ?? 0
-
-	const totalPages = isArchive ? Math.ceil(total / rowsPerPage) || 1 : 1
 
 	// Фильтр по оборудованию — единственный, что пришёл ссылкой: снятие чипа должно
 	// убрать и параметр адреса, иначе возврат к ссылке/перезагрузка снова его включит.

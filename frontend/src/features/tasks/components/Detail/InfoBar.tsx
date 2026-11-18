@@ -35,11 +35,6 @@ export const InfoBar = ({ task }: Props) => {
 	const currentUserId = useAppSelector(getUserId)
 	const capabilities = useAppSelector(getCurrentCapabilities)
 	const hasNoGroups = useAppSelector(getHasNoGroups)
-	const isCreator = currentUserId != null && currentUserId === task.creator?.id
-	// «Владелец» решений — владелец заявки, или автор если владелец не задан.
-	// Если заказчик задан, только он имеет права владельца (отмена/подтверждение/возврат).
-	const isOwner = (currentUserId != null && currentUserId === task.owner?.id) ||
-		(!task.owner && isCreator)
 	const isAssignee = currentUserId != null && currentUserId === task.assignee?.id
 	const isManager = Boolean(task.access?.isManager) || capabilities.isRealmAdmin
 	// Меню «Изменить статус» — только «рабочим» и менеджерам: исполнителю (заявку
@@ -59,10 +54,12 @@ export const InfoBar = ({ task }: Props) => {
 	// исполнителю их не показываем (бэкенд всё равно не даст — canChangeStatus /
 	// isCreatorOrManager), чтобы в меню не висели серые недоступные пункты.
 	const canSeeTerminalStatuses = isManager
-	const canAccept = isOwner && task.status === 'resolved'
-	const canReturn = isOwner && task.status === 'resolved'
-	// Отменить можно только новую (open) заявку.
-	const canCancel = isOwner && task.status === 'open'
+	// Решения владельца приходят готовыми флагами с бэкенда (AccessFlags): той же
+	// формулой считается и плагин Mattermost, поэтому веб не дублирует предикат
+	// «владелец + статус» и не может с ним разъехаться.
+	const canCancel = Boolean(task.access?.canCancel)
+	const canConfirm = Boolean(task.access?.canConfirm)
+	const canReopen = Boolean(task.access?.canReopen)
 
 	const handleStatusChange = async (status: TicketStatus, comment?: string, dueDate?: string | null) => {
 		try {
@@ -145,7 +142,7 @@ export const InfoBar = ({ task }: Props) => {
 					</Button>
 				)}
 
-				{!hasNoGroups && (task.access?.isManager || capabilities.isRealmAdmin) && isActive && !task.dueDate && (
+				{!hasNoGroups && isManager && isActive && !task.dueDate && (
 					<DeadlinePopover onSetDueDate={handleSetDueDate} />
 				)}
 
@@ -161,7 +158,7 @@ export const InfoBar = ({ task }: Props) => {
 					</Button>
 				)}
 
-				{canAccept && (
+				{canConfirm && (
 					<Button
 						variant='contained'
 						onClick={() => changeStatus('closed')}
@@ -172,7 +169,7 @@ export const InfoBar = ({ task }: Props) => {
 					</Button>
 				)}
 
-				{canReturn && (
+				{canReopen && (
 					<Button
 						variant='outlined'
 						onClick={() => changeStatus('in_progress')}

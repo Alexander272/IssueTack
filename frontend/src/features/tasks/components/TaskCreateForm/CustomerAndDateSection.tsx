@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Box, Checkbox, FormControlLabel, Typography } from '@mui/material'
+import { Box, Typography } from '@mui/material'
 import { DateTimePicker } from '@mui/x-date-pickers'
 import { Controller, useFormContext, useWatch } from 'react-hook-form'
 import dayjs from 'dayjs'
@@ -16,9 +16,7 @@ type Props = {
 	number?: number
 	title?: string
 	subtitle?: string
-	/** Id текущего пользователя для самоназначения исполнителем (чекбокс в форме создания). */
-	currentUserId?: string | null
-	/** Автор заявки — исключается из «Уведомлять» (по умолчанию = currentUserId). */
+	/** Автор заявки — исключается из «Уведомлять». */
 	creatorId?: string | null
 	showOwner?: boolean
 	showDueDate?: boolean
@@ -30,8 +28,7 @@ type Props = {
 export const CustomerAndDateSection = ({
 	number = 4,
 	title = 'Заказчик и сроки',
-	subtitle = 'Укажите заказчика и желаемый срок выполнения. При необходимости назначьте себя исполнителем',
-	currentUserId = null,
+	subtitle = 'Укажите заказчика и желаемый срок выполнения',
 	creatorId,
 	showOwner = true,
 	showDueDate = true,
@@ -42,7 +39,7 @@ export const CustomerAndDateSection = ({
 	const { data: customersData } = useGetRealmUsersQuery('all')
 	const customers = useMemo(() => customersData?.data ?? [], [customersData])
 	const ownerId = useWatch({ control, name: 'ownerId' })
-	const excludedNotifierIds = [creatorId ?? currentUserId, ownerId]
+	const excludedNotifierIds = [creatorId, ownerId]
 
 	return (
 		<SectionCard number={number} title={title} subtitle={subtitle}>
@@ -106,26 +103,6 @@ export const CustomerAndDateSection = ({
 								}
 								slots={{ textField: DateTextField }}
 								slotProps={{ textField: { fullWidth: true } }}
-							/>
-						)}
-					/>
-				</Box>
-			)}
-
-			{currentUserId && (
-				<Box sx={{ mt: 1 }}>
-					<Controller
-						control={control}
-						name='assigneeId'
-						render={({ field }) => (
-							<FormControlLabel
-								control={
-									<Checkbox
-										checked={field.value === currentUserId}
-										onChange={e => field.onChange(e.target.checked ? currentUserId : null)}
-									/>
-								}
-								label='Назначить меня исполнителем'
 							/>
 						)}
 					/>
