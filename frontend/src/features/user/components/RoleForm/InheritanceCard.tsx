@@ -5,6 +5,7 @@ import { SearchIcon, XIcon, CheckIcon, LockIcon, ArrowLeftIcon, LinkIcon } from 
 
 import type { IRoleWithStats } from '../../types/role'
 import type { IForm } from './UpdateRole'
+import { pluralize } from '@/utils/plural'
 import { useGetRolesWithStatsQuery } from '../../roleApiSlice'
 
 type Props = {
@@ -172,7 +173,7 @@ export const InheritanceCard: FC<Props> = ({ roleId }) => {
 				>
 					<Typography sx={{ color: selectedCount ? '#1f2937' : '#9ca3af', fontSize: '0.875rem' }}>
 						{selectedCount
-							? `${selectedCount} рол${selectedCount > 1 ? 'и' : 'ь'} выбран${selectedCount == 1 ? 'а' : 'ы'}`
+							? `${selectedCount} ${pluralize(selectedCount, ['роль', 'роли', 'ролей'])} выбран${pluralize(selectedCount, ['а', 'ы', 'ы'])}`
 							: 'Выберите роли для наследования...'}
 					</Typography>
 					<Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

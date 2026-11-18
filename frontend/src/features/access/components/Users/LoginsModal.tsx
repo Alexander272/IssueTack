@@ -176,6 +176,10 @@ const LoginRow: FC<{ login: IUserLogin }> = ({ login }) => {
 	const isBot = metadata?.isBot
 	const success = metadata?.success
 
+	// Кэшируем конфиги, чтобы не вызывать функцию дважды для одного значения
+	const browserCfg = browser ? getBrowserConfig(browser) : null
+	const osCfg = os ? getOsConfig(os) : null
+
 	const botChip =
 		isBot !== undefined
 			? { variant: isBot ? ('error' as const) : ('success' as const), label: isBot ? 'Да' : 'Нет' }
@@ -204,12 +208,8 @@ const LoginRow: FC<{ login: IUserLogin }> = ({ login }) => {
 			<TableCell align='center'>
 				{browser || device ? (
 					<Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
-						{browser && (
-							<Chip
-								colors={getBrowserConfig(browser).colors}
-								label={browser}
-								icon={getBrowserConfig(browser).icon}
-							/>
+						{browser && browserCfg && (
+							<Chip colors={browserCfg.colors} label={browser} icon={browserCfg.icon} />
 						)}
 						{device && (
 							<Chip
@@ -218,7 +218,7 @@ const LoginRow: FC<{ login: IUserLogin }> = ({ login }) => {
 								icon={getDeviceIcon(device)}
 							/>
 						)}
-						{os && <Chip colors={getOsConfig(os).colors} label={os} icon={getOsConfig(os).icon} />}
+						{os && osCfg && <Chip colors={osCfg.colors} label={os} icon={osCfg.icon} />}
 					</Box>
 				) : (
 					<Typography sx={{ color: 'text.disabled' }}>-</Typography>

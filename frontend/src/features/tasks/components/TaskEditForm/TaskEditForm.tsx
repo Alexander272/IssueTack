@@ -1,5 +1,5 @@
-import { Box, Button, Stack, TextField, Typography } from '@mui/material'
-import { Controller, FormProvider, useForm, useFormContext } from 'react-hook-form'
+import { Box, Button, Stack, Typography } from '@mui/material'
+import { FormProvider, useForm } from 'react-hook-form'
 import { useEffect, useState } from 'react'
 import { toast } from 'react-toastify'
 
@@ -11,8 +11,7 @@ import { useUpdateTaskMutation } from '../../tasksApiSlice'
 import { AdvancedSettingsSection } from '../TaskCreateForm/AdvancedSettingsSection'
 import { CategoryAndSiteSection } from '../TaskCreateForm/CategoryAndSiteSection'
 import { CustomerAndDateSection } from '../TaskCreateForm/CustomerAndDateSection'
-import { SectionCard } from '../TaskCreateForm/SectionCard'
-import { fieldLabelSx } from '../TaskCreateForm/styles'
+import { DescriptionSection } from '../TaskCreateForm/DescriptionSection'
 
 type Props = {
 	task: ITask
@@ -20,62 +19,6 @@ type Props = {
 	onCancel?: () => void
 	embedded?: boolean
 	onSavingChange?: (saving: boolean) => void
-}
-
-const EditDescriptionSection = ({ readOnly }: { readOnly: boolean }) => {
-	const { control } = useFormContext<FormValues>()
-
-	return (
-		<SectionCard number={2} title='Заголовок и описание'>
-			<Box>
-				<Typography variant='caption' sx={fieldLabelSx}>
-					Заголовок{' '}
-					<Typography component='span' color='error'>
-						*
-					</Typography>
-				</Typography>
-				<Controller
-					control={control}
-					name='title'
-					rules={{
-						required: 'Обязательное поле',
-						validate: value => (value ?? '').trim().length > 0 || 'Заголовок не может состоять из пробелов',
-					}}
-					render={({ field, fieldState }) => (
-						<Box>
-							<TextField
-								{...field}
-								fullWidth
-								size='small'
-								disabled={readOnly}
-								error={Boolean(fieldState.error)}
-								helperText={fieldState.error?.message}
-								slotProps={{ htmlInput: { maxLength: 150 } }}
-							/>
-							<Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-								<Typography sx={{ fontSize: '0.6875rem', color: '#9ca3af', mt: 0.25 }}>
-									{(field.value ?? '').length} / 150
-								</Typography>
-							</Box>
-						</Box>
-					)}
-				/>
-			</Box>
-
-			<Box>
-				<Typography variant='caption' sx={fieldLabelSx}>
-					Подробное описание
-				</Typography>
-				<Controller
-					control={control}
-					name='description'
-					render={({ field }) => (
-						<TextField {...field} fullWidth size='small' multiline minRows={6} disabled={readOnly} />
-					)}
-				/>
-			</Box>
-		</SectionCard>
-	)
 }
 
 export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChange }: Props) => {
@@ -92,6 +35,9 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 	// остальные поля — категорию, площадку, приоритет, срок, группу, исполнителя —
 	// но не содержимое (см. режим adminOnlyEdit в TicketService.Update).
 	const canEditContent = Boolean(task.access?.canEditFields)
+
+	// Формула прав доступа для расширенных настроек: менеджер группы или админ реалма
+	const isAdmin = Boolean(task.access?.isManager) || capabilities.isRealmAdmin
 
 	useEffect(() => {
 		onSavingChange?.(isLoading)
@@ -169,16 +115,16 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 				<Box component='form' onSubmit={onSubmit}>
 					<Stack sx={{ gap: 1 }}>
 						<CategoryAndSiteSection number={1} />
-						<EditDescriptionSection readOnly={!canEditContent} />
+						<DescriptionSection readOnly={!canEditContent} />
 
 						{isManager && (
 							<AdvancedSettingsSection
 								number={3}
 								autoAssign={false}
-								canEditDueDate={Boolean(task.access?.isManager) || capabilities.isRealmAdmin}
-								canEditGroup={Boolean(task.access?.isManager) || capabilities.isRealmAdmin}
-								canEditPriority={Boolean(task.access?.isManager) || capabilities.isRealmAdmin}
-								canEditOwnerMuted={Boolean(task.access?.isManager) || capabilities.isRealmAdmin}
+								canEditDueDate={isAdmin}
+								canEditGroup={isAdmin}
+								canEditPriority={isAdmin}
+								canEditOwnerMuted={isAdmin}
 								creatorId={task.creator.id}
 							/>
 						)}

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 
-export const useDebounce = (value: unknown, delay: number) => {
+export const useDebounce = <T>(value: T, delay: number) => {
 	// value and delay in ms (1000ms = 1s)
 	// debounced values
-	const [debouncedValue, setDebouncedValue] = useState(value)
+	const [debouncedValue, setDebouncedValue] = useState<T>(value)
 
 	useEffect(
 		() => {
@@ -17,7 +17,7 @@ export const useDebounce = (value: unknown, delay: number) => {
 				clearTimeout(t)
 			}
 		},
-		[value, delay] // re-run if value or delay changes
+		[value, delay], // re-run if value or delay changes
 	)
 	return debouncedValue
 }

@@ -6,7 +6,7 @@ import type { FormValues } from './types'
 // подхватить чужой черновик. Вложения (File) не сохраняются — их нельзя
 // сериализовать.
 
-const VERSION = 3
+const VERSION = 4
 
 function draftKey(realmId: string, userId: string) {
 	return `@issueTrack/taskCreateDraft:${realmId}:${userId}`
@@ -18,25 +18,24 @@ function isSubtask(value: unknown): boolean {
 	return typeof s.title === 'string' && typeof s.description === 'string'
 }
 
+const isString = (val: unknown): val is string => typeof val === 'string'
+const isNullableString = (val: unknown): val is string | null => val === null || typeof val === 'string'
+const isStringArray = (val: unknown): val is string[] => Array.isArray(val) && val.every(isString)
+
 function isFormValues(value: unknown): value is FormValues {
 	if (!value || typeof value !== 'object') return false
 	const v = value as Record<string, unknown>
+
+	const requiredStrings = [v.title, v.description, v.priority, v.categoryId, v.siteId]
+	const nullableStrings = [v.groupId, v.ownerId, v.assigneeId, v.dueDate, v.equipmentId]
+
 	return (
-		typeof v.title === 'string' &&
-		typeof v.description === 'string' &&
-		typeof v.priority === 'string' &&
-		typeof v.categoryId === 'string' &&
-		(v.groupId === null || typeof v.groupId === 'string') &&
-		(v.ownerId === null || typeof v.ownerId === 'string') &&
-		(v.assigneeId === null || typeof v.assigneeId === 'string') &&
-		typeof v.siteId === 'string' &&
-		(v.dueDate === null || typeof v.dueDate === 'string') &&
+		requiredStrings.every(isString) &&
+		nullableStrings.every(isNullableString) &&
+		typeof v.ownerMuted === 'boolean' &&
+		isStringArray(v.notifierIds) &&
 		Array.isArray(v.subtasks) &&
-		v.subtasks.every(isSubtask) &&
-		(v.equipmentId === null || typeof v.equipmentId === 'string') &&
-		Array.isArray(v.notifierIds) &&
-		v.notifierIds.every((id: unknown) => typeof id === 'string') &&
-		typeof v.ownerMuted === 'boolean'
+		v.subtasks.every(isSubtask)
 	)
 }
 
@@ -76,9 +75,21 @@ export function clearDraft(realmId: string, userId: string) {
 // пользователя не считается черновиком (её проставляет эффект, а не человек).
 export function hasDraftContent(values: FormValues, filesCount: number): boolean {
 	if (filesCount > 0) return true
-	if (values.title?.trim() || values.description?.trim()) return true
-	if (values.categoryId || values.groupId || values.ownerId || values.assigneeId || values.dueDate) return true
-	if ((values.notifierIds ?? []).length > 0) return true
 	if (values.ownerMuted) return true
-	return (values.subtasks ?? []).some(s => s?.title?.trim() || s?.description?.trim())
+	if (values.notifierIds.length > 0) return true
+
+	const textFields = [values.title, values.description]
+	if (textFields.some(text => text.trim().length > 0)) return true
+
+	const selectedFields = [
+		values.categoryId,
+		values.groupId,
+		values.ownerId,
+		values.assigneeId,
+		values.dueDate,
+		values.equipmentId,
+	]
+	if (selectedFields.some(Boolean)) return true
+
+	return values.subtasks.some(s => s.title.trim().length > 0 || s.description.trim().length > 0)
 }

@@ -36,10 +36,8 @@ export const TaskCard = ({ task, onClick }: Props) => {
 			}
 		: null
 
-	// const createdDate = new Date(task.createdAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
-
 	const attachmentsCount = task.attachments?.length ?? 0
-	const commentsCount = (task as { comments?: unknown[] }).comments?.length ?? 0
+	const commentsCount = task.comments?.length ?? 0
 
 	return (
 		<Box
@@ -85,8 +83,6 @@ export const TaskCard = ({ task, onClick }: Props) => {
 					{!hasNoGroups && (
 						<TaskPriorityBadge priority={task.priority} sx={{ px: 1, py: 0.5, fontSize: '0.625rem' }} />
 					)}
-
-					{/* <Typography sx={{ fontSize: '0.75rem', color: '#41454a' }}>{createdDate}</Typography> */}
 				</Stack>
 
 				<Typography
@@ -164,7 +160,7 @@ export const TaskCard = ({ task, onClick }: Props) => {
 					</Box>
 				)}
 
-<Stack
+				<Stack
 					direction='row'
 					spacing={2}
 					sx={{ alignItems: 'center', pt: 0.5, mt: 1, borderTop: '1px solid #f3f4f6' }}
