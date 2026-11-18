@@ -123,7 +123,7 @@ export const StatisticsTicketsModal: FC<Props> = ({ dimension, bucketId, bucketN
 					total={total}
 					onOpenTask={handleOpenTask}
 					onShowMore={() => setLimit(value => value + PAGE_SIZE)}
-					dimension={dimension === 'assignee' ? 'assignee' : dimension === 'owner' ? 'owner' : undefined}
+					dimension={dimension === 'assignee' || dimension === 'owner' ? dimension : undefined}
 				/>
 			</DialogContent>
 		</Dialog>
