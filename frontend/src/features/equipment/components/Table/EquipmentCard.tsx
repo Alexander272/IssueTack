@@ -6,7 +6,7 @@ import { equipmentAccent } from '../../utils/typeKind'
 import { useEquipmentTree } from '../treeState'
 import { EquipmentTypeIcon } from '../EquipmentTypeIcon'
 import { EquipmentStatusBadge } from '../EquipmentStatusBadge'
-import { equipmentRowMeta, type EquipmentRowNode } from './rowMeta'
+import { equipmentRowMeta, equipmentRowKind, type EquipmentRowKind, type EquipmentRowNode } from './rowMeta'
 import { nestedListSx } from './nestedList'
 
 type Props = {
@@ -20,18 +20,28 @@ type Props = {
 	children?: ReactNode
 }
 
+// Фон карточки по смысловому виду узла: комплект — фиолетовый акцент, установленная
+// единица — оранжевый (родитель), остальные — белый. Вложенный и обычный совпадают.
+const CARD_BG: Record<EquipmentRowKind, string> = {
+	kit: '#7c3aed0a',
+	installed: '#ea580c0a',
+	nested: '#fff',
+	plain: '#fff',
+}
+
 // Мобильная карточка единицы — аналог строки EquipmentRow на узком экране (как
 // TaskCard против строки таблицы заявок). Иерархия сохраняется: узел с детьми рисует
 // шеврон и счётчик «(N)», а раскрытые потомки выводятся внутри родительской карточки
 // компактным списком (embedded). Статус вынесен в нижнюю строку — название получает
 // всю ширину карточки и переносится максимум на две строки.
-export const EquipmentCard: FC<Props> = ({ node, embedded = false, children }) => {
+export const EquipmentCard: FC<Props> = ({ node, depth = 0, embedded = false, children }) => {
 	const { tree, expanded, toggle, open } = useEquipmentTree()
 	const accent = equipmentAccent(node)
-	const { holder, subtitle, childCount } = equipmentRowMeta(node)
+	const { holder, subtitle, childCount, isInstalled } = equipmentRowMeta(node)
 	const hasToggle = tree && (Boolean(node.hasChildren) || childCount > 0)
 	const isExpanded = hasToggle && expanded.has(node.id)
 	const nesting = childCount > 0 && !node.isKit
+	const kind = equipmentRowKind(node, isInstalled, depth)
 
 	const iconSize = embedded ? 30 : 36
 
@@ -48,7 +58,7 @@ export const EquipmentCard: FC<Props> = ({ node, embedded = false, children }) =
 							'&:hover': { bgcolor: 'rgba(15, 23, 42, 0.04)' },
 						}
 					: {
-							bgcolor: node.isKit ? '#7c3aed0a' : node.parentId ? '#ea580c0a' : '#fff',
+							bgcolor: CARD_BG[kind],
 							border: '1px solid #e5e7eb',
 							borderRadius: 2.5,
 							p: 1.5,

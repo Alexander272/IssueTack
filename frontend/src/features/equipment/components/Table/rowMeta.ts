@@ -15,6 +15,18 @@ export type EquipmentRowMeta = {
 	subtitle: string
 }
 
+// Смысловой вид строки: комплект / установленный / вложенный / обычный. Один источник
+// решения для строки таблицы и карточки (EquipmentRow / EquipmentCard), чтобы ветвление
+// на «цвет фона» не дублировалось руками в каждом компоненте.
+export type EquipmentRowKind = 'kit' | 'installed' | 'nested' | 'plain'
+
+export const equipmentRowKind = (node: EquipmentRowNode, isInstalled: boolean, depth: number): EquipmentRowKind => {
+	if (node.isKit) return 'kit'
+	if (isInstalled) return 'installed'
+	if (depth > 0) return 'nested'
+	return 'plain'
+}
+
 // Метрики строки, общие для десктопной EquipmentRow и мобильной EquipmentCard:
 // держатель, место, признак установленности и подпись второй строки. Одна функция,
 // чтобы две разметки не разъезжались в толковании полей.

@@ -7,11 +7,24 @@ import { useEquipmentTree } from '../treeState'
 import { EquipmentTypeIcon } from '../EquipmentTypeIcon'
 import { EquipmentStatusBadge } from '../EquipmentStatusBadge'
 import { EquipmentCard } from './EquipmentCard'
-import { equipmentRowMeta, type EquipmentRowNode } from './rowMeta'
+import { equipmentRowMeta, equipmentRowKind, type EquipmentRowKind, type EquipmentRowNode } from './rowMeta'
 
 type Props = {
 	node: EquipmentRowNode
 	depth?: number
+}
+
+const ROW_BG: Record<EquipmentRowKind, string | undefined> = {
+	kit: '#7c3aed08',
+	installed: '#ea580c08',
+	nested: '#fafafa',
+	plain: undefined,
+}
+const ROW_HOVER_BG: Record<EquipmentRowKind, string> = {
+	kit: '#f5f3ff',
+	installed: '#fff7ed',
+	nested: '#f5f5f5',
+	plain: '#f5f5f5',
 }
 
 // Строка дерева оборудования: иконка типа (с бейджем вложенности), название с
@@ -31,8 +44,9 @@ export const EquipmentRow: FC<Props> = ({ node, depth = 0 }) => {
 	const isExpanded = hasToggle && expanded.has(node.id)
 	const nesting = childCount > 0 && !node.isKit
 
-	const rowBg = node.isKit ? '#7c3aed08' : isInstalled ? '#ea580c08' : depth > 0 ? '#fafafa' : undefined
-	const hoverBg = node.isKit ? '#f5f3ff' : isInstalled ? '#fff7ed' : '#f5f5f5'
+	const kind = equipmentRowKind(node, isInstalled, depth)
+	const rowBg = ROW_BG[kind]
+	const hoverBg = ROW_HOVER_BG[kind]
 
 	return (
 		<TableRow

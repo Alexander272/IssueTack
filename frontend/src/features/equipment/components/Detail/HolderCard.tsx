@@ -1,4 +1,4 @@
-import { useState, type FC } from 'react'
+import { useState, type FC, type ReactNode } from 'react'
 import { Box, Button, Stack, Typography } from '@mui/material'
 import dayjs from 'dayjs'
 import { PackageCheckIcon, PackageMinusIcon, UserRoundXIcon, WarehouseIcon } from 'lucide-mui'
@@ -49,6 +49,18 @@ export const HolderCard: FC<Props> = ({ unit }) => {
 		.map(s => s[0])
 		.join('')
 		.slice(0, 2)
+
+	// Отображение держателя (сотруг / на складе / не указан) вынесено в одну пару
+	// «иконка + подпись»: JSX не должен знать про ветвление, он рендерит готовое.
+	let holderIcon: ReactNode = <UserRoundXIcon sx={{ fontSize: 20 }} />
+	let holderLabel = 'Не указан'
+	if (hasHolder) {
+		holderIcon = initials
+		holderLabel = holder
+	} else if (inStock) {
+		holderIcon = <WarehouseIcon sx={{ fontSize: 20 }} />
+		holderLabel = 'На складе'
+	}
 
 	const handleUnassign = async () => {
 		try {
@@ -103,25 +115,25 @@ export const HolderCard: FC<Props> = ({ unit }) => {
 									: { bgcolor: '#f1f5f9', color: '#64748b' }),
 							}}
 						>
-							{hasHolder ? initials : inStock ? <WarehouseIcon sx={{ fontSize: 20 }} /> : <UserRoundXIcon sx={{ fontSize: 20 }} />}
-						</Box>
-						<Box sx={{ minWidth: 0 }}>
-							<Typography sx={sectionLabelSx}>Держатель</Typography>
-							<Typography sx={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }} noWrap>
-								{hasHolder ? holder : inStock ? 'На складе' : 'Не указан'}
+							{holderIcon}
+					</Box>
+					<Box sx={{ minWidth: 0 }}>
+						<Typography sx={sectionLabelSx}>Держатель</Typography>
+						<Typography sx={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }} noWrap>
+							{holderLabel}
+						</Typography>
+						<Typography sx={{ fontSize: 12, color: '#64748b' }} noWrap>
+							{unit.siteName || unit.location || '—'}
+						</Typography>
+						{returnDueAt && (
+							<Typography
+								sx={{ fontSize: 12, color: returnOverdue ? 'error.main' : '#64748b' }}
+								noWrap
+							>
+								{returnOverdue ? 'Возврат просрочен с ' : 'Вернуть до '}
+								{returnDueAt.format('DD.MM.YYYY')}
 							</Typography>
-							<Typography sx={{ fontSize: 12, color: '#64748b' }} noWrap>
-								{unit.siteName || unit.location || '—'}
-							</Typography>
-							{returnDueAt && (
-								<Typography
-									sx={{ fontSize: 12, color: returnOverdue ? 'error.main' : '#64748b' }}
-									noWrap
-								>
-									{returnOverdue ? 'Возврат просрочен с ' : 'Вернуть до '}
-									{returnDueAt.format('DD.MM.YYYY')}
-								</Typography>
-							)}
+						)}
 						</Box>
 					</Box>
 					<Stack

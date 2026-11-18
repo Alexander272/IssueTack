@@ -1,13 +1,13 @@
 import { type FC, useCallback, useMemo, useState } from 'react'
 import { Box, useMediaQuery, useTheme } from '@mui/material'
 
-import { Pagination } from '@/components/Pagination/Pagination'
-import { useDebounce } from '@/hooks/useDebounce'
 import type { EquipmentStatus } from '../../types/equipment'
+import { isTreeMode, type EquipmentFilters, type TypeFilter } from '../Toolbar/types'
+import { useDebounce } from '@/hooks/useDebounce'
 import { useGetAllEquipmentQuery, useGetEquipmentTreeQuery } from '../../equipmentApiSlice'
+import { Pagination } from '@/components/Pagination/Pagination'
 import { EquipmentTable } from '../Table'
 import { EquipmentToolbar } from '../Toolbar'
-import { isTreeMode, type EquipmentFilters } from '../Toolbar/types'
 import { EquipmentTreeContext } from '../treeState'
 import { EquipmentFlatRows } from './EquipmentFlatRows'
 import { EquipmentRootRows } from './EquipmentTreeRows'
@@ -16,6 +16,9 @@ import { bundleRoots, sortNodes, toggleInSet } from './rows'
 const PAGE_SIZE = 50
 
 const DEFAULT_FILTERS: EquipmentFilters = { search: '', typeFilter: 'all', status: 'all' }
+
+// Тип фильтра → is_kit для запроса: не задан («all») — не фильтровать, единицы / комплекты — только свои.
+const IS_KIT_BY_TYPE: Record<TypeFilter, boolean | undefined> = { all: undefined, unit: false, kit: true }
 
 type Props = {
 	onOpen: (id: string) => void
@@ -35,12 +38,12 @@ export const EquipmentList: FC<Props> = ({ onOpen }) => {
 	const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
 	const { search, typeFilter, status } = filters
-	const debouncedSearch = useDebounce(search, 300) as string
+	const debouncedSearch = useDebounce(search, 300)
 	const query = debouncedSearch.trim()
 	const treeMode = isTreeMode(query)
 	const statusFilter = status === 'all' ? undefined : (status as EquipmentStatus)
 	// Тип сужает корни дерева; в плоском списке (поиск) — обычный фильтр по is_kit.
-	const isKit = typeFilter === 'kit' ? true : typeFilter === 'unit' ? false : undefined
+	const isKit = IS_KIT_BY_TYPE[typeFilter]
 
 	const rootsQuery = useGetEquipmentTreeQuery(
 		{ status: statusFilter, isKit, search: query || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE },
@@ -58,22 +61,34 @@ export const EquipmentList: FC<Props> = ({ onOpen }) => {
 	)
 
 	const active = treeMode ? rootsQuery : flatQuery
-	const total = active.data?.total ?? 0
+	const loadedTotal = active.data?.total
+	// Пока у нового ключа запроса нет данных (data === undefined), total === 0 — не обнуляем страницу.
+	const total = loadedTotal ?? 0
 	const isLoading = active.isFetching
 	const totalPages = Math.ceil(total / PAGE_SIZE) || 1
+	// Derived safePage: если данных ещё нет — оставляем page, иначе ограничиваем последней страницей.
+	const safePage = loadedTotal === undefined ? page : Math.min(page, totalPages - 1)
 
-	const roots = useMemo(() => rootsQuery.data?.data ?? [], [rootsQuery.data])
-	const items = useMemo(() => flatQuery.data?.data ?? [], [flatQuery.data])
+	// Неактивный запрос пропущен (skip), но его данные остаются в кэше RTK Query после
+	// переключения режима. Берём данные только активного, чтобы его мемо не пересчитывались
+	// от чужих обновлений, и не создаём лишний useMemo ради `data?.data ?? []`.
+	const rootsData = treeMode ? rootsQuery.data?.data : undefined
+	const itemsData = treeMode ? undefined : flatQuery.data?.data
 
-	const bundles = useMemo(() => bundleRoots(sortNodes(roots)), [roots])
-	const flatItems = useMemo(() => sortNodes(items), [items])
-	const empty = treeMode ? bundles.length === 0 : items.length === 0
+	const bundles = useMemo(() => bundleRoots(sortNodes(rootsData ?? [])), [rootsData])
+	const flatItems = useMemo(() => sortNodes(itemsData ?? []), [itemsData])
+	const empty = treeMode ? bundles.length === 0 : flatItems.length === 0
 
-	// Обёрнуто в useCallback, чтобы ссылка на функцию не менялась и тулбар не
-	// перерисовывался лишний раз.
+	// Сброс страницы и раскрытых узлов при смене фильтров.
 	const handleFiltersChange = useCallback((updates: Partial<EquipmentFilters>) => {
 		setFilters(prev => ({ ...prev, ...updates }))
 		setPage(0)
+		setExpanded(new Set())
+	}, [])
+
+	// Сброс страницы и раскрытых узлов при смене страницы пагинации.
+	const handlePageChange = useCallback((p: number) => {
+		setPage(p - 1)
 		setExpanded(new Set())
 	}, [])
 
@@ -87,11 +102,11 @@ export const EquipmentList: FC<Props> = ({ onOpen }) => {
 				setExpanded(new Set())
 				return
 			}
-			const ids = roots.filter(n => n.hasChildren).map(n => n.id)
+			const ids = (rootsData ?? []).filter(n => n.hasChildren).map(n => n.id)
 			const keys = bundles.filter(b => b.type === 'group').map(b => b.key)
 			setExpanded(prev => new Set([...prev, ...ids, ...keys]))
 		},
-		[roots, bundles],
+		[rootsData, bundles],
 	)
 
 	// Строки дерева читают раскрытие/открытие из контекста: протаскивать их через
@@ -113,7 +128,7 @@ export const EquipmentList: FC<Props> = ({ onOpen }) => {
 
 			{totalPages > 1 && (
 				<Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-					<Pagination page={page + 1} totalPages={totalPages} onClick={p => setPage(p - 1)} />
+					<Pagination page={safePage + 1} totalPages={totalPages} onClick={handlePageChange} />
 				</Box>
 			)}
 		</Box>
