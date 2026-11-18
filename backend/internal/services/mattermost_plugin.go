@@ -169,10 +169,9 @@ func (s *MattermostService) ticketDetail(ctx context.Context, settings *models.R
 	}
 	detail.DeepLink = pluginDeepLink(ticket.ID)
 
-	isOwner := ticket.Owner != nil && ticket.Owner.ID == user.ID
-	detail.CanConfirm = isOwner && ticket.Status == models.StatusResolved
-	detail.CanReopen = isOwner && ticket.Status == models.StatusResolved
-	detail.CanCancel = isOwner && ticket.Status == models.StatusOpen
+	// Решения владельца — из общей формулы ownerDecisions, чтобы плагин и веб
+	// (AccessFlags) не разъезжались в наборе кнопок.
+	detail.CanCancel, detail.CanConfirm, detail.CanReopen = ownerDecisions(ticket, user.ID)
 
 	return detail, nil
 }

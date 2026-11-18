@@ -55,6 +55,13 @@ type AccessFlags struct {
 	CanEditFields bool `json:"canEditFields"`
 	IsAdmin       bool `json:"isAdmin"`
 	IsManager     bool `json:"isManager"`
+	// CanCancel/CanConfirm/CanReopen — «решения владельца»: отмена новой заявки,
+	// подтверждение решения и возврат в работу. Считаются одной формулой
+	// (TicketService.ownerDecisions), той же, что отдаёт плагин Mattermost
+	// (PluginTicketDetail), — чтобы веб и плагин не разъезжались.
+	CanCancel  bool `json:"canCancel"`
+	CanConfirm bool `json:"canConfirm"`
+	CanReopen  bool `json:"canReopen"`
 	// CanRequestDueDate — исполнитель может запросить перенос срока (при установленном сроке).
 	CanRequestDueDate bool `json:"canRequestDueDate"`
 	// CanDecideDueDate — менеджер группы/начальник области может утверждать/отклонять запросы переноса срока.

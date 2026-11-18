@@ -3257,6 +3257,96 @@ func TestTicketService_GetAccessFlags_Customer(t *testing.T) {
 	assert.ElementsMatch(t, []models.TicketStatus{models.StatusCancelled}, flags.AllowedStatuses)
 }
 
+// TestTicketService_GetAccessFlags_OwnerDecisions — трио «решений владельца»
+// (canCancel/canConfirm/canReopen) в AccessFlags: отмена — владельцу новой (open)
+// заявки, подтверждение и возврат — владельцу решённой (resolved). Владелец — это
+// заказчик, а если заказчик не задан — автор (isOwnerOnlyOrCreatorWithoutOwner).
+// Отдельно фиксируем, что автор с чужим заказчиком кнопок не получает: решения
+// принимает заказчик, и это намеренное правило, а не недосмотр.
+func TestTicketService_GetAccessFlags_OwnerDecisions(t *testing.T) {
+	ownerID := uuid.New()
+	creatorID := uuid.New()
+	strangerID := uuid.New()
+
+	owner := &models.UserShort{ID: ownerID, LastName: "Owner"}
+	creator := models.UserShort{ID: creatorID, LastName: "Creator"}
+
+	cases := []struct {
+		name       string
+		status     models.TicketStatus
+		ticket     *models.Ticket
+		userID     uuid.UUID
+		canCancel  bool
+		canConfirm bool
+		canReopen  bool
+	}{
+		{
+			name:      "owner open can cancel only",
+			status:    models.StatusOpen,
+			ticket:    &models.Ticket{Creator: creator, Owner: owner},
+			userID:    ownerID,
+			canCancel: true,
+		},
+		{
+			name:       "owner resolved can confirm and reopen",
+			status:     models.StatusResolved,
+			ticket:     &models.Ticket{Creator: creator, Owner: owner},
+			userID:     ownerID,
+			canConfirm: true,
+			canReopen:  true,
+		},
+		{
+			name:   "owner closed no decisions",
+			status: models.StatusClosed,
+			ticket: &models.Ticket{Creator: creator, Owner: owner},
+			userID: ownerID,
+		},
+		{
+			name:      "author without owner is owner of own ticket",
+			status:    models.StatusOpen,
+			ticket:    &models.Ticket{Creator: creator},
+			userID:    creatorID,
+			canCancel: true,
+		},
+		{
+			name:   "author with another customer gets no decisions",
+			status: models.StatusOpen,
+			ticket: &models.Ticket{Creator: creator, Owner: owner},
+			userID: creatorID,
+		},
+		{
+			name:   "stranger gets no decisions",
+			status: models.StatusOpen,
+			ticket: &models.Ticket{Creator: creator, Owner: owner},
+			userID: strangerID,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, mockSubtasks, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+			userID := tc.userID
+			mockPolicies.On("Enforce", userID.String(), mock.Anything, string(access.ResourceTicket), string(access.Write)).Return(false, nil)
+			mockPolicies.On("Enforce", userID.String(), mock.Anything, string(access.ResourceTicket), string(access.Delete)).Return(false, nil)
+			mockPolicies.On("Enforce", userID.String(), mock.Anything, string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+			mockPolicies.On("Enforce", userID.String(), mock.Anything, string(access.ResourceSite), string(access.Write)).Return(false, nil)
+			mockGroups.On("GetManagedGroups", mock.Anything, userID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+			mockGroups.On("GetMemberGroups", mock.Anything, userID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil)
+			mockSubtasks.On("GetUnresolvedCount", mock.Anything, mock.Anything).Return(0, nil)
+
+			tc.ticket.ID = uuid.New()
+			tc.ticket.Status = tc.status
+
+			flags, err := svc.GetAccessFlags(context.Background(), tc.ticket, userID)
+			assert.NoError(t, err)
+			assert.Equal(t, tc.canCancel, flags.CanCancel, "canCancel")
+			assert.Equal(t, tc.canConfirm, flags.CanConfirm, "canConfirm")
+			assert.Equal(t, tc.canReopen, flags.CanReopen, "canReopen")
+		})
+	}
+}
+
 func TestTicketService_GetSummary(t *testing.T) {
 	mockRepo, _, _, _, _, _, _, svc := ticketServiceFixtures()
 

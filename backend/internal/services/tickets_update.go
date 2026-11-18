@@ -70,7 +70,7 @@ func (s *TicketService) updateTicket(
 				// write/work-прав: ему доступны решения по статусам через
 				// ownerTransitionAllowed. Автор без владельца остаётся «заказчиком»
 				// своей заявки (см. canEditFields ниже).
-				if !s.isOwnerOnlyOrCreatorWithoutOwner(old, dto.Actor.ID) {
+				if !isOwnerOnlyOrCreatorWithoutOwner(old, dto.Actor.ID) {
 					return err
 				}
 				ownerOnly = true

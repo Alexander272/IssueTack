@@ -99,11 +99,26 @@ func (s *TicketService) isOwner(ticket *models.Ticket, actorID uuid.UUID) bool {
 	return ticket.Owner != nil && ticket.Owner.ID == actorID
 }
 
-// isOwnerOrCreator — владелец заявки или её автор. Оба получают «решения владельца»
-// (отмена/подтверждение/возврат), когда у них нет write/work-доступа: заказчик —
-// по владению, безгрупповой автор — как заказчик своей же заявки (см. Update).
-func (s *TicketService) isOwnerOrCreator(ticket *models.Ticket, actorID uuid.UUID) bool {
-	return s.isOwner(ticket, actorID) || ticket.Creator.ID == actorID
+// ownerDecisions — «решения владельца»: отмена новой заявки (open → cancelled),
+// подтверждение решения (resolved → closed) и возврат в работу (resolved →
+// in_progress). Единственная формула: ей пользуются и веб-флаги доступа
+// (AccessFlags), и плагин Mattermost (PluginTicketDetail), иначе веб и плагин
+// разъезжаются в том, какие кнопки показывает владельцу.
+//
+// Функция пакетная, а не метод TicketService: у MattermostService заявки лежат
+// за интерфейсом Tickets, и метод сервиса был бы ему недоступен.
+//
+// Владельцем считается заказчик заявки, а если заказчик не задан — автор
+// (см. isOwnerOnlyOrCreatorWithoutOwner и ownerTransitionAllowed в Update).
+// Набор переходов намеренно узкий: остальные статусы владелец без write/work-доступа
+// менять не может.
+func ownerDecisions(ticket *models.Ticket, userID uuid.UUID) (canCancel, canConfirm, canReopen bool) {
+	if !isOwnerOnlyOrCreatorWithoutOwner(ticket, userID) {
+		return false, false, false
+	}
+	return ticket.Status == models.StatusOpen,
+		ticket.Status == models.StatusResolved,
+		ticket.Status == models.StatusResolved
 }
 
 // canEditFields определяет, может ли пользователь править не-статусные поля тикета
@@ -306,6 +321,10 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 
 	flags.AllowedStatuses = s.computeAllowedStatuses(ctx, ticket, userID)
 
+	// Решения владельца (отмена/подтверждение/возврат) — тот же набор, что у плагина
+	// Mattermost; фронт показывает по ним кнопки вместо меню статусов.
+	flags.CanCancel, flags.CanConfirm, flags.CanReopen = ownerDecisions(ticket, userID)
+
 	// CanRequestDueDate — исполнитель (assignee) может запросить перенос срока заявки.
 	// Запрос имеет смысл при установленном сроке и при отсутствии уже pending-запроса
 	// (лимит — один на тикет, enforced в БД через partial unique index).
@@ -431,7 +450,7 @@ func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *mode
 // isOwnerOnlyOrCreatorWithoutOwner — владелец заявки, или автор без владельца.
 // Если заказчик задан, то «решения владельца» доступны только ему, а не автору.
 // Если владельца нет — автор остаётся «заказчиком» своей заявки.
-func (s *TicketService) isOwnerOnlyOrCreatorWithoutOwner(ticket *models.Ticket, actorID uuid.UUID) bool {
+func isOwnerOnlyOrCreatorWithoutOwner(ticket *models.Ticket, actorID uuid.UUID) bool {
 	if ticket.Owner != nil {
 		return ticket.Owner.ID == actorID
 	}
