@@ -1061,12 +1061,13 @@ func (s *NotificationService) deliver(ctx context.Context, ticket *models.Ticket
 // addOwnerAndNotifiers добавляет заказчика (owner) и наблюдателей («Уведомлять»)
 // в набор получателей, исключая автора действия (если передан). Используется для
 // событий, по которым владелец и наблюдатели получают уведомления как заинтересованные
-// участники заявки.
+// участники заявки. Если для заявки отключены уведомления заказчика (OwnerMuted),
+// владелец в получатели не попадает.
 func addOwnerAndNotifiers(recipients map[uuid.UUID]struct{}, ticket *models.Ticket, exclude *uuid.UUID) {
 	if ticket == nil {
 		return
 	}
-	if ticket.Owner != nil {
+	if ticket.Owner != nil && !ticket.OwnerMuted {
 		if exclude == nil || ticket.Owner.ID != *exclude {
 			recipients[ticket.Owner.ID] = struct{}{}
 		}

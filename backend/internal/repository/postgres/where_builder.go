@@ -155,20 +155,21 @@ func (w *whereBuilder) favorites(userID *uuid.UUID, typ *models.FavoriteType) {
 	w.idx++
 }
 
-// creatorOrOwner добавляет "(t.creator_id = $n OR t.owner_id = $n OR EXISTS(notifier))":
-// тикеты, где пользователь является автором, заказчиком или наблюдателем («Уведомлять»).
+// creatorOrOwner добавляет "(t.creator_id = $n OR (t.owner_id = $n AND NOT t.owner_muted) OR EXISTS(notifier))":
+// тикеты, где пользователь является автором, заказчиком (если заявка не скрыта от заказчика)
+// или наблюдателем («Уведомлять»).
 func (w *whereBuilder) creatorOrOwner(userID *uuid.UUID) {
 	if userID == nil {
 		return
 	}
 	w.idx++
-	w.add(fmt.Sprintf("(t.creator_id = $%d OR t.owner_id = $%d OR EXISTS (SELECT 1 FROM %s tn WHERE tn.ticket_id = t.id AND tn.user_id = $%d))",
+	w.add(fmt.Sprintf("(t.creator_id = $%d OR (t.owner_id = $%d AND NOT t.owner_muted) OR EXISTS (SELECT 1 FROM %s tn WHERE tn.ticket_id = t.id AND tn.user_id = $%d))",
 		w.idx, w.idx+1, Tables.TicketNotifiers, w.idx+2))
 	w.args = append(w.args, *userID, *userID, *userID)
 	w.idx += 2
 }
 
-// readableBy добавляет "(t.creator_id = $n OR t.owner_id = $n OR t.assignee_id = $n
+// readableBy добавляет "(t.creator_id = $n OR (t.owner_id = $n AND NOT t.owner_muted) OR t.assignee_id = $n
 // OR EXISTS(notifier) OR t.group_id IN (...))": заявки, доступные пользователю на чтение
 // по атрибутам. Используется для поиска заявки по номеру, где обычный списочный scope
 // отсекал бы создателя/наблюдателя, не состоящего в группе тикета. Внегрупповые заявки,
@@ -185,7 +186,7 @@ func (w *whereBuilder) readableBy(f *models.MyWorkFilter) {
 	w.args = append(w.args, f.UserID)
 	disj := []string{
 		"t.creator_id = " + user,
-		"t.owner_id = " + user,
+		"(t.owner_id = " + user + " AND NOT t.owner_muted)",
 		"t.assignee_id = " + user,
 		fmt.Sprintf("EXISTS (SELECT 1 FROM %s tn WHERE tn.ticket_id = t.id AND tn.user_id = %s)", Tables.TicketNotifiers, notifierUser),
 	}

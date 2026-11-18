@@ -28,17 +28,12 @@ export const TaskFilters: FC<TaskFiltersProps> = ({
 	// «Заказчик» — все участники реалма; «Исполнитель» — только участники групп (как в статистике).
 	// В обоих списках локальные пользователи: импортированные из Mattermost и системные не участвуют.
 	const ownerOptions = useMemo(
-		() =>
-			(usersData?.data ?? [])
-				.filter(u => u.source !== 'mattermost' && !u.isSystem)
-				.map(u => ({ id: u.id, label: `${u.lastName} ${u.firstName} (${u.username})` })),
+		() => (usersData?.data ?? []).map(u => ({ id: u.id, label: `${u.lastName} ${u.firstName} (${u.username})` })),
 		[usersData],
 	)
 	const assigneeOptions = useMemo(
 		() =>
-			(executorsData?.data ?? [])
-				.filter(u => u.source !== 'mattermost' && !u.isSystem)
-				.map(u => ({ id: u.id, label: `${u.lastName} ${u.firstName} (${u.username})` })),
+			(executorsData?.data ?? []).map(u => ({ id: u.id, label: `${u.lastName} ${u.firstName} (${u.username})` })),
 		[executorsData],
 	)
 

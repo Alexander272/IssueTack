@@ -124,8 +124,9 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 			// заявки по чтению, но не «рабочие»: они могут оставлять внешний комментарий
 			// к активной заявке, не получая work-доступа (иначе получили бы и смену
 			// статусов в обход ownerTransitionAllowed). Внутренние комментарии остаются
-			// за исполнителем/менеджером группы.
-			isOwner := ticket.Owner != nil && ticket.Owner.ID == dto.UserID
+			// за исполнителем/менеджером группы. Если заявка скрыта от заказчика
+			// (OwnerMuted), доступ по роли заказчика не предоставляется.
+			isOwner := ticket.Owner != nil && ticket.Owner.ID == dto.UserID && !ticket.OwnerMuted
 			isNotifier := false
 			for i := range ticket.Notifiers {
 				if ticket.Notifiers[i].ID == dto.UserID {
@@ -243,7 +244,7 @@ func (s *CommentService) notifyOwnerViaMattermost(ctx context.Context, comment *
 		logger.Warn("failed to load ticket for mattermost comment notify", logger.StringAttr("ticket_id", comment.TicketID.String()), logger.ErrAttr(err))
 		return
 	}
-	if ticket.Owner == nil || ticket.RealmID == nil {
+	if ticket.Owner == nil || ticket.RealmID == nil || ticket.OwnerMuted {
 		return
 	}
 	if comment.UserID != nil && ticket.Owner.ID == *comment.UserID {

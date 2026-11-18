@@ -174,8 +174,9 @@ func (s *TicketAccessService) checkTicketAttributes(ctx context.Context, ticket 
 	// и Delete — нет: иначе owner прошёл бы общие проверки прав и смог бы выставлять
 	// произвольные статусы в обход строгих переходов ownerTransitionAllowed (см.
 	// TicketService.Update). Право на комментарий owner'у выдаётся отдельно в
-	// CommentService.Create, чтобы не расширять CheckWorkAccess.
-	isOwner := ticket.Owner != nil && ticket.Owner.ID == userID
+	// CommentService.Create, чтобы не расширять CheckWorkAccess. Если заявка скрыта
+	// от заказчика (OwnerMuted), доступ по роли заказчика не предоставляется.
+	isOwner := ticket.Owner != nil && ticket.Owner.ID == userID && !ticket.OwnerMuted
 	// Наблюдатели (список «Уведомлять») получают read-доступ к заявке как заказчик.
 	// Право вести заявку (write/delete/work) им не даётся.
 	isNotifier := hasTicketNotifier(ticket, userID)
@@ -268,8 +269,9 @@ func (s *TicketAccessService) checkGroupManager(ctx context.Context, groupID uui
 // комментарии и решения владельца, но не «взять в работу» — работа не его роль.
 // Read-доступ при этом owner'у уже выдан в checkTicketAttributes, а вот Take
 // гейтится этим методом: иначе заказчик подхватывал бы чужую заявку в исполнители.
+// Если заявка скрыта от заказчика (OwnerMuted), роль владельца не активна.
 func (s *TicketAccessService) ownerReadOnly(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) (bool, error) {
-	if ticket.Owner == nil || ticket.Owner.ID != userID {
+	if ticket.Owner == nil || ticket.Owner.ID != userID || ticket.OwnerMuted {
 		return false, nil
 	}
 	if ticket.Creator.ID == userID {
@@ -360,10 +362,10 @@ func (s *TicketAccessService) IsCustomer(ctx context.Context, ticket *models.Tic
 
 // CanAttachToTicket проверяет право прикрепить файл к заявке. Кроме «рабочего»
 // доступа (CheckWorkAccess) вложение разрешено заказчику — автору-без-групп,
-// владельцу или наблюдателю из списка «Уведомлять»: приложить файл к своей
-// активной заявке — часть сценария заинтересованного участника, поэтому здесь он
-// не отсекается, в отличие от подзадач и внутренних комментариев. Замороженные
-// заявки (resolved/closed/cancelled) закрыты и для них.
+// владельцу (если заявка не скрыта от него, OwnerMuted) или наблюдателю из списка
+// «Уведомлять»: приложить файл к своей активной заявке — часть сценария
+// заинтересованного участника, поэтому здесь он не отсекается, в отличие от подзадач
+// и внутренних комментариев. Замороженные заявки (resolved/closed/cancelled) закрыты и для них.
 func (s *TicketAccessService) CanAttachToTicket(ctx context.Context, dto *models.AccessCheckDTO) error {
 	workErr := s.CheckWorkAccess(ctx, dto)
 	if workErr == nil {
@@ -379,7 +381,7 @@ func (s *TicketAccessService) CanAttachToTicket(ctx context.Context, dto *models
 	}
 
 	isCreator := ticket.Creator.ID == dto.UserID
-	isOwner := ticket.Owner != nil && ticket.Owner.ID == dto.UserID
+	isOwner := ticket.Owner != nil && ticket.Owner.ID == dto.UserID && !ticket.OwnerMuted
 	isNotifier := hasTicketNotifier(ticket, dto.UserID)
 	if !isCreator && !isOwner && !isNotifier {
 		return workErr

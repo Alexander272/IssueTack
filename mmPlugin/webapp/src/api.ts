@@ -164,6 +164,9 @@ export interface CreateTicketPayload {
     // Наблюдатели («Уведомлять») — только менеджеру и исполнителю; сервер
     // проверяет право менять список так же, как веб-форма.
     notifierIds?: string[];
+    // Отключает уведомления заказчику и скрывает заявку из его списка заявок.
+    // Учитывается только менеджером при явно выбранном заказчике.
+    ownerMuted?: boolean;
 }
 
 const contextCache = new Map<string, {scope: PluginScope; ts: number; data: PluginContextResult}>();
@@ -344,6 +347,9 @@ export async function createTicket(scope: PluginScope, payload: CreateTicketPayl
     }
     if (payload.dueDate) {
         fd.append('dueDate', payload.dueDate);
+    }
+    if (payload.ownerMuted) {
+        fd.append('ownerMuted', 'true');
     }
     // Повторяющееся поле: сервер собирает его через PostFormArray.
     for (const id of payload.notifierIds || []) {

@@ -23,11 +23,8 @@ export const GroupsView: FC = () => {
 	const { data: groups } = useGetAllGroupsQuery()
 	const { data: usersData } = useGetAvailableUsersQuery()
 	// В группы исполнителей можно брать только локальных пользователей: импортированные
-	// из Mattermost и системные в этом списке не нужны.
-	const users = useMemo(
-		() => (usersData?.data ?? []).filter(u => u.source !== 'mattermost' && !u.isSystem),
-		[usersData],
-	)
+	// из Mattermost в этом списке не нужны.
+	const users = useMemo(() => (usersData?.data ?? []).filter(u => u.source !== 'mattermost'), [usersData])
 
 	const filtered = useMemo(() => {
 		const q = debouncedSearch.toLowerCase()

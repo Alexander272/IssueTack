@@ -379,6 +379,11 @@ func (h *Handler) handlePluginCreateTicket(c *gin.Context) {
 		input.NotifierIDs = append(input.NotifierIDs, id)
 	}
 
+	switch strings.ToLower(strings.TrimSpace(c.Request.FormValue("ownerMuted"))) {
+	case "1", "true", "yes", "on":
+		input.OwnerMuted = true
+	}
+
 	files := c.Request.MultipartForm.File["files"]
 	if len(files) > maxPluginFiles {
 		response.SendError(c, models.ErrInvalidInput)

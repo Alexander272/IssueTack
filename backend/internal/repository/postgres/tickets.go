@@ -94,7 +94,7 @@ func (a *nullableTicketAssoc) assign(ticket *models.Ticket) {
 // COUNT(*) OVER() AS total_count для тотала страницы.
 func ticketSelectBase() string {
 	return fmt.Sprintf(`SELECT 
-			t.id, t.title, t.description, t.status, t.priority, t.ticket_number, t.realm_id, t.due_date, t.closed_at, t.resolved_at, t.created_at, t.updated_at,
+			t.id, t.title, t.description, t.status, t.priority, t.ticket_number, t.realm_id, t.due_date, t.closed_at, t.resolved_at, t.owner_muted, t.created_at, t.updated_at,
 			u_creator.id, u_creator.username AS creator_username, u_creator.first_name AS creator_first_name, u_creator.last_name AS creator_last_name, u_creator.internal_number AS creator_internal_number,
 			u_owner.id, u_owner.username AS owner_username, u_owner.first_name AS owner_first_name, u_owner.last_name AS owner_last_name, u_owner.internal_number AS owner_internal_number,
 			u_assignee.id, u_assignee.username AS assignee_username, u_assignee.first_name AS assignee_first_name, u_assignee.last_name AS assignee_last_name, u_assignee.internal_number AS assignee_internal_number,
@@ -130,7 +130,7 @@ func scanTicketRow(row rowScanner) (*models.Ticket, int, error) {
 		&ticket.ID, &ticket.Title, &ticket.Description,
 		&ticket.Status, &ticket.Priority,
 		&ticket.TicketNumber, &ticket.RealmID,
-		&ticket.DueDate, &ticket.ClosedAt, &ticket.ResolvedAt, &ticket.CreatedAt, &ticket.UpdatedAt,
+		&ticket.DueDate, &ticket.ClosedAt, &ticket.ResolvedAt, &ticket.OwnerMuted, &ticket.CreatedAt, &ticket.UpdatedAt,
 		&ticket.Creator.ID, &ticket.Creator.Username, &ticket.Creator.FirstName, &ticket.Creator.LastName, &ticket.Creator.InternalNumber,
 		&assoc.OwnerID, &assoc.OwnerUsername, &assoc.OwnerFirstName, &assoc.OwnerLastName, &assoc.OwnerInternalNumber,
 		&assoc.AssigneeID, &assoc.AssigneeUsername, &assoc.AssigneeFirstName, &assoc.AssigneeLastName, &assoc.AssigneeInternalNumber,
@@ -236,7 +236,7 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 
 func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) (*models.Ticket, error) {
 	query := fmt.Sprintf(`SELECT 
-			t.id, t.title, t.description, t.status, t.priority, t.ticket_number, t.realm_id, t.due_date, t.closed_at, t.resolved_at, t.created_at, t.updated_at,
+			t.id, t.title, t.description, t.status, t.priority, t.ticket_number, t.realm_id, t.due_date, t.closed_at, t.resolved_at, t.owner_muted, t.created_at, t.updated_at,
 			-- Данные владельца
 			u_owner.id, u_owner.username AS owner_username, u_owner.first_name AS owner_first_name, u_owner.last_name AS owner_last_name, u_owner.internal_number AS owner_internal_number,
 			-- Данные создателя
@@ -275,7 +275,7 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 	if err := r.db.QueryRow(ctx, query, req.ID).Scan(
 		&ticket.ID, &ticket.Title, &ticket.Description, &ticket.Status, &ticket.Priority,
 		&ticket.TicketNumber, &ticket.RealmID,
-		&ticket.DueDate, &ticket.ClosedAt, &ticket.ResolvedAt, &ticket.CreatedAt, &ticket.UpdatedAt,
+		&ticket.DueDate, &ticket.ClosedAt, &ticket.ResolvedAt, &ticket.OwnerMuted, &ticket.CreatedAt, &ticket.UpdatedAt,
 		&assoc.OwnerID, &assoc.OwnerUsername, &assoc.OwnerFirstName, &assoc.OwnerLastName, &assoc.OwnerInternalNumber,
 		&ticket.Creator.ID, &ticket.Creator.Username, &ticket.Creator.FirstName, &ticket.Creator.LastName, &ticket.Creator.InternalNumber,
 		&assoc.AssigneeID, &assoc.AssigneeUsername, &assoc.AssigneeFirstName, &assoc.AssigneeLastName, &assoc.AssigneeInternalNumber,
@@ -329,8 +329,8 @@ func (r *TicketRepo) Create(ctx context.Context, tx Tx, dto *models.TicketDTO) e
 	dto.TicketNumber = ticketNumber
 
 	query := fmt.Sprintf(`INSERT INTO %s (id, title, description, status, priority, site_id, category_id,
-		creator_id, owner_id, group_id, assignee_id, manager_id, due_date, ticket_number, realm_id) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+		creator_id, owner_id, group_id, assignee_id, manager_id, due_date, ticket_number, realm_id, owner_muted) 
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
 		Tables.Tickets,
 	)
 
@@ -344,7 +344,7 @@ func (r *TicketRepo) Create(ctx context.Context, tx Tx, dto *models.TicketDTO) e
 
 	_, err := r.getExec(tx).Exec(
 		ctx, query, dto.ID, dto.Title, dto.Description, dto.Status, dto.Priority, siteID, categoryID,
-		dto.CreatorID, dto.OwnerID, dto.GroupID, dto.AssigneeID, dto.ManagerID, dto.DueDate, ticketNumber, dto.RealmID,
+		dto.CreatorID, dto.OwnerID, dto.GroupID, dto.AssigneeID, dto.ManagerID, dto.DueDate, ticketNumber, dto.RealmID, dto.OwnerMuted,
 	)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
@@ -376,6 +376,7 @@ func (r *TicketRepo) Update(ctx context.Context, tx Tx, dto *models.TicketDTO) e
 	add("assigneeId", "assignee_id", dto.AssigneeID)
 	add("managerId", "manager_id", dto.ManagerID)
 	add("ownerId", "owner_id", dto.OwnerID)
+	add("ownerMuted", "owner_muted", dto.OwnerMuted)
 	add("dueDate", "due_date", dto.DueDate)
 	add("closedAt", "closed_at", dto.ClosedAt)
 	add("resolvedAt", "resolved_at", dto.ResolvedAt)

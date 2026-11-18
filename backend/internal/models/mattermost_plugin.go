@@ -107,7 +107,11 @@ type PluginCreateTicketInput struct {
 	// означает «никого не уведомлять» и неотличим от «поле не передано», что для
 	// создания одно и то же.
 	NotifierIDs []uuid.UUID
-	Files       []PluginFile
+	// OwnerMuted отключает уведомления заказчику и скрывает заявку из его списка.
+	// Учитывается только при наличии явно выбранного заказчика и праве менеджера/
+	// начальника области (проверяется TicketService.Create).
+	OwnerMuted bool
+	Files      []PluginFile
 }
 
 // PluginCreateTicketResult — результат создания заявки из плагина.

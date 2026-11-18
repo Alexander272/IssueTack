@@ -479,6 +479,7 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 	// Серверная часть правила выбора заказчика (P2): явный заказчик должен быть
 	// выбран разрешённым пользователем (менеджер/исполнитель) и быть активным
 	// пользователем области — иначе заявка с чужим заказчиком не создаётся.
+	explicitOtherOwner := dto.OwnerID != nil && *dto.OwnerID != dto.CreatorID
 	if dto.OwnerID != nil {
 		if dto.RealmID == nil {
 			return models.ErrInvalidInput
@@ -505,6 +506,15 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 	supervisor, err := s.access.IsRealmSupervisor(ctx, dto.Actor.ID, realmStr)
 	if err != nil {
 		return fmt.Errorf("failed to check supervisor access: %w", err)
+	}
+
+	if dto.OwnerMuted {
+		if !isManager && !supervisor {
+			return models.ErrPermissionDenied
+		}
+		if !explicitOtherOwner {
+			dto.OwnerMuted = false
+		}
 	}
 
 	if isManager || supervisor {
@@ -755,6 +765,39 @@ func (s *TicketService) updateTicket(
 		// Так же, как при создании без заказчика, им становится создатель.
 		if dto.HasField("ownerId") && dto.OwnerID == nil {
 			dto.OwnerID = &oldTicket.Creator.ID
+		}
+
+		// Скрытие заявки от заказчика и отключение уведомлений ему (ownerMuted) —
+		// действие менеджера группы/начальника области. При снятии явного заказчика
+		// (владелец становится создателем) флаг принудительно сбрасывается.
+		if dto.HasField("ownerMuted") || dto.HasField("ownerId") {
+			resultOwnerID := oldTicket.Creator.ID
+			if oldTicket.Owner != nil {
+				resultOwnerID = oldTicket.Owner.ID
+			}
+			if dto.HasField("ownerId") && dto.OwnerID != nil {
+				resultOwnerID = *dto.OwnerID
+			}
+			resultOwnerMuted := oldTicket.OwnerMuted
+			if dto.HasField("ownerMuted") {
+				resultOwnerMuted = dto.OwnerMuted
+			}
+			if resultOwnerID == oldTicket.Creator.ID {
+				resultOwnerMuted = false
+			}
+			if dto.HasField("ownerMuted") && resultOwnerMuted != oldTicket.OwnerMuted {
+				okManage, err := s.access.CanManage(ctx, dto.Actor.ID, oldTicket)
+				if err != nil {
+					return fmt.Errorf("failed to check owner mute access: %w", err)
+				}
+				if !okManage {
+					return models.ErrPermissionDenied
+				}
+			}
+			if resultOwnerMuted != oldTicket.OwnerMuted || (dto.HasField("ownerMuted") && dto.OwnerMuted != resultOwnerMuted) {
+				dto.OwnerMuted = resultOwnerMuted
+				dto.MarkProvided("ownerMuted")
+			}
 		}
 
 		if dto.HasField("status") && dto.Status != oldTicket.Status {
@@ -1418,15 +1461,16 @@ func (s *TicketService) isManagerOfGroup(ctx context.Context, group *models.Grou
 }
 
 func (s *TicketService) isOwner(ticket *models.Ticket, actorID uuid.UUID) bool {
-	return ticket.Owner != nil && ticket.Owner.ID == actorID
+	return ticket.Owner != nil && ticket.Owner.ID == actorID && !ticket.OwnerMuted
 }
 
 // isOwnerOnlyOrCreatorWithoutOwner — владелец заявки, или автор без владельца.
-// Если заказчик задан, то «решения владельца» доступны только ему, а не автору.
+// Если заказчик задан, то «решения владельца» доступны только ему, а не автору
+// (скрытый от заказа владелец, OwnerMuted, правом владельца не пользуется).
 // Если владельца нет — автор остаётся «заказчиком» своей заявки.
 func (s *TicketService) isOwnerOnlyOrCreatorWithoutOwner(ticket *models.Ticket, actorID uuid.UUID) bool {
 	if ticket.Owner != nil {
-		return ticket.Owner.ID == actorID
+		return ticket.Owner.ID == actorID && !ticket.OwnerMuted
 	}
 	return ticket.Creator.ID == actorID
 }
@@ -1819,7 +1863,7 @@ func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *mode
 		}
 	}
 	isCreatorOrMgr := isCreator || isMgr
-	isOwner := ticket.Owner != nil && ticket.Owner.ID == userID
+	isOwner := ticket.Owner != nil && ticket.Owner.ID == userID && !ticket.OwnerMuted
 	hasWork := hasWrite || (ticket.Assignee != nil && ticket.Assignee.ID == userID)
 
 	current := ticket.Status

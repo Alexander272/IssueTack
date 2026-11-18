@@ -638,6 +638,7 @@ func (s *MattermostService) PluginCreateTicket(ctx context.Context, input *model
 	if input.DueDate != nil {
 		dto.DueDate = input.DueDate
 	}
+	dto.OwnerMuted = input.OwnerMuted
 	// Наблюдатели («Уведомлять»). Поле передаётся только менеджеру и
 	// исполнителю; у «чистого» заявителя его нет. Право менять список
 	// проверяет validateAndPrepareNotifiers внутри TicketService.Create —

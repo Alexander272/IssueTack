@@ -29,6 +29,9 @@ type Ticket struct {
 	Assignee *UserShort  `json:"assignee"` // Конкретный агент-исполнитель
 	Manager  *UserShort  `json:"manager"`  // Начальник, контролирующий задачу
 
+	// OwnerMuted отключает уведомления заказчику и скрывает заявку из его списка заявок.
+	OwnerMuted bool `json:"ownerMuted" db:"owner_muted"`
+
 	// Сроки и планирование
 	DueDate    *time.Time `json:"dueDate" db:"due_date"`
 	ClosedAt   *time.Time `json:"closedAt" db:"closed_at"`
@@ -150,6 +153,9 @@ type TicketDTO struct {
 	// событиям как владелец и получают read-доступ к заявке. При Update
 	// обрабатывается как полная замена, если поле передано в запросе.
 	NotifierIDs []uuid.UUID `json:"notifierIds,omitempty"`
+
+	// OwnerMuted отключает уведомления заказчику и скрывает заявку из его списка заявок.
+	OwnerMuted bool `json:"ownerMuted" db:"owner_muted"`
 
 	// Поля, переданные в запросе (заполняется при UnmarshalJSON). Позволяет делать partial update.
 	Provided map[string]bool `json:"-"`
@@ -326,6 +332,9 @@ func (dto *TicketDTO) GetChanges(old *Ticket) []*FieldChange {
 		} else if dto.OwnerID == nil && old.Owner != nil {
 			changes = append(changes, &FieldChange{ActionOwnerChanged, old.Owner.ID.String(), "none"})
 		}
+	}
+	if dto.HasField("ownerMuted") && dto.OwnerMuted != old.OwnerMuted {
+		changes = append(changes, &FieldChange{ActionOwnerMutedChanged, formatFieldValue(old.OwnerMuted), formatFieldValue(dto.OwnerMuted)})
 	}
 
 	return changes

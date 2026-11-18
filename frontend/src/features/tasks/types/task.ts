@@ -72,6 +72,8 @@ export interface ITask {
 	attachments?: IAttachment[]
 	notifiers?: IUserShort[]
 	access?: IAccessFlags
+	/** Отключает уведомления заказчику и скрывает заявку из его списка заявок. */
+	ownerMuted?: boolean
 	/** Запрос исполнителя на перенос срока (только когда есть pending-решение менеджера). */
 	dueDateRequest?: IDueDateRequest | null
 }
@@ -136,6 +138,8 @@ export interface ITaskDTO {
 	subtasks?: ISubtaskCreateDTO[]
 	/** Наблюдатели заявки (список «Уведомлять»). При обновлении — полная замена, если передано. */
 	notifierIds?: string[]
+	/** Отключает уведомления заказчику и скрывает заявку из его списка заявок. */
+	ownerMuted?: boolean
 }
 
 export interface ISubtask {
