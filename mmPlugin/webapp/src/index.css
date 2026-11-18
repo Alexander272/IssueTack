@@ -473,25 +473,25 @@
     justify-content: space-between;
     min-height: 38px;
     padding: 6px 12px;
-    border: 1px solid #d0d7de;
+    border: 1px solid rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.16);
     border-radius: 6px;
-    background-color: #fff;
+    background-color: var(--center-channel-bg, #fff);
     cursor: pointer;
     user-select: none;
-    transition: border-color 0.15s ease;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .it-f-select-trigger:hover:not(.is-disabled) {
-    border-color: #8c959f;
+    border-color: rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.32);
 }
 
 .it-f-select-trigger.is-open {
-    border-color: #1976d2;
-    box-shadow: 0 0 0 1px #1976d2;
+    border-color: var(--button-bg, #166de0);
+    box-shadow: 0 0 0 1px var(--button-bg, #166de0);
 }
 
 .it-f-select-trigger.is-disabled {
-    background-color: #f6f8fa;
+    background-color: rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.08);
     cursor: not-allowed;
     opacity: 0.7;
 }
@@ -501,11 +501,11 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: #24292e;
+    color: var(--center-channel-color, #3d3c40);
 }
 
 .it-f-select-trigger__placeholder {
-    color: #8c959f;
+    color: rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.56);
 }
 
 /* Бейдж +N */
@@ -519,9 +519,9 @@
     font-size: 12px;
     font-weight: 600;
     line-height: 1;
-    color: #1976d2;
-    background-color: rgba(25, 118, 210, 0.08);
-    border: 1px solid rgba(25, 118, 210, 0.2);
+    color: var(--button-bg, #166de0);
+    background-color: rgba(var(--button-bg-rgb, 22, 109, 224), 0.12);
+    border: 1px solid rgba(var(--button-bg-rgb, 22, 109, 224), 0.24);
     border-radius: 4px;
     white-space: nowrap;
 }
@@ -532,11 +532,11 @@
     top: calc(100% + 4px);
     left: 0;
     width: 100%;
-    background-color: #fff;
-    border: 1px solid #e1e4e8;
+    background-color: var(--center-channel-bg, #fff);
+    border: 1px solid rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.16);
     border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(149, 157, 165, 0.2);
-    color: #24292e;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    color: var(--center-channel-color, #3d3c40);
     z-index: 1310;
     overflow: hidden;
 }
@@ -546,11 +546,11 @@
     display: flex;
     align-items: center;
     padding: 8px 16px;
-    border-bottom: 1px solid #eaecef;
+    border-bottom: 1px solid rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.12);
 }
 
 .it-f-select-search__icon {
-    color: #6e7781;
+    color: rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.56);
     margin-right: 8px;
     flex-shrink: 0;
 }
@@ -560,8 +560,12 @@
     border: none;
     outline: none;
     font-size: 13px;
-    color: #24292e;
+    color: var(--center-channel-color, #3d3c40);
     background: transparent;
+}
+
+.it-f-select-search__input::placeholder {
+    color: rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.56);
 }
 
 /* Список опций (аналог ListboxComponent с высотой ~8 элементов) */
@@ -581,7 +585,7 @@
 }
 
 .it-f-select-option:hover {
-    background-color: rgba(0, 0, 0, 0.04);
+    background-color: rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.08);
 }
 
 .it-f-select-option__row {
@@ -601,13 +605,13 @@
     margin-right: 12px;
     margin-left: 4px;
     border-radius: 4px;
-    border: 1px solid #afafaf;
-    color: #1976d2;
-    background-color: #fff;
+    border: 1px solid rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.32);
+    color: var(--button-bg, #166de0);
+    background-color: var(--center-channel-bg, #fff);
 }
 
 .it-f-select-checkbox.is-checked {
-    border-color: #1976d2;
+    border-color: var(--button-bg, #166de0);
 }
 
 .it-f-select-option__label {
@@ -618,7 +622,7 @@
 
 .it-f-select-option__divider {
     height: 1px;
-    background-color: #eaecef;
+    background-color: rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.08);
     margin-top: 8px;
 }
 
@@ -629,7 +633,7 @@
 .it-f-select-empty {
     padding: 16px;
     text-align: center;
-    color: #6e7781;
+    color: rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.56);
 }
 
 /* Карточки приоритета в «Расширенных настройках» менеджера — как PriorityCard
