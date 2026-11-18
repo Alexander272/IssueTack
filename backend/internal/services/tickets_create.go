@@ -129,6 +129,7 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 	// Серверная часть правила выбора заказчика (P2): явный заказчик должен быть
 	// выбран разрешённым пользователем (менеджер/исполнитель) и быть активным
 	// пользователем области — иначе заявка с чужим заказчиком не создаётся.
+	explicitOtherOwner := dto.OwnerID != nil && *dto.OwnerID != dto.CreatorID
 	if dto.OwnerID != nil {
 		if dto.RealmID == nil {
 			return models.ErrInvalidInput
@@ -157,6 +158,15 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		return fmt.Errorf("failed to check supervisor access: %w", err)
 	}
 
+	if dto.OwnerMuted {
+		if !isManager && !supervisor {
+			return models.ErrPermissionDenied
+		}
+		if !explicitOtherOwner {
+			dto.OwnerMuted = false
+		}
+	}
+
 	if isManager || supervisor {
 		canSetDueDate = true
 	} else {
@@ -176,9 +186,8 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		return models.ErrPermissionDenied
 	}
 
-	// 2. Если срок не указан вручную и у категории есть срок по умолчанию —
-	// применяем его автоматически всем создателям (свойство категории).
-	// canSetDueDate гейтит только ручную установку срока.
+	// 2. Автосрок из категории применяется всем (свойство категории, а не право
+	// пользователя). canSetDueDate гейтит только ручную установку срока.
 	if dto.DueDate == nil && dto.CategoryID != uuid.Nil {
 		category, err := s.categories.GetByID(ctx, &models.GetCategoryByIdDTO{ID: dto.CategoryID, RealmID: *dto.RealmID})
 		if err != nil {

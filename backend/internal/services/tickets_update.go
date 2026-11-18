@@ -107,6 +107,39 @@ func (s *TicketService) updateTicket(
 			dto.OwnerID = &oldTicket.Creator.ID
 		}
 
+		// Скрытие заявки от заказчика и отключение уведомлений ему (ownerMuted) —
+		// действие менеджера группы/начальника области. При снятии явного заказчика
+		// (владелец становится создателем) флаг принудительно сбрасывается.
+		if dto.HasField("ownerMuted") || dto.HasField("ownerId") {
+			resultOwnerID := oldTicket.Creator.ID
+			if oldTicket.Owner != nil {
+				resultOwnerID = oldTicket.Owner.ID
+			}
+			if dto.HasField("ownerId") && dto.OwnerID != nil {
+				resultOwnerID = *dto.OwnerID
+			}
+			resultOwnerMuted := oldTicket.OwnerMuted
+			if dto.HasField("ownerMuted") {
+				resultOwnerMuted = dto.OwnerMuted
+			}
+			if resultOwnerID == oldTicket.Creator.ID {
+				resultOwnerMuted = false
+			}
+			if dto.HasField("ownerMuted") && resultOwnerMuted != oldTicket.OwnerMuted {
+				okManage, err := s.access.CanManage(ctx, dto.Actor.ID, oldTicket)
+				if err != nil {
+					return fmt.Errorf("failed to check owner mute access: %w", err)
+				}
+				if !okManage {
+					return models.ErrPermissionDenied
+				}
+			}
+			if resultOwnerMuted != oldTicket.OwnerMuted || (dto.HasField("ownerMuted") && dto.OwnerMuted != resultOwnerMuted) {
+				dto.OwnerMuted = resultOwnerMuted
+				dto.MarkProvided("ownerMuted")
+			}
+		}
+
 		if dto.HasField("status") && dto.Status != oldTicket.Status {
 			ok, err := s.canChangeStatus(ctx, oldTicket, dto.Actor.ID, realmStr)
 			if err != nil {
