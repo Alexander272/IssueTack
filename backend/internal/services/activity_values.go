@@ -26,6 +26,18 @@ func logPersonName(firstName, lastName, username string, id uuid.UUID) string {
 	}
 }
 
+// logBoolLabel приводит булево значение снапшота к человекочитаемому виду.
+func logBoolLabel(raw string) string {
+	switch raw {
+	case "true":
+		return "Да"
+	case "false":
+		return "Нет"
+	default:
+		return raw
+	}
+}
+
 // logEntityName — имя справочной сущности (группа/площадка/категория) для журнала;
 // при пустом имени — сырой id.
 func logEntityName(name string, id uuid.UUID) string {
@@ -102,6 +114,9 @@ func (s *TicketService) logValues(ctx context.Context, old *models.Ticket, chang
 		case models.ActionNotifiersChanged:
 			oldVal = logNotifierUsers(old.Notifiers)
 			newVal = resolveNotifierLabels(ctx, s.users, c.NewVal)
+		case models.ActionOwnerMutedChanged:
+			oldVal = logBoolLabel(c.OldVal)
+			newVal = logBoolLabel(c.NewVal)
 		default:
 			oldVal = c.OldVal
 			newVal = c.NewVal

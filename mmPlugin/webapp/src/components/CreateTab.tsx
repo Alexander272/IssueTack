@@ -67,48 +67,6 @@ function pluginUserLabel(u: PluginUserShort): string {
 	return u.username
 }
 
-// NotifierField — список наблюдателей «Уведомлять». В вебе это мультиселект с
-// поиском (NotifierSelector); в модалке плагина нативный multiple-select не
-// помещается и неудобен на телефоне, поэтому те же варианты — чекбоксами в
-// прокручиваемой рамке. Автор и заказчик из списка исключены: они и так
-// получают уведомления, дублировать их незачем (как excludeIds в вебе).
-// interface NotifierFieldProps {
-// 	options: PluginUserShort[]
-// 	value: string[]
-// 	onChange: (ids: string[]) => void
-// }
-
-// function NotifierField({ options, value, onChange }: NotifierFieldProps) {
-// 	return (
-// 		<div className='it-f-label'>
-// 			<span className='it-f-label__text'>Уведомлять</span>
-// 			{options.length > 0 ? (
-// 				<div className='it-f-multi'>
-// 					{options.map(u => (
-// 						<label key={u.id} className='it-f-multi__item'>
-// 							<input
-// 								className='it-f-check__box'
-// 								type='checkbox'
-// 								checked={value.includes(u.id)}
-// 								onChange={e =>
-// 									onChange(
-// 										e.target.checked
-// 											? [...value, u.id]
-// 											: value.filter(id => id !== u.id),
-// 									)
-// 								}
-// 							/>
-// 							<span>{pluginUserLabel(u)}</span>
-// 						</label>
-// 					))}
-// 				</div>
-// 			) : (
-// 				<span className='it-f-label__hint'>Нет доступных пользователей</span>
-// 			)}
-// 		</div>
-// 	)
-// }
-
 // pluginDueDateFromCategory — значение для <input type="datetime-local">: срок
 // в днях от сегодняшнего дня на конец дня. Бэкенд (parsePluginDueDate) принимает
 // формат datetime-local, поэтому toISOString() не подходит.
@@ -144,6 +102,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 	const [assigneeId, setAssigneeId] = useState(initialDraft?.assigneeId ?? '')
 	const [ownerId, setOwnerId] = useState(initialDraft?.ownerId ?? '')
 	const [notifierIds, setNotifierIds] = useState<string[]>(initialDraft?.notifierIds ?? [])
+	const [ownerMuted, setOwnerMuted] = useState(Boolean(initialDraft?.ownerMuted))
 	const [dueDate, setDueDate] = useState(initialDraft?.dueDate ?? '')
 	const [files, setFiles] = useState<File[]>([])
 	const [submitting, setSubmitting] = useState(false)
@@ -174,6 +133,12 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 			return next.length === prev.length ? prev : next
 		})
 	}, [excludedNotifierIds])
+
+	useEffect(() => {
+		if (!ownerId && ownerMuted) {
+			setOwnerMuted(false)
+		}
+	}, [ownerId, ownerMuted])
 
 	const categories = (context.categories || []).filter((c: PluginCategory) => c.isActive !== false)
 	// Категории группируются по разделам (таксономия) — нативные optgroup.
@@ -250,6 +215,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 			assigneeId,
 			ownerId,
 			notifierIds,
+			ownerMuted,
 			dueDate,
 		})
 	}, [
@@ -264,6 +230,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		assigneeId,
 		ownerId,
 		notifierIds,
+		ownerMuted,
 		dueDate,
 	])
 
@@ -280,7 +247,8 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 			assigneeId ||
 			ownerId ||
 			dueDate ||
-			notifierIds.length > 0,
+			notifierIds.length > 0 ||
+			ownerMuted,
 		)
 		setHasDraft(hasContent)
 		onDraftChange?.(hasContent)
@@ -297,6 +265,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		assigneeId,
 		ownerId,
 		notifierIds,
+		ownerMuted,
 		dueDate,
 	])
 
@@ -311,6 +280,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		setGroupId('')
 		setAssigneeId('')
 		setOwnerId('')
+		setOwnerMuted(false)
 		setDueDate('')
 		setNotifierIds([])
 		setFiles([])
@@ -379,6 +349,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 				if (assigneeId) payload.assigneeId = assigneeId
 				if (ownerId) payload.ownerId = ownerId
 				if (dueDate) payload.dueDate = dueDate
+				if (ownerMuted && ownerId) payload.ownerMuted = true
 				payload.notifierIds = notifierIds
 			} else if (isExecutor) {
 				if (ownerId) payload.ownerId = ownerId
@@ -402,6 +373,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 			setGroupId('')
 			setAssigneeId('')
 			setOwnerId('')
+			setOwnerMuted(false)
 			setNotifierIds([])
 			setDueDate('')
 			setFiles([])
@@ -588,7 +560,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 				</div>
 			</section>
 
-			{(isManager || isExecutor) ? (
+			{isManager || isExecutor ? (
 				<section className='it-ticket-section'>
 					<div className='it-ticket-section__head'>
 						<div className='it-ticket-section__num'>3</div>
@@ -628,9 +600,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 											/>
 											<span className='it-f-priority-card__label'>{PRIORITY_LABELS[value]}</span>
 										</span>
-										<span className='it-f-priority-card__desc'>
-											{PRIORITY_DESCRIPTIONS[value]}
-										</span>
+										<span className='it-f-priority-card__desc'>{PRIORITY_DESCRIPTIONS[value]}</span>
 									</button>
 								))}
 							</div>
@@ -638,29 +608,31 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 						</div>
 
 						<div className='it-ticket-grid'>
-							<label className='it-f-label'>
-								<span className='it-f-label__text'>Заказчик</span>
-								<select
-									className={`it-f${fieldErrors.ownerId ? ' it-f--error' : ''}`}
-									value={ownerId}
-									onChange={e => {
-										setOwnerId(e.target.value)
-										clearFieldError('ownerId')
-									}}
-								>
-									<option value=''>
-										{isManager ? '— Заявитель: создатель —' : '— Не указан —'}
-									</option>
-									{customers.map(u => (
-										<option key={u.id} value={u.id}>
-											{pluginUserLabel(u)}
+							<div className='it-f-label'>
+								<label className='it-f-label' style={{ gap: 4 }}>
+									<span className='it-f-label__text'>Заказчик</span>
+									<select
+										className={`it-f${fieldErrors.ownerId ? ' it-f--error' : ''}`}
+										value={ownerId}
+										onChange={e => {
+											setOwnerId(e.target.value)
+											clearFieldError('ownerId')
+										}}
+									>
+										<option value=''>
+											{isManager ? '— Заявитель: создатель —' : '— Не указан —'}
 										</option>
-									))}
-								</select>
-								{fieldErrors.ownerId ? (
-									<span className='it-f__err'>{fieldErrors.ownerId}</span>
-								) : null}
-							</label>
+										{customers.map(u => (
+											<option key={u.id} value={u.id}>
+												{pluginUserLabel(u)}
+											</option>
+										))}
+									</select>
+									{fieldErrors.ownerId ? (
+										<span className='it-f__err'>{fieldErrors.ownerId}</span>
+									) : null}
+								</label>
+							</div>
 
 							<NotifierField
 								options={notifierOptions}
@@ -668,6 +640,22 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 								onChange={setNotifierIds}
 								pluginUserLabel={pluginUserLabel}
 							/>
+
+							{isManager && ownerId ? (
+								<div style={{ gridColumn: '1 / -1', marginTop: '-16px' }}>
+									<label className='it-f-check' style={{ display: 'flex' }}>
+										<input
+											className='it-f-check__box'
+											type='checkbox'
+											checked={ownerMuted}
+											onChange={e => setOwnerMuted(e.target.checked)}
+										/>
+										<span className='it-f-check__text'>
+											Не уведомлять заказчика и скрыть заявку из его списка
+										</span>
+									</label>
+								</div>
+							) : null}
 
 							<label className='it-f-label'>
 								<span className='it-f-label__text'>Группа</span>
@@ -709,9 +697,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 											className='it-f-check__box'
 											type='checkbox'
 											checked={assigneeId === context.user.id}
-											onChange={e =>
-												setAssigneeId(e.target.checked ? context.user.id : '')
-											}
+											onChange={e => setAssigneeId(e.target.checked ? context.user.id : '')}
 										/>
 										<span className='it-f-check__text'>Назначить меня исполнителем</span>
 									</label>

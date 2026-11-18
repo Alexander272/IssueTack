@@ -310,4 +310,3 @@ func (s *TicketService) GetByID(ctx context.Context, req *models.GetTicketByIdDT
 
 	return data, nil
 }
-

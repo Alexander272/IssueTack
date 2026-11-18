@@ -18,6 +18,8 @@ export interface FormValues {
 	subtasks: SubtaskFormValues[]
 	equipmentId: string | null
 	notifierIds: string[]
+	/** Отключает уведомления заказчику и скрывает заявку из его списка заявок. */
+	ownerMuted: boolean
 }
 
 export type Props = {

@@ -36,6 +36,7 @@ const EMPTY_FORM: FormValues = {
 	subtasks: [],
 	equipmentId: null,
 	notifierIds: [],
+	ownerMuted: false,
 }
 
 export type TaskCreateFormHandle = { requestReset: () => void }
@@ -176,6 +177,7 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 							: data.notifierIds?.length
 								? data.notifierIds
 								: undefined,
+					ownerMuted: isManager ? Boolean(data.ownerMuted && data.ownerId) : undefined,
 				}
 
 				try {
@@ -248,15 +250,15 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 							{(isManager || isExecutor) && <SubtasksCreationSection />}
 
 							{isManager && (
-								<AdvancedSettingsSection creatorId={currentUserId} title='Настройки заявки' />
+								<AdvancedSettingsSection
+									canEditOwnerMuted={true}
+									creatorId={currentUserId}
+									title='Настройки заявки'
+								/>
 							)}
 
 							{isExecutor && (
 								<AdvancedSettingsSection
-									autoAssign={true}
-									canEditDueDate={true}
-									canPickAssignee={true}
-									canEditPriority={true}
 									canEditGroup={false}
 									creatorId={currentUserId}
 									title='Настройки заявки'

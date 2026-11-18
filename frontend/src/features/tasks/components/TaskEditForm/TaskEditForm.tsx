@@ -110,6 +110,7 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 			dueDate: task.dueDate ?? null,
 			subtasks: [],
 			notifierIds: (task.notifiers ?? []).map(u => u.id),
+			ownerMuted: task.ownerMuted ?? false,
 			equipmentId: task.equipment?.id ?? null,
 		},
 		mode: 'onTouched',
@@ -138,6 +139,7 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 				dueDate: data.dueDate || null,
 				equipmentId: data.equipmentId || null,
 				...(canEditNotifiers ? { notifierIds: data.notifierIds ?? [] } : {}),
+				ownerMuted: Boolean(data.ownerMuted && data.ownerId),
 			}
 
 			try {
@@ -176,6 +178,7 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 								canEditDueDate={Boolean(task.access?.isManager) || capabilities.isRealmAdmin}
 								canEditGroup={Boolean(task.access?.isManager) || capabilities.isRealmAdmin}
 								canEditPriority={Boolean(task.access?.isManager) || capabilities.isRealmAdmin}
+								canEditOwnerMuted={Boolean(task.access?.isManager) || capabilities.isRealmAdmin}
 								creatorId={task.creator.id}
 							/>
 						)}

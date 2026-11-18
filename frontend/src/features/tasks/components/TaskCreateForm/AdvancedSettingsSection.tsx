@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { Autocomplete, Box, Stack, TextField, Tooltip, Typography } from '@mui/material'
+import { Autocomplete, Box, Checkbox, FormControlLabel, Stack, TextField, Tooltip, Typography } from '@mui/material'
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
 import { Controller, useFormContext, useWatch } from 'react-hook-form'
 import dayjs from 'dayjs'
@@ -28,6 +28,8 @@ type Props = {
 	canEditPriority?: boolean
 	/** Можно ли менять группу: только менеджер группы или админ реалма. */
 	canEditGroup?: boolean
+	/** Можно ли отключить уведомления заказчику и скрыть заявку из его списка. */
+	canEditOwnerMuted?: boolean
 	/** Автор заявки — исключается из списка «Уведомлять». */
 	creatorId?: string | null
 	title?: string
@@ -41,6 +43,7 @@ export const AdvancedSettingsSection = ({
 	canPickAssignee = true,
 	canEditPriority = true,
 	canEditGroup = true,
+	canEditOwnerMuted = false,
 	creatorId = null,
 	title = 'Расширенные настройки',
 	subtitle = '',
@@ -61,6 +64,13 @@ export const AdvancedSettingsSection = ({
 	const selectedCategoryId = useWatch({ control, name: 'categoryId' })
 	const selectedGroupId = useWatch({ control, name: 'groupId' })
 	const selectedOwnerId = useWatch({ control, name: 'ownerId' })
+	const ownerMuted = useWatch({ control, name: 'ownerMuted' })
+
+	useEffect(() => {
+		if (!selectedOwnerId && ownerMuted) {
+			setValue('ownerMuted', false)
+		}
+	}, [selectedOwnerId, ownerMuted, setValue])
 
 	// Авто-назначение должно срабатывать только когда пользователь реально меняет
 	// категорию/группу. При восстановлении черновика categoryId/groupId уже
@@ -180,6 +190,38 @@ export const AdvancedSettingsSection = ({
 							)}
 						/>
 					</Box>
+
+					{canEditOwnerMuted && selectedOwnerId ? (
+						<Box sx={{ gridColumn: { xs: 'span 1', sm: 'span 2' }, mt: -2 }}>
+							<Controller
+								control={control}
+								name='ownerMuted'
+								render={({ field }) => (
+									<FormControlLabel
+										control={
+											<Checkbox
+												size='small'
+												checked={Boolean(field.value)}
+												onChange={e => field.onChange(e.target.checked)}
+											/>
+										}
+										label={
+											<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+												<Typography variant='body2'>
+													Не уведомлять заказчика и скрыть заявку из его списка
+												</Typography>
+												<Tooltip title='Заказчику не будут приходить уведомления об этой заявке, и она не будет отображаться в его списке заявок.'>
+													<CircleQuestionMarkIcon
+														sx={{ fontSize: 14, cursor: 'pointer', color: '#9ca3af' }}
+													/>
+												</Tooltip>
+											</Box>
+										}
+									/>
+								)}
+							/>
+						</Box>
+					) : null}
 
 					<Box>
 						<Typography variant='caption' sx={fieldLabelSx}>

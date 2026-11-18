@@ -27,7 +27,10 @@ export const TaskFilters: FC<TaskFiltersProps> = ({
 	const { data: sitesData } = useGetAllSitesQuery()
 	const { data: usersData } = useGetAvailableUsersQuery()
 	const { data: executorsData } = useGetRealmUsersQuery('executors')
-	const { data: equipmentData } = useGetAllEquipmentQuery({ limit: 500, excludeKits: true }, { skip: !canSeeEquipment })
+	const { data: equipmentData } = useGetAllEquipmentQuery(
+		{ limit: 500, excludeKits: true },
+		{ skip: !canSeeEquipment },
+	)
 
 	const siteOptions = useMemo(() => (sitesData?.data ?? []).map(s => ({ id: s.id, label: s.name })), [sitesData])
 

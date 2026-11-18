@@ -40,6 +40,7 @@ export const FIELD_META: Record<string, FieldMeta> = {
 	assigned: meta('Исполнитель', 'назначил исполнителя', UserRound, '#8b5cf6', 'plain'),
 	assign_changed: meta('Исполнитель', 'изменил исполнителя', UserRound, '#8b5cf6', 'plain'),
 	owner_changed: meta('Заказчик', 'изменил заказчика', UserRound, '#8b5cf6', 'plain'),
+	owner_muted_changed: meta('Скрытие от заказчика', 'изменил видимость для заказчика', UserRound, '#6b7280', 'plain'),
 	manager_changed: meta('Руководитель', 'изменил руководителя', UserCog, '#8b5cf6', 'plain'),
 	group_changed: meta('Группа', 'изменил группу', Users, '#0ea5e9', 'plain'),
 	group_assigned: meta('Группа', 'назначил группу', Users, '#0ea5e9', 'plain'),

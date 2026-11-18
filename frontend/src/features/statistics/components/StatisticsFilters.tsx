@@ -136,7 +136,11 @@ const FilterPopover: FC<PopoverProps> = ({
 				{isManager && (
 					<Box sx={sectionBoxSx}>
 						<Typography sx={sectionSx}>Группа</Typography>
-						<FilterSelect options={groupOptions} values={local.groupId} onChange={ids => update('groupId', ids)} />
+						<FilterSelect
+							options={groupOptions}
+							values={local.groupId}
+							onChange={ids => update('groupId', ids)}
+						/>
 					</Box>
 				)}
 
@@ -145,7 +149,16 @@ const FilterPopover: FC<PopoverProps> = ({
 					<FilterSelect options={siteOptions} values={local.siteId} onChange={ids => update('siteId', ids)} />
 				</Box>
 
-				<Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, mt: 2, pt: 2, borderTop: '1px solid #eaeef2' }}>
+				<Box
+					sx={{
+						display: 'flex',
+						justifyContent: 'space-between',
+						gap: 1,
+						mt: 2,
+						pt: 2,
+						borderTop: '1px solid #eaeef2',
+					}}
+				>
 					<Button
 						onClick={handleReset}
 						sx={{
@@ -158,7 +171,11 @@ const FilterPopover: FC<PopoverProps> = ({
 					>
 						Сбросить всё
 					</Button>
-					<Button variant='contained' onClick={handleApply} sx={{ textTransform: 'none', borderRadius: '6px' }}>
+					<Button
+						variant='contained'
+						onClick={handleApply}
+						sx={{ textTransform: 'none', borderRadius: '6px' }}
+					>
 						Применить
 					</Button>
 				</Box>
@@ -193,8 +210,7 @@ export const StatisticsFilters: FC<Props> = ({ value, onChange, onReset, isManag
 	)
 
 	const activeCount = useMemo(
-		() =>
-			[value.assigneeId, value.categoryId, value.groupId, value.siteId].filter(ids => ids.length > 0).length,
+		() => [value.assigneeId, value.categoryId, value.groupId, value.siteId].filter(ids => ids.length > 0).length,
 		[value],
 	)
 

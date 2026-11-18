@@ -295,6 +295,7 @@ func TestPluginCreateTicketParsesExtendedFields(t *testing.T) {
 	require.NoError(t, mw.WriteField("groupId", groupID.String()))
 	require.NoError(t, mw.WriteField("ownerId", ownerID.String()))
 	require.NoError(t, mw.WriteField("dueDate", "2026-11-05T14:30"))
+	require.NoError(t, mw.WriteField("ownerMuted", "true"))
 	require.NoError(t, mw.WriteField("notifierIds", notifierID1.String()))
 	require.NoError(t, mw.WriteField("notifierIds", notifierID2.String()))
 	require.NoError(t, mw.Close())
@@ -312,6 +313,7 @@ func TestPluginCreateTicketParsesExtendedFields(t *testing.T) {
 	assert.Equal(t, ownerID, stub.got.OwnerID)
 	require.NotNil(t, stub.got.DueDate)
 	assert.Equal(t, "2026-11-05T14:30", stub.got.DueDate.Format("2006-01-02T15:04"))
+	assert.True(t, stub.got.OwnerMuted)
 	require.Len(t, stub.got.NotifierIDs, 2)
 	assert.Equal(t, []uuid.UUID{notifierID1, notifierID2}, stub.got.NotifierIDs)
 }

@@ -20,6 +20,9 @@ export interface PluginCreateDraft {
 	// сохранённых до его появления, его нет, и такие черновики остаются
 	// валидными (версия не меняется).
 	notifierIds?: string[]
+	// Отключает уведомления заказчику и скрывает заявку из его списка.
+	// Поле опционально для обратной совместимости с уже сохранёнными черновиками.
+	ownerMuted?: boolean
 }
 
 const VERSION = 2
@@ -40,6 +43,10 @@ function isOptionalStrArray(v: unknown): boolean {
 	return v === undefined || (Array.isArray(v) && v.every(id => typeof id === 'string'))
 }
 
+function isOptionalBool(v: unknown): boolean {
+	return v === undefined || typeof v === 'boolean'
+}
+
 function isDraft(value: unknown): value is PluginCreateDraft {
 	if (!value || typeof value !== 'object') return false
 	const d = value as Record<string, unknown>
@@ -53,7 +60,8 @@ function isDraft(value: unknown): value is PluginCreateDraft {
 		isOptionalStr(d.assigneeId) &&
 		isOptionalStr(d.ownerId) &&
 		isOptionalStr(d.dueDate) &&
-		isOptionalStrArray(d.notifierIds)
+		isOptionalStrArray(d.notifierIds) &&
+		isOptionalBool(d.ownerMuted)
 	)
 }
 
