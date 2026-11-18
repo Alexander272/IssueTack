@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { Autocomplete, Box, Stack, TextField, Typography } from '@mui/material'
+import { Autocomplete, Box, Stack, TextField, Tooltip, Typography } from '@mui/material'
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
 import { Controller, useFormContext, useWatch } from 'react-hook-form'
 import dayjs from 'dayjs'
@@ -15,6 +15,7 @@ import { PriorityCard } from './PriorityCard'
 import { fieldLabelSx } from './styles'
 import type { FormValues } from './types'
 import { DateTextField } from '@/components/DatePicker/DatePicker'
+import { CircleQuestionMarkIcon } from 'lucide-mui'
 
 type Props = {
 	number?: number
@@ -161,7 +162,10 @@ export const AdvancedSettingsSection = ({
 
 					<Box>
 						<Typography variant='caption' sx={fieldLabelSx}>
-							Уведомлять
+							Уведомлять{' '}
+							<Tooltip title='Получают уведомления о создании, смене статуса и комментариях наравне с автором/заказчиком'>
+								<CircleQuestionMarkIcon sx={{ fontSize: 14, cursor: 'pointer' }} />
+							</Tooltip>
 						</Typography>
 						<Controller
 							control={control}
@@ -193,7 +197,11 @@ export const AdvancedSettingsSection = ({
 									disabled={!canEditGroup}
 									noOptionsText='Нет групп'
 									renderInput={params => (
-										<TextField {...params} size='small' placeholder={autoAssign ? 'Авто (по категории)' : 'Выберите группу'} />
+										<TextField
+											{...params}
+											size='small'
+											placeholder={autoAssign ? 'Авто (по категории)' : 'Выберите группу'}
+										/>
 									)}
 								/>
 							)}
@@ -216,7 +224,11 @@ export const AdvancedSettingsSection = ({
 									disabled={!canPickAssignee}
 									noOptionsText='Нет исполнителей'
 									renderInput={params => (
-										<TextField {...params} size='small' placeholder={autoAssign ? 'Авто (по группе)' : 'Выберите исполнителя'} />
+										<TextField
+											{...params}
+											size='small'
+											placeholder={autoAssign ? 'Авто (по группе)' : 'Выберите исполнителя'}
+										/>
 									)}
 								/>
 							)}

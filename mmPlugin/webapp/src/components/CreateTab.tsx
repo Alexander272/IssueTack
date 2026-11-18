@@ -364,8 +364,8 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		try {
 			// Поля доп. секций отправляются только тем, кому они доступны:
 			// менеджер — все (приоритет, группа, исполнитель, заявитель, срок),
-			// исполнитель — заказчик и самоназначение. Обычный заявитель ничего
-			// не шлёт — сервер сам подставит группу/приоритет из категории.
+			// исполнитель — заказчик и самоназначение. Обычный заявитель может
+			// указать наблюдателей. Группа/приоритет берутся с сервера из категории.
 			const payload: CreateTicketPayload = {
 				title: title.trim(),
 				description: description.trim(),
@@ -385,6 +385,8 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 				if (assigneeId) payload.assigneeId = assigneeId
 				if (priority) payload.priority = priority
 				if (dueDate) payload.dueDate = dueDate
+				payload.notifierIds = notifierIds
+			} else if (notifierIds.length > 0) {
 				payload.notifierIds = notifierIds
 			}
 			const res = await createTicket(scope, payload)
@@ -591,17 +593,20 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 					<div className='it-ticket-section__head'>
 						<div className='it-ticket-section__num'>3</div>
 						<div>
-							<div className='it-ticket-section__title'>{isManager ? 'Расширенные настройки' : 'Заказчик и сроки'}</div>
+							<div className='it-ticket-section__title'>
+								{isManager ? 'Расширенные настройки' : 'Заказчик и сроки'}
+							</div>
 							<div className='it-ticket-section__subtitle'>
-								{isManager ? 'Доступно менеджерам' : 'Укажите заказчика и желаемый срок выполнения. При необходимости назначьте себя исполнителем'}
+								{isManager
+									? 'Доступно менеджерам'
+									: 'Укажите заказчика и желаемый срок выполнения. При необходимости назначьте себя исполнителем'}
 							</div>
 						</div>
 					</div>
 					<div className='it-ticket-section__body'>
 						<div className='it-f-label'>
 							<span className='it-f-label__text'>
-								Приоритет{' '}
-								<span className='it-f-required'>*</span>
+								Приоритет <span className='it-f-required'>*</span>
 							</span>
 							<div className='it-f-priority' role='radiogroup' aria-label='Приоритет'>
 								{PRIORITY_ORDER.map(value => (
@@ -623,7 +628,9 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 											/>
 											<span className='it-f-priority-card__label'>{PRIORITY_LABELS[value]}</span>
 										</span>
-										<span className='it-f-priority-card__desc'>{PRIORITY_DESCRIPTIONS[value]}</span>
+										<span className='it-f-priority-card__desc'>
+											{PRIORITY_DESCRIPTIONS[value]}
+										</span>
 									</button>
 								))}
 							</div>
@@ -631,88 +638,124 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 						</div>
 
 						<div className='it-ticket-grid'>
-						<label className='it-f-label'>
-							<span className='it-f-label__text'>Заказчик</span>
-							<select
-								className={`it-f${fieldErrors.ownerId ? ' it-f--error' : ''}`}
-								value={ownerId}
-								onChange={e => {
-									setOwnerId(e.target.value)
-									clearFieldError('ownerId')
-								}}
-							>
-								<option value=''>{isManager ? '— Заявитель: создатель —' : '— Не указан —'}</option>
-								{customers.map(u => (
-									<option key={u.id} value={u.id}>
-										{pluginUserLabel(u)}
+							<label className='it-f-label'>
+								<span className='it-f-label__text'>Заказчик</span>
+								<select
+									className={`it-f${fieldErrors.ownerId ? ' it-f--error' : ''}`}
+									value={ownerId}
+									onChange={e => {
+										setOwnerId(e.target.value)
+										clearFieldError('ownerId')
+									}}
+								>
+									<option value=''>
+										{isManager ? '— Заявитель: создатель —' : '— Не указан —'}
 									</option>
-								))}
-							</select>
-							{fieldErrors.ownerId ? <span className='it-f__err'>{fieldErrors.ownerId}</span> : null}
-						</label>
+									{customers.map(u => (
+										<option key={u.id} value={u.id}>
+											{pluginUserLabel(u)}
+										</option>
+									))}
+								</select>
+								{fieldErrors.ownerId ? (
+									<span className='it-f__err'>{fieldErrors.ownerId}</span>
+								) : null}
+							</label>
 
+							<NotifierField
+								options={notifierOptions}
+								value={notifierIds}
+								onChange={setNotifierIds}
+								pluginUserLabel={pluginUserLabel}
+							/>
+
+							<label className='it-f-label'>
+								<span className='it-f-label__text'>Группа</span>
+								<select
+									className='it-f'
+									value={groupId}
+									onChange={e => setGroupId(e.target.value)}
+									disabled={!isManager}
+								>
+									<option value=''>— Авто (по категории) —</option>
+									{realmGroups.map(g => (
+										<option key={g.id} value={g.id}>
+											{g.name}
+										</option>
+									))}
+								</select>
+							</label>
+
+							<label className='it-f-label'>
+								<span className='it-f-label__text'>Исполнитель</span>
+								<select
+									className='it-f'
+									value={assigneeId}
+									onChange={e => setAssigneeId(e.target.value)}
+								>
+									<option value=''>— Авто (по группе) —</option>
+									{executors.map(u => (
+										<option key={u.id} value={u.id}>
+											{pluginUserLabel(u)}
+										</option>
+									))}
+								</select>
+								{executors.length === 0 ? (
+									<span className='it-f-label__hint'>Нет исполнителей</span>
+								) : null}
+								{isManager ? null : (
+									<label className='it-f-label it-f-check'>
+										<input
+											className='it-f-check__box'
+											type='checkbox'
+											checked={assigneeId === context.user.id}
+											onChange={e =>
+												setAssigneeId(e.target.checked ? context.user.id : '')
+											}
+										/>
+										<span className='it-f-check__text'>Назначить меня исполнителем</span>
+									</label>
+								)}
+							</label>
+
+							<div style={{ gridColumn: '1 / -1' }}>
+								<label className='it-f-label'>
+									<span className='it-f-label__text'>Срок выполнения</span>
+									<input
+										className='it-f'
+										type='datetime-local'
+										value={dueDate}
+										onChange={e => setDueDate(e.target.value)}
+									/>
+								</label>
+							</div>
+						</div>
+					</div>
+				</section>
+			) : null}
+
+			{!isManager && !isExecutor ? (
+				<section className='it-ticket-section'>
+					<div className='it-ticket-section__head'>
+						<div className='it-ticket-section__num'>3</div>
+						<div>
+							<div className='it-ticket-section__title'>Уведомлять дополнительно</div>
+							<div className='it-ticket-section__subtitle'>
+								Кому еще сообщать о создании, смене статуса и комментариях. Ответственные по заявке
+								получат эти уведомления автоматически.
+							</div>
+						</div>
+					</div>
+					<div className='it-ticket-section__body'>
 						<NotifierField
 							options={notifierOptions}
 							value={notifierIds}
 							onChange={setNotifierIds}
 							pluginUserLabel={pluginUserLabel}
+							label={null}
 						/>
-
-						<label className='it-f-label'>
-							<span className='it-f-label__text'>Группа</span>
-							<select
-								className='it-f'
-								value={groupId}
-								onChange={e => setGroupId(e.target.value)}
-								disabled={!isManager}
-							>
-								<option value=''>— Авто (по категории) —</option>
-								{realmGroups.map(g => (
-									<option key={g.id} value={g.id}>
-										{g.name}
-									</option>
-								))}
-							</select>
-						</label>
-
-						<label className='it-f-label'>
-							<span className='it-f-label__text'>Исполнитель</span>
-							<select className='it-f' value={assigneeId} onChange={e => setAssigneeId(e.target.value)}>
-								<option value=''>— Авто (по группе) —</option>
-								{executors.map(u => (
-									<option key={u.id} value={u.id}>
-										{pluginUserLabel(u)}
-									</option>
-								))}
-							</select>
-							{executors.length === 0 ? <span className='it-f-label__hint'>Нет исполнителей</span> : null}
-							{isManager ? null : (
-								<label className='it-f-label it-f-check'>
-									<input
-										className='it-f-check__box'
-										type='checkbox'
-										checked={assigneeId === context.user.id}
-										onChange={e => setAssigneeId(e.target.checked ? context.user.id : '')}
-									/>
-									<span className='it-f-check__text'>Назначить меня исполнителем</span>
-								</label>
-							)}
-						</label>
-
-						<div style={{ gridColumn: '1 / -1' }}>
-							<label className='it-f-label'>
-								<span className='it-f-label__text'>Срок выполнения</span>
-								<input
-									className='it-f'
-									type='datetime-local'
-									value={dueDate}
-									onChange={e => setDueDate(e.target.value)}
-								/>
-							</label>
-						</div>
-						</div>
-						</div>
-					</section>
+					</div>
+				</section>
 			) : null}
 
 			{error ? <div className='it-ticket-error'>{error}</div> : null}

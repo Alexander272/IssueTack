@@ -165,3 +165,6 @@ export const SLA_TONES = {
 } as const
 
 export type SlaTone = keyof typeof SLA_TONES
+
+// Размер страницы для архивных списков задач (таблица/избранное).
+export const TASKS_PAGE_SIZE = 20

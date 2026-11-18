@@ -8,6 +8,7 @@ export interface NotifierFieldProps {
 	onChange: (value: string[]) => void
 	pluginUserLabel: (user: PluginUserShort) => string
 	disabled?: boolean
+	label?: string | null
 }
 
 interface PopperCoords {
@@ -18,7 +19,14 @@ interface PopperCoords {
 	openUpward: boolean
 }
 
-export function NotifierField({ options, value, onChange, pluginUserLabel, disabled = false }: NotifierFieldProps) {
+export function NotifierField({
+	options,
+	value,
+	onChange,
+	pluginUserLabel,
+	disabled = false,
+	label = 'Уведомлять',
+}: NotifierFieldProps) {
 	const [isOpen, setIsOpen] = useState(false)
 	const [search, setSearch] = useState('')
 	const [displayValue, setDisplayValue] = useState('')
@@ -188,7 +196,7 @@ export function NotifierField({ options, value, onChange, pluginUserLabel, disab
 
 	return (
 		<div className='it-f-label'>
-			<span className='it-f-label__text'>Уведомлять</span>
+			{label ? <span className='it-f-label__text'>{label}</span> : null}
 			{options.length > 0 ? (
 				<div className='it-f-select-wrapper'>
 					<div

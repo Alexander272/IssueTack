@@ -1,6 +1,6 @@
 import { Box, Typography } from '@mui/material'
 
-import type { GroupByField } from '../../constants/taskMaps'
+import { TASKS_PAGE_SIZE, type GroupByField } from '../../constants/taskMaps'
 import type { ITaskFilter } from '../../types/task'
 import { Pagination } from '@/components/Pagination/Pagination'
 import { BoxFallback } from '@/components/Fallback/BoxFallback'
@@ -28,14 +28,12 @@ export const TaskListView = ({
 	page,
 	onPageChange,
 }: Props) => {
-	const rowsPerPage = 20
-
 	const { data, isFetching } = useGetTasksQuery(filters)
 
 	const tasks = data?.data ?? []
 	const total = data?.total ?? 0
 
-	const totalPages = isArchive ? Math.ceil(total / rowsPerPage) || 1 : 1
+	const totalPages = isArchive ? Math.ceil(total / TASKS_PAGE_SIZE) || 1 : 1
 
 	if (isFetching && !tasks.length) {
 		return <BoxFallback />

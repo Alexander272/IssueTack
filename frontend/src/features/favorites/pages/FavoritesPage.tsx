@@ -3,7 +3,7 @@ import { Box, Typography, Tab, Tabs } from '@mui/material'
 import { Pin, Star } from 'lucide-mui'
 
 import type { GroupByField } from '@/features/tasks/constants/taskMaps'
-import { statusOptionsFor, groupByFieldHidden } from '@/features/tasks/constants/taskMaps'
+import { statusOptionsFor, groupByFieldHidden, TASKS_PAGE_SIZE } from '@/features/tasks/constants/taskMaps'
 import type { FilterValues } from '@/features/tasks/components/filters'
 import type { ITaskFilter } from '@/features/tasks/types/task'
 import { useAppSelector } from '@/hooks/redux'
@@ -30,7 +30,6 @@ const DEFAULT_FILTERS: FilterValues = {
 }
 
 export const FavoritesPage = () => {
-	const rowsPerPage = 20
 	const hasNoGroups = useAppSelector(getHasNoGroups)
 
 	const STORAGE_KEY = '@issueTrack/favoritesFilters'
@@ -114,8 +113,8 @@ export const FavoritesPage = () => {
 			// archived для избранного — только триггер пагинации (бэкенд statusMode
 			// при FavoritesByUser не применяет, статусы не режутся по вкладке).
 			archived: isArchive || undefined,
-			limit: isArchive ? rowsPerPage : undefined,
-			offset: isArchive ? page * rowsPerPage : undefined,
+			limit: isArchive ? TASKS_PAGE_SIZE : undefined,
+			offset: isArchive ? page * TASKS_PAGE_SIZE : undefined,
 		}),
 		[effectiveFilters, tab, page, isArchive],
 	)

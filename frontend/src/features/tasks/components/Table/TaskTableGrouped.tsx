@@ -73,8 +73,7 @@ export const TaskTableGrouped = ({ tasks, groupBy, onTaskClick, columnsCount }: 
 	const { groups, sortedKeys } = useMemo(() => {
 		const grouped: Record<string, ITask[]> = {}
 		tasks.forEach(task => {
-			// Добавляем fallback для пустых значений, чтобы не было ключей "undefined"
-			const key = getGroupValue(task, groupBy, hasNoGroups) ?? 'Без группы'
+			const key = getGroupValue(task, groupBy, hasNoGroups)
 			if (!grouped[key]) grouped[key] = []
 			grouped[key].push(task)
 		})

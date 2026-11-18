@@ -3,7 +3,7 @@ import { Box, Button, Typography, Tab, Tabs, useTheme } from '@mui/material'
 import { ArchiveIcon, InboxIcon, PlusIcon } from 'lucide-mui'
 
 import type { GroupByField } from '../constants/taskMaps'
-import { statusOptionsFor } from '../constants/taskMaps'
+import { statusOptionsFor, TASKS_PAGE_SIZE } from '../constants/taskMaps'
 import type { FilterValues } from '../components/filters'
 import type { ITaskFilter } from '../types/task'
 import { PermRules } from '@/features/access/constants/permissions'
@@ -55,7 +55,6 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 	const canCreate = useCan(PermRules.Tasks.Write)
 	const isManager = useAppSelector(getIsManager)
 	const hasNoGroups = useAppSelector(getHasNoGroups)
-	const rowsPerPage = 20
 
 	const title = PAGE_TITLE[mode]
 	const desc = isManager && mode !== 'assigned' ? 'Все доступные заявки' : PAGE_DESC[mode]
@@ -143,8 +142,8 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 			sort: effectiveFilters.sort,
 			mode,
 			archived: isArchive || undefined,
-			limit: isArchive ? rowsPerPage : undefined,
-			offset: isArchive ? page * rowsPerPage : undefined,
+			limit: isArchive ? TASKS_PAGE_SIZE : undefined,
+			offset: isArchive ? page * TASKS_PAGE_SIZE : undefined,
 		}),
 		[effectiveFilters, mode, page, isArchive, numberFilter, debouncedSearch],
 	)

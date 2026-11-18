@@ -20,6 +20,7 @@ import { DescriptionSection } from './DescriptionSection'
 import { AdvancedSettingsSection } from './AdvancedSettingsSection'
 import { SubtasksCreationSection } from './SubtasksCreationSection'
 import { clearDraft, hasDraftContent, loadDraft, saveDraft } from './draft'
+import { CustomerAndDateSection } from './CustomerAndDateSection'
 
 // EMPTY_FORM — исходные значения формы. reset() обязан сбрасывать именно к ним,
 // а не к defaultValues: последние могут быть черновиком из sessionStorage.
@@ -161,7 +162,12 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 					subtasks: data.subtasks
 						.map(s => ({ title: s.title.trim(), description: s.description.trim() }))
 						.filter(s => s.title.length > 0),
-					notifierIds: isManager || isExecutor ? (data.notifierIds ?? []) : undefined,
+					notifierIds:
+						isManager || isExecutor
+							? (data.notifierIds ?? [])
+							: data.notifierIds?.length
+								? data.notifierIds
+								: undefined,
 				}
 
 				try {
@@ -216,6 +222,20 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 						<Stack sx={{ gap: { xs: 1.5, sm: 3 } }}>
 							<CategoryAndSiteSection categories={categories} sites={sites} />
 							<DescriptionSection files={files} onFilesChange={setFiles} />
+
+							{!isManager && !isExecutor && (
+								<CustomerAndDateSection
+									number={3}
+									creatorId={currentUserId}
+									title={'Уведомлять дополнительно'}
+									subtitle={
+										'Кому еще сообщать о создании, смене статуса и комментариях. Ответственные по заявке получат эти уведомления автоматически.'
+									}
+									showOwner={false}
+									showDueDate={false}
+									showNotifierFieldLabel={false}
+								/>
+							)}
 
 							{(isManager || isExecutor) && <SubtasksCreationSection />}
 
