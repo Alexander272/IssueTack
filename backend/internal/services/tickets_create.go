@@ -176,9 +176,10 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		return models.ErrPermissionDenied
 	}
 
-	// 2. Если срок не указан вручную, но пользователь имеет право его устанавливать,
-	// и у категории есть срок по умолчанию — применяем его автоматически.
-	if dto.DueDate == nil && canSetDueDate && dto.CategoryID != uuid.Nil {
+	// 2. Если срок не указан вручную и у категории есть срок по умолчанию —
+	// применяем его автоматически всем создателям (свойство категории).
+	// canSetDueDate гейтит только ручную установку срока.
+	if dto.DueDate == nil && dto.CategoryID != uuid.Nil {
 		category, err := s.categories.GetByID(ctx, &models.GetCategoryByIdDTO{ID: dto.CategoryID, RealmID: *dto.RealmID})
 		if err != nil {
 			return fmt.Errorf("failed to get category: %w", err)
