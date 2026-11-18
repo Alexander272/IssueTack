@@ -15,6 +15,7 @@ import { formatBytes } from '../labels'
 import { clearDraft, loadDraft, saveDraft } from '../createDraft'
 import { useClipboardFiles } from '../useClipboardFiles'
 import { FileIcon } from './icons'
+import { NotifierField } from './Form/NotifierField'
 
 // pluginUserLabel — подпись пользователя в селектах формы: «Фамилия Имя
 // (username)», без имён — просто username (как в диалогах бота).
@@ -66,6 +67,48 @@ function pluginUserLabel(u: PluginUserShort): string {
 	return u.username
 }
 
+// NotifierField — список наблюдателей «Уведомлять». В вебе это мультиселект с
+// поиском (NotifierSelector); в модалке плагина нативный multiple-select не
+// помещается и неудобен на телефоне, поэтому те же варианты — чекбоксами в
+// прокручиваемой рамке. Автор и заказчик из списка исключены: они и так
+// получают уведомления, дублировать их незачем (как excludeIds в вебе).
+// interface NotifierFieldProps {
+// 	options: PluginUserShort[]
+// 	value: string[]
+// 	onChange: (ids: string[]) => void
+// }
+
+// function NotifierField({ options, value, onChange }: NotifierFieldProps) {
+// 	return (
+// 		<div className='it-f-label'>
+// 			<span className='it-f-label__text'>Уведомлять</span>
+// 			{options.length > 0 ? (
+// 				<div className='it-f-multi'>
+// 					{options.map(u => (
+// 						<label key={u.id} className='it-f-multi__item'>
+// 							<input
+// 								className='it-f-check__box'
+// 								type='checkbox'
+// 								checked={value.includes(u.id)}
+// 								onChange={e =>
+// 									onChange(
+// 										e.target.checked
+// 											? [...value, u.id]
+// 											: value.filter(id => id !== u.id),
+// 									)
+// 								}
+// 							/>
+// 							<span>{pluginUserLabel(u)}</span>
+// 						</label>
+// 					))}
+// 				</div>
+// 			) : (
+// 				<span className='it-f-label__hint'>Нет доступных пользователей</span>
+// 			)}
+// 		</div>
+// 	)
+// }
+
 // pluginDueDateFromCategory — значение для <input type="datetime-local">: срок
 // в днях от сегодняшнего дня на конец дня. Бэкенд (parsePluginDueDate) принимает
 // формат datetime-local, поэтому toISOString() не подходит.
@@ -100,6 +143,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 	const [groupId, setGroupId] = useState(initialDraft?.groupId ?? '')
 	const [assigneeId, setAssigneeId] = useState(initialDraft?.assigneeId ?? '')
 	const [ownerId, setOwnerId] = useState(initialDraft?.ownerId ?? '')
+	const [notifierIds, setNotifierIds] = useState<string[]>(initialDraft?.notifierIds ?? [])
 	const [dueDate, setDueDate] = useState(initialDraft?.dueDate ?? '')
 	const [files, setFiles] = useState<File[]>([])
 	const [submitting, setSubmitting] = useState(false)
@@ -108,6 +152,28 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 	const [result, setResult] = useState<PluginCreateResult | null>(null)
 	const [hasDraft, setHasDraft] = useState(false)
 	const [confirmingClear, setConfirmingClear] = useState(false)
+
+	// Автор и заказчик не выбираются наблюдателями (как excludeIds в веб-форме):
+	// они и так получают уведомления. Если заказчика сменили на уже выбранного
+	// наблюдателя, тот убирается из списка — иначе в запрос ушёл бы запрещённый id.
+	const excludedNotifierIds = useMemo(() => {
+		const ids = new Set<string>()
+		if (context.user.id) ids.add(context.user.id)
+		if (ownerId) ids.add(ownerId)
+		return ids
+	}, [context.user.id, ownerId])
+
+	const notifierOptions = useMemo(
+		() => customers.filter(u => !excludedNotifierIds.has(u.id)),
+		[customers, excludedNotifierIds],
+	)
+
+	useEffect(() => {
+		setNotifierIds(prev => {
+			const next = prev.filter(id => !excludedNotifierIds.has(id))
+			return next.length === prev.length ? prev : next
+		})
+	}, [excludedNotifierIds])
 
 	const categories = (context.categories || []).filter((c: PluginCategory) => c.isActive !== false)
 	// Категории группируются по разделам (таксономия) — нативные optgroup.
@@ -146,8 +212,10 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 	const prevCategoryId = useRef(categoryId)
 	const prevGroupId = useRef(groupId)
 
+	// Эффект 1: категория → группа + приоритет + срок (менеджер И исполнитель).
+	// Исполнитель создаёт заявку и должен получать те же авто-подстановки, что и менеджер.
 	useEffect(() => {
-		if (!isManager) return
+		if (!(isManager || isExecutor)) return
 		if (prevCategoryId.current === categoryId) return
 		prevCategoryId.current = categoryId
 		const cat = categories.find(c => c.id === categoryId)
@@ -157,7 +225,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		// поле срока, а категория без автосрока его сбрасывает, иначе в форме
 		// остался бы срок предыдущей категории.
 		setDueDate(cat?.defaultDueDays != null ? pluginDueDateFromCategory(cat.defaultDueDays) : '')
-	}, [categoryId, categories, isManager])
+	}, [categoryId, categories, isManager, isExecutor])
 
 	useEffect(() => {
 		if (!isManager) return
@@ -181,6 +249,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 			groupId,
 			assigneeId,
 			ownerId,
+			notifierIds,
 			dueDate,
 		})
 	}, [
@@ -194,6 +263,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		groupId,
 		assigneeId,
 		ownerId,
+		notifierIds,
 		dueDate,
 	])
 
@@ -209,7 +279,8 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 			groupId ||
 			assigneeId ||
 			ownerId ||
-			dueDate,
+			dueDate ||
+			notifierIds.length > 0,
 		)
 		setHasDraft(hasContent)
 		onDraftChange?.(hasContent)
@@ -225,6 +296,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		groupId,
 		assigneeId,
 		ownerId,
+		notifierIds,
 		dueDate,
 	])
 
@@ -240,6 +312,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		setAssigneeId('')
 		setOwnerId('')
 		setDueDate('')
+		setNotifierIds([])
 		setFiles([])
 		setError(null)
 		setFieldErrors({})
@@ -291,8 +364,8 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		try {
 			// Поля доп. секций отправляются только тем, кому они доступны:
 			// менеджер — все (приоритет, группа, исполнитель, заявитель, срок),
-			// исполнитель — заказчик и самоназначение. Обычный заявитель ничего
-			// не шлёт — сервер сам подставит группу/приоритет из категории.
+			// исполнитель — заказчик и самоназначение. Обычный заявитель может
+			// указать наблюдателей. Группа/приоритет берутся с сервера из категории.
 			const payload: CreateTicketPayload = {
 				title: title.trim(),
 				description: description.trim(),
@@ -306,11 +379,15 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 				if (assigneeId) payload.assigneeId = assigneeId
 				if (ownerId) payload.ownerId = ownerId
 				if (dueDate) payload.dueDate = dueDate
+				payload.notifierIds = notifierIds
 			} else if (isExecutor) {
 				if (ownerId) payload.ownerId = ownerId
 				if (assigneeId) payload.assigneeId = assigneeId
 				if (priority) payload.priority = priority
 				if (dueDate) payload.dueDate = dueDate
+				payload.notifierIds = notifierIds
+			} else if (notifierIds.length > 0) {
+				payload.notifierIds = notifierIds
 			}
 			const res = await createTicket(scope, payload)
 			// Заявка создана — черновик больше не нужен, а поля очищаем, чтобы
@@ -325,6 +402,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 			setGroupId('')
 			setAssigneeId('')
 			setOwnerId('')
+			setNotifierIds([])
 			setDueDate('')
 			setFiles([])
 			setResult({ number: res.number, link: res.link, ...res })
@@ -510,113 +588,22 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 				</div>
 			</section>
 
-			{/* Заказчик — отдельная секция только исполнителю; в веб-форме
-				CustomerSelectionSection идёт после «Описания», поэтому и здесь
-				она после него, чтобы порядок полей совпадал. */}
-			{isExecutor ? (
+			{(isManager || isExecutor) ? (
 				<section className='it-ticket-section'>
 					<div className='it-ticket-section__head'>
 						<div className='it-ticket-section__num'>3</div>
 						<div>
-							<div className='it-ticket-section__title'>Заказчик и сроки</div>
+							<div className='it-ticket-section__title'>
+								{isManager ? 'Расширенные настройки' : 'Заказчик и сроки'}
+							</div>
 							<div className='it-ticket-section__subtitle'>
-								Укажите заказчика и желаемый срок выполнения. При необходимости назначьте себя
-								исполнителем
+								{isManager
+									? 'Доступно менеджерам'
+									: 'Укажите заказчика и желаемый срок выполнения. При необходимости назначьте себя исполнителем'}
 							</div>
 						</div>
 					</div>
 					<div className='it-ticket-section__body'>
-						<label className='it-f-label'>
-							<span className='it-f-label__text'>
-								Заказчик
-							</span>
-							<select
-								className={`it-f${fieldErrors.ownerId ? ' it-f--error' : ''}`}
-								value={ownerId}
-								onChange={e => {
-									setOwnerId(e.target.value)
-									clearFieldError('ownerId')
-								}}
-							>
-								<option value=''>— Не указан —</option>
-								{customers.map(u => (
-									<option key={u.id} value={u.id}>
-										{pluginUserLabel(u)}
-									</option>
-								))}
-							</select>
-							{customers.length === 0 ? <span className='it-f-label__hint'>Нет заказчиков</span> : null}
-						</label>
-
-						<div className='it-f-label'>
-							<span className='it-f-label__text'>Приоритет</span>
-							<select
-								className={`it-f${fieldErrors.priority ? ' it-f--error' : ''}`}
-								value={priority}
-								onChange={e => {
-									setPriority(e.target.value)
-									clearFieldError('priority')
-								}}
-							>
-								<option value=''>— Не указан —</option>
-								{PRIORITY_ORDER.map(v => (
-									<option key={v} value={v}>
-										{PRIORITY_LABELS[v]}
-									</option>
-								))}
-							</select>
-							{fieldErrors.priority ? <span className='it-f__err'>{fieldErrors.priority}</span> : null}
-						</div>
-
-						<label className='it-f-label'>
-							<span className='it-f-label__text'>Исполнитель</span>
-							<select className='it-f' value={assigneeId} onChange={e => setAssigneeId(e.target.value)}>
-								<option value=''>— Не указан —</option>
-								{executors.map(u => (
-									<option key={u.id} value={u.id}>
-										{pluginUserLabel(u)}
-									</option>
-								))}
-							</select>
-							{executors.length === 0 ? <span className='it-f-label__hint'>Нет исполнителей</span> : null}
-						</label>
-
-						<label className='it-f-label'>
-							<span className='it-f-label__text'>Срок выполнения</span>
-							<input
-								className='it-f'
-								type='datetime-local'
-								value={dueDate}
-								onChange={e => setDueDate(e.target.value)}
-							/>
-						</label>
-
-						<label className='it-f-label it-f-check'>
-							<input
-								className='it-f-check__box'
-								type='checkbox'
-								checked={assigneeId === context.user.id}
-								onChange={e => setAssigneeId(e.target.checked ? context.user.id : '')}
-							/>
-							<span className='it-f-check__text'>Назначить меня исполнителем</span>
-						</label>
-					</div>
-				</section>
-			) : null}
-
-			{isManager ? (
-				<section className='it-ticket-section'>
-					<div className='it-ticket-section__head'>
-						<div className='it-ticket-section__num'>3</div>
-						<div>
-							<div className='it-ticket-section__title'>Расширенные настройки</div>
-							<div className='it-ticket-section__subtitle'>Доступно менеджерам</div>
-						</div>
-					</div>
-					<div className='it-ticket-section__body'>
-						{/* div, а не label: у label с несколькими кнопками имплицитная
-							ассоциация идёт на первую, и клик по любой другой чипе дублировался
-							бы синтетическим кликом по «Низкому». */}
 						<div className='it-f-label'>
 							<span className='it-f-label__text'>
 								Приоритет <span className='it-f-required'>*</span>
@@ -641,7 +628,9 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 											/>
 											<span className='it-f-priority-card__label'>{PRIORITY_LABELS[value]}</span>
 										</span>
-										<span className='it-f-priority-card__desc'>{PRIORITY_DESCRIPTIONS[value]}</span>
+										<span className='it-f-priority-card__desc'>
+											{PRIORITY_DESCRIPTIONS[value]}
+										</span>
 									</button>
 								))}
 							</div>
@@ -650,20 +639,44 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 
 						<div className='it-ticket-grid'>
 							<label className='it-f-label'>
-								<span className='it-f-label__text'>Заявитель</span>
-								<select className='it-f' value={ownerId} onChange={e => setOwnerId(e.target.value)}>
-									<option value=''>— Заявитель: создатель —</option>
+								<span className='it-f-label__text'>Заказчик</span>
+								<select
+									className={`it-f${fieldErrors.ownerId ? ' it-f--error' : ''}`}
+									value={ownerId}
+									onChange={e => {
+										setOwnerId(e.target.value)
+										clearFieldError('ownerId')
+									}}
+								>
+									<option value=''>
+										{isManager ? '— Заявитель: создатель —' : '— Не указан —'}
+									</option>
 									{customers.map(u => (
 										<option key={u.id} value={u.id}>
 											{pluginUserLabel(u)}
 										</option>
 									))}
 								</select>
+								{fieldErrors.ownerId ? (
+									<span className='it-f__err'>{fieldErrors.ownerId}</span>
+								) : null}
 							</label>
+
+							<NotifierField
+								options={notifierOptions}
+								value={notifierIds}
+								onChange={setNotifierIds}
+								pluginUserLabel={pluginUserLabel}
+							/>
 
 							<label className='it-f-label'>
 								<span className='it-f-label__text'>Группа</span>
-								<select className='it-f' value={groupId} onChange={e => setGroupId(e.target.value)}>
+								<select
+									className='it-f'
+									value={groupId}
+									onChange={e => setGroupId(e.target.value)}
+									disabled={!isManager}
+								>
 									<option value=''>— Авто (по категории) —</option>
 									{realmGroups.map(g => (
 										<option key={g.id} value={g.id}>
@@ -687,18 +700,60 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 										</option>
 									))}
 								</select>
+								{executors.length === 0 ? (
+									<span className='it-f-label__hint'>Нет исполнителей</span>
+								) : null}
+								{isManager ? null : (
+									<label className='it-f-label it-f-check'>
+										<input
+											className='it-f-check__box'
+											type='checkbox'
+											checked={assigneeId === context.user.id}
+											onChange={e =>
+												setAssigneeId(e.target.checked ? context.user.id : '')
+											}
+										/>
+										<span className='it-f-check__text'>Назначить меня исполнителем</span>
+									</label>
+								)}
 							</label>
 
-							<label className='it-f-label'>
-								<span className='it-f-label__text'>Срок выполнения</span>
-								<input
-									className='it-f'
-									type='datetime-local'
-									value={dueDate}
-									onChange={e => setDueDate(e.target.value)}
-								/>
-							</label>
+							<div style={{ gridColumn: '1 / -1' }}>
+								<label className='it-f-label'>
+									<span className='it-f-label__text'>Срок выполнения</span>
+									<input
+										className='it-f'
+										type='datetime-local'
+										value={dueDate}
+										onChange={e => setDueDate(e.target.value)}
+									/>
+								</label>
+							</div>
 						</div>
+					</div>
+				</section>
+			) : null}
+
+			{!isManager && !isExecutor ? (
+				<section className='it-ticket-section'>
+					<div className='it-ticket-section__head'>
+						<div className='it-ticket-section__num'>3</div>
+						<div>
+							<div className='it-ticket-section__title'>Уведомлять дополнительно</div>
+							<div className='it-ticket-section__subtitle'>
+								Кому еще сообщать о создании, смене статуса и комментариях. Ответственные по заявке
+								получат эти уведомления автоматически.
+							</div>
+						</div>
+					</div>
+					<div className='it-ticket-section__body'>
+						<NotifierField
+							options={notifierOptions}
+							value={notifierIds}
+							onChange={setNotifierIds}
+							pluginUserLabel={pluginUserLabel}
+							label={null}
+						/>
 					</div>
 				</section>
 			) : null}

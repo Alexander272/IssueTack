@@ -19,8 +19,8 @@ type TabMode = 'active' | 'archive'
 
 interface ArchiveFilters {
     search: string
-    closedAtFrom: string
-    closedAtTo: string
+    closedAtFrom?: string
+    closedAtTo?: string
 }
 
 const PAGE_SIZE = 10
@@ -32,12 +32,11 @@ const formatDay = (d: Date) => {
     return `${d.getFullYear()}-${month}-${day}`
 }
 
-// defaultArchiveFilters — окно по умолчанию: последние 30 дней. Без него
-// вкладка открывалась бы на всей закрытой истории пользователя.
+// defaultArchiveFilters — окно по умолчанию: последние 3 месяца.
 const defaultArchiveFilters = (): ArchiveFilters => {
     const to = new Date()
     const from = new Date(to)
-    from.setDate(from.getDate() - 30)
+    from.setDate(from.getDate() - 90)
     return {
         search: '',
         closedAtFrom: formatDay(from),
@@ -67,16 +66,20 @@ export default function MyTicketsTab({ scope, pendingOpenId, onPendingOpenHandle
     // Дебаунсится только сетевой запрос: поле ввода обновляется сразу.
     const debouncedSearch = useDebounce(archiveFilters.search, SEARCH_DEBOUNCE_MS)
 
+    // При поиске — без ограничений по датам (вся история), иначе — последние 3 месяца.
     const archiveQuery = useMemo(
-        () => ({
-            search: debouncedSearch.trim(),
-            closedAtFrom: archiveFilters.closedAtFrom,
-            closedAtTo: archiveFilters.closedAtTo,
-        }),
+        () => {
+            const search = debouncedSearch.trim()
+            return {
+                search,
+                closedAtFrom: search ? undefined : archiveFilters.closedAtFrom,
+                closedAtTo: search ? undefined : archiveFilters.closedAtTo,
+            }
+        },
         [debouncedSearch, archiveFilters.closedAtFrom, archiveFilters.closedAtTo],
     )
 
-    const archiveQueryKey = `${archiveQuery.search}|${archiveQuery.closedAtFrom}|${archiveQuery.closedAtTo}`
+    const archiveQueryKey = `${archiveQuery.search || '*'}|${archiveQuery.closedAtFrom || '*'}|${archiveQuery.closedAtTo || '*'}`
 
     const loadActive = useCallback(() => {
         const reqId = ++activeReqRef.current
@@ -118,8 +121,8 @@ export default function MyTicketsTab({ scope, pendingOpenId, onPendingOpenHandle
                 limit: PAGE_SIZE,
                 offset,
                 search: query.search || undefined,
-                closedAtFrom: query.closedAtFrom || undefined,
-                closedAtTo: query.closedAtTo || undefined,
+                closedAtFrom: query.search ? undefined : (query.closedAtFrom || undefined),
+                closedAtTo: query.search ? undefined : (query.closedAtTo || undefined),
             })
                 .then(result => {
                     if (reqId !== archiveReqRef.current) {

@@ -13,6 +13,10 @@ import {
 	CalendarIcon,
 	CalendarClockIcon,
 	AlarmClockIcon,
+	CircleCheck,
+	TriangleAlert,
+	CircleMinus,
+	CircleSlash,
 } from 'lucide-mui'
 
 export interface StatusMapValue {
@@ -152,3 +156,15 @@ export const groupByOptionsFor = (hasNoGroups: boolean) =>
 // пользователя (нужно для санитайза сохранённого в localStorage фильтра).
 export const groupByFieldHidden = (field: GroupByField, hasNoGroups: boolean) =>
 	hasNoGroups && GROUPLESS_HIDDEN_GROUP_FIELDS.has(field)
+
+export const SLA_TONES = {
+	onTime: { icon: CircleCheck, iconColor: '#059669', textColor: '#111827', bold: false },
+	overdue: { icon: TriangleAlert, iconColor: '#dc2626', textColor: '#dc2626', bold: true },
+	neutral: { icon: CircleMinus, iconColor: '#9ca3af', textColor: '#6b7280', bold: false },
+	cancelled: { icon: CircleSlash, iconColor: '#9ca3af', textColor: '#6b7280', bold: false },
+} as const
+
+export type SlaTone = keyof typeof SLA_TONES
+
+// Размер страницы для архивных списков задач (таблица/избранное).
+export const TASKS_PAGE_SIZE = 20

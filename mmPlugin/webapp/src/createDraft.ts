@@ -16,6 +16,10 @@ export interface PluginCreateDraft {
 	assigneeId?: string
 	ownerId?: string
 	dueDate?: string
+	// Наблюдатели («Уведомлять») — массив id. Поле опционально: в черновиках,
+	// сохранённых до его появления, его нет, и такие черновики остаются
+	// валидными (версия не меняется).
+	notifierIds?: string[]
 }
 
 const VERSION = 2
@@ -30,6 +34,12 @@ function isOptionalStr(v: unknown): boolean {
 	return v === undefined || typeof v === 'string'
 }
 
+// isOptionalStrArray — список id либо отсутствует (старый черновик), либо
+// состоит только из строк.
+function isOptionalStrArray(v: unknown): boolean {
+	return v === undefined || (Array.isArray(v) && v.every(id => typeof id === 'string'))
+}
+
 function isDraft(value: unknown): value is PluginCreateDraft {
 	if (!value || typeof value !== 'object') return false
 	const d = value as Record<string, unknown>
@@ -42,7 +52,8 @@ function isDraft(value: unknown): value is PluginCreateDraft {
 		isOptionalStr(d.groupId) &&
 		isOptionalStr(d.assigneeId) &&
 		isOptionalStr(d.ownerId) &&
-		isOptionalStr(d.dueDate)
+		isOptionalStr(d.dueDate) &&
+		isOptionalStrArray(d.notifierIds)
 	)
 }
 

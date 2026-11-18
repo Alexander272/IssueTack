@@ -153,6 +153,7 @@ func (s *MattermostService) ticketDetail(ctx context.Context, settings *models.R
 		Creator:     ticket.Creator,
 		Owner:       ticket.Owner,
 		Assignee:    ticket.Assignee,
+		Notifiers:   ticket.Notifiers,
 	}
 	if ticket.TicketNumber != nil {
 		detail.Number = *ticket.TicketNumber
@@ -636,6 +637,16 @@ func (s *MattermostService) PluginCreateTicket(ctx context.Context, input *model
 	}
 	if input.DueDate != nil {
 		dto.DueDate = input.DueDate
+	}
+	// Наблюдатели («Уведомлять»). Поле передаётся только менеджеру и
+	// исполнителю; у «чистого» заявителя его нет. Право менять список
+	// проверяет validateAndPrepareNotifiers внутри TicketService.Create —
+	// заявитель-заказчик получит ErrPermissionDenied, как и в вебе.
+	// MarkProvided нужен потому, что DTO собирается вручную, а не из JSON:
+	// без него Create не увидит поле и не синхронизирует наблюдателей.
+	if len(input.NotifierIDs) > 0 {
+		dto.NotifierIDs = input.NotifierIDs
+		dto.MarkProvided("notifierIds")
 	}
 
 	if dto.GroupID != nil {

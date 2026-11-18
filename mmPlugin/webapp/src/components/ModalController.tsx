@@ -58,7 +58,7 @@ export default function ModalController({scope, context, initialPendingOpenId, o
 	}, [onClose, hasDraft])
 
 	return (
-		<div className='it-ticket-overlay' onClick={() => (hasDraft ? undefined : onClose())}>
+		<div className='it-ticket-overlay'>
 			<div
 				className='it-ticket-modal'
 				ref={modalRef}

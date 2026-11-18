@@ -3,12 +3,15 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository/postgres"
+	"github.com/Alexander272/IssueTrack/backend/pkg/error_bot"
+	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/google/uuid"
 )
 
@@ -152,7 +155,14 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 			groupIDs = unionGroupIDs(managed, member)
 		}
 		req.MyWork = &models.MyWorkFilter{UserID: req.Actor.ID, GroupIDs: groupIDs}
-	} else if !canViewAll {
+		// Явный авторский скоуп (CreatedOrOwnedBy) не получает группового fallback'а:
+		// он уже сужает заявки по автору/заказчику/наблюдателю (плагин «Мои заявки»,
+		// PluginListMine ставит его напрямую без mode). Добавление группового scope
+		// дало бы AND со строкой (creator OR owner OR notifier) и отсеяло бы заявки
+		// авторов, созданных в группах, где их самого нет (например, через категорию).
+		// Режимы created/created_or_owned/readable задают эти скоупы в ветках ниже,
+		// поэтому чинить нужно только «plain»-обзор без mode.
+	} else if req.CreatedOrOwnedBy == nil && !canViewAll {
 		managed, err := s.groups.GetManagedGroups(ctx, req.Actor.ID, nil)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to get managed groups: %w", err)
@@ -302,4 +312,1489 @@ func (s *TicketService) GetByID(ctx context.Context, req *models.GetTicketByIdDT
 	}
 
 	return data, nil
+}
+
+// Create создаёт новый тикет: проверяет права на создание, заполняет
+// владельца/исполнителя (при необходимости — автоматически), фиксирует
+// действие в журнале и отправляет уведомление.
+func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error {
+	if dto.Actor == nil {
+		return models.ErrPermissionDenied
+	}
+	if strings.TrimSpace(dto.Title) == "" {
+		return models.ErrInvalidInput
+	}
+
+	realmStr := ""
+	if dto.RealmID != nil {
+		realmStr = dto.RealmID.String()
+	}
+
+	ok, err := s.access.CanCreateTicket(ctx, dto.Actor.ID, realmStr)
+	if err != nil {
+		return fmt.Errorf("policy check failed: %w", err)
+	}
+
+	if !ok {
+		// Исполнитель (участник хотя бы одной группы) может создать заявку
+		// с ограничениями: приоритет/группа/исполнитель принудительно
+		// определяются системой. Заказчик необязателен: если он не указан,
+		// ниже им становится создатель.
+		member, err := s.groups.GetMemberGroups(ctx, dto.Actor.ID, dto.RealmID)
+		if err != nil {
+			return fmt.Errorf("failed to get member groups: %w", err)
+		}
+		if len(member) == 0 {
+			return models.ErrPermissionDenied
+		}
+		if err := s.applyExecutorCreateRestrictions(ctx, dto, member); err != nil {
+			return err
+		}
+	}
+
+	if dto.GroupID == nil {
+		return fmt.Errorf("group is required")
+	}
+
+	// Заказчик необязателен: если он не указан, заявка выполняется для создателя.
+	// Подстановка обязательна — колонка tickets.owner_id в БД NOT NULL, поэтому
+	// пустой заказчик из формы не должен уходить в INSERT как NULL.
+	// Серверная часть правила выбора заказчика (P2): явный заказчик должен быть
+	// выбран разрешённым пользователем (менеджер/исполнитель) и быть активным
+	// пользователем области — иначе заявка с чужим заказчиком не создаётся.
+	if dto.OwnerID != nil {
+		if dto.RealmID == nil {
+			return models.ErrInvalidInput
+		}
+		if err := s.validateOwnerSelection(ctx, dto.Actor.ID, *dto.RealmID, *dto.OwnerID); err != nil {
+			return err
+		}
+	}
+	if dto.OwnerID == nil {
+		dto.OwnerID = &dto.CreatorID
+	}
+
+	if err := s.autoAssign(ctx, dto); err != nil {
+		return fmt.Errorf("auto-assign: %w", err)
+	}
+
+	canSetDueDate := false
+
+	isManager, err := s.isManagerOfGroup(ctx, &models.GroupShort{ID: *dto.GroupID}, dto.Actor.ID)
+	if err != nil {
+		return fmt.Errorf("failed to check manager access: %w", err)
+	}
+
+	supervisor, err := s.access.IsRealmSupervisor(ctx, dto.Actor.ID, realmStr)
+	if err != nil {
+		return fmt.Errorf("failed to check supervisor access: %w", err)
+	}
+
+	if isManager || supervisor {
+		canSetDueDate = true
+	} else {
+		// Проверяем, является ли пользователь "исполнителем" (участником хотя бы одной группы в реалме)
+		// Мы делаем этот запрос только если пользователь не менеджер и не супервизор, чтобы сэкономить ресурсы
+		memberGroups, err := s.groups.GetMemberGroups(ctx, dto.Actor.ID, dto.RealmID)
+		if err != nil {
+			return fmt.Errorf("failed to get member groups for due date check: %w", err)
+		}
+		if len(memberGroups) > 0 {
+			canSetDueDate = true
+		}
+	}
+
+	// 1. Если пользователь пытается вручную установить срок, но не имеет прав — блокируем
+	if dto.DueDate != nil && !canSetDueDate {
+		return models.ErrPermissionDenied
+	}
+
+	// 2. Автосрок из категории применяется всем (свойство категории, а не право
+	// пользователя). canSetDueDate гейтит только ручную установку срока.
+	if dto.DueDate == nil && dto.CategoryID != uuid.Nil {
+		category, err := s.categories.GetByID(ctx, &models.GetCategoryByIdDTO{ID: dto.CategoryID, RealmID: *dto.RealmID})
+		if err != nil {
+			return fmt.Errorf("failed to get category: %w", err)
+		}
+		if category.DefaultDueDays != nil && *category.DefaultDueDays > 0 {
+			dd := time.Now().UTC().AddDate(0, 0, *category.DefaultDueDays)
+			dto.DueDate = &dd
+		}
+	}
+
+	if err := s.validateAndPrepareNotifiers(ctx, dto, nil); err != nil {
+		return err
+	}
+
+	err = s.tx.WithinTransaction(ctx, func(newTx postgres.Tx) error {
+		if err := s.repo.Create(ctx, newTx, dto); err != nil {
+			return fmt.Errorf("failed to create ticket. error: %w", err)
+		}
+
+		if dto.HasField("notifierIds") {
+			if err := s.repo.SyncNotifiers(ctx, newTx, *dto.ID, dto.Actor.ID, dto.NotifierIDs); err != nil {
+				return fmt.Errorf("failed to sync ticket notifiers: %w", err)
+			}
+		}
+
+		if len(dto.Subtasks) > 0 {
+			for _, st := range dto.Subtasks {
+				st.TicketID = *dto.ID
+				st.Actor = dto.Actor
+			}
+			if err := s.subtasks.CreateManyOnCreate(ctx, newTx, dto.Subtasks); err != nil {
+				return fmt.Errorf("failed to create subtasks: %w", err)
+			}
+		}
+
+		log := &models.ActivityLogDTO{
+			Action:        "created",
+			ChangedBy:     dto.Actor.ID,
+			ChangedByName: dto.Actor.Name,
+			EntityType:    string(access.ResourceTicket),
+			EntityID:      *dto.ID,
+			Entity:        dto.Title,
+		}
+		if err := log.SetNewValues(map[string]string{"title": dto.Title}); err != nil {
+			return fmt.Errorf("set new values: %w", err)
+		}
+		if err := s.logs.Create(ctx, newTx, []*models.ActivityLogDTO{log}); err != nil {
+			return fmt.Errorf("store log: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	created, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
+	if err != nil {
+		return fmt.Errorf("failed to load created ticket for notification: %w", err)
+	}
+	if err := s.notifications.TicketCreated(ctx, created, dto.Actor.ID); err != nil {
+		s.notifyBestEffort("create", *dto.ID, dto.Title, err)
+	}
+	return nil
+}
+
+// applyExecutorCreateRestrictions нормализует и валидирует поля заявки, создаваемой
+// исполнителем (участником группы, без coarse-прав CanCreateTicket). Исполнителю
+// разрешено выбирать исполнителя (любого активного исполнителя реалма), приоритет,
+// группу и срок; при отсутствии явного выбора применяются дефолты категории/группы.
+func (s *TicketService) applyExecutorCreateRestrictions(ctx context.Context, dto *models.TicketDTO, memberGroups []uuid.UUID) error {
+	if dto.RealmID == nil {
+		return fmt.Errorf("realm is required")
+	}
+
+	category, err := s.categories.GetByID(ctx, &models.GetCategoryByIdDTO{ID: dto.CategoryID, RealmID: *dto.RealmID})
+	if err != nil {
+		return fmt.Errorf("failed to get category: %w", err)
+	}
+	if category.GroupID == uuid.Nil {
+		return fmt.Errorf("category has no group")
+	}
+
+	// Группа: исполнитель может выбрать любую группу реалма; по умолчанию — группа категории.
+	if dto.GroupID == nil || *dto.GroupID == uuid.Nil {
+		dto.GroupID = &category.GroupID
+	}
+
+	// Приоритет: принимает выбранное валидное значение, иначе — приоритет категории.
+	if !dto.Priority.IsValid() {
+		dto.Priority = category.Priority
+	}
+
+	// Исполнитель: можно назначить любого активного исполнителя реалма (участника
+	// хотя бы одной группы в реалме). Невалидный выбор отклоняется.
+	if dto.AssigneeID != nil {
+		if err := s.validateRealmExecutor(ctx, *dto.AssigneeID, *dto.RealmID); err != nil {
+			return err
+		}
+	} else if containsUUID(memberGroups, category.GroupID) {
+		// Категория ведёт в группу исполнителя и явного выбора нет — назначаем его.
+		dto.AssigneeID = &dto.CreatorID
+	}
+	return nil
+}
+
+// validateRealmExecutor проверяет, что пользователь — активный исполнитель области:
+// активен, состоит в области и является участником хотя бы одной группы области.
+func (s *TicketService) validateRealmExecutor(ctx context.Context, userID, realmID uuid.UUID) error {
+	if userID == uuid.Nil {
+		return models.ErrInvalidInput
+	}
+	u, err := s.users.GetByID(ctx, userID)
+	if err != nil || u == nil || !u.IsActive {
+		return models.ErrInvalidInput
+	}
+	if !hasActiveRealmMembership(u, realmID) {
+		return models.ErrInvalidInput
+	}
+	memberGroups, err := s.groups.GetMemberGroups(ctx, userID, &realmID)
+	if err != nil {
+		return fmt.Errorf("failed to get member groups: %w", err)
+	}
+	if len(memberGroups) == 0 {
+		return models.ErrInvalidInput
+	}
+	return nil
+}
+
+func containsUUID(values []uuid.UUID, target uuid.UUID) bool {
+	for _, v := range values {
+		if v == target {
+			return true
+		}
+	}
+	return false
+}
+
+// Update обновляет поля тикета с учётом прав доступа и правил переходов по статусам.
+// Пользователь с work-доступом может менять только статус; «чистый» владелец —
+// только допустимые переходы из трёх (отменить, принять решение, вернуть в работу);
+// статус closed можно поставить только из resolved. Тело — updateTicket в переданной
+// транзакции; уведомления подписчиков отправляет после коммита.
+func (s *TicketService) Update(ctx context.Context, dto *models.TicketDTO) error {
+	var changes []*models.FieldChange
+	err := s.tx.WithinTransaction(ctx, func(newTx postgres.Tx) error {
+		var txErr error
+		changes, txErr = s.updateTicket(ctx, newTx, dto, nil)
+		return txErr
+	})
+	if err != nil {
+		return err
+	}
+
+	s.notifyTicketUpdated(ctx, dto, changes)
+	return nil
+}
+
+// ticketUpdateOptions — необязательные уточнения updateTicket. Сейчас это только
+// подмена тега в снапшоте журнала: уведомления и Mattermost получают исходные
+// изменения DTO, а история может назвать изменение точнее.
+type ticketUpdateOptions struct {
+	logTagAlias map[models.ActivityType]models.ActivityType
+}
+
+// updateTicket — тело Update внутри уже открытой транзакции: проверки прав, запись
+// изменений и журнал. Возвращает изменения для уведомления после коммита — их
+// рассылает вызывающий (Update либо DecideDueDateRequest, который проводит решение
+// по переносу срока и смену срока одной транзакцией).
+func (s *TicketService) updateTicket(
+	ctx context.Context,
+	newTx postgres.Tx,
+	dto *models.TicketDTO,
+	opts *ticketUpdateOptions,
+) (changes []*models.FieldChange, err error) {
+	err = func() error {
+		realmStr := ""
+		if dto.RealmID != nil {
+			realmStr = dto.RealmID.String()
+		}
+
+		assignedOnly := false
+		adminOnlyEdit := false
+		ownerOnly := false
+		if err := s.access.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: *dto.ID, UserID: dto.Actor.ID, Action: string(access.Write)}); err != nil {
+			if workErr := s.access.CheckWorkAccess(ctx, &models.AccessCheckDTO{TicketID: *dto.ID, UserID: dto.Actor.ID}); workErr != nil {
+				old, loadErr := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
+				if loadErr != nil {
+					return fmt.Errorf("failed to load ticket for access check: %w", loadErr)
+				}
+				// Владелец заявки сохраняет ограниченный доступ к ней даже без
+				// write/work-прав: ему доступны решения по статусам через
+				// ownerTransitionAllowed. Автор без владельца остаётся «заказчиком»
+				// своей заявки (см. canEditFields ниже).
+				if !s.isOwnerOnlyOrCreatorWithoutOwner(old, dto.Actor.ID) {
+					return err
+				}
+				ownerOnly = true
+			}
+			assignedOnly = true
+		}
+
+		oldTicket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
+		if err != nil {
+			return err
+		}
+
+		// Серверная часть правила выбора заказчика (P2): явно выбранный заказчик
+		// должен быть выбран разрешённым пользователем (менеджер/исполнитель) и быть
+		// активным пользователем области — иначе изменение заказчика отклоняется.
+		// Проверяем до fallback: снятый в форме заказчик (OwnerID == nil) — это не
+		// явный выбор, а «без заказчика» → он заменяется создателем без валидации.
+		if dto.HasField("ownerId") && dto.OwnerID != nil {
+			if oldTicket.RealmID == nil {
+				return models.ErrInvalidInput
+			}
+			if err := s.validateOwnerSelection(ctx, dto.Actor.ID, *oldTicket.RealmID, *dto.OwnerID); err != nil {
+				return err
+			}
+		}
+
+		// Снятый в форме заказчик трактуется как «заявка для создателя»: колонка
+		// owner_id в БД NOT NULL, поэтому очистка поля не должна писать NULL.
+		// Так же, как при создании без заказчика, им становится создатель.
+		if dto.HasField("ownerId") && dto.OwnerID == nil {
+			dto.OwnerID = &oldTicket.Creator.ID
+		}
+
+		if dto.HasField("status") && dto.Status != oldTicket.Status {
+			ok, err := s.canChangeStatus(ctx, oldTicket, dto.Actor.ID, realmStr)
+			if err != nil {
+				return fmt.Errorf("failed to check status access: %w", err)
+			}
+			if !ok {
+				return models.ErrPermissionDenied
+			}
+		}
+
+		if ownerOnly && dto.HasField("status") && dto.Status != oldTicket.Status && !s.ownerTransitionAllowed(oldTicket, dto) {
+			return models.ErrPermissionDenied
+		}
+
+		// Закрытая/отменённая заявка — терминальна: её статус изменить нельзя
+		// (resolved при этом допускает переходы →closed и →in_progress выше).
+		if dto.HasField("status") && oldTicket.Status != dto.Status &&
+			(oldTicket.Status == models.StatusClosed || oldTicket.Status == models.StatusCancelled) {
+			return models.ErrTicketFrozen
+		}
+
+		if dto.HasField("status") && dto.Status != oldTicket.Status &&
+			(dto.Status == models.StatusClosed || dto.Status == models.StatusCancelled) {
+			ok, err := s.isCreatorOrManager(ctx, oldTicket, dto.Actor.ID)
+			if err != nil {
+				return fmt.Errorf("failed to check close access: %w", err)
+			}
+			if !ok && s.isOwner(oldTicket, dto.Actor.ID) {
+				ok = true
+			}
+			if !ok {
+				return models.ErrPermissionDenied
+			}
+		}
+
+		if dto.HasField("status") && dto.Status != oldTicket.Status {
+			switch dto.Status {
+			case models.StatusResolved:
+				n, err := s.subtasks.GetUnresolvedCount(ctx, *dto.ID)
+				if err != nil {
+					return fmt.Errorf("failed to check subtasks: %w", err)
+				}
+				if n > 0 {
+					return models.ErrSubtasksNotResolved
+				}
+			case models.StatusClosed:
+				if oldTicket.Status != models.StatusResolved {
+					return models.ErrCloseRequiresResolved
+				}
+			}
+		}
+
+		if dto.HasField("status") {
+			now := time.Now()
+			switch dto.Status {
+			case models.StatusResolved:
+				if oldTicket.ResolvedAt == nil {
+					dto.ResolvedAt = &now
+					dto.MarkProvided("resolvedAt")
+				}
+			case models.StatusClosed, models.StatusCancelled:
+				if oldTicket.ClosedAt == nil {
+					dto.ClosedAt = &now
+					dto.MarkProvided("closedAt")
+				}
+			default:
+				if oldTicket.ClosedAt != nil {
+					dto.ClosedAt = nil
+					dto.MarkProvided("closedAt")
+				}
+				if oldTicket.ResolvedAt != nil {
+					dto.ResolvedAt = nil
+					dto.MarkProvided("resolvedAt")
+				}
+			}
+		}
+
+		changes = dto.GetChanges(oldTicket)
+
+		// Неактивные статусы (resolved/closed/cancelled) — «замороженные»: менять
+		// разрешено только сам статус (resolved→closed, resolved→in_progress и т.п.).
+		// Все прочие поля (срок, приоритет, исполнитель, заголовок и др.) изменить нельзя.
+		// Исключение: при возврате из resolved в in_progress менеджер может указать новый срок.
+		if isTicketInactive(oldTicket.Status) {
+			for _, change := range changes {
+				// При возврате из resolved разрешены: смена статуса, срок (dueDate), закрытие.
+				if change.Tag != models.ActionStatusChanged && change.Tag != models.ActionClosed && change.Tag != models.ActionDueDateChanged {
+					return models.ErrTicketFrozen
+				}
+				// Срок разрешён только при переходе resolved → in_progress.
+				if change.Tag == models.ActionDueDateChanged && (oldTicket.Status != models.StatusResolved || dto.Status != models.StatusInProgress) {
+					return models.ErrTicketFrozen
+				}
+			}
+		}
+
+		// Тонкие права операций: смена группы и исполнителя доступна начальнику области,
+		// менеджеру группы тикета или исполнителю области (участнику групп). Исполнителю
+		// можно назначать любого активного исполнителя реалма. Менеджер (manager_id)
+		// определяется менеджером группы автоматически — ручное изменение запрещено всем.
+		// Эти ограничения действуют поверх прочих прав — независимо от assignedOnly/
+		// ownerOnly и права правки полей (canEditFields). Эхо текущего значения не
+		// создаёт change и проходит беспрепятственно.
+		isAdmin, err := s.access.CanAdministerTickets(ctx, dto.Actor.ID, oldTicket)
+		if err != nil {
+			return fmt.Errorf("failed to check admin access: %w", err)
+		}
+		for _, change := range changes {
+			switch change.Tag {
+			case models.ActionGroupChanged, models.ActionGroupAssigned:
+				if isAdmin {
+					continue
+				}
+				isManager, mgrErr := s.isManagerOfGroup(ctx, oldTicket.Group, dto.Actor.ID)
+				if mgrErr != nil {
+					return mgrErr
+				}
+				if isManager {
+					continue
+				}
+				if oldTicket.RealmID == nil {
+					return models.ErrPermissionDenied
+				}
+				memberGroups, mgrErr := s.groups.GetMemberGroups(ctx, dto.Actor.ID, oldTicket.RealmID)
+				if mgrErr != nil {
+					return fmt.Errorf("failed to get member groups: %w", mgrErr)
+				}
+				if len(memberGroups) == 0 {
+					return models.ErrPermissionDenied
+				}
+			case models.ActionAssigned, models.ActionAssignChanged:
+				if isAdmin {
+					continue
+				}
+				isManager, mgrErr := s.isManagerOfGroup(ctx, oldTicket.Group, dto.Actor.ID)
+				if mgrErr != nil {
+					return mgrErr
+				}
+				if isManager {
+					continue
+				}
+				if oldTicket.RealmID == nil || dto.AssigneeID == nil {
+					return models.ErrPermissionDenied
+				}
+				memberGroups, mgrErr := s.groups.GetMemberGroups(ctx, dto.Actor.ID, oldTicket.RealmID)
+				if mgrErr != nil {
+					return fmt.Errorf("failed to get member groups: %w", mgrErr)
+				}
+				if len(memberGroups) == 0 {
+					return models.ErrPermissionDenied
+				}
+				if err := s.validateRealmExecutor(ctx, *dto.AssigneeID, *oldTicket.RealmID); err != nil {
+					return err
+				}
+			case models.ActionManagerChanged:
+				return models.ErrPermissionDenied
+			}
+		}
+
+		// Право правки полей (заголовок/описание/приоритет/срок/группа и т.п.)
+		// имеет только создатель, менеджер группы или владелец (в статусе open).
+		// Политика Casbin write сама по себе права правки полей не даёт — она
+		// остаётся источником «рабочего» доступа (комментарии/вложения/подзадачи/
+		// смена статуса). Пользователь лишь со «рабочим» доступом (assignedOnly)
+		// может менять только статус; передача исполнителя выполняется через
+		// отдельный эндпоинт Transfer (см. выше), а смена assignee via Update
+		// доступна только админу/менеджеру группы (проверено в «тонких правах»).
+		// Начальник области (realm supervisor), не являющийся создателем/
+		// менеджером/владельцем тикета, получает отдельный режим adminOnlyEdit:
+		// ему разрешено править любые поля кроме заголовка и описания.
+		if !assignedOnly && !ownerOnly {
+			canEdit, editErr := s.canEditFields(ctx, oldTicket, dto.Actor.ID)
+			if editErr != nil {
+				return editErr
+			}
+			if !canEdit {
+				supervisor, supErr := s.access.IsRealmSupervisor(ctx, dto.Actor.ID, ticketRealm(oldTicket))
+				if supErr != nil {
+					return fmt.Errorf("failed to check supervisor access: %w", supErr)
+				}
+				if supervisor {
+					adminOnlyEdit = true
+				} else {
+					assignedOnly = true
+				}
+			}
+		}
+
+		if assignedOnly && !ownerOnly {
+			for _, change := range changes {
+				switch change.Tag {
+				case models.ActionStatusChanged, models.ActionClosed:
+					// допустимо: изменение статуса
+				case models.ActionGroupChanged, models.ActionGroupAssigned:
+					// допустимо только для админа: авторизация проведена в «тонких правах» выше
+				case models.ActionAssigned, models.ActionAssignChanged:
+					// допустимо только для админа/менеджера группы: авторизация
+					// проведена в «тонких правах» выше (исполнитель с work-доступом
+					// сюда не попадает — его передача идёт через Transfer)
+				default:
+					return models.ErrPermissionDenied
+				}
+			}
+		}
+
+		// Режим правки начальника области: любые поля кроме заголовка/описания.
+		// Смена статуса остаётся под canChangeStatus (проверен выше), закрытие/
+		// отмена — под строгой проверкой, «замороженные» — под ErrTicketFrozen,
+		// менеджер группы (manager_id) — под запретом в «тонких правах».
+		if adminOnlyEdit && !ownerOnly {
+			for _, change := range changes {
+				switch change.Tag {
+				case models.ActionTitleChanged, models.ActionDescriptionChanged:
+					return models.ErrPermissionDenied
+				}
+			}
+		}
+
+		// Для владельца/автора без write/work-доступа переходы по статусам уже
+		// проверены через ownerTransitionAllowed выше; здесь ограничиваем правку
+		// не-статусных полей через canEditFields: автор правит всегда, владелец —
+		// только пока заявка ещё в статусе open.
+		if ownerOnly {
+			for _, change := range changes {
+				if change.Tag == models.ActionStatusChanged || change.Tag == models.ActionClosed {
+					continue
+				}
+				ownerEdit, editErr := s.canEditFields(ctx, oldTicket, dto.Actor.ID)
+				if editErr != nil {
+					return editErr
+				}
+				if !ownerEdit {
+					return models.ErrPermissionDenied
+				}
+			}
+		}
+
+		if err := s.checkGroupRealm(ctx, oldTicket, dto); err != nil {
+			return err
+		}
+
+		if dto.HasField("notifierIds") {
+			if err := s.validateAndPrepareNotifiers(ctx, dto, oldTicket); err != nil {
+				return err
+			}
+			if ch, ok := notifierIDsChange(oldTicket.Notifiers, dto.NotifierIDs); ok {
+				changes = append(changes, ch)
+			}
+		}
+
+		if err := s.repo.Update(ctx, newTx, dto); err != nil {
+			return fmt.Errorf("failed to update ticket. error: %w", err)
+		}
+
+		if dto.HasField("notifierIds") {
+			if err := s.repo.SyncNotifiers(ctx, newTx, *dto.ID, dto.Actor.ID, dto.NotifierIDs); err != nil {
+				return fmt.Errorf("failed to sync ticket notifiers: %w", err)
+			}
+		}
+
+		if len(changes) > 0 {
+			oldMap, newMap := s.logValues(ctx, oldTicket, changes)
+			if opts != nil {
+				renameLogTags(oldMap, newMap, opts.logTagAlias)
+			}
+
+			log := &models.ActivityLogDTO{
+				Action:        "updated",
+				ChangedBy:     dto.Actor.ID,
+				ChangedByName: dto.Actor.Name,
+				EntityType:    string(access.ResourceTicket),
+				EntityID:      *dto.ID,
+				Entity:        oldTicket.Title,
+			}
+			if err := log.SetOldValues(oldMap); err != nil {
+				return fmt.Errorf("set old values: %w", err)
+			}
+			if err := log.SetNewValues(newMap); err != nil {
+				return fmt.Errorf("set new values: %w", err)
+			}
+			if err := s.logs.Create(ctx, newTx, []*models.ActivityLogDTO{log}); err != nil {
+				return fmt.Errorf("store logs: %w", err)
+			}
+		}
+
+		return nil
+	}()
+	return changes, err
+}
+
+// notifyTicketUpdated — уведомление об изменениях заявки. Вызывается только после
+// коммита: получатели не должны узнать об изменении, которое откатилось.
+func (s *TicketService) notifyTicketUpdated(ctx context.Context, dto *models.TicketDTO, changes []*models.FieldChange) {
+	if len(changes) == 0 {
+		return
+	}
+	updated, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
+	if err != nil {
+		s.notifyBestEffort("update", *dto.ID, dto.Title, err)
+		return
+	}
+	if err := s.notifications.TicketUpdated(ctx, updated, dto.Actor.ID, changes); err != nil {
+		s.notifyBestEffort("update", *dto.ID, dto.Title, err)
+	}
+}
+
+// Take — «взять заявку в работу»: пользователь назначает себя исполнителем
+// (assignee) и переводит заявку в статус in_progress. Разрешено, если заявка
+// активна (не resolved/closed/cancelled), пользователь имеет read-доступ и заявка
+// «забираема» — не имеет исполнителя вовсе, либо исполнитель — другой пользователь,
+// а заявка ещё в статусе open. Если исполнитель уже является текущим пользователем —
+// отказ (нет смысла брать собственную заявку).
+func (s *TicketService) Take(ctx context.Context, dto *models.TakeTicketDTO) error {
+	ticket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: dto.ID})
+	if err != nil {
+		return fmt.Errorf("failed to get ticket by id. error: %w", err)
+	}
+
+	if isTicketInactive(ticket.Status) {
+		return models.ErrTicketFrozen
+	}
+
+	if err := s.access.CheckAccessOnTicket(ctx, ticket, dto.Actor.ID, string(access.Read)); err != nil {
+		return err
+	}
+
+	// Заказчик (owner) и наблюдатель («Уведомлять») с доступом только по чтению
+	// не могут «взять заявку»: их роль — просмотр/комментарий/решения владельца.
+	// Автор без групп (IsCustomer) — тоже заказчик, а не рабочий, поэтому «взять» ему нельзя.
+	ownerReadOnly, err := s.access.ownerReadOnly(ctx, ticket, dto.Actor.ID)
+	if err != nil {
+		return err
+	}
+	if ownerReadOnly {
+		return models.ErrPermissionDenied
+	}
+	notifierReadOnly, err := s.access.notifierReadOnly(ctx, ticket, dto.Actor.ID)
+	if err != nil {
+		return err
+	}
+	if notifierReadOnly {
+		return models.ErrPermissionDenied
+	}
+	if ticket.Creator.ID == dto.Actor.ID {
+		customer, err := s.access.IsCustomer(ctx, ticket, dto.Actor.ID)
+		if err != nil {
+			return err
+		}
+		if customer {
+			return models.ErrPermissionDenied
+		}
+	}
+
+	if ticket.Assignee != nil {
+		if ticket.Assignee.ID == dto.Actor.ID {
+			return models.ErrPermissionDenied
+		}
+		if ticket.Status != models.StatusOpen {
+			return models.ErrPermissionDenied
+		}
+	}
+
+	var realmID *uuid.UUID
+	if dto.RealmID != "" {
+		if rid, parseErr := uuid.Parse(dto.RealmID); parseErr == nil {
+			realmID = &rid
+		}
+	}
+	dtoUpdate := &models.TicketDTO{
+		ID:         &dto.ID,
+		Actor:      dto.Actor,
+		RealmID:    realmID,
+		Status:     models.StatusInProgress,
+		AssigneeID: &dto.Actor.ID,
+	}
+	dtoUpdate.MarkProvided("status")
+	dtoUpdate.MarkProvided("assigneeId")
+
+	var changes []*models.FieldChange
+	err = s.tx.WithinTransaction(ctx, func(newTx postgres.Tx) error {
+		oldTicket, loadErr := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: dto.ID})
+		if loadErr != nil {
+			return loadErr
+		}
+
+		changes = dtoUpdate.GetChanges(oldTicket)
+
+		if err := s.repo.Update(ctx, newTx, dtoUpdate); err != nil {
+			return fmt.Errorf("failed to update ticket. error: %w", err)
+		}
+
+		if len(changes) > 0 {
+			oldMap, newMap := s.logValues(ctx, oldTicket, changes)
+
+			log := &models.ActivityLogDTO{
+				Action:        "updated",
+				ChangedBy:     dto.Actor.ID,
+				ChangedByName: dto.Actor.Name,
+				EntityType:    string(access.ResourceTicket),
+				EntityID:      dto.ID,
+				Entity:        oldTicket.Title,
+			}
+			if err := log.SetOldValues(oldMap); err != nil {
+				return fmt.Errorf("set old values: %w", err)
+			}
+			if err := log.SetNewValues(newMap); err != nil {
+				return fmt.Errorf("set new values: %w", err)
+			}
+			if err := s.logs.Create(ctx, newTx, []*models.ActivityLogDTO{log}); err != nil {
+				return fmt.Errorf("store logs: %w", err)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	if len(changes) > 0 {
+		updated, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: dto.ID})
+		if err != nil {
+			s.notifyBestEffort("update", dto.ID, ticket.Title, err)
+		} else if err := s.notifications.TicketUpdated(ctx, updated, dto.Actor.ID, changes); err != nil {
+			s.notifyBestEffort("update", dto.ID, ticket.Title, err)
+		}
+	}
+	return nil
+}
+
+// Transfer передаёт заявку от текущего исполнителя другому участнику той же
+// группы. Только текущий исполнитель (assignee) может передать заявку; статус
+// при передаче не меняется. Замороженные (resolved/closed/cancelled) заявки
+// передавать нельзя.
+func (s *TicketService) Transfer(ctx context.Context, dto *models.TransferTicketDTO) error {
+	ticket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
+	if err != nil {
+		return fmt.Errorf("failed to get ticket by id. error: %w", err)
+	}
+
+	if isTicketInactive(ticket.Status) {
+		return models.ErrTicketFrozen
+	}
+
+	// Передавать может только текущий исполнитель.
+	if ticket.Assignee == nil || ticket.Assignee.ID != dto.Actor.ID {
+		return models.ErrPermissionDenied
+	}
+
+	// Новый исполнитель обязан быть участником той же группы, что и тикет.
+	if err := s.validateAssigneeForAssign(ctx, ticket, dto.AssigneeID); err != nil {
+		return err
+	}
+
+	var realmID *uuid.UUID
+	if dto.RealmID != "" {
+		if rid, parseErr := uuid.Parse(dto.RealmID); parseErr == nil {
+			realmID = &rid
+		}
+	}
+
+	dtoUpdate := &models.TicketDTO{
+		ID:         dto.ID,
+		Actor:      dto.Actor,
+		RealmID:    realmID,
+		AssigneeID: dto.AssigneeID,
+	}
+	dtoUpdate.MarkProvided("assigneeId")
+
+	var changes []*models.FieldChange
+	err = s.tx.WithinTransaction(ctx, func(newTx postgres.Tx) error {
+		oldTicket, loadErr := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
+		if loadErr != nil {
+			return loadErr
+		}
+
+		changes = dtoUpdate.GetChanges(oldTicket)
+
+		if err := s.repo.Update(ctx, newTx, dtoUpdate); err != nil {
+			return fmt.Errorf("failed to update ticket. error: %w", err)
+		}
+
+		if len(changes) > 0 {
+			oldMap, newMap := s.logValues(ctx, oldTicket, changes)
+
+			log := &models.ActivityLogDTO{
+				Action:        "updated",
+				ChangedBy:     dto.Actor.ID,
+				ChangedByName: dto.Actor.Name,
+				EntityType:    string(access.ResourceTicket),
+				EntityID:      *dto.ID,
+				Entity:        oldTicket.Title,
+			}
+			if err := log.SetOldValues(oldMap); err != nil {
+				return fmt.Errorf("set old values: %w", err)
+			}
+			if err := log.SetNewValues(newMap); err != nil {
+				return fmt.Errorf("set new values: %w", err)
+			}
+			if err := s.logs.Create(ctx, newTx, []*models.ActivityLogDTO{log}); err != nil {
+				return fmt.Errorf("store logs: %w", err)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	if len(changes) > 0 {
+		updated, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *dto.ID})
+		if err != nil {
+			s.notifyBestEffort("transfer", *dto.ID, ticket.Title, err)
+		} else if err := s.notifications.TicketUpdated(ctx, updated, dto.Actor.ID, changes); err != nil {
+			s.notifyBestEffort("transfer", *dto.ID, ticket.Title, err)
+		}
+	}
+	return nil
+}
+
+// Delete удаляет тикет: проверяет право на удаление, сохраняет снимок данных
+// в журнале и отправляет уведомление об удалении.
+func (s *TicketService) Delete(ctx context.Context, dto *models.DeleteTicketDTO) error {
+	if err := s.access.CheckAccess(ctx, &models.AccessCheckDTO{TicketID: dto.ID, UserID: dto.Actor.ID, Action: string(access.Delete)}); err != nil {
+		return err
+	}
+
+	var ticket *models.Ticket
+	// Директории вложений удаляются после коммита, поэтому id подзадач нужно
+	// сохранить из транзакции наружу.
+	var deletedSubIDs []uuid.UUID
+	err := s.tx.WithinTransaction(ctx, func(newTx postgres.Tx) error {
+		var loadErr error
+		ticket, loadErr = s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: dto.ID})
+		if loadErr != nil {
+			return fmt.Errorf("failed to load ticket: %w", loadErr)
+		}
+
+		snapshot := map[string]any{
+			"title":    ticket.Title,
+			"status":   ticket.Status,
+			"priority": ticket.Priority,
+		}
+		if ticket.Assignee != nil {
+			snapshot["assignee"] = s.logUserLabel(ctx, ticket.Assignee.ID)
+		}
+		log := &models.ActivityLogDTO{
+			Action:        "deleted",
+			ChangedBy:     dto.Actor.ID,
+			ChangedByName: dto.Actor.Name,
+			EntityType:    string(access.ResourceTicket),
+			EntityID:      dto.ID,
+			Entity:        ticket.Title,
+		}
+		if err := log.SetOldValues(snapshot); err != nil {
+			return fmt.Errorf("set old values: %w", err)
+		}
+		if err := s.logs.Create(ctx, newTx, []*models.ActivityLogDTO{log}); err != nil {
+			return fmt.Errorf("store log: %w", err)
+		}
+
+		// Вложения не привязаны к тикету внешним ключом (полиморфный entity_id),
+		// поэтому при удалении тикета их нужно вычищать явно: записи из БД
+		// (ticket/{id} и subtask/{id}). Директории с файлами удаляются ПОСЛЕ
+		// коммита транзакции — файловая система в неё не входит, и удаление до
+		// коммита при откате (например, на s.repo.Delete ниже) потеряло бы файлы
+		// безвозвратно. См. AttachmentService.DeleteByEntity / RemoveEntityDir.
+		if err := s.attachments.DeleteByEntity(ctx, newTx, "ticket", dto.ID); err != nil {
+			return fmt.Errorf("failed to cleanup ticket attachments: %w", err)
+		}
+		subs, subsErr := s.subtasks.GetByTicketID(ctx, dto.ID, dto.Actor.ID)
+		if subsErr != nil {
+			return fmt.Errorf("failed to load ticket subtasks: %w", subsErr)
+		}
+		subIDs := make([]uuid.UUID, 0, len(subs))
+		for _, sub := range subs {
+			if err := s.attachments.DeleteByEntity(ctx, newTx, "subtask", sub.ID); err != nil {
+				return fmt.Errorf("failed to cleanup subtask attachments: %w", err)
+			}
+			subIDs = append(subIDs, sub.ID)
+		}
+
+		if err := s.repo.Delete(ctx, newTx, dto); err != nil {
+			return fmt.Errorf("failed to delete ticket. error: %w", err)
+		}
+		deletedSubIDs = subIDs
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Транзакция закоммичена — теперь директории можно снимать с диска.
+	s.attachments.RemoveEntityDir("ticket", dto.ID)
+	for _, subID := range deletedSubIDs {
+		s.attachments.RemoveEntityDir("subtask", subID)
+	}
+
+	if err := s.notifications.TicketDeleted(ctx, ticket); err != nil {
+		s.notifyBestEffort("delete", ticket.ID, ticket.Title, err)
+	}
+
+	return nil
+}
+
+// isCreatorOrManager проверяет, является ли пользователь автором тикета или менеджером его группы —
+// строгая проверка, используемая для закрытия/отмены тикета (см. модель доступа). Владелец здесь
+// учитывается отдельно: для него допустимы только ограниченные переходы (ownerTransitionAllowed).
+func (s *TicketService) isCreatorOrManager(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) (bool, error) {
+	if ticket.Creator.ID == actorID {
+		return true, nil
+	}
+	return s.isManagerOfGroup(ctx, ticket.Group, actorID)
+}
+
+// canChangeStatus определяет, может ли пользователь переводить тикет по статусам:
+// только автор, исполнитель, владелец, менеджер группы или админ реалма (realm supervisor).
+// Политика Casbin write сама по себе права на смену статуса не даёт — участник группы
+// с realm-wide write-правом (не admin) менять статус не может. Закрытие/отмена дополнительно
+// гейтятся isCreatorOrManager/владельцем (строгая проверка), терминальные статусы — ErrTicketFrozen.
+func (s *TicketService) canChangeStatus(ctx context.Context, ticket *models.Ticket, userID uuid.UUID, realm string) (bool, error) {
+	if ticket.Creator.ID == userID {
+		return true, nil
+	}
+	if ticket.Assignee != nil && ticket.Assignee.ID == userID {
+		return true, nil
+	}
+	if ticket.Owner != nil && ticket.Owner.ID == userID {
+		return true, nil
+	}
+	isManager, err := s.isManagerOfGroup(ctx, ticket.Group, userID)
+	if err != nil {
+		return false, err
+	}
+	if isManager {
+		return true, nil
+	}
+	return s.access.IsRealmSupervisor(ctx, userID, realm)
+}
+
+// isManagerOfGroup проверяет, является ли пользователь менеджером указанной группы тикета.
+// Для тикета без группы всегда возвращает false. Определение менеджера — через GetManagedGroups.
+func (s *TicketService) isManagerOfGroup(ctx context.Context, group *models.GroupShort, actorID uuid.UUID) (bool, error) {
+	if group == nil {
+		return false, nil
+	}
+
+	managed, err := s.groups.GetManagedGroups(ctx, actorID, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to get managed groups: %w", err)
+	}
+	for _, gid := range managed {
+		if gid == group.ID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *TicketService) isOwner(ticket *models.Ticket, actorID uuid.UUID) bool {
+	return ticket.Owner != nil && ticket.Owner.ID == actorID
+}
+
+// isOwnerOnlyOrCreatorWithoutOwner — владелец заявки, или автор без владельца.
+// Если заказчик задан, то «решения владельца» доступны только ему, а не автору.
+// Если владельца нет — автор остаётся «заказчиком» своей заявки.
+func (s *TicketService) isOwnerOnlyOrCreatorWithoutOwner(ticket *models.Ticket, actorID uuid.UUID) bool {
+	if ticket.Owner != nil {
+		return ticket.Owner.ID == actorID
+	}
+	return ticket.Creator.ID == actorID
+}
+
+// canEditFields определяет, может ли пользователь править не-статусные поля тикета
+// (заголовок/описание/приоритет/срок/группа/исполнитель и т.п.): создатель или
+// менеджер группы — всегда; владелец — только пока заявка ещё в статусе open
+// (не взята в работу). Начальника области это НЕ включает — он правит чужие заявки
+// через отдельный режим adminOnlyEdit в Update (все поля кроме заголовка/описания).
+// Политика Casbin write сама право правки полей не даёт, поэтому write-пользователи
+// без роли здесь получают false.
+func (s *TicketService) canEditFields(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID) (bool, error) {
+	creatorOrManager, err := s.isCreatorOrManager(ctx, ticket, actorID)
+	if err != nil {
+		return false, err
+	}
+	if creatorOrManager {
+		return true, nil
+	}
+	if s.isOwner(ticket, actorID) {
+		return ticket.Status == models.StatusOpen, nil
+	}
+	return false, nil
+}
+
+// canPickOwner проверяет, может ли пользователь выбрать заказчика при создании
+// заявки: начальник области (realm supervisor) или менеджер управляющей группы,
+// либо исполнитель (участник группы). Это зеркалит правило веб-формы и MM-диалога
+// (MattermostService.canPickOwner) и определяет, кто из создавших заявку может
+// назначить заказчика — свой или чужой.
+func (s *TicketService) canPickOwner(ctx context.Context, userID, realmID uuid.UUID) (bool, error) {
+	isRealmAdmin, err := s.access.IsRealmSupervisor(ctx, userID, realmID.String())
+	if err != nil {
+		return false, err
+	}
+	managedGroups, err := s.groups.GetManagedGroups(ctx, userID, &realmID)
+	if err != nil {
+		return false, err
+	}
+	memberGroups, err := s.groups.GetMemberGroups(ctx, userID, &realmID)
+	if err != nil {
+		return false, err
+	}
+	isManager := isRealmAdmin || len(managedGroups) > 0
+	isExecutor := !isManager && len(memberGroups) > 0
+	return isManager || isExecutor, nil
+}
+
+// validateOwnerSelection — серверная часть правила выбора заказчика: явно выбранный
+// заказчик (ownerId) должен быть выбран пользователем, которому это разрешено
+// (менеджер/исполнитель, см. canPickOwner), и должен быть активным участником
+// области заявки. Иначе заявка не создаётся/не обновляется с чужим заказчиком.
+func (s *TicketService) validateOwnerSelection(ctx context.Context, actorID, realmID uuid.UUID, ownerID uuid.UUID) error {
+	pickable, err := s.canPickOwner(ctx, actorID, realmID)
+	if err != nil {
+		return fmt.Errorf("failed to check owner picker access: %w", err)
+	}
+	if !pickable {
+		return models.ErrPermissionDenied
+	}
+	u, err := s.users.GetByID(ctx, ownerID)
+	if err != nil || u == nil || !u.IsActive {
+		return models.ErrInvalidInput
+	}
+	// Заказчик — участник именно этой области: GetByID отдаёт все членства, и
+	// пользователь из другого realm (или с деактивированным членством) не должен
+	// становиться заказчиком — владение даёт read-доступ к заявке чужой области.
+	if !hasActiveRealmMembership(u, realmID) {
+		return models.ErrInvalidInput
+	}
+	return nil
+}
+
+// hasActiveRealmMembership — есть ли у пользователя активное членство в области.
+func hasActiveRealmMembership(u *models.UserData, realmID uuid.UUID) bool {
+	for _, membership := range u.Realms {
+		if membership != nil && membership.RealmID == realmID && membership.IsActive {
+			return true
+		}
+	}
+	return false
+}
+
+// validateAssigneeForAssign проверяет, что смена исполнителя для пользователя с
+// соответствующим (но не полным) доступом допустима: новый исполнитель должен быть
+// участником той же группы, что и тикет, иное запрещено. Используется при передаче
+// заявки исполнителем через Update и через Transfer.
+func (s *TicketService) validateAssigneeForAssign(ctx context.Context, ticket *models.Ticket, assigneeID *uuid.UUID) error {
+	if ticket.Group == nil || assigneeID == nil {
+		return models.ErrPermissionDenied
+	}
+	ok, err := s.groups.IsMember(ctx, ticket.Group.ID, *assigneeID)
+	if err != nil {
+		return fmt.Errorf("failed to check assignee membership: %w", err)
+	}
+	if !ok {
+		return models.ErrPermissionDenied
+	}
+	return nil
+}
+
+// ownerTransitionAllowed — допустимые переходы по статусам для «чистого» владельца
+// или автора заявки (без write/work-доступа). Разрешены только: open → cancelled
+// (отменить новую заявку), resolved → closed (принять решение) и resolved → in_progress
+// (вернуть в работу). Все прочие смены статусов для них запрещены (проверяется в Update).
+func (s *TicketService) ownerTransitionAllowed(ticket *models.Ticket, dto *models.TicketDTO) bool {
+	if !dto.HasField("status") || dto.Status == ticket.Status {
+		return false
+	}
+	switch dto.Status {
+	case models.StatusCancelled:
+		return ticket.Status == models.StatusOpen
+	case models.StatusClosed:
+		return ticket.Status == models.StatusResolved
+	case models.StatusInProgress:
+		return ticket.Status == models.StatusResolved
+	default:
+		return false
+	}
+}
+
+// isTicketInactive возвращает true, если тикет находится в «замороженном»
+// (неактивном) статусе: resolved, closed или cancelled. Для таких тикетов
+// изменение данных (комментарии, вложения, подзадачи, поля) запрещено.
+func isTicketInactive(status models.TicketStatus) bool {
+	switch status {
+	case models.StatusResolved, models.StatusClosed, models.StatusCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+// AutoCloseResolved автоматически закрывает resolved-тикеты с истёкшей
+// задержкой и возвращает количество закрытых. При неположительной задержке
+// ничего не делает.
+func (s *TicketService) AutoCloseResolved(ctx context.Context, delay time.Duration) (int64, error) {
+	if delay <= 0 {
+		return 0, nil
+	}
+
+	cutoff := time.Now().Add(-delay)
+	return s.repo.CloseResolved(ctx, cutoff)
+}
+
+// activeStatuses — статусы, которые считаются «активными» (тикет в работе): из/в них разрешены
+// переходы, а их наличие блокирует закрытие через resolved (см. GetUnresolvedCount).
+var activeStatuses = []models.TicketStatus{
+	models.StatusOpen,
+	models.StatusInProgress,
+	models.StatusPending,
+	models.StatusOnHold,
+}
+
+// validateAndPrepareNotifiers проверяет и нормализует список наблюдателей
+// («Уведомлять») заявки: поле обрабатывается как полная замена только если оно
+// передано в запросе. При создании заявки начальных наблюдателей может задать
+// любой пользователь, которому разрешено создание (право на создание уже
+// проверено до вызова). При редактировании менять список могут только
+// «исполнитель и выше» (участник группы, менеджер группы или начальник области)
+// — то есть пользователь, который в области тикета не является «заказчиком»
+// (IsCustomer == false). Каждый наблюдатель должен быть активным пользователем
+// и активным участником области тикета. Дубликаты и пустые id отбрасываются.
+func (s *TicketService) validateAndPrepareNotifiers(ctx context.Context, dto *models.TicketDTO, oldTicket *models.Ticket) error {
+	if !dto.HasField("notifierIds") {
+		return nil
+	}
+	if dto.Actor == nil {
+		return models.ErrPermissionDenied
+	}
+
+	var realmID uuid.UUID
+	switch {
+	case oldTicket != nil && oldTicket.RealmID != nil:
+		realmID = *oldTicket.RealmID
+	case dto.RealmID != nil:
+		realmID = *dto.RealmID
+	default:
+		return models.ErrInvalidInput
+	}
+
+	checkTicket := oldTicket
+	if checkTicket == nil {
+		// На создании тикета ещё нет — достаточно знать область для проверки роли
+		// «заказчик/не заказчик» (IsCustomer смотрит на группы/членство в реалме).
+		checkTicket = &models.Ticket{RealmID: &realmID}
+	} else if checkTicket.RealmID == nil {
+		t := *checkTicket
+		t.RealmID = &realmID
+		checkTicket = &t
+	}
+
+	customer, err := s.access.IsCustomer(ctx, checkTicket, dto.Actor.ID)
+	if err != nil {
+		return fmt.Errorf("failed to check notifier edit permission: %w", err)
+	}
+	// При создании заявки право задать начальных наблюдателей следует из права
+	// на создание самой заявки (уже проверено выше); на редактировании список
+	// наблюдателей по-прежнему меняют только «исполнитель и выше» (не заказчик).
+	if customer && oldTicket != nil {
+		return models.ErrPermissionDenied
+	}
+
+	if len(dto.NotifierIDs) == 0 {
+		dto.NotifierIDs = []uuid.UUID{}
+		return nil
+	}
+
+	seen := make(map[uuid.UUID]struct{}, len(dto.NotifierIDs))
+	uniq := make([]uuid.UUID, 0, len(dto.NotifierIDs))
+	for _, id := range dto.NotifierIDs {
+		if id == uuid.Nil {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+
+		u, err := s.users.GetByID(ctx, id)
+		if err != nil || u == nil || !u.IsActive {
+			return models.ErrInvalidInput
+		}
+		if !hasActiveRealmMembership(u, realmID) {
+			return models.ErrInvalidInput
+		}
+		uniq = append(uniq, id)
+	}
+
+	dto.NotifierIDs = uniq
+	return nil
+}
+
+func formatNotifierIDs(ids []uuid.UUID) string {
+	if len(ids) == 0 {
+		return "none"
+	}
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, id.String())
+	}
+	return strings.Join(out, ",")
+}
+
+func notifierIDsChange(old []models.UserShort, newIDs []uuid.UUID) (*models.FieldChange, bool) {
+	oldSet := make(map[string]struct{}, len(old))
+	for _, u := range old {
+		oldSet[u.ID.String()] = struct{}{}
+	}
+	newSet := make(map[string]struct{}, len(newIDs))
+	for _, id := range newIDs {
+		newSet[id.String()] = struct{}{}
+	}
+	if len(oldSet) == len(newSet) {
+		same := true
+		for id := range oldSet {
+			if _, ok := newSet[id]; !ok {
+				same = false
+				break
+			}
+		}
+		if same {
+			return nil, false
+		}
+	}
+
+	oldIDs := make([]uuid.UUID, 0, len(old))
+	for _, u := range old {
+		oldIDs = append(oldIDs, u.ID)
+	}
+	return &models.FieldChange{
+		Tag:    models.ActionNotifiersChanged,
+		OldVal: formatNotifierIDs(oldIDs),
+		NewVal: formatNotifierIDs(newIDs),
+	}, true
+}
+
+// GetAccessFlags вычисляет флаги доступа к тикету для пользователя
+// (чтение, запись, удаление, работа) и список доступных ему переходов по статусам.
+// Реалм не принимается: все проверки внутри берут его из ticket.RealmID (см.
+// TicketAccessService.CheckAccessOnTicket), поэтому клиентский realm-заголовок
+// не может расширить набор прав.
+func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) (*models.AccessFlags, error) {
+	flags := &models.AccessFlags{CanRead: true}
+
+	writeErr := s.access.CheckAccessOnTicket(ctx, ticket, userID, string(access.Write))
+	flags.CanWrite = writeErr == nil
+
+	deleteErr := s.access.CheckAccessOnTicket(ctx, ticket, userID, string(access.Delete))
+	flags.CanDelete = deleteErr == nil
+
+	flags.CanWork = flags.CanWrite || (ticket.Assignee != nil && ticket.Assignee.ID == userID)
+
+	// CanTake — заявку можно «взять в работу»: она активна (не resolved/closed/cancelled)
+	// и «забираема» — исполнителя нет совсем, либо исполнитель — другой пользователь,
+	// а заявка ещё в статусе open (см. Take). Кнопка не показывается «не-рабочим»:
+	// чистому заказчику (ownerReadOnly), наблюдателю (notifierReadOnly) и
+	// автору-без-групп (IsCustomer) — их роль просмотр/комментарий/решения, а не работа.
+	ownerReadOnly, err := s.access.ownerReadOnly(ctx, ticket, userID)
+	if err != nil {
+		return nil, err
+	}
+	notifierReadOnly, err := s.access.notifierReadOnly(ctx, ticket, userID)
+	if err != nil {
+		return nil, err
+	}
+	nonWorker := ownerReadOnly || notifierReadOnly
+	if !nonWorker && ticket.Creator.ID == userID {
+		customer, err := s.access.IsCustomer(ctx, ticket, userID)
+		if err != nil {
+			return nil, err
+		}
+		nonWorker = customer
+	}
+	flags.CanTake = !nonWorker &&
+		!isTicketInactive(ticket.Status) &&
+		(ticket.Assignee == nil ||
+			(ticket.Assignee.ID != userID && ticket.Status == models.StatusOpen))
+
+	// CanEditFields — право правки не-статусных полей (заголовок/описание и т.п.):
+	// создатель или менеджер группы всегда, владелец — пока заявка в статусе open.
+	// Политика write сама по себе права правки полей не даёт.
+	canEdit, err := s.canEditFields(ctx, ticket, userID)
+	if err != nil {
+		return nil, err
+	}
+	flags.CanEditFields = canEdit
+
+	// IsAdmin — начальник области (realm supervisor): пользователь с realm-wide
+	// правами управления областью. Такому пользователю разрешены смена группы
+	// заявки и передача исполнителя мимо менеджера группы. Намеренно не через
+	// ticket:write — это право есть у рядовых сотрудников, и по нему фронт
+	// разблокировал бы смену группы на чужих заявках.
+	isAdmin, err := s.access.CanAdministerTickets(ctx, userID, ticket)
+	if err != nil {
+		return nil, err
+	}
+	flags.IsAdmin = isAdmin
+
+	// IsManager — менеджер группы, к которой относится тикет (across-check never fails
+	// для тикета без группы — false). Такому пользователю разрешена смена исполнителя.
+	isManager, err := s.isManagerOfGroup(ctx, ticket.Group, userID)
+	if err != nil {
+		return nil, err
+	}
+	flags.IsManager = isManager
+
+	flags.AllowedStatuses = s.computeAllowedStatuses(ctx, ticket, userID)
+
+	// CanRequestDueDate — исполнитель (assignee) может запросить перенос срока заявки.
+	// Запрос имеет смысл при установленном сроке и при отсутствии уже pending-запроса
+	// (лимит — один на тикет, enforced в БД через partial unique index).
+	flags.CanRequestDueDate = false
+	if !isTicketInactive(ticket.Status) && ticket.DueDate != nil &&
+		ticket.Assignee != nil && ticket.Assignee.ID == userID {
+		// Ошибку чтения нельзя трактовать как «запроса нет»: иначе кнопка висела бы,
+		// а создание падало бы на том же запросе (или, хуже, дублировало pending).
+		if existing, reqErr := s.dueRequests.GetPendingByTicket(ctx, ticket.ID); reqErr == nil && existing == nil {
+			flags.CanRequestDueDate = true
+		}
+	}
+
+	// CanDecideDueDate — утверждать/отклонять запросы может менеджер группы или
+	// начальник области (realm supervisor) — те же, кому backend разрешает править срок.
+	flags.CanDecideDueDate = isManager || isAdmin
+
+	return flags, nil
+}
+
+// computeAllowedStatuses вычисляет список статусов, доступных пользователю для перевода тикета,
+// в зависимости от его роли (автор/менеджер группы, владелец, write/work-доступ) и текущего
+// статуса. Логика отражает модель доступа: владелец без write/work получает только три перехода
+// (см. ownerTransitionAllowed), исполнитель с work-доступом — активные статусы и resolved
+// (при отсутствии незакрытых подзадач), закрытие/отмена активного тикета — только
+// автору/менеджеру группы (владелец может отменить активный тикет).
+func (s *TicketService) computeAllowedStatuses(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) []models.TicketStatus {
+	hasWrite := s.access.CheckAccessOnTicket(ctx, ticket, userID, string(access.Write)) == nil
+	isCreator := ticket.Creator.ID == userID
+
+	isMgr := false
+	if ticket.Group != nil {
+		managed, err := s.groups.GetManagedGroups(ctx, userID, nil)
+		if err == nil {
+			for _, gid := range managed {
+				if gid == ticket.Group.ID {
+					isMgr = true
+					break
+				}
+			}
+		}
+	}
+	isCreatorOrMgr := isCreator || isMgr
+	isOwner := ticket.Owner != nil && ticket.Owner.ID == userID
+	hasWork := hasWrite || (ticket.Assignee != nil && ticket.Assignee.ID == userID)
+
+	current := ticket.Status
+	// Инициализация обязательна: список уходит в JSON как AccessFlags.AllowedStatuses,
+	// который во фронте объявлен TicketStatus[] — nil-слайс отдал бы null вопреки типу.
+	allowed := []models.TicketStatus{}
+
+	// add добавляет статусы в список разрешённых, исключая дубликаты
+	// (одна роль может давать статус, уже добавленный другой ролью).
+	add := func(statuses ...models.TicketStatus) {
+		for _, st := range statuses {
+			found := false
+			for _, a := range allowed {
+				if a == st {
+					found = true
+					break
+				}
+			}
+			if !found {
+				allowed = append(allowed, st)
+			}
+		}
+	}
+
+	switch {
+	case current == models.StatusClosed || current == models.StatusCancelled:
+		// Закрытая/отменённая заявка — «замороженная»: вернуть её в активные статусы
+		// нельзя никому (даже исполнителю с work-доступом). Разрешён лишь взаимообмен
+		// closed⇄cancelled автору/менеджеру группы/владельцу.
+		if isOwner || (ticket.Owner == nil && isCreatorOrMgr) {
+			if current == models.StatusClosed {
+				add(models.StatusCancelled)
+			} else {
+				add(models.StatusClosed)
+			}
+		}
+
+	case current == models.StatusResolved:
+		// Подтверждение решения — только владелец или (если нет владельца) автор/менеджер.
+		if isOwner || (ticket.Owner == nil && isCreatorOrMgr) {
+			add(models.StatusClosed)
+		}
+		// Возврат в работу — владелец, или (если нет владельца) автор, или write/work-доступ.
+		if hasWrite || hasWork || isOwner || (ticket.Owner == nil && isCreator) {
+			add(models.StatusInProgress)
+		}
+		if hasWrite || hasWork {
+			for _, st := range activeStatuses {
+				if st != models.StatusInProgress {
+					add(st)
+				}
+			}
+		}
+		// Отмена решения — только владелец, или (если нет владельца) автор/менеджер.
+		if isOwner || (ticket.Owner == nil && isCreatorOrMgr) {
+			add(models.StatusCancelled)
+		}
+
+	default:
+		if hasWrite || hasWork {
+			for _, st := range activeStatuses {
+				if st != current {
+					add(st)
+				}
+			}
+			n, err := s.subtasks.GetUnresolvedCount(ctx, ticket.ID)
+			if err == nil && n == 0 {
+				add(models.StatusResolved)
+			}
+		}
+		if isOwner || (ticket.Owner == nil && isCreatorOrMgr) {
+			add(models.StatusCancelled)
+		}
+	}
+
+	return allowed
+}
+
+// notifyBestEffort отправляет уведомление после фикса тикета. Ошибки
+// уведомления не должны превращать уже совершённую операцию в 500 для клиента,
+// но обязательно сигнализируются разработчику (error_bot) и в лог.
+func (s *TicketService) notifyBestEffort(action string, entityID uuid.UUID, entity string, notifyErr error) {
+	if notifyErr == nil {
+		return
+	}
+	errMsg := fmt.Sprintf("failed to send notification (%s): %v", action, notifyErr)
+	logger.Error(errMsg,
+		logger.StringAttr("entity_id", entityID.String()),
+		logger.StringAttr("entity", entity),
+	)
+	error_bot.Send(nil, errMsg, map[string]string{
+		action:      entity,
+		"entity_id": entityID.String(),
+	})
 }

@@ -1,40 +1,40 @@
 import { Box, Typography } from '@mui/material'
 
-import type { GroupByField } from '../../constants/taskMaps'
-import type { ITask } from '../../types/task'
+import { TASKS_PAGE_SIZE, type GroupByField } from '../../constants/taskMaps'
+import type { ITaskFilter } from '../../types/task'
 import { Pagination } from '@/components/Pagination/Pagination'
 import { BoxFallback } from '@/components/Fallback/BoxFallback'
 import { TaskTable } from './TaskTable'
+import { useGetTasksQuery } from '../../tasksApiSlice'
 
 interface Props {
-	tasks: ITask[]
-	isFetching: boolean
-	total: number
+	filters: ITaskFilter
 	isArchive: boolean
 	groupBy: GroupByField
 	groupEnabled: boolean
-	onTaskClick: (task: ITask) => void
 	sort: string
 	onSortChange: (sort: string) => void
 	page: number
-	totalPages: number
 	onPageChange: (page: number) => void
 }
 
 export const TaskListView = ({
-	tasks,
-	isFetching,
-	total,
+	filters,
 	isArchive,
 	groupBy,
 	groupEnabled,
-	onTaskClick,
 	sort,
 	onSortChange,
 	page,
-	totalPages,
 	onPageChange,
 }: Props) => {
+	const { data, isFetching } = useGetTasksQuery(filters)
+
+	const tasks = data?.data ?? []
+	const total = data?.total ?? 0
+
+	const totalPages = isArchive ? Math.ceil(total / TASKS_PAGE_SIZE) || 1 : 1
+
 	if (isFetching && !tasks.length) {
 		return <BoxFallback />
 	}
@@ -45,8 +45,8 @@ export const TaskListView = ({
 				tasks={tasks}
 				groupBy={groupBy}
 				groupEnabled={groupEnabled}
-				onTaskClick={onTaskClick}
 				sort={sort}
+				isArchive={isArchive}
 				onSortChange={onSortChange}
 			/>
 

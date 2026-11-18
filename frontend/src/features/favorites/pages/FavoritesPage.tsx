@@ -1,16 +1,13 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import { Box, Typography, Tab, Tabs } from '@mui/material'
-import { useNavigate } from 'react-router'
 import { Pin, Star } from 'lucide-mui'
 
 import type { GroupByField } from '@/features/tasks/constants/taskMaps'
-import { statusOptionsFor, groupByFieldHidden } from '@/features/tasks/constants/taskMaps'
+import { statusOptionsFor, groupByFieldHidden, TASKS_PAGE_SIZE } from '@/features/tasks/constants/taskMaps'
 import type { FilterValues } from '@/features/tasks/components/filters'
-import type { ITask, ITaskFilter } from '@/features/tasks/types/task'
-import { AppRoutes } from '@/pages/router/routes'
+import type { ITaskFilter } from '@/features/tasks/types/task'
 import { useAppSelector } from '@/hooks/redux'
 import { getHasNoGroups } from '@/features/user/userSlice'
-import { useGetTasksQuery } from '@/features/tasks/tasksApiSlice'
 import { TaskFilters } from '@/features/tasks/components/filters'
 import { TaskListView } from '@/features/tasks/components/Table'
 
@@ -33,8 +30,6 @@ const DEFAULT_FILTERS: FilterValues = {
 }
 
 export const FavoritesPage = () => {
-	const navigate = useNavigate()
-	const rowsPerPage = 20
 	const hasNoGroups = useAppSelector(getHasNoGroups)
 
 	const STORAGE_KEY = '@issueTrack/favoritesFilters'
@@ -118,18 +113,11 @@ export const FavoritesPage = () => {
 			// archived для избранного — только триггер пагинации (бэкенд statusMode
 			// при FavoritesByUser не применяет, статусы не режутся по вкладке).
 			archived: isArchive || undefined,
-			limit: isArchive ? rowsPerPage : undefined,
-			offset: isArchive ? page * rowsPerPage : undefined,
+			limit: isArchive ? TASKS_PAGE_SIZE : undefined,
+			offset: isArchive ? page * TASKS_PAGE_SIZE : undefined,
 		}),
 		[effectiveFilters, tab, page, isArchive],
 	)
-
-	const { data, isFetching } = useGetTasksQuery(queryFilter)
-
-	const tasks = data?.data ?? []
-	const total = data?.total ?? 0
-
-	const totalPages = isArchive ? Math.ceil(total / rowsPerPage) || 1 : 1
 
 	const handleFilterChange = useCallback((patch: Partial<FilterValues>) => {
 		setFilters(prev => ({ ...prev, ...patch }))
@@ -141,13 +129,6 @@ export const FavoritesPage = () => {
 		setPage(0)
 		localStorage.removeItem(STORAGE_KEY)
 	}, [STORAGE_KEY])
-
-	const handleTaskClick = useCallback(
-		(task: ITask) => {
-			navigate(`${AppRoutes.Tasks}/${task.id}`)
-		},
-		[navigate],
-	)
 
 	const handlePageChange = useCallback((p: number) => setPage(p - 1), [])
 
@@ -189,17 +170,13 @@ export const FavoritesPage = () => {
 			/>
 
 			<TaskListView
-				tasks={tasks}
-				isFetching={isFetching}
-				total={total}
+				filters={queryFilter}
 				isArchive={isArchive}
 				groupBy={effectiveFilters.groupBy as GroupByField}
 				groupEnabled={!isArchive && effectiveFilters.groupEnabled}
-				onTaskClick={handleTaskClick}
 				sort={effectiveFilters.sort}
 				onSortChange={sort => handleFilterChange({ sort })}
 				page={page}
-				totalPages={totalPages}
 				onPageChange={handlePageChange}
 			/>
 		</Box>

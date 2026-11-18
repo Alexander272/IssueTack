@@ -39,7 +39,7 @@ export const NotifierSelector = ({ options, value, onChange, excludeIds, disable
 		<SelectWithFilter
 			placeholder='Выберите пользователей'
 			values={selected}
-			options={userOptions}
+			options={filteredOptions}
 			onChange={v => onChange(v.map(u => u.id))}
 			disabled={disabled}
 		/>

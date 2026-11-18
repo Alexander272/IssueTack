@@ -4,15 +4,13 @@ import { useNavigate, useSearchParams } from 'react-router'
 import { ArchiveIcon, InboxIcon, PlusIcon } from 'lucide-mui'
 
 import type { GroupByField } from '../constants/taskMaps'
-import { statusOptionsFor } from '../constants/taskMaps'
+import { statusOptionsFor, TASKS_PAGE_SIZE } from '../constants/taskMaps'
 import type { FilterValues } from '../components/filters'
-import type { ITask, ITaskFilter } from '../types/task'
-import { AppRoutes } from '@/pages/router/routes'
+import type { ITaskFilter } from '../types/task'
 import { PermRules } from '@/features/access/constants/permissions'
 import { useAppSelector } from '@/hooks/redux'
 import { useDebounce } from '@/hooks/useDebounce'
 import { useCan } from '@/features/access/utils/can'
-import { useGetTasksQuery } from '../tasksApiSlice'
 import { getHasNoGroups, getIsManager } from '@/features/user/userSlice'
 import { TaskFilters } from '../components/filters'
 import { TaskListView } from '../components/Table'
@@ -61,12 +59,9 @@ const PAGE_DESC: Record<Mode, string> = {
 
 export const TaskList = ({ mode = 'created' }: Props) => {
 	const { palette } = useTheme()
-	const navigate = useNavigate()
-	const [searchParams] = useSearchParams()
 	const canCreate = useCan(PermRules.Tasks.Write)
 	const isManager = useAppSelector(getIsManager)
 	const hasNoGroups = useAppSelector(getHasNoGroups)
-	const rowsPerPage = 20
 
 	// Фильтр по оборудованию приходит ссылкой (?equipmentId=…, кнопка «Показать все»
 	// в карточке единицы) и живёт в адресе, а не в localStorage: сохранённый фильтр
@@ -200,8 +195,8 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 			// отключаем целиком (`allStatuses`), а ручное переключение на «Архив» снимает
 			// его обратно — вкладка работает как обычно после явного выбора.
 			allStatuses: urlEquipmentId && !isArchive ? true : undefined,
-			limit: isArchive ? rowsPerPage : undefined,
-			offset: isArchive ? page * rowsPerPage : undefined,
+			limit: isArchive ? TASKS_PAGE_SIZE : undefined,
+			offset: isArchive ? page * TASKS_PAGE_SIZE : undefined,
 		}),
 		[effectiveFilters, listMode, page, isArchive, numberFilter, debouncedSearch, urlEquipmentId],
 	)
@@ -242,13 +237,6 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 		localStorage.removeItem(STORAGE_KEY)
 		dropEquipmentParam()
 	}, [STORAGE_KEY, dropEquipmentParam])
-
-	const handleTaskClick = useCallback(
-		(task: ITask) => {
-			navigate(`${AppRoutes.Tasks}/${task.id}`)
-		},
-		[navigate],
-	)
 
 	const handlePageChange = useCallback((p: number) => setPage(p - 1), [])
 
@@ -323,17 +311,13 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 			/>
 
 			<TaskListView
-				tasks={tasks}
-				isFetching={isFetching}
-				total={total}
+				filters={queryFilter}
 				isArchive={isArchive}
 				groupBy={effectiveFilters.groupBy as GroupByField}
 				groupEnabled={!isArchive && effectiveFilters.groupEnabled}
-				onTaskClick={handleTaskClick}
 				sort={effectiveFilters.sort}
 				onSortChange={sort => handleFilterChange({ sort })}
 				page={page}
-				totalPages={totalPages}
 				onPageChange={handlePageChange}
 			/>
 

@@ -161,6 +161,9 @@ export interface CreateTicketPayload {
     assigneeId?: string;
     ownerId?: string;
     dueDate?: string;
+    // Наблюдатели («Уведомлять») — только менеджеру и исполнителю; сервер
+    // проверяет право менять список так же, как веб-форма.
+    notifierIds?: string[];
 }
 
 const contextCache = new Map<string, {scope: PluginScope; ts: number; data: PluginContextResult}>();
@@ -341,6 +344,10 @@ export async function createTicket(scope: PluginScope, payload: CreateTicketPayl
     }
     if (payload.dueDate) {
         fd.append('dueDate', payload.dueDate);
+    }
+    // Повторяющееся поле: сервер собирает его через PostFormArray.
+    for (const id of payload.notifierIds || []) {
+        fd.append('notifierIds', id);
     }
     for (const file of payload.files || []) {
         fd.append('files', file);
