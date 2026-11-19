@@ -154,6 +154,7 @@ export const Popover: FC<Props> = ({
 						value={currentOwner}
 						onChange={(_, v) => update('ownerId', v?.id)}
 						getOptionLabel={o => o.label}
+						getOptionKey={o => o.id}
 						renderInput={params => <TextField {...params} size='small' placeholder='Выберите...' />}
 						noOptionsText='Нет пользователей'
 					/>
@@ -174,6 +175,7 @@ export const Popover: FC<Props> = ({
 							)
 						}
 						getOptionLabel={o => o.label}
+						getOptionKey={o => o.id}
 						renderInput={params => <TextField {...params} size='small' placeholder='Выберите...' />}
 						noOptionsText='Нет площадок'
 					/>
@@ -188,6 +190,7 @@ export const Popover: FC<Props> = ({
 							value={currentEquipment}
 							onChange={(_, v) => update('equipmentId', v?.id)}
 							getOptionLabel={o => o.label}
+							getOptionKey={o => o.id}
 							renderInput={params => <TextField {...params} size='small' placeholder='Выберите...' />}
 							noOptionsText='Нет оборудования'
 						/>
@@ -256,6 +259,7 @@ export const Popover: FC<Props> = ({
 						value={currentAssignee}
 						onChange={(_, v) => update('assigneeId', v?.id)}
 						getOptionLabel={o => o.label}
+						getOptionKey={o => o.id}
 						renderInput={params => <TextField {...params} size='small' placeholder='Выберите...' />}
 						noOptionsText='Нет пользователей'
 					/>

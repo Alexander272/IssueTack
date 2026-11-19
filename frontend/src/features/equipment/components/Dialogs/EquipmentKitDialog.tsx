@@ -527,6 +527,7 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 															<Autocomplete
 																options={unitOptions(row)}
 																getOptionLabel={u => u.name}
+																getOptionKey={u => u.id}
 																isOptionEqualToValue={(option, value) =>
 																	option.id === value.id
 																}

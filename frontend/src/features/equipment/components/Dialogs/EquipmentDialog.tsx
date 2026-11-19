@@ -250,6 +250,7 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 											{...field}
 											options={types}
 											getOptionLabel={u => u.name}
+											getOptionKey={u => u.id}
 											value={types.find(t => t.id === field.value) ?? null}
 											onChange={(_e, value) => field.onChange(value?.id ?? '')}
 											renderInput={params => (
@@ -384,6 +385,8 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 												<Autocomplete
 													freeSolo
 													options={shops}
+													getOptionLabel={s => s.name}
+													getOptionKey={s => s.id}
 													value={field.value || null}
 													onChange={(_e, value) => field.onChange(value ?? '')}
 													// Стрелка-маркер списка: у freeSolo можно и вписать

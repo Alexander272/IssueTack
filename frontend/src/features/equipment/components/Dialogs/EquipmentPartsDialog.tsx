@@ -159,6 +159,7 @@ export const EquipmentPartsDialog: FC<Props> = ({ open, onClose, unit }) => {
 						<Autocomplete
 							options={candidates}
 							getOptionLabel={u => u.name}
+							getOptionKey={u => u.id}
 							value={selected}
 							onChange={(_e, value) => setSelected(value)}
 							renderInput={params => (

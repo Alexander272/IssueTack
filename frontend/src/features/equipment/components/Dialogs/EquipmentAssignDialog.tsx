@@ -256,6 +256,7 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 										freeSolo
 										options={users}
 										getOptionLabel={optionLabel}
+										getOptionKey={o => (typeof o === 'string' ? o : o.id)}
 										// Сотрудник опознаётся по ссылке на объект из
 										// options; иначе в поле показывается введённое
 										// ФИО ('' вместо null — свободное значение).

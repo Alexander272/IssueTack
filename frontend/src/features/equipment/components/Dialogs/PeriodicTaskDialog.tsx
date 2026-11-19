@@ -263,6 +263,7 @@ export const PeriodicTaskDialog: FC<Props> = ({ open, onClose, templateId }) => 
 											fullWidth
 											options={equipmentTypes}
 											getOptionLabel={(type: IEquipmentType) => type.name}
+											getOptionKey={(type: IEquipmentType) => type.id}
 											value={equipmentTypes.find(t => t.id === field.value) || null}
 											onChange={(_e, val) => field.onChange(val?.id || '')}
 											renderInput={params => (
@@ -387,6 +388,7 @@ export const PeriodicTaskDialog: FC<Props> = ({ open, onClose, templateId }) => 
 											fullWidth
 											options={Object.keys(PRIORITY_MAP) as Priority[]}
 											getOptionLabel={(value: Priority) => PRIORITY_MAP[value].label}
+											getOptionKey={(value: Priority) => value}
 											value={field.value || null}
 											onChange={(_e, val) => field.onChange(val || 'medium')}
 											renderInput={params => <TextField {...params} />}

@@ -678,6 +678,7 @@ const CreateActDialog: FC<CreateProps> = ({ open, unit, onClose }) => {
 					<Autocomplete
 						options={users}
 						getOptionLabel={customerLabel}
+						getOptionKey={u => u.id}
 						value={users.find(u => u.id === userId) ?? null}
 						onChange={(_e, value) => {
 							setUserId(value?.id ?? null)
@@ -688,6 +689,7 @@ const CreateActDialog: FC<CreateProps> = ({ open, unit, onClose }) => {
 					<Autocomplete
 						options={sites}
 						getOptionLabel={s => s.name}
+						getOptionKey={s => s.id}
 						value={sites.find(s => s.id === siteId) ?? null}
 						onChange={(_e, value) => setSiteId(value?.id ?? null)}
 						renderInput={params => <TextField {...params} size='small' label='Площадка' />}
