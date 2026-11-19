@@ -3,6 +3,7 @@ package tickets
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
@@ -53,6 +54,11 @@ func (h *Handler) getAll(c *gin.Context) {
 		return
 	}
 
+	if err := normalizeTicketFilter(filter); err != nil {
+		response.SendError(c, err)
+		return
+	}
+
 	realmID, ok := utils.GetRealmUUID(c)
 	if ok {
 		filter.RealmID = &realmID
@@ -80,6 +86,68 @@ func (h *Handler) getAll(c *gin.Context) {
 		return
 	}
 	response.SendData(c, data, total)
+}
+
+func normalizeTicketFilter(filter *models.TicketFilter) error {
+	if len(filter.Statuses) > 0 {
+		statuses := make([]models.TicketStatus, 0, len(filter.Statuses))
+		for _, raw := range splitCSVValues(stringSliceFromStatuses(filter.Statuses)) {
+			st := models.TicketStatus(raw)
+			if !st.IsValid() {
+				return fmt.Errorf("%w: invalid status %q", models.ErrInvalidInput, raw)
+			}
+			statuses = append(statuses, st)
+		}
+		filter.Statuses = statuses
+	}
+
+	if len(filter.Priorities) > 0 {
+		priorities := make([]models.Priority, 0, len(filter.Priorities))
+		for _, raw := range splitCSVValues(stringSliceFromPriorities(filter.Priorities)) {
+			p := models.Priority(raw)
+			if !p.IsValid() {
+				return fmt.Errorf("%w: invalid priority %q", models.ErrInvalidInput, raw)
+			}
+			priorities = append(priorities, p)
+		}
+		filter.Priorities = priorities
+	}
+
+	if len(filter.SiteIDs) > 0 {
+		filter.SiteIDs = splitCSVValues(filter.SiteIDs)
+	}
+
+	return nil
+}
+
+func splitCSVValues(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		for _, part := range strings.Split(value, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func stringSliceFromStatuses(values []models.TicketStatus) []string {
+	out := make([]string, len(values))
+	for i, v := range values {
+		out[i] = string(v)
+	}
+	return out
+}
+
+func stringSliceFromPriorities(values []models.Priority) []string {
+	out := make([]string, len(values))
+	for i, v := range values {
+		out[i] = string(v)
+	}
+	return out
 }
 
 func (h *Handler) getByID(c *gin.Context) {
