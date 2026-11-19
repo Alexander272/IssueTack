@@ -3,34 +3,45 @@ import { TableRow, TableCell, Typography, Box, Tooltip, type SxProps, type Theme
 import dayjs from 'dayjs'
 
 import type { ITask } from '../../types/task'
-import {
-	ACTIVE_STATUSES,
-	DUE_DATE_COLORS,
-	DUE_DATE_ICONS,
-	DUE_DATE_DEFAULT_ICON,
-	type GroupByField,
-	SLA_TONES,
-} from '../../constants/taskMaps'
+import { ACTIVE_STATUSES, DUE_DATE_COLORS, DUE_DATE_ICONS, DUE_DATE_DEFAULT_ICON, SLA_TONES } from '../../constants/taskMaps'
 import { getDueDateTone, getShortDate, getSmartDate } from '@/utils/date'
-import { useAppSelector } from '@/hooks/redux'
-import { getHasNoGroups } from '@/features/user/userSlice'
 import { TaskStatusBadge } from '../TaskStatusBadge'
 import { TaskPriorityBadge } from '../TaskPriorityBadge'
 import { TaskAssignmentChip } from '../TaskAssignmentChip'
 import { TaskProgressBar } from '../TaskProgressBar'
+import type { TaskColumnField, TaskListViewState } from './taskView'
 
 type SlaInfo = { tone: 'onTime' } | { tone: 'overdue'; daysLate: number } | { tone: 'neutral' } | { tone: 'cancelled' }
 
+function getSlaTooltipTitle(task: ITask, slaInfo: SlaInfo | null): string {
+	if (task.status === 'cancelled') {
+		return `Отменена ${getShortDate(task.closedAt)}`
+	}
+	if (!task.dueDate || !task.closedAt) {
+		return 'Срок не был задан'
+	}
+
+	const base = `Срок: ${getShortDate(task.dueDate)} · Закрыта: ${getShortDate(task.closedAt)}`
+
+	switch (slaInfo?.tone) {
+		case 'onTime':
+			return `${base} · В срок`
+		case 'overdue':
+			return `${base} · +${slaInfo.daysLate} дн.`
+		default:
+			return base
+	}
+}
+
 interface Props {
 	task: ITask
+	view: TaskListViewState
 	onClick: (task: ITask) => void
-	groupBy?: GroupByField
-	isArchive?: boolean
 	sx?: SxProps<Theme>
 }
 
-export const TaskRow = ({ task, onClick, groupBy, isArchive, sx }: Props) => {
-	const hasNoGroups = useAppSelector(getHasNoGroups)
+export const TaskRow = ({ task, view, onClick, sx }: Props) => {
+	const show = (field: TaskColumnField) => view.columns.has(field)
 	const displayId = task.ticketNumber || '—'
 	const dueTone = ACTIVE_STATUSES.includes(task.status) ? getDueDateTone(task.dueDate) : null
 	const DueDateIcon = dueTone ? DUE_DATE_ICONS[dueTone] : DUE_DATE_DEFAULT_ICON
@@ -44,7 +55,7 @@ export const TaskRow = ({ task, onClick, groupBy, isArchive, sx }: Props) => {
 
 	const isTerminal = !ACTIVE_STATUSES.includes(task.status)
 	const slaInfo = useMemo(() => {
-		if (!isArchive || !isTerminal) return null
+		if (!view.isArchive || !isTerminal) return null
 		if (task.status === 'cancelled') return { tone: 'cancelled' as const }
 		if (!task.dueDate || !task.closedAt) return { tone: 'neutral' as const }
 
@@ -57,29 +68,9 @@ export const TaskRow = ({ task, onClick, groupBy, isArchive, sx }: Props) => {
 			return { tone: 'onTime' as const }
 		}
 		return { tone: 'overdue' as const, daysLate: diffDays }
-	}, [isArchive, isTerminal, task.status, task.dueDate, task.closedAt])
+	}, [view.isArchive, isTerminal, task.status, task.dueDate, task.closedAt])
 	const sla = SLA_TONES[slaInfo?.tone ?? 'neutral']
 	const SlaIcon = sla.icon
-
-	function getSlaTooltipTitle(task: ITask, slaInfo: SlaInfo | null): string {
-		if (task.status === 'cancelled') {
-			return `Отменена ${getShortDate(task.closedAt)}`
-		}
-		if (!task.dueDate || !task.closedAt) {
-			return 'Срок не был задан'
-		}
-
-		const base = `Срок: ${getShortDate(task.dueDate)} · Закрыта: ${getShortDate(task.closedAt)}`
-
-		switch (slaInfo?.tone) {
-			case 'onTime':
-				return `${base} · В срок`
-			case 'overdue':
-				return `${base} · +${slaInfo.daysLate} дн.`
-			default:
-				return base
-		}
-	}
 
 	return (
 		<TableRow
@@ -93,47 +84,53 @@ export const TaskRow = ({ task, onClick, groupBy, isArchive, sx }: Props) => {
 				...sx,
 			}}
 		>
-			<TableCell>
-				<Typography sx={{ fontWeight: 600, color: '#111827', fontSize: '0.875rem' }}>{displayId}</Typography>
-			</TableCell>
-			<TableCell>
-				<Tooltip title={task.title} placement='top'>
-					<Typography
-						sx={{
-							fontWeight: 600,
-							color: '#111827',
-							fontSize: '0.875rem',
-							overflow: 'hidden',
-							textOverflow: 'ellipsis',
-							whiteSpace: 'nowrap',
-						}}
-					>
-						{task.title}
-					</Typography>
-				</Tooltip>
-			</TableCell>
+			{show('ticketNumber') && (
+				<TableCell>
+					<Typography sx={{ fontWeight: 600, color: '#111827', fontSize: '0.875rem' }}>{displayId}</Typography>
+				</TableCell>
+			)}
+			{show('title') && (
+				<TableCell>
+					<Tooltip title={task.title} placement='top'>
+						<Typography
+							sx={{
+								fontWeight: 600,
+								color: '#111827',
+								fontSize: '0.875rem',
+								overflow: 'hidden',
+								textOverflow: 'ellipsis',
+								whiteSpace: 'nowrap',
+							}}
+						>
+							{task.title}
+						</Typography>
+					</Tooltip>
+				</TableCell>
+			)}
 
-			<TableCell>
-				<Tooltip
-					title={`${task.owner?.lastName} ${task.owner?.firstName}${task.owner?.internalNumber ? ` (${task.owner.internalNumber})` : ''}`}
-					placement='top'
-				>
-					<Typography
-						sx={{
-							fontSize: '0.875rem',
-							color: '#6b7280',
-							overflow: 'hidden',
-							textOverflow: 'ellipsis',
-							whiteSpace: 'nowrap',
-						}}
+			{show('owner') && (
+				<TableCell>
+					<Tooltip
+						title={`${task.owner?.lastName} ${task.owner?.firstName}${task.owner?.internalNumber ? ` (${task.owner.internalNumber})` : ''}`}
+						placement='top'
 					>
-						{task.owner?.lastName} {task.owner?.firstName}{' '}
-						{task.owner?.internalNumber ? `(${task.owner?.internalNumber})` : null}
-					</Typography>
-				</Tooltip>
-			</TableCell>
+						<Typography
+							sx={{
+								fontSize: '0.875rem',
+								color: '#6b7280',
+								overflow: 'hidden',
+								textOverflow: 'ellipsis',
+								whiteSpace: 'nowrap',
+							}}
+						>
+							{task.owner?.lastName} {task.owner?.firstName}{' '}
+							{task.owner?.internalNumber ? `(${task.owner?.internalNumber})` : null}
+						</Typography>
+					</Tooltip>
+				</TableCell>
+			)}
 
-			{groupBy !== 'site' && (
+			{show('site') && (
 				<TableCell sx={{ py: 1 }}>
 					<Tooltip title={task.site?.name ?? '—'} placement='top'>
 						<Box
@@ -171,35 +168,37 @@ export const TaskRow = ({ task, onClick, groupBy, isArchive, sx }: Props) => {
 				</TableCell>
 			)}
 
-			<TableCell sx={{ py: 1 }}>
-				<Tooltip title={getSmartDate(task.createdAt) ?? '—'} placement='top'>
-					<Box sx={{ display: 'flex', flexDirection: 'column' }}>
-						<Box
-							sx={{
-								display: 'inline-flex',
-								alignItems: 'center',
-								gap: 0.5,
-							}}
-						>
-							<DUE_DATE_DEFAULT_ICON sx={{ fontSize: 14 }} />
-							<Typography
-								component='span'
+			{show('createdAt') && (
+				<TableCell sx={{ py: 1 }}>
+					<Tooltip title={getSmartDate(task.createdAt) ?? '—'} placement='top'>
+						<Box sx={{ display: 'flex', flexDirection: 'column' }}>
+							<Box
 								sx={{
-									fontSize: '0.875rem',
-									fontWeight: 400,
-									lineHeight: 1,
+									display: 'inline-flex',
+									alignItems: 'center',
+									gap: 0.5,
 								}}
 							>
-								{getShortDate(task.createdAt)}
-							</Typography>
+								<DUE_DATE_DEFAULT_ICON sx={{ fontSize: 14 }} />
+								<Typography
+									component='span'
+									sx={{
+										fontSize: '0.875rem',
+										fontWeight: 400,
+										lineHeight: 1,
+									}}
+								>
+									{getShortDate(task.createdAt)}
+								</Typography>
+							</Box>
 						</Box>
-					</Box>
-				</Tooltip>
-			</TableCell>
+					</Tooltip>
+				</TableCell>
+			)}
 
-			{!hasNoGroups && groupBy !== 'dueDate' ? (
+			{(show('dueDate') || show('closedAt')) && (
 				<TableCell>
-					{!isArchive && (
+					{!view.isArchive && (
 						<Box sx={{ display: 'flex', flexDirection: 'column' }}>
 							<Box
 								sx={{
@@ -228,7 +227,7 @@ export const TaskRow = ({ task, onClick, groupBy, isArchive, sx }: Props) => {
 							)}
 						</Box>
 					)}
-					{isArchive && (
+					{view.isArchive && (
 						<Tooltip title={getSlaTooltipTitle(task, slaInfo)} placement='top'>
 							<Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
 								<SlaIcon sx={{ fontSize: 14, color: sla.iconColor }} />
@@ -247,29 +246,31 @@ export const TaskRow = ({ task, onClick, groupBy, isArchive, sx }: Props) => {
 						</Tooltip>
 					)}
 				</TableCell>
-			) : null}
+			)}
 
-			{!hasNoGroups && groupBy !== 'priority' && (
+			{show('priority') && (
 				<TableCell sx={{ py: 1 }}>
 					<TaskPriorityBadge priority={task.priority} />
 				</TableCell>
 			)}
 
-			{groupBy !== 'assignee' ? (
+			{show('assignee') && (
 				<TableCell sx={{ py: 1 }}>
 					<TaskAssignmentChip assignee={task.assignee} />
 				</TableCell>
-			) : null}
+			)}
 
-			{groupBy !== 'status' ? (
+			{show('status') && (
 				<TableCell sx={{ py: 1 }}>
 					<TaskStatusBadge status={task.status} />
 				</TableCell>
-			) : null}
+			)}
 
-			<TableCell align='right'>
-				<TaskProgressBar done={subtaskProgress.done} total={subtaskProgress.total} />
-			</TableCell>
+			{show('subtasks') && (
+				<TableCell align='right'>
+					<TaskProgressBar done={subtaskProgress.done} total={subtaskProgress.total} />
+				</TableCell>
+			)}
 		</TableRow>
 	)
 }

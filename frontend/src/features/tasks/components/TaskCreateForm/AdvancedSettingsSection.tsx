@@ -16,38 +16,32 @@ import { fieldLabelSx } from './styles'
 import type { FormValues } from './types'
 import { DateTextField } from '@/components/DatePicker/DatePicker'
 import { CircleQuestionMarkIcon } from 'lucide-mui'
+import { useTaskFormSettings } from './taskFormMode'
 
 type Props = {
 	number?: number
-	autoAssign?: boolean
-	/** Можно ли менять срок: только менеджер группы заявки или админ реалма. */
-	canEditDueDate?: boolean
-	/** Можно ли выбирать исполнителя: менеджер группы/админ реалма или исполнитель области. */
-	canPickAssignee?: boolean
-	/** Можно ли менять приоритет: только менеджер группы или админ реалма. */
-	canEditPriority?: boolean
-	/** Можно ли менять группу: только менеджер группы или админ реалма. */
-	canEditGroup?: boolean
-	/** Можно ли отключить уведомления заказчику и скрыть заявку из его списка. */
-	canEditOwnerMuted?: boolean
-	/** Автор заявки — исключается из списка «Уведомлять». */
-	creatorId?: string | null
 	title?: string
 	subtitle?: string
 }
 
 export const AdvancedSettingsSection = ({
 	number = 4,
-	autoAssign = true,
-	canEditDueDate = true,
-	canPickAssignee = true,
-	canEditPriority = true,
-	canEditGroup = true,
-	canEditOwnerMuted = false,
-	creatorId = null,
 	title = 'Расширенные настройки',
 	subtitle = '',
 }: Props) => {
+	const {
+		mode,
+		creatorId,
+		canEditDueDate,
+		canPickAssignee,
+		canEditPriority,
+		canEditGroup,
+		canEditOwnerMuted,
+	} = useTaskFormSettings()
+	// Авто-назначение — сценарий создания: на редактировании категория не должна
+	// перезаписывать уже выбранные группу/исполнителя/срок.
+	const autoAssign = mode === 'create'
+
 	const { control, setValue } = useFormContext<FormValues>()
 	const { data: categoriesData } = useGetAllCategoriesQuery()
 	const { data: groupsData } = useGetAllGroupsQuery()

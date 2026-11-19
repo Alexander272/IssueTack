@@ -3488,6 +3488,99 @@ func TestTicketService_GetAccessFlags_OwnerDecisions(t *testing.T) {
 	}
 }
 
+// TestTicketService_GetAccessFlags_ThinRights фиксирует новые «тонкие» флаги
+// (canCreateSubtask/canAttachToTicket/canManage): они должны совпадать с формулами
+// TicketAccessService, по которым бэкенд реально пускает в подзадачи/вложения/управление.
+func TestTicketService_GetAccessFlags_ThinRights(t *testing.T) {
+	creatorID := uuid.New()
+	groupID := uuid.New()
+
+	cases := []struct {
+		name              string
+		status            models.TicketStatus
+		ticket            func() *models.Ticket
+		userID            uuid.UUID
+		managed           []uuid.UUID
+		member            []uuid.UUID
+		canCreateSubtask  bool
+		canAttachToTicket bool
+		canManage         bool
+	}{
+		{
+			name:   "creator and group manager",
+			status: models.StatusOpen,
+			ticket: func() *models.Ticket {
+				return &models.Ticket{Creator: models.UserShort{ID: creatorID}, Group: &models.GroupShort{ID: groupID}}
+			},
+			userID:            creatorID,
+			managed:           []uuid.UUID{groupID},
+			canCreateSubtask:  true,
+			canAttachToTicket: true,
+			canManage:         true,
+		},
+		{
+			name:   "groupless creator is customer",
+			status: models.StatusOpen,
+			ticket: func() *models.Ticket {
+				return &models.Ticket{Creator: models.UserShort{ID: creatorID}}
+			},
+			userID:            creatorID,
+			canAttachToTicket: true,
+		},
+		{
+			name:   "assignee",
+			status: models.StatusOpen,
+			ticket: func() *models.Ticket {
+				return &models.Ticket{Creator: models.UserShort{ID: uuid.New()}, Assignee: &models.UserShort{ID: creatorID}}
+			},
+			userID:            creatorID,
+			canCreateSubtask:  true,
+			canAttachToTicket: true,
+		},
+		{
+			name:   "notifier",
+			status: models.StatusOpen,
+			ticket: func() *models.Ticket {
+				return &models.Ticket{Creator: models.UserShort{ID: uuid.New()}, Notifiers: []models.UserShort{{ID: creatorID}}}
+			},
+			userID:            creatorID,
+			canAttachToTicket: true,
+		},
+		{
+			name:   "frozen ticket",
+			status: models.StatusClosed,
+			ticket: func() *models.Ticket {
+				return &models.Ticket{Creator: models.UserShort{ID: creatorID}, Group: &models.GroupShort{ID: groupID}}
+			},
+			userID:    creatorID,
+			managed:   []uuid.UUID{groupID},
+			canManage: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, mockSubtasks, _, _, mockGroups, mockPolicies, svc := ticketServiceFixtures()
+
+			mockPolicies.On("Enforce", tc.userID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(false, nil)
+			mockPolicies.On("Enforce", tc.userID.String(), "", string(access.ResourceSite), string(access.Write)).Return(false, nil)
+			mockGroups.On("GetManagedGroups", mock.Anything, tc.userID, (*uuid.UUID)(nil)).Return(tc.managed, nil)
+			mockGroups.On("GetMemberGroups", mock.Anything, tc.userID, (*uuid.UUID)(nil)).Return(tc.member, nil)
+			mockSubtasks.On("GetUnresolvedCount", mock.Anything, mock.Anything).Return(0, nil)
+
+			ticket := tc.ticket()
+			ticket.ID = uuid.New()
+			ticket.Status = tc.status
+
+			flags, err := svc.GetAccessFlags(context.Background(), ticket, tc.userID)
+			require.NoError(t, err)
+			assert.Equal(t, tc.canCreateSubtask, flags.CanCreateSubtask, "canCreateSubtask")
+			assert.Equal(t, tc.canAttachToTicket, flags.CanAttachToTicket, "canAttachToTicket")
+			assert.Equal(t, tc.canManage, flags.CanManage, "canManage")
+		})
+	}
+}
+
 func TestTicketService_GetSummary(t *testing.T) {
 	mockRepo, _, _, _, _, _, _, svc := ticketServiceFixtures()
 

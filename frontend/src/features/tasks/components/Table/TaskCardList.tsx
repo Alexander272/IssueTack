@@ -3,22 +3,19 @@ import { Box, Typography } from '@mui/material'
 import { ChevronDownIcon } from 'lucide-mui'
 
 import type { ITask } from '../../types/task'
-import type { GroupByField } from '../../constants/taskMaps'
-import { useAppSelector } from '@/hooks/redux'
-import { getHasNoGroups } from '@/features/user/userSlice'
-import { getGroupValue, sortGroupKeys } from './getGroupValue'
 import { TaskCard } from './TaskCard'
+import type { TaskListViewState } from './taskView'
+import { useGroupedTasks } from './useGroupedTasks'
 
 interface Props {
 	tasks: ITask[]
-	groupBy: GroupByField
-	groupEnabled: boolean
+	view: TaskListViewState
 	onTaskClick: (task: ITask) => void
 }
 
-export const TaskCardList = ({ tasks, groupBy, groupEnabled, onTaskClick }: Props) => {
+export const TaskCardList = ({ tasks, view, onTaskClick }: Props) => {
 	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
-	const hasNoGroups = useAppSelector(getHasNoGroups)
+	const { groups, sortedKeys } = useGroupedTasks(tasks, view)
 
 	const toggleGroup = (key: string) => {
 		setCollapsedGroups(prev => {
@@ -29,7 +26,7 @@ export const TaskCardList = ({ tasks, groupBy, groupEnabled, onTaskClick }: Prop
 		})
 	}
 
-	if (!groupEnabled) {
+	if (!view.groupEnabled) {
 		return (
 			<Box
 				sx={{
@@ -39,20 +36,11 @@ export const TaskCardList = ({ tasks, groupBy, groupEnabled, onTaskClick }: Prop
 				}}
 			>
 				{tasks.map(task => (
-					<TaskCard key={task.id} task={task} onClick={onTaskClick} />
+					<TaskCard key={task.id} task={task} view={view} onClick={onTaskClick} />
 				))}
 			</Box>
 		)
 	}
-
-	const groups: Record<string, ITask[]> = {}
-	tasks.forEach(task => {
-		const key = getGroupValue(task, groupBy, hasNoGroups)
-		if (!groups[key]) groups[key] = []
-		groups[key].push(task)
-	})
-
-	const sortedKeys = sortGroupKeys(Object.keys(groups), groupBy)
 
 	return (
 		<>
@@ -110,7 +98,7 @@ export const TaskCardList = ({ tasks, groupBy, groupEnabled, onTaskClick }: Prop
 								}}
 							>
 								{groupTasks.map(task => (
-									<TaskCard key={task.id} task={task} onClick={onTaskClick} />
+									<TaskCard key={task.id} task={task} view={view} onClick={onTaskClick} />
 								))}
 							</Box>
 						)}

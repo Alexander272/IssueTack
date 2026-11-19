@@ -5,7 +5,8 @@ import { useParams } from 'react-router'
 import { useGetTaskByIdQuery } from '../tasksApiSlice'
 import { BoxFallback } from '@/components/Fallback/BoxFallback'
 import { useAppSelector } from '@/hooks/redux'
-import { getCurrentCapabilities, getIsManager, getUserId } from '@/features/user/userSlice'
+import { getIsManager, getUserId } from '@/features/user/userSlice'
+import { useTicketControls } from '../hooks/useTicketControls'
 import { Header } from '../components/Detail/Header'
 import { InfoBar } from '../components/Detail/InfoBar'
 import { Description } from '../components/Detail/Description'
@@ -25,28 +26,16 @@ export const TaskDetailPage = () => {
 	const [editOpen, setEditOpen] = useState(false)
 	const [transferOpen, setTransferOpen] = useState(false)
 	const isManager = useAppSelector(getIsManager)
-	const capabilities = useAppSelector(getCurrentCapabilities)
 	const userId = useAppSelector(getUserId)
+
+	// Все права детали считаются одной формулой из access-флагов бэкенда; хук
+	// вызывается до ранних возвратов, чтобы порядок хуков не менялся.
+	const controls = useTicketControls(data?.data)
 
 	if (isLoading) return <BoxFallback />
 	if (!data?.data) return <DetailNotFound />
 
 	const task = data.data
-	// Неактивные (замороженные) статусы: решения, закрытые и отменённые заявки
-	// недоступны для изменения данных.
-	const isInactive = task.status === 'resolved' || task.status === 'closed' || task.status === 'cancelled'
-	const isCreator = task.creator?.id === userId
-	const isOwner = task.owner?.id === userId
-	const canEdit = !isInactive && (task.access?.canEditFields || task.access?.isAdmin)
-	// Вложение к заявке доступно «рабочему» (work-доступ) и заказчику — автору или
-	// владельцу активной заявки (см. бэкенд CanAttachToTicket). Замороженные закрыты.
-	const canUploadAttachments = !isInactive && (Boolean(task.access?.canWork) || isCreator || isOwner)
-	const canCreate = Boolean(
-		isCreator ||
-		task.assignee?.id === userId ||
-		task.access?.isManager ||
-		capabilities.isRealmAdmin,
-	)
 
 	return (
 		<>
@@ -63,7 +52,7 @@ export const TaskDetailPage = () => {
 					>
 						<Header
 							task={task}
-							onEdit={canEdit ? () => setEditOpen(true) : undefined}
+							onEdit={controls.canEdit ? () => setEditOpen(true) : undefined}
 							onTransfer={() => setTransferOpen(true)}
 						/>
 
@@ -74,26 +63,24 @@ export const TaskDetailPage = () => {
 						<Grid size={{ xs: 12, lg: 9 }} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
 							<Description
 								description={task.description}
-								onEdit={canEdit ? () => setEditOpen(true) : undefined}
+								onEdit={controls.canEdit ? () => setEditOpen(true) : undefined}
 							/>
 							<Subtasks
 								subtasks={task.subtasks}
 								taskId={task.id}
-								canWork={task.access?.canWork}
-								canCreate={canCreate}
-								inactive={isInactive}
-								canDelete={
-									Boolean(task.access?.canDelete) && Boolean(task.access?.canWork) && !isInactive
-								}
+								canWork={controls.canWork}
+								canCreateSubtask={controls.canCreateSubtask}
+								canDeleteSubtask={controls.canDeleteSubtask}
+								inactive={controls.isInactive}
 								userId={userId ?? undefined}
-								canManage={Boolean(task.access?.isManager) || capabilities.isRealmAdmin}
+								canManage={controls.canManage}
 							/>
 							<Attachments
 								attachments={task.attachments}
-								canWork={canUploadAttachments}
+								canAttach={controls.canAttachToTicket}
 								taskId={task.id}
 							/>
-							<Comments taskId={task.id} isInactive={isInactive} canWork={Boolean(task.access?.canWork)} />
+							<Comments taskId={task.id} isInactive={controls.isInactive} canWork={controls.canWork} />
 						</Grid>
 
 						<Grid size={{ xs: 12, lg: 3 }} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

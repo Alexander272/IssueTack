@@ -1,4 +1,5 @@
 import { Box, Typography, Stack } from '@mui/material'
+import { Paperclip, MessageSquare } from 'lucide-mui'
 
 import type { ITask } from '../../types/task'
 import {
@@ -9,20 +10,19 @@ import {
 	DUE_DATE_DEFAULT_ICON,
 } from '../../constants/taskMaps'
 import { getDueDateTone, getShortDate } from '@/utils/date'
-import { useAppSelector } from '@/hooks/redux'
-import { getHasNoGroups } from '@/features/user/userSlice'
 import { TaskStatusBadge } from '../TaskStatusBadge'
 import { TaskPriorityBadge } from '../TaskPriorityBadge'
 import { TaskAssignmentChip } from '../TaskAssignmentChip'
 import { TaskProgressBar } from '../TaskProgressBar'
+import type { TaskListViewState } from './taskView'
 
 interface Props {
 	task: ITask
+	view: TaskListViewState
 	onClick: (task: ITask) => void
 }
 
-export const TaskCard = ({ task, onClick }: Props) => {
-	const hasNoGroups = useAppSelector(getHasNoGroups)
+export const TaskCard = ({ task, view, onClick }: Props) => {
 	const priorityColor = PRIORITY_MAP[task.priority]?.barColor ?? '#6b7280'
 	const dueTone = ACTIVE_STATUSES.includes(task.status) ? getDueDateTone(task.dueDate) : null
 	const DueDateIcon = dueTone ? DUE_DATE_ICONS[dueTone] : DUE_DATE_DEFAULT_ICON
@@ -38,6 +38,12 @@ export const TaskCard = ({ task, onClick }: Props) => {
 
 	const attachmentsCount = task.attachments?.length ?? 0
 	const commentsCount = task.comments?.length ?? 0
+
+	// Подвал карточки подчиняется тем же колонкам, что и таблица: срок скрыт у
+	// безгруппового пользователя и при группировке по сроку, в архиве вместо срока
+	// показывается дата закрытия. Раньше это решалось отдельным флагом hasNoGroups.
+	const showClosed = Boolean(task.closedAt)
+	const showDue = view.columns.has('dueDate') && !task.closedAt
 
 	return (
 		<Box
@@ -57,7 +63,7 @@ export const TaskCard = ({ task, onClick }: Props) => {
 				},
 			}}
 		>
-			{!hasNoGroups && (
+			{!view.hasNoGroups && (
 				<Box
 					sx={{
 						position: 'absolute',
@@ -80,7 +86,7 @@ export const TaskCard = ({ task, onClick }: Props) => {
 					)}
 
 					<TaskStatusBadge status={task.status} sx={{ px: 1, py: 0.5, fontSize: '0.625rem' }} />
-					{!hasNoGroups && (
+					{!view.hasNoGroups && (
 						<TaskPriorityBadge priority={task.priority} sx={{ px: 1, py: 0.5, fontSize: '0.625rem' }} />
 					)}
 				</Stack>
@@ -165,51 +171,41 @@ export const TaskCard = ({ task, onClick }: Props) => {
 					spacing={2}
 					sx={{ alignItems: 'center', pt: 0.5, mt: 1, borderTop: '1px solid #f3f4f6' }}
 				>
-					{(!hasNoGroups || task.closedAt) && (
+					{(showClosed || showDue) && (
 						<Box
 							sx={{
 								display: 'inline-flex',
 								alignItems: 'center',
 								gap: 0.5,
 								fontSize: '0.75rem',
-								color: task.closedAt ? '#059669' : dueTone ? DUE_DATE_COLORS[dueTone] : '#9ca3af',
-								fontWeight: task.closedAt || (dueTone && dueTone !== 'soon') ? 600 : 400,
+								color: showClosed ? '#059669' : dueTone ? DUE_DATE_COLORS[dueTone] : '#9ca3af',
+								fontWeight: showClosed || (dueTone && dueTone !== 'soon') ? 600 : 400,
 							}}
 						>
-							{!task.closedAt && <DueDateIcon sx={{ fontSize: 14 }} />}
+							{!showClosed && <DueDateIcon sx={{ fontSize: 14 }} />}
 							<Typography component='span' sx={{ fontSize: '0.75rem', lineHeight: 1 }}>
-								{task.closedAt ? 'Закрыта' : 'Срок'}:{' '}
-								{task.closedAt ? getShortDate(task.closedAt) : getShortDate(task.dueDate)}
+								{showClosed ? 'Закрыта' : 'Срок'}:{' '}
+								{showClosed ? getShortDate(task.closedAt) : getShortDate(task.dueDate)}
 							</Typography>
 						</Box>
 					)}
 
 					{attachmentsCount > 0 && (
-						<Typography
-							sx={{
-								fontSize: '0.75rem',
-								color: '#9ca3af',
-								display: 'flex',
-								alignItems: 'center',
-								gap: 0.5,
-							}}
-						>
-							📎 {attachmentsCount}
-						</Typography>
+						<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: '#9ca3af' }}>
+							<Paperclip sx={{ fontSize: 14 }} />
+							<Typography component='span' sx={{ fontSize: '0.75rem', lineHeight: 1 }}>
+								{attachmentsCount}
+							</Typography>
+						</Box>
 					)}
 
 					{commentsCount > 0 && (
-						<Typography
-							sx={{
-								fontSize: '0.75rem',
-								color: '#9ca3af',
-								display: 'flex',
-								alignItems: 'center',
-								gap: 0.5,
-							}}
-						>
-							💬 {commentsCount}
-						</Typography>
+						<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, color: '#9ca3af' }}>
+							<MessageSquare sx={{ fontSize: 14 }} />
+							<Typography component='span' sx={{ fontSize: '0.75rem', lineHeight: 1 }}>
+								{commentsCount}
+							</Typography>
+						</Box>
 					)}
 				</Stack>
 			</Box>

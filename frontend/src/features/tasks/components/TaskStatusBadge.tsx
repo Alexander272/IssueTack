@@ -1,6 +1,7 @@
 import { Box, Typography, type SxProps, type Theme } from '@mui/material'
+import { CircleDashed } from 'lucide-mui'
 import type { TicketStatus } from '../types/task'
-import { STATUS_MAP } from '../constants/taskMaps'
+import { STATUS_MAP, type StatusMapValue } from '../constants/taskMaps'
 
 interface Props {
 	status: TicketStatus
@@ -8,7 +9,12 @@ interface Props {
 }
 
 export const TaskStatusBadge = ({ status, sx }: Props) => {
-	const info = STATUS_MAP[status]
+	// Статус приходит из API, поэтому неизвестное значение не должно ронять рендер:
+	// показываем нейтральный бейдж с сырым значением вместо обращения к undefined.
+	const info: StatusMapValue | undefined = STATUS_MAP[status]
+	const label = info?.label ?? status
+	const textColor = info?.textColor ?? '#6b7280'
+	const Icon = info?.icon ?? CircleDashed
 
 	return (
 		<Box
@@ -21,14 +27,14 @@ export const TaskStatusBadge = ({ status, sx }: Props) => {
 				borderRadius: '999px',
 				fontSize: '0.75rem',
 				fontWeight: 500,
-				bgcolor: info.bgColor,
-				color: info.textColor,
+				bgcolor: info?.bgColor ?? '#f3f4f6',
+				color: textColor,
 				...sx,
 			}}
 		>
-			<info.icon sx={{ fontSize: 14, color: info.textColor }} />
+			<Icon sx={{ fontSize: 14, color: textColor }} />
 			<Typography component='span' sx={{ fontSize: '0.75rem', fontWeight: 500, lineHeight: 1 }}>
-				{info.label}
+				{label}
 			</Typography>
 		</Box>
 	)

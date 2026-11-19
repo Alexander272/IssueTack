@@ -1,11 +1,15 @@
+import { useCallback } from 'react'
 import { Box, Typography } from '@mui/material'
+import { useNavigate } from 'react-router'
 
 import { TASKS_PAGE_SIZE, type GroupByField } from '../../constants/taskMaps'
-import type { ITaskFilter } from '../../types/task'
+import type { ITask, ITaskFilter } from '../../types/task'
 import { Pagination } from '@/components/Pagination/Pagination'
 import { BoxFallback } from '@/components/Fallback/BoxFallback'
 import { TaskTable } from './TaskTable'
+import { useTaskListView } from './taskView'
 import { useGetTasksQuery } from '../../tasksApiSlice'
+import { AppRoutes } from '@/pages/router/routes'
 
 interface Props {
 	filters: ITaskFilter
@@ -29,6 +33,13 @@ export const TaskListView = ({
 	onPageChange,
 }: Props) => {
 	const { data, isFetching } = useGetTasksQuery(filters)
+	const navigate = useNavigate()
+
+	// Один объект представления на всю ветку таблицы/карточек: шапка, строки и
+	// карточки больше не получают isArchive/groupBy/флаги по отдельности.
+	const view = useTaskListView({ isArchive, groupBy, groupEnabled, sort, onSortChange })
+
+	const handleTaskClick = useCallback((task: ITask) => navigate(`${AppRoutes.Tasks}/${task.id}`), [navigate])
 
 	const tasks = data?.data ?? []
 	const total = data?.total ?? 0
@@ -41,14 +52,7 @@ export const TaskListView = ({
 
 	return (
 		<>
-			<TaskTable
-				tasks={tasks}
-				groupBy={groupBy}
-				groupEnabled={groupEnabled}
-				sort={sort}
-				isArchive={isArchive}
-				onSortChange={onSortChange}
-			/>
+			<TaskTable tasks={tasks} view={view} onTaskClick={handleTaskClick} />
 
 			<Box
 				sx={{

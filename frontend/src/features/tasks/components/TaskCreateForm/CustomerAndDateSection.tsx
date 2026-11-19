@@ -11,30 +11,20 @@ import { DateTextField } from '@/components/DatePicker/DatePicker'
 import { CustomerSelector } from './CustomerSelector'
 import { NotifierSelector } from './NotifierSelector'
 import { SectionCard } from './SectionCard'
+import { useTaskFormSettings } from './taskFormMode'
 
 type Props = {
 	number?: number
 	title?: string
 	subtitle?: string
-	/** Автор заявки — исключается из «Уведомлять». */
-	creatorId?: string | null
-	showOwner?: boolean
-	showDueDate?: boolean
-	showNotifiers?: boolean
-	/** Показывать подпись поля «Уведомлять» (скрыть, если заголовок секции уже «Уведомлять»). */
-	showNotifierFieldLabel?: boolean
 }
 
 export const CustomerAndDateSection = ({
 	number = 4,
 	title = 'Заказчик и сроки',
 	subtitle = 'Укажите заказчика и желаемый срок выполнения',
-	creatorId,
-	showOwner = true,
-	showDueDate = true,
-	showNotifiers = true,
-	showNotifierFieldLabel = true,
 }: Props) => {
+	const { creatorId, canEditNotifiers, showOwner, showDueDate, showNotifierFieldLabel } = useTaskFormSettings()
 	const { control } = useFormContext<FormValues>()
 	const { data: customersData } = useGetRealmUsersQuery('all')
 	const customers = useMemo(() => customersData?.data ?? [], [customersData])
@@ -64,7 +54,7 @@ export const CustomerAndDateSection = ({
 				</Box>
 			)}
 
-			{showNotifiers && (
+			{canEditNotifiers && (
 				<Box sx={{ mt: 1 }}>
 					{showNotifierFieldLabel && (
 						<Typography variant='caption' sx={fieldLabelSx}>

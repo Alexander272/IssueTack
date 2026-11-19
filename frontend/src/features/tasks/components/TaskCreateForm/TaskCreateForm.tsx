@@ -21,6 +21,8 @@ import { SubtasksCreationSection } from './SubtasksCreationSection'
 import { clearDraft, hasDraftContent, loadDraft, saveDraft } from './draft'
 import { buildCreateDTO, type CreateRole } from './dto'
 import { CustomerAndDateSection } from './CustomerAndDateSection'
+import { TaskFormProvider } from './TaskFormProvider'
+import type { TaskFormSettings } from './taskFormMode'
 
 // EMPTY_FORM — исходные значения формы. reset() обязан сбрасывать именно к ним,
 // а не к defaultValues: последние могут быть черновиком из sessionStorage.
@@ -54,6 +56,27 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 		// (см. buildCreateDTO). Одна формула вместо повторов isManager/isExecutor
 		// на каждое поле.
 		const role: CreateRole = isManager ? 'manager' : isExecutor ? 'executor' : 'customer'
+
+		// Права секций формы создания: менеджер настраивает группу, приоритет, срок
+		// и уведомления заказчика; исполнитель — заказчика и исполнителя; обычный
+		// заявитель видит только список дополнительных уведомляемых.
+		const formSettings = useMemo<TaskFormSettings>(
+			() => ({
+				mode: 'create',
+				creatorId: currentUserId ?? null,
+				canEditContent: true,
+				canEditDueDate: true,
+				canPickAssignee: true,
+				canEditPriority: true,
+				canEditGroup: isManager,
+				canEditOwnerMuted: isManager,
+				canEditNotifiers: true,
+				showOwner: role !== 'customer',
+				showDueDate: role !== 'customer',
+				showNotifierFieldLabel: role !== 'customer',
+			}),
+			[currentUserId, isManager, role],
+		)
 
 		const [createTask, { isLoading: isCreating }] = useCreateTaskMutation()
 		const [uploadAttachment, { isLoading: isUploading }] = useUploadAttachmentMutation()
@@ -211,74 +234,60 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 					</Box>
 				)}
 
-				<FormProvider {...methods}>
-					<Box component='form' onSubmit={onSubmit}>
-						<Stack sx={{ gap: { xs: 1.5, sm: 3 } }}>
-							<CategoryAndSiteSection />
-							<DescriptionSection files={files} onFilesChange={setFiles} />
+				<TaskFormProvider settings={formSettings}>
+					<FormProvider {...methods}>
+						<Box component='form' onSubmit={onSubmit}>
+							<Stack sx={{ gap: { xs: 1.5, sm: 3 } }}>
+								<CategoryAndSiteSection />
+								<DescriptionSection files={files} onFilesChange={setFiles} />
 
-							{!isManager && !isExecutor && (
-								<CustomerAndDateSection
-									number={3}
-									creatorId={currentUserId}
-									title={'Уведомлять дополнительно'}
-									subtitle={
-										'Кому еще сообщать о создании, смене статуса и комментариях. Ответственные по заявке получат эти уведомления автоматически.'
-									}
-									showOwner={false}
-									showDueDate={false}
-									showNotifierFieldLabel={false}
-								/>
-							)}
+								{role === 'customer' && (
+									<CustomerAndDateSection
+										number={3}
+										title={'Уведомлять дополнительно'}
+										subtitle={
+											'Кому еще сообщать о создании, смене статуса и комментариях. Ответственные по заявке получат эти уведомления автоматически.'
+										}
+									/>
+								)}
 
-							{(isManager || isExecutor) && <SubtasksCreationSection />}
+								{(isManager || isExecutor) && <SubtasksCreationSection />}
 
-							{isManager && (
-								<AdvancedSettingsSection
-									canEditOwnerMuted={true}
-									creatorId={currentUserId}
-									title='Настройки заявки'
-								/>
-							)}
+								{(isManager || isExecutor) && (
+									<AdvancedSettingsSection title='Настройки заявки' />
+								)}
 
-							{isExecutor && (
-								<AdvancedSettingsSection
-									canEditGroup={false}
-									creatorId={currentUserId}
-									title='Настройки заявки'
-								/>
-							)}
-
-							<Box
-								sx={{
-									display: 'flex',
-									justifyContent: 'flex-end',
-									gap: 1,
-									pt: 1,
-									pb: !embedded ? 2 : 0,
-								}}
-							>
-								<Button
-									type='button'
-									variant='outlined'
-									onClick={embedded ? onCancel : () => setConfirmOpen(true)}
-									sx={{ textTransform: 'none', color: 'text.primary', borderColor: '#ddd' }}
+								<Box
+									sx={{
+										display: 'flex',
+										justifyContent: 'flex-end',
+										gap: 1,
+										pt: 1,
+										pb: !embedded ? 2 : 0,
+									}}
 								>
-									{embedded ? 'Отмена' : 'Очистить'}
-								</Button>
-								<Button
-									type='submit'
-									variant='contained'
-									disabled={isSaving || !formState.isValid}
-									startIcon={<SaveIcon sx={{ fontSize: 18 }} />}
-									sx={{ textTransform: 'none', px: 3 }}
-								>
-									{isSaving ? 'Создание...' : 'Создать заявку'}
-								</Button>
-							</Box>
-						</Stack>
-					</Box>
-				</FormProvider>
+									<Button
+										type='button'
+										variant='outlined'
+										onClick={embedded ? onCancel : () => setConfirmOpen(true)}
+										sx={{ textTransform: 'none', color: 'text.primary', borderColor: '#ddd' }}
+									>
+										{embedded ? 'Отмена' : 'Очистить'}
+									</Button>
+									<Button
+										type='submit'
+										variant='contained'
+										disabled={isSaving || !formState.isValid}
+										startIcon={<SaveIcon sx={{ fontSize: 18 }} />}
+										sx={{ textTransform: 'none', px: 3 }}
+									>
+										{isSaving ? 'Создание...' : 'Создать заявку'}
+									</Button>
+								</Box>
+							</Stack>
+						</Box>
+					</FormProvider>
+				</TaskFormProvider>
 
 				<ConfirmDialog
 					open={confirmOpen}

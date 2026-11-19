@@ -58,6 +58,12 @@ export interface IAccessFlags {
 	canRequestDueDate?: boolean
 	/** Могут ли текущий пользователь (менеджер группы/начальник области) утверждать или отклонять запрос переноса срока. */
 	canDecideDueDate?: boolean
+	/** Создание подзадачи: создатель/исполнитель/управляющий тикетом (уже учитывает заморозку). */
+	canCreateSubtask?: boolean
+	/** Загрузка вложения: work-доступ или заказчик активной заявки (уже учитывает заморозку). */
+	canAttachToTicket?: boolean
+	/** Управление тикетом: начальник области или менеджер его группы. */
+	canManage?: boolean
 }
 
 export interface ITask {

@@ -65,8 +65,17 @@ type AccessFlags struct {
 	// CanRequestDueDate — исполнитель может запросить перенос срока (при установленном сроке).
 	CanRequestDueDate bool `json:"canRequestDueDate"`
 	// CanDecideDueDate — менеджер группы/начальник области может утверждать/отклонять запросы переноса срока.
-	CanDecideDueDate bool           `json:"canDecideDueDate"`
-	AllowedStatuses  []TicketStatus `json:"allowedStatuses"`
+	CanDecideDueDate bool `json:"canDecideDueDate"`
+
+	// CanCreateSubtask/CanAttachToTicket/CanManage — «тонкие» права, которые фронт
+	// раньше вычислял сам по access.isManager/isAssignee/isCreator. Считаются теми же
+	// формулами, что и сервисные проверки (TicketAccessService), чтобы кнопки не
+	// расходились с тем, что бэкенд действительно пропустит.
+	CanCreateSubtask  bool `json:"canCreateSubtask"`
+	CanAttachToTicket bool `json:"canAttachToTicket"`
+	CanManage         bool `json:"canManage"`
+
+	AllowedStatuses []TicketStatus `json:"allowedStatuses"`
 }
 
 type GetTicketByIdDTO struct {

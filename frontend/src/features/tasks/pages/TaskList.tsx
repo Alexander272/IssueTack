@@ -3,14 +3,14 @@ import { Box, Button, Typography, Tab, Tabs, useTheme } from '@mui/material'
 import { useNavigate, useSearchParams } from 'react-router'
 import { ArchiveIcon, InboxIcon, PlusIcon } from 'lucide-mui'
 
-import type { GroupByField } from '../constants/taskMaps'
-import { statusOptionsFor, TASKS_PAGE_SIZE } from '../constants/taskMaps'
 import type { FilterValues } from '../components/filters'
 import type { ITaskFilter } from '../types/task'
 import { PermRules } from '@/features/access/constants/permissions'
+import { statusOptionsFor, TASKS_PAGE_SIZE } from '../constants/taskMaps'
 import { useAppSelector } from '@/hooks/redux'
 import { useDebounce } from '@/hooks/useDebounce'
 import { useCan } from '@/features/access/utils/can'
+import { clampHiddenFields } from '../utils/clampFilters'
 import { getHasNoGroups, getIsManager } from '@/features/user/userSlice'
 import { TaskFilters } from '../components/filters'
 import { TaskListView } from '../components/Table'
@@ -108,25 +108,16 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 	}
 
 	// clampHiddenFields — для обычного пользователя без групп скрываем группировку и фильтры целиком.
-	const clampHiddenFields = useCallback(
-		(f: FilterValues): FilterValues => {
-			if (!hasNoGroups) return f
-			const hasHidden =
-				f.groupEnabled ||
-				Object.values(f).some(v => v !== undefined && v !== false && v !== DEFAULT_FILTERS.sort)
-			if (!hasHidden) return f
-			return {
-				...DEFAULT_FILTERS,
-				groupEnabled: false,
-			}
-		},
+	const clampFilters = useCallback(
+		(f: FilterValues): FilterValues =>
+			clampHiddenFields(f, { hasNoGroups, defaults: DEFAULT_FILTERS, mode: 'all' }),
 		[hasNoGroups],
 	)
 
 	const loadFilters = (): FilterValues => {
 		try {
 			const saved = localStorage.getItem(STORAGE_KEY)
-			if (saved) return clampHiddenFields(clampStatuses({ ...DEFAULT_FILTERS, ...JSON.parse(saved) }, false))
+			if (saved) return clampFilters(clampStatuses({ ...DEFAULT_FILTERS, ...JSON.parse(saved) }, false))
 		} catch {
 			/* ignore */
 		}
@@ -144,7 +135,7 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 	// Роль пользователя могла стать «без групп» при смене реалма: скрытые фильтры
 	// не вычищаем из состояния (иначе setState в эффекте), а отдаём производное
 	// значение — в запрос и в UI уходит уже очищенный набор.
-	const effectiveFilters = useMemo(() => clampHiddenFields(filters), [filters, clampHiddenFields])
+	const effectiveFilters = useMemo(() => clampFilters(filters), [filters, clampFilters])
 
 	// Ссылку на другое оборудование можно открыть поверх уже смонтированного списка
 	// (возврат по истории к ссылке с оборудованием) — адрес остаётся источником правды.
@@ -173,7 +164,7 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 
 	// Сетевой запрос дебаунсится, чтобы не долбить бэкенд на каждое нажатие
 	// клавиши в поиске; сам инпут фильтров остаётся мгновенным.
-	const debouncedSearch = useDebounce(filters.search, 300) as string
+	const debouncedSearch = useDebounce(filters.search, 300)
 
 	const numberFilter = filters.ticketNumber ? Number(filters.ticketNumber) : NaN
 
@@ -308,7 +299,7 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 			<TaskListView
 				filters={queryFilter}
 				isArchive={isArchive}
-				groupBy={effectiveFilters.groupBy as GroupByField}
+				groupBy={effectiveFilters.groupBy}
 				groupEnabled={!isArchive && effectiveFilters.groupEnabled}
 				sort={effectiveFilters.sort}
 				onSortChange={sort => handleFilterChange({ sort })}

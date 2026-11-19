@@ -38,6 +38,9 @@ export const STATUS_MAP: Record<TicketStatus, StatusMapValue> = {
 
 export const ACTIVE_STATUSES: TicketStatus[] = ['open', 'in_progress', 'pending', 'on_hold']
 
+// Замороженные (терминальные) статусы: данные заявки больше не меняются.
+export const INACTIVE_STATUSES: TicketStatus[] = ['resolved', 'closed', 'cancelled']
+
 export const DUE_DATE_COLORS: Record<Exclude<DueDateTone, null>, string> = {
 	overdue: '#dc2626',
 	today: '#ea580c',

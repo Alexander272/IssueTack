@@ -21,15 +21,18 @@ import { SubtaskDialog } from './SubtaskDialog'
 interface Props {
 	subtasks: ISubtask[] | undefined
 	taskId: string
-	canWork?: boolean
-	/** Может ли пользователь создавать подзадачи (создатель/исполнитель тикета, менеджер группы, админ реалма). */
-	canCreate?: boolean
-	canDelete?: boolean
-	inactive?: boolean
+	/** «Рабочий» доступ: write-права по атрибутам или исполнитель. */
+	canWork: boolean
+	/** Создание подзадач (canCreateSubtask с бэкенда — уже учитывает заморозку). */
+	canCreateSubtask: boolean
+	/** Удаление подзадач (право удаления тикета + work-доступ + активная заявка). */
+	canDeleteSubtask: boolean
+	/** Заявка в терминальном статусе: подзадачи только для чтения. */
+	inactive: boolean
 	/** Текущий пользователь. Нужен для правки содержимого: она доступна автору (createdBy) или canManage. */
 	userId?: string
 	/** Признак «управления» тикетом: менеджер группы или админ реалма. */
-	canManage?: boolean
+	canManage: boolean
 }
 
 const SUBTASK_STATUS_OPTIONS: { value: TicketStatus; label: string; icon: FC<SvgIconProps>; iconColor: string }[] = (
@@ -48,12 +51,12 @@ const isLongDescription = (text: string) => text.length > DESCRIPTION_CLAMP_THRE
 export const Subtasks = ({
 	subtasks,
 	taskId,
-	canWork = true,
-	canCreate = false,
-	canDelete = false,
-	inactive = false,
+	canWork,
+	canCreateSubtask,
+	canDeleteSubtask,
+	inactive,
 	userId,
-	canManage = false,
+	canManage,
 }: Props) => {
 	const [createSubtask] = useCreateSubtaskMutation()
 	const [updateSubtask] = useUpdateSubtaskMutation()
@@ -67,8 +70,6 @@ export const Subtasks = ({
 
 	const list = subtasks ?? []
 	const interactive = canWork && !inactive
-	const canCreateSub = canCreate && interactive
-	const canDeleteSub = canDelete && interactive
 	const done = list.filter(s => DONE_STATUSES.includes(s.status)).length
 	const total = list.length
 	const progress = total > 0 ? Math.round((done / total) * 100) : 0
@@ -180,7 +181,7 @@ export const Subtasks = ({
 					</Typography>
 				</Typography>
 
-				{canCreateSub && (
+				{canCreateSubtask && (
 					<Box
 						onClick={openCreate}
 						sx={{
@@ -348,7 +349,7 @@ export const Subtasks = ({
 												</IconButton>
 											</Tooltip>
 										)}
-										{canDeleteSub && (
+										{canDeleteSubtask && (
 											<Tooltip title='Удалить'>
 												<IconButton size='large' onClick={() => setDeleteTarget(sub)}>
 													<Trash2 sx={{ fontSize: 16, color: '#ef5350' }} />

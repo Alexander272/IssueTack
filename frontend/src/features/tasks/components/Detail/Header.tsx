@@ -3,7 +3,8 @@ import { Box, IconButton, Tooltip, Typography, Menu, MenuItem, ListItemIcon } fr
 import { Star, MoreVertical, ArrowLeftIcon, Pin, Pencil, UserRound } from 'lucide-mui'
 import { useLocation, useNavigate } from 'react-router'
 
-import type { ITask, TicketStatus } from '../../types/task'
+import type { ITask } from '../../types/task'
+import { INACTIVE_STATUSES } from '../../constants/taskMaps'
 import { AppRoutes } from '@/pages/router/routes'
 import {
 	useGetFavoriteStateQuery,
@@ -12,8 +13,6 @@ import {
 } from '@/features/favorites/favoritesApiSlice'
 import { useAppSelector } from '@/hooks/redux'
 import { getUserId, getHasNoGroups } from '@/features/user/userSlice'
-
-const INACTIVE_STATUSES: TicketStatus[] = ['resolved', 'closed', 'cancelled']
 
 interface Props {
 	task: ITask

@@ -3,10 +3,11 @@ import { Box, Typography, Tab, Tabs } from '@mui/material'
 import { Pin, Star } from 'lucide-mui'
 
 import type { GroupByField } from '@/features/tasks/constants/taskMaps'
-import { statusOptionsFor, groupByFieldHidden, TASKS_PAGE_SIZE } from '@/features/tasks/constants/taskMaps'
 import type { FilterValues } from '@/features/tasks/components/filters'
 import type { ITaskFilter } from '@/features/tasks/types/task'
+import { statusOptionsFor, TASKS_PAGE_SIZE } from '@/features/tasks/constants/taskMaps'
 import { useAppSelector } from '@/hooks/redux'
+import { clampHiddenFields } from '@/features/tasks/utils/clampFilters'
 import { getHasNoGroups } from '@/features/user/userSlice'
 import { TaskFilters } from '@/features/tasks/components/filters'
 import { TaskListView } from '@/features/tasks/components/Table'
@@ -48,30 +49,16 @@ export const FavoritesPage = () => {
 	// clampHiddenFields — «обычному пользователю» без групп срок и приоритет не показываются,
 	// поэтому сохранённые значения этих фильтров и группировки вычищаем (иначе невидимый
 	// фильтр продолжит резать список).
-	const clampHiddenFields = useCallback(
-		(f: FilterValues): FilterValues => {
-			if (!hasNoGroups) return f
-			const hasHidden =
-				f.dueDateFrom !== undefined ||
-				f.dueDateTo !== undefined ||
-				f.priorities !== undefined ||
-				groupByFieldHidden(f.groupBy, hasNoGroups)
-			if (!hasHidden) return f
-			return {
-				...f,
-				dueDateFrom: undefined,
-				dueDateTo: undefined,
-				priorities: undefined,
-				groupBy: groupByFieldHidden(f.groupBy, hasNoGroups) ? DEFAULT_FILTERS.groupBy : f.groupBy,
-			}
-		},
+	const clampFilters = useCallback(
+		(f: FilterValues): FilterValues =>
+			clampHiddenFields(f, { hasNoGroups, defaults: DEFAULT_FILTERS, mode: 'filters' }),
 		[hasNoGroups],
 	)
 
 	const loadFilters = (): FilterValues => {
 		try {
 			const saved = localStorage.getItem(STORAGE_KEY)
-			if (saved) return clampHiddenFields(clampStatuses({ ...DEFAULT_FILTERS, ...JSON.parse(saved) }, false))
+			if (saved) return clampFilters(clampStatuses({ ...DEFAULT_FILTERS, ...JSON.parse(saved) }, false))
 		} catch {
 			/* ignore */
 		}
@@ -84,7 +71,7 @@ export const FavoritesPage = () => {
 
 	// Роль могла стать «без групп» при смене реалма — скрытые фильтры не вычищаем
 	// из состояния (иначе setState в эффекте), а отдаём производное значение.
-	const effectiveFilters = useMemo(() => clampHiddenFields(filters), [filters, clampHiddenFields])
+	const effectiveFilters = useMemo(() => clampFilters(filters), [filters, clampFilters])
 
 	useEffect(() => {
 		localStorage.setItem(STORAGE_KEY, JSON.stringify(effectiveFilters))

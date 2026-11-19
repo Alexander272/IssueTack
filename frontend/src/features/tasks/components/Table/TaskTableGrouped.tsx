@@ -1,17 +1,16 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useState } from 'react'
 import { TableCell, TableRow, Typography, Box } from '@mui/material'
 import { ChevronDownIcon } from 'lucide-mui'
 
 import type { ITask } from '../../types/task'
 import type { GroupByField } from '../../constants/taskMaps'
-import { useAppSelector } from '@/hooks/redux'
-import { getHasNoGroups } from '@/features/user/userSlice'
 import { TaskRow } from './TaskRow'
-import { getGroupValue, sortGroupKeys } from './getGroupValue'
+import type { TaskListViewState } from './taskView'
+import { useGroupedTasks } from './useGroupedTasks'
 
 interface Props {
 	tasks: ITask[]
-	groupBy: GroupByField
+	view: TaskListViewState
 	onTaskClick: (task: ITask) => void
 	columnsCount: number
 }
@@ -31,9 +30,8 @@ const getInitialCollapsed = (): CollapsedState => {
 // Мемоизируем строку задачи
 const MemoizedTaskRow = memo(TaskRow)
 
-export const TaskTableGrouped = ({ tasks, groupBy, onTaskClick, columnsCount }: Props) => {
+export const TaskTableGrouped = ({ tasks, view, onTaskClick, columnsCount }: Props) => {
 	const [collapsedMap, setCollapsedMap] = useState<CollapsedState>(getInitialCollapsed)
-	const hasNoGroups = useAppSelector(getHasNoGroups)
 
 	// Дебаунс для записи в localStorage (предотвращает фризы при частых кликах)
 	useEffect(() => {
@@ -51,38 +49,26 @@ export const TaskTableGrouped = ({ tasks, groupBy, onTaskClick, columnsCount }: 
 		return () => clearTimeout(timeoutId)
 	}, [collapsedMap])
 
-	const collapsedGroups = useMemo(() => new Set(collapsedMap[groupBy] ?? []), [collapsedMap, groupBy])
+	const collapsedGroups = new Set(collapsedMap[view.groupBy] ?? [])
 
 	const toggleGroup = useCallback(
 		(key: string) => {
 			setCollapsedMap(prev => {
-				const currentList = prev[groupBy] ?? []
+				const currentList = prev[view.groupBy] ?? []
 				const isCurrentlyCollapsed = currentList.includes(key)
 
 				const nextList = isCurrentlyCollapsed ? currentList.filter(item => item !== key) : [...currentList, key]
 
 				return {
 					...prev,
-					[groupBy]: nextList,
+					[view.groupBy]: nextList,
 				}
 			})
 		},
-		[groupBy],
+		[view.groupBy],
 	)
 
-	const { groups, sortedKeys } = useMemo(() => {
-		const grouped: Record<string, ITask[]> = {}
-		tasks.forEach(task => {
-			const key = getGroupValue(task, groupBy, hasNoGroups)
-			if (!grouped[key]) grouped[key] = []
-			grouped[key].push(task)
-		})
-
-		return {
-			groups: grouped,
-			sortedKeys: sortGroupKeys(Object.keys(grouped), groupBy),
-		}
-	}, [tasks, groupBy, hasNoGroups])
+	const { groups, sortedKeys } = useGroupedTasks(tasks, view)
 
 	// Обработчик клавиш для доступности
 	const handleKeyDown = useCallback(
@@ -153,7 +139,7 @@ export const TaskTableGrouped = ({ tasks, groupBy, onTaskClick, columnsCount }: 
 					...(isCollapsed
 						? []
 						: groupTasks.map(task => (
-								<MemoizedTaskRow key={task.id} task={task} onClick={onTaskClick} groupBy={groupBy} />
+								<MemoizedTaskRow key={task.id} task={task} view={view} onClick={onTaskClick} />
 							))),
 				]
 			})}

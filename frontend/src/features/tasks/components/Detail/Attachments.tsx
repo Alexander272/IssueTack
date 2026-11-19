@@ -17,7 +17,8 @@ import { PreviewDialog } from './Preview'
 
 interface Props {
 	attachments: IAttachment[] | undefined
-	canWork?: boolean
+	/** Вложение разрешено (canAttachToTicket с бэкенда — уже учитывает заморозку). */
+	canAttach: boolean
 	taskId?: string
 }
 
@@ -55,13 +56,13 @@ function ImageThumbnail({ file }: { file: IAttachment }) {
 	)
 }
 
-export const Attachments = ({ attachments, canWork, taskId }: Props) => {
+export const Attachments = ({ attachments, canAttach, taskId }: Props) => {
 	const [uploadAttachment] = useUploadAttachmentMutation()
 	const [fetchContent] = useLazyGetAttachmentContentQuery()
 	const [previewFile, setPreviewFile] = useState<IAttachment | null>(null)
 
 	const files = attachments ?? []
-	const showUpload = canWork && taskId
+	const showUpload = canAttach && taskId
 
 	const handleDownload = useCallback(
 		async (file: IAttachment) => {

@@ -1,299 +1,31 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { useSelector } from 'react-redux'
 import { Box, Button, CircularProgress, IconButton, Stack, Switch, TextField, Tooltip, Typography } from '@mui/material'
-import { MessageSquare, Trash2, EyeOff, ArrowRightLeft, Paperclip, Download, ExternalLink } from 'lucide-mui'
-import { toast } from 'react-toastify'
+import { EyeOff, MessageSquare, Paperclip, Trash2 } from 'lucide-mui'
 
-import type { IFetchError } from '@/app/types/error'
-import type { IComment } from '../../types/comment'
-import type { IAttachment } from '../../types/task'
-import { useGetActivityLogsQuery } from '../../modules/activity/activityApiSlice'
-import { ActivityTimeline } from '../../modules/activity/ActivityTimeline'
+import { useGetActivityLogsQuery } from '../../../modules/activity/activityApiSlice'
+import { ActivityTimeline } from '../../../modules/activity/ActivityTimeline'
 import {
 	useGetCommentsQuery,
 	useCreateCommentMutation,
 	useDeleteCommentMutation,
-} from '../../modules/comments/commentsApiSlice'
-import { useLazyGetAttachmentContentQuery } from '../../modules/attachments/attachmentsApiSlice'
+} from '../../../modules/comments/commentsApiSlice'
 import { getUserId } from '@/features/user/userSlice'
-import { saveAs } from '@/utils/saveAs'
-import { getAvatarColor, getInitials, getDisplayName } from '@/utils/avatar'
-import { formatSize } from '../../utils/size'
-import { isImage, isPdf, isText, getFileIcon } from '../../utils/fileIcon'
-import { PreviewDialog } from './Preview'
+import { formatSize } from '../../../utils/size'
+import { CommentEntry } from './CommentEntry'
 
 interface Props {
 	taskId: string
-	isInactive?: boolean
+	/** Заявка в терминальном статусе: внешние комментарии запрещены, поле форсится внутренним. */
+	isInactive: boolean
 	/** Есть ли у пользователя «рабочий» доступ (write или исполнитель). От него зависит
 	 *  возможность писать внутренние комментарии: заказчику (без групп) они недоступны. */
-	canWork?: boolean
+	canWork: boolean
 }
 
 type TabKey = 'comments' | 'history'
 
-const CommentAttachments = ({ attachments }: { attachments: IAttachment[] }) => {
-	const [fetchContent] = useLazyGetAttachmentContentQuery()
-	const [previewFile, setPreviewFile] = useState<IAttachment | null>(null)
-
-	const handleDownload = async (file: IAttachment) => {
-		try {
-			const { url } = await fetchContent(file.id).unwrap()
-			const res = await fetch(url)
-			saveAs(await res.blob(), file.fileName)
-		} catch (error) {
-			const fetchError = error as IFetchError
-			toast.error(fetchError.data?.message || 'Ошибка скачивания файла')
-		}
-	}
-
-	const handleOpen = async (file: IAttachment) => {
-		if (isImage(file.mimeType)) {
-			setPreviewFile(file)
-			return
-		}
-		if (isPdf(file.mimeType) || isText(file.mimeType)) {
-			try {
-				const { url } = await fetchContent(file.id).unwrap()
-				window.open(url, '_blank')
-			} catch (error) {
-				const fetchError = error as IFetchError
-				toast.error(fetchError.data?.message || 'Ошибка открытия файла')
-			}
-			return
-		}
-		handleDownload(file)
-	}
-
-	return (
-		<>
-			<Stack spacing={0.5} sx={{ mt: 1 }}>
-				{attachments.map(file => {
-					const info = getFileIcon(file.mimeType)
-					const IconComponent = info.icon
-					return (
-						<Box
-							key={file.id}
-							sx={{
-								display: 'flex',
-								alignItems: 'center',
-								gap: 1,
-								px: 1,
-								py: 0.5,
-								borderRadius: '6px',
-								bgcolor: 'white',
-								border: '1px solid #e5e7eb',
-							}}
-						>
-							{isImage(file.mimeType) ? (
-								<IconComponent sx={{ fontSize: 20, color: info.color }} />
-							) : (
-								<Box
-									sx={{
-										width: 20,
-										height: 20,
-										display: 'flex',
-										alignItems: 'center',
-										justifyContent: 'center',
-									}}
-								>
-									<IconComponent sx={{ fontSize: 20, color: info.color }} />
-								</Box>
-							)}
-							<Typography
-								sx={{
-									flex: 1,
-									minWidth: 0,
-									fontSize: '0.75rem',
-									fontWeight: 500,
-									color: '#1f2937',
-									overflow: 'hidden',
-									textOverflow: 'ellipsis',
-									whiteSpace: 'nowrap',
-									cursor: 'pointer',
-									'&:hover': { textDecoration: 'underline' },
-								}}
-								onClick={() => handleOpen(file)}
-							>
-								{file.fileName}
-							</Typography>
-							<Typography sx={{ fontSize: '0.6875rem', color: '#9ca3af', flexShrink: 0 }}>
-								{formatSize(file.fileSize)}
-							</Typography>
-							<IconButton
-								size='small'
-								onClick={() => handleOpen(file)}
-								sx={{ p: 0.25, color: '#6b7280' }}
-							>
-								<ExternalLink sx={{ fontSize: 14 }} />
-							</IconButton>
-							<IconButton
-								size='small'
-								onClick={() => handleDownload(file)}
-								sx={{ p: 0.25, color: '#6b7280' }}
-							>
-								<Download sx={{ fontSize: 14 }} />
-							</IconButton>
-						</Box>
-					)
-				})}
-			</Stack>
-			<PreviewDialog file={previewFile} onClose={() => setPreviewFile(null)} />
-		</>
-	)
-}
-
-// Окно, в течение которого автор может удалить свой комментарий.
-const DELETE_COMMENT_WINDOW_MS = 15 * 60 * 1000
-
-const CommentEntry = ({
-	comment,
-	currentUserId,
-	onDelete,
-}: {
-	comment: IComment
-	currentUserId: string
-	onDelete: () => void
-}) => {
-	const displayName = getDisplayName(comment.user)
-	const initials = getInitials(comment.user)
-	const color = getAvatarColor(comment.userId ?? 'deleted')
-	const isAuthor = comment.userId !== null && comment.userId === currentUserId
-	const createdAt = new Date(comment.createdAt).getTime()
-	// Реактивное окно удаления: по его истечении кнопка дизейблится, а не остаётся
-	// замороженной на значении из момента монтирования.
-	const [deleteWindowExpired, setDeleteWindowExpired] = useState(
-		() => Date.now() - createdAt >= DELETE_COMMENT_WINDOW_MS,
-	)
-	useEffect(() => {
-		if (deleteWindowExpired) return undefined
-		const remaining = createdAt + DELETE_COMMENT_WINDOW_MS - Date.now()
-		if (remaining <= 0) return undefined
-		const timer = setTimeout(() => setDeleteWindowExpired(true), remaining)
-		return () => clearTimeout(timer)
-	}, [createdAt, deleteWindowExpired])
-	const withinDeleteWindow = !deleteWindowExpired
-
-	return (
-		<Box sx={{ display: 'flex', gap: 1.5 }}>
-			<Box
-				sx={{
-					width: 36,
-					height: 36,
-					borderRadius: '50%',
-					flexShrink: 0,
-					display: 'flex',
-					alignItems: 'center',
-					justifyContent: 'center',
-					fontSize: '0.75rem',
-					fontWeight: 700,
-					color: 'white',
-					bgcolor: color,
-				}}
-			>
-				{initials}
-			</Box>
-
-			<Box sx={{ flex: 1, minWidth: 0 }}>
-				<Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
-					<Typography sx={{ fontSize: '0.8125rem', fontWeight: 600, color: '#1f2937' }}>
-						{displayName}
-					</Typography>
-					{comment.isInternal && (
-						<Tooltip title='Внутренний комментарий — виден исполнителю и менеджерам группы'>
-							<Box
-								sx={{
-									display: 'inline-flex',
-									alignItems: 'center',
-									gap: 0.25,
-									px: 0.75,
-									py: 0.125,
-									borderRadius: '4px',
-									fontSize: '0.6875rem',
-									fontWeight: 500,
-									bgcolor: '#fef3c7',
-									color: '#92400e',
-								}}
-							>
-								<EyeOff sx={{ fontSize: 12 }} />
-								Внутренний
-							</Box>
-						</Tooltip>
-					)}
-					{comment.type === 'status_change' && (
-						<Box
-							sx={{
-								display: 'inline-flex',
-								alignItems: 'center',
-								gap: 0.25,
-								px: 0.75,
-								py: 0.125,
-								borderRadius: '4px',
-								fontSize: '0.6875rem',
-								fontWeight: 500,
-								bgcolor: '#e0f2fe',
-								color: '#0369a1',
-							}}
-						>
-							<ArrowRightLeft sx={{ fontSize: 12 }} />
-							Смена статуса
-						</Box>
-					)}
-					<Typography sx={{ fontSize: '0.75rem', color: '#9ca3af', ml: 'auto', flexShrink: 0 }}>
-						{new Date(comment.createdAt).toLocaleDateString('ru-RU', {
-							day: 'numeric',
-							month: 'short',
-							hour: '2-digit',
-							minute: '2-digit',
-						})}
-					</Typography>
-					{isAuthor && (
-						<Tooltip
-							title={
-								withinDeleteWindow
-									? 'Удалить комментарий'
-									: 'Удаление доступно в течение 15 минут после создания'
-							}
-						>
-							<span>
-								<IconButton
-									size='small'
-									onClick={onDelete}
-									disabled={!withinDeleteWindow}
-									sx={{
-										ml: 0.5,
-										color: '#9ca3af',
-										'&:hover': { color: '#ef4444' },
-										'&.Mui-disabled': { color: '#d1d5db' },
-									}}
-								>
-									<Trash2 sx={{ fontSize: 14 }} />
-								</IconButton>
-							</span>
-						</Tooltip>
-					)}
-				</Box>
-				<Box
-					sx={{
-						bgcolor: comment.isInternal ? '#fffbeb' : '#f9fafb',
-						borderRadius: '8px',
-						p: 1.5,
-						borderLeft: `3px solid ${color}`,
-					}}
-				>
-					<Typography sx={{ fontSize: '0.8125rem', color: '#374151', whiteSpace: 'pre-wrap' }}>
-						{comment.text}
-					</Typography>
-					{comment.attachments && comment.attachments.length > 0 && (
-						<CommentAttachments attachments={comment.attachments} />
-					)}
-				</Box>
-			</Box>
-		</Box>
-	)
-}
-
-export const Comments = ({ taskId, isInactive = false, canWork = true }: Props) => {
+export const Comments = ({ taskId, isInactive, canWork }: Props) => {
 	const [activeTab, setActiveTab] = useState<TabKey>('comments')
 	const [text, setText] = useState('')
 	const [isInternal, setIsInternal] = useState(isInactive)

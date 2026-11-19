@@ -360,6 +360,22 @@ func (s *TicketAccessService) IsCustomer(ctx context.Context, ticket *models.Tic
 	return len(member) == 0, nil
 }
 
+// canAttachByAttributes — чистая формула права приложить файл к уже загруженной заявке.
+// hasWork — результат «рабочего» доступа (CheckWorkAccess без проверки замороженности;
+// эта проверка делается здесь). Вынесена, чтобы AccessFlags и ручка вложений считали
+// одно и то же и не перезагружали тикет.
+func canAttachByAttributes(ticket *models.Ticket, userID uuid.UUID, hasWork bool) bool {
+	if isTicketInactive(ticket.Status) {
+		return false
+	}
+	if hasWork {
+		return true
+	}
+	isCreator := ticket.Creator.ID == userID
+	isOwner := ticket.Owner != nil && ticket.Owner.ID == userID && !ticket.OwnerMuted
+	return isCreator || isOwner || hasTicketNotifier(ticket, userID)
+}
+
 // CanAttachToTicket проверяет право прикрепить файл к заявке. Кроме «рабочего»
 // доступа (CheckWorkAccess) вложение разрешено заказчику — автору-без-групп,
 // владельцу (если заявка не скрыта от него, OwnerMuted) или наблюдателю из списка
@@ -367,26 +383,16 @@ func (s *TicketAccessService) IsCustomer(ctx context.Context, ticket *models.Tic
 // заинтересованного участника, поэтому здесь он не отсекается, в отличие от подзадач
 // и внутренних комментариев. Замороженные заявки (resolved/closed/cancelled) закрыты и для них.
 func (s *TicketAccessService) CanAttachToTicket(ctx context.Context, dto *models.AccessCheckDTO) error {
-	workErr := s.CheckWorkAccess(ctx, dto)
-	if workErr == nil {
-		return nil
-	}
-
 	ticket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: dto.TicketID})
 	if err != nil {
 		return fmt.Errorf("failed to load ticket: %w", err)
 	}
-	if isTicketInactive(ticket.Status) {
-		return models.ErrTicketFrozen
-	}
 
-	isCreator := ticket.Creator.ID == dto.UserID
-	isOwner := ticket.Owner != nil && ticket.Owner.ID == dto.UserID && !ticket.OwnerMuted
-	isNotifier := hasTicketNotifier(ticket, dto.UserID)
-	if !isCreator && !isOwner && !isNotifier {
-		return workErr
+	workErr := s.checkWorkOnTicket(ctx, ticket, dto.UserID)
+	if workErr == nil || canAttachByAttributes(ticket, dto.UserID, false) {
+		return nil
 	}
-	return nil
+	return workErr
 }
 
 // CheckAccess — точка входа проверки доступа по DTO. Загружает тикет и делегирует
@@ -416,15 +422,19 @@ func (s *TicketAccessService) CheckWorkAccess(ctx context.Context, dto *models.A
 	if err != nil {
 		return fmt.Errorf("failed to load ticket: %w", err)
 	}
+	return s.checkWorkOnTicket(ctx, ticket, dto.UserID)
+}
 
+// checkWorkOnTicket — «рабочий» доступ по уже загруженному тикету. query не делает:
+// используется и ручками (после одной загрузки), и при сборке AccessFlags.
+func (s *TicketAccessService) checkWorkOnTicket(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) error {
 	if isTicketInactive(ticket.Status) {
 		return models.ErrTicketFrozen
 	}
-
-	if err := s.CheckAccessOnTicket(ctx, ticket, dto.UserID, string(access.Write)); err == nil {
+	if s.CheckAccessOnTicket(ctx, ticket, userID, string(access.Write)) == nil {
 		return nil
 	}
-	if ticket.Assignee != nil && ticket.Assignee.ID == dto.UserID {
+	if ticket.Assignee != nil && ticket.Assignee.ID == userID {
 		return nil
 	}
 	return models.ErrPermissionDenied
@@ -519,6 +529,22 @@ func (s *TicketAccessService) CanAdministerTickets(ctx context.Context, userID u
 	return s.IsRealmSupervisor(ctx, userID, ticketRealm(ticket))
 }
 
+// canCreateSubtaskByAttributes — чистая формула права создавать подзадачи по уже
+// загруженному тикету. isCustomer/canManage передаются вызывающим, чтобы AccessFlags
+// не делал лишние запросы: оба значения он уже вычисляет для других флагов.
+func canCreateSubtaskByAttributes(ticket *models.Ticket, userID uuid.UUID, isCustomer, canManage bool) bool {
+	if isTicketInactive(ticket.Status) {
+		return false
+	}
+	if ticket.Creator.ID == userID && !isCustomer {
+		return true
+	}
+	if ticket.Assignee != nil && ticket.Assignee.ID == userID {
+		return true
+	}
+	return canManage
+}
+
 // CanCreateSubtask — создание подзадач доступно только пользователям с «атрибутной»
 // ролью в тикете: создатель, исполнитель либо «управление» тикетом (CanManage —
 // менеджер группы / realm supervisor). Realm-wide политика ticket:write (Casbin) права
@@ -530,20 +556,18 @@ func (s *TicketAccessService) CanCreateSubtask(ctx context.Context, userID uuid.
 	if err != nil {
 		return false, fmt.Errorf("failed to load ticket: %w", err)
 	}
-
 	if isTicketInactive(ticket.Status) {
 		return false, nil
 	}
+
+	isCustomer := false
 	if ticket.Creator.ID == userID {
-		customer, err := s.IsCustomer(ctx, ticket, userID)
+		isCustomer, err = s.IsCustomer(ctx, ticket, userID)
 		if err != nil {
 			return false, err
 		}
-		if !customer {
-			return true, nil
-		}
 	}
-	if ticket.Assignee != nil && ticket.Assignee.ID == userID {
+	if canCreateSubtaskByAttributes(ticket, userID, isCustomer, false) {
 		return true, nil
 	}
 	return s.CanManage(ctx, userID, ticket)

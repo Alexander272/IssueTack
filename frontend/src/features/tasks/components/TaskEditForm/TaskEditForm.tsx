@@ -1,17 +1,19 @@
 import { Box, Button, Stack, Typography } from '@mui/material'
 import { FormProvider, useForm } from 'react-hook-form'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'react-toastify'
 
 import type { ITask, ITaskDTO } from '../../types/task'
 import type { FormValues } from './types'
 import { useAppSelector } from '@/hooks/redux'
-import { getCurrentCapabilities, getHasNoGroups, getIsManager } from '@/features/user/userSlice'
+import { getHasNoGroups } from '@/features/user/userSlice'
 import { useUpdateTaskMutation } from '../../tasksApiSlice'
 import { AdvancedSettingsSection } from '../TaskCreateForm/AdvancedSettingsSection'
 import { CategoryAndSiteSection } from '../TaskCreateForm/CategoryAndSiteSection'
 import { CustomerAndDateSection } from '../TaskCreateForm/CustomerAndDateSection'
 import { DescriptionSection } from '../TaskCreateForm/DescriptionSection'
+import { TaskFormProvider } from '../TaskCreateForm/TaskFormProvider'
+import type { TaskFormSettings } from '../TaskCreateForm/taskFormMode'
 
 type Props = {
 	task: ITask
@@ -22,13 +24,16 @@ type Props = {
 }
 
 export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChange }: Props) => {
-	const isManager = useAppSelector(getIsManager)
 	const hasNoGroups = useAppSelector(getHasNoGroups)
-	const capabilities = useAppSelector(getCurrentCapabilities)
 	const canEditNotifiers = !hasNoGroups
-	const canEditOwnerAndDueDate = !isManager && canEditNotifiers && task.status === 'open'
 
-	const [updateTask, { isLoading }] = useUpdateTaskMutation()
+	// Управление заявкой: менеджер её группы или начальник области. Тот же флаг
+	// считает бэкенд (AccessFlags.CanManage), поэтому начальник области без
+	// управляемых групп тоже получает расширенные настройки.
+	const canManage = Boolean(task.access?.canManage)
+	// Заказчика и срок безгрупповой пользователь не видит; менять их можно, только
+	// пока заявка новая (у владельца дальше права на поля уже нет).
+	const canEditOwnerAndDueDate = !canManage && canEditNotifiers && task.status === 'open'
 
 	// Заголовок/описание может править только создатель/менеджер группы/владелец
 	// (canEditFields). Начальник области (task.access.isAdmin) правит через форму
@@ -36,8 +41,25 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 	// но не содержимое (см. режим adminOnlyEdit в TicketService.Update).
 	const canEditContent = Boolean(task.access?.canEditFields)
 
-	// Формула прав доступа для расширенных настроек: менеджер группы или админ реалма
-	const isAdmin = Boolean(task.access?.isManager) || capabilities.isRealmAdmin
+	const formSettings = useMemo<TaskFormSettings>(
+		() => ({
+			mode: 'edit',
+			creatorId: task.creator.id,
+			canEditContent,
+			canEditDueDate: canManage,
+			canPickAssignee: true,
+			canEditPriority: canManage,
+			canEditGroup: canManage,
+			canEditOwnerMuted: canManage,
+			canEditNotifiers,
+			showOwner: canEditOwnerAndDueDate,
+			showDueDate: canEditOwnerAndDueDate,
+			showNotifierFieldLabel: canEditOwnerAndDueDate,
+		}),
+		[task.creator.id, canEditContent, canManage, canEditNotifiers, canEditOwnerAndDueDate],
+	)
+
+	const [updateTask, { isLoading }] = useUpdateTaskMutation()
 
 	useEffect(() => {
 		onSavingChange?.(isLoading)
@@ -111,61 +133,57 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 				</Box>
 			)}
 
-			<FormProvider {...methods}>
-				<Box component='form' onSubmit={onSubmit}>
-					<Stack sx={{ gap: 1 }}>
-						<CategoryAndSiteSection number={1} />
-						<DescriptionSection readOnly={!canEditContent} />
+			<TaskFormProvider settings={formSettings}>
+				<FormProvider {...methods}>
+					<Box component='form' onSubmit={onSubmit}>
+						<Stack sx={{ gap: 1 }}>
+							<CategoryAndSiteSection number={1} />
+							<DescriptionSection readOnly={!canEditContent} />
 
-						{isManager && (
-							<AdvancedSettingsSection
-								number={3}
-								autoAssign={false}
-								canEditDueDate={isAdmin}
-								canEditGroup={isAdmin}
-								canEditPriority={isAdmin}
-								canEditOwnerMuted={isAdmin}
-								creatorId={task.creator.id}
-							/>
-						)}
+							{canManage && <AdvancedSettingsSection number={3} />}
 
-						{!isManager && canEditNotifiers && (
-							<CustomerAndDateSection
-								number={3}
-								creatorId={task.creator.id}
-								title={canEditOwnerAndDueDate ? 'Заказчик, сроки и уведомления' : 'Уведомлять'}
-								subtitle={
-									canEditOwnerAndDueDate
-										? 'Пока задача новая, можно изменить заказчика, срок и список уведомляемых'
-										: ''
-								}
-								showOwner={canEditOwnerAndDueDate}
-								showDueDate={canEditOwnerAndDueDate}
-								showNotifierFieldLabel={canEditOwnerAndDueDate}
-							/>
-						)}
+							{!canManage && canEditNotifiers && (
+								<CustomerAndDateSection
+									number={3}
+									title={canEditOwnerAndDueDate ? 'Заказчик, сроки и уведомления' : 'Уведомлять'}
+									subtitle={
+										canEditOwnerAndDueDate
+											? 'Пока задача новая, можно изменить заказчика, срок и список уведомляемых'
+											: ''
+									}
+								/>
+							)}
 
-						<Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, pt: 1, pb: !embedded ? 2 : 0 }}>
-							<Button
-								type='button'
-								variant='outlined'
-								onClick={embedded ? onCancel : () => reset()}
-								sx={{ textTransform: 'none', color: 'text.primary', borderColor: '#ddd' }}
+							<Box
+								sx={{
+									display: 'flex',
+									justifyContent: 'flex-end',
+									gap: 1,
+									pt: 1,
+									pb: !embedded ? 2 : 0,
+								}}
 							>
-								{embedded ? 'Отмена' : 'Сбросить'}
-							</Button>
-							<Button
-								type='submit'
-								variant='contained'
-								disabled={isLoading || !formState.isValid || !formState.isDirty}
-								sx={{ textTransform: 'none', px: 3 }}
-							>
-								{isLoading ? 'Сохранение...' : 'Сохранить'}
-							</Button>
-						</Box>
-					</Stack>
-				</Box>
-			</FormProvider>
+								<Button
+									type='button'
+									variant='outlined'
+									onClick={embedded ? onCancel : () => reset()}
+									sx={{ textTransform: 'none', color: 'text.primary', borderColor: '#ddd' }}
+								>
+									{embedded ? 'Отмена' : 'Сбросить'}
+								</Button>
+								<Button
+									type='submit'
+									variant='contained'
+									disabled={isLoading || !formState.isValid || !formState.isDirty}
+									sx={{ textTransform: 'none', px: 3 }}
+								>
+									{isLoading ? 'Сохранение...' : 'Сохранить'}
+								</Button>
+							</Box>
+						</Stack>
+					</Box>
+				</FormProvider>
+			</TaskFormProvider>
 		</Box>
 	)
 }

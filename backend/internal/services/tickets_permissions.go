@@ -279,12 +279,13 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 		return nil, err
 	}
 	nonWorker := ownerReadOnly || notifierReadOnly
+	isCustomer := false
 	if !nonWorker && ticket.Creator.ID == userID {
-		customer, err := s.access.IsCustomer(ctx, ticket, userID)
+		isCustomer, err = s.access.IsCustomer(ctx, ticket, userID)
 		if err != nil {
 			return nil, err
 		}
-		nonWorker = customer
+		nonWorker = isCustomer
 	}
 	flags.CanTake = !nonWorker &&
 		!isTicketInactive(ticket.Status) &&
@@ -341,6 +342,13 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 	// CanDecideDueDate — утверждать/отклонять запросы может менеджер группы или
 	// начальник области (realm supervisor) — те же, кому backend разрешает править срок.
 	flags.CanDecideDueDate = isManager || isAdmin
+
+	// «Тонкие» права для контролов детали/подзадач/вложений. Все три формулы уже
+	// использованы выше (isCustomer/CanWork/isAdmin/isManager), поэтому новых
+	// запросов и методов TicketAccessChecker здесь нет.
+	flags.CanManage = isAdmin || isManager
+	flags.CanCreateSubtask = canCreateSubtaskByAttributes(ticket, userID, isCustomer, flags.CanManage)
+	flags.CanAttachToTicket = canAttachByAttributes(ticket, userID, flags.CanWork)
 
 	return flags, nil
 }

@@ -7,6 +7,7 @@ import {
 	ClickAwayListener,
 	InputAdornment,
 	Popper,
+	type PopperProps,
 	Stack,
 	styled,
 	type SxProps,
@@ -34,8 +35,6 @@ type Props = {
 	onChange: (values: Option[]) => void
 	isLoading?: boolean
 	onFocus?: () => void
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	filterOptions?: (options: any[], { inputValue }: any) => any[]
 	sx?: SxProps<Theme>
 }
 
@@ -49,7 +48,6 @@ export const SelectWithFilter: FC<Props> = ({
 	disabled,
 	isLoading,
 	onFocus,
-	filterOptions,
 	sx,
 }) => {
 	const theme = useTheme()
@@ -267,7 +265,6 @@ export const SelectWithFilter: FC<Props> = ({
 								setInputValue(newInputValue)
 							}}
 							onFocus={onFocus}
-							filterOptions={filterOptions}
 							disableCloseOnSelect
 							renderValue={() => null}
 							loading={isLoading}
@@ -309,7 +306,7 @@ export const SelectWithFilter: FC<Props> = ({
 }
 
 interface PopperComponentProps {
-	anchorEl?: unknown
+	anchorEl?: PopperProps['anchorEl']
 	disablePortal?: boolean
 	open: boolean
 }
@@ -344,8 +341,5 @@ const StyledAutocompletePopper = styled('div')(({ theme }) => ({
 			padding: 0,
 			margin: 0,
 		},
-	},
-	[`&.${autocompleteClasses.popperDisablePortal}`]: {
-		position: 'relative',
 	},
 }))
