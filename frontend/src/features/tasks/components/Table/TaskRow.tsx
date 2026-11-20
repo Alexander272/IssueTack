@@ -61,6 +61,9 @@ export const TaskRow = ({ task, view, onClick, sx }: Props) => {
 
 	const isTerminal = !ACTIVE_STATUSES.includes(task.status)
 
+	// Создатель не исполнитель — заявка от «чужого» клиента: название выделяем primary цветом.
+	const creatorIsNotAssignee = task.assignee != null && task.assignee.id !== task.creator.id
+
 	const slaInfo = useMemo(() => {
 		if (!view.isArchive || !isTerminal) return null
 		if (task.status === 'cancelled') {
@@ -114,7 +117,7 @@ export const TaskRow = ({ task, view, onClick, sx }: Props) => {
 						<Typography
 							sx={{
 								fontWeight: 600,
-								color: '#111827',
+								color: creatorIsNotAssignee ? '#3300ff' : '#111827',
 								fontSize: '0.875rem',
 								overflow: 'hidden',
 								textOverflow: 'ellipsis',
