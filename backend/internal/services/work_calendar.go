@@ -14,6 +14,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/config"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/repository"
+	"github.com/Alexander272/IssueTrack/backend/pkg/error_bot"
 	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 )
 
@@ -311,11 +312,13 @@ func (c *workCalendar) fetchYear(ctx context.Context, source string, year int) (
 
 	resp, err := c.client.Do(req)
 	if err != nil {
+		error_bot.Send(nil, err.Error(), req)
 		return nil, fmt.Errorf("fetch calendar %d: %w", year, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		error_bot.Send(nil, fmt.Sprintf("Not expected status code: %d", resp.StatusCode), req)
 		return nil, fmt.Errorf("fetch calendar %d: status %d", year, resp.StatusCode)
 	}
 
@@ -391,12 +394,6 @@ func parseXMLDay(d xmlDay, year int, sourceDate *time.Time) (models.CalendarDay,
 		HolidayID:  holidayID,
 		SourceDate: sourceDate,
 	}, true
-}
-
-// calendarYearsForRange возвращает годы, покрывающие текущий и следующий (и при необходимости прошлый).
-func calendarYearsForRange(loc *time.Location) []int {
-	now := time.Now().In(loc)
-	return []int{now.Year(), now.Year() + 1}
 }
 
 // addWorkingDaysMonFri возвращает конец N-го рабочего дня после base по правилу Mon–Fri

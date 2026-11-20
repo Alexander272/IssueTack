@@ -3,7 +3,13 @@ import { TableRow, TableCell, Typography, Box, Tooltip, type SxProps, type Theme
 import dayjs from 'dayjs'
 
 import type { ITask } from '../../types/task'
-import { ACTIVE_STATUSES, DUE_DATE_COLORS, DUE_DATE_ICONS, DUE_DATE_DEFAULT_ICON, SLA_TONES } from '../../constants/taskMaps'
+import {
+	ACTIVE_STATUSES,
+	DUE_DATE_COLORS,
+	DUE_DATE_ICONS,
+	DUE_DATE_DEFAULT_ICON,
+	SLA_TONES,
+} from '../../constants/taskMaps'
 import { getDueDateTone, getShortDate, getSmartDate } from '@/utils/date'
 import { TaskStatusBadge } from '../TaskStatusBadge'
 import { TaskPriorityBadge } from '../TaskPriorityBadge'
@@ -21,7 +27,7 @@ function getSlaTooltipTitle(task: ITask, slaInfo: SlaInfo | null): string {
 		return 'Срок не был задан'
 	}
 
-	const base = `Срок: ${getShortDate(task.dueDate)} · Закрыта: ${getShortDate(task.closedAt)}`
+	const base = `Срок: ${getShortDate(task.dueDate)} · Решена: ${getShortDate(task.resolvedAt)}`
 
 	switch (slaInfo?.tone) {
 		case 'onTime':
@@ -54,21 +60,32 @@ export const TaskRow = ({ task, view, onClick, sx }: Props) => {
 		: { done: 0, total: 0 }
 
 	const isTerminal = !ACTIVE_STATUSES.includes(task.status)
+
 	const slaInfo = useMemo(() => {
 		if (!view.isArchive || !isTerminal) return null
-		if (task.status === 'cancelled') return { tone: 'cancelled' as const }
-		if (!task.dueDate || !task.closedAt) return { tone: 'neutral' as const }
+		if (task.status === 'cancelled') {
+			return { tone: 'cancelled' as const }
+		}
 
-		const closed = dayjs(task.closedAt)
+		// На случай, если заявка закрылась без этапа решения, можно оставить фоллбэк на closedAt
+		const targetDate = task.resolvedAt ?? task.closedAt
+		if (!task.dueDate || !targetDate) {
+			return { tone: 'neutral' as const }
+		}
+		const resolved = dayjs(targetDate)
 		const due = dayjs(task.dueDate)
-		const diffMs = closed.valueOf() - due.valueOf()
-		const diffDays = closed.startOf('day').diff(due.startOf('day'), 'day')
 
+		if (!resolved.isValid() || !due.isValid()) {
+			return { tone: 'neutral' as const }
+		}
+		const diffMs = resolved.valueOf() - due.valueOf()
 		if (diffMs <= 0) {
 			return { tone: 'onTime' as const }
 		}
+		const diffDays = resolved.startOf('day').diff(due.startOf('day'), 'day')
 		return { tone: 'overdue' as const, daysLate: diffDays }
-	}, [view.isArchive, isTerminal, task.status, task.dueDate, task.closedAt])
+	}, [view.isArchive, isTerminal, task.status, task.dueDate, task.resolvedAt, task.closedAt])
+
 	const sla = SLA_TONES[slaInfo?.tone ?? 'neutral']
 	const SlaIcon = sla.icon
 
@@ -86,7 +103,9 @@ export const TaskRow = ({ task, view, onClick, sx }: Props) => {
 		>
 			{show('ticketNumber') && (
 				<TableCell>
-					<Typography sx={{ fontWeight: 600, color: '#111827', fontSize: '0.875rem' }}>{displayId}</Typography>
+					<Typography sx={{ fontWeight: 600, color: '#111827', fontSize: '0.875rem' }}>
+						{displayId}
+					</Typography>
 				</TableCell>
 			)}
 			{show('title') && (

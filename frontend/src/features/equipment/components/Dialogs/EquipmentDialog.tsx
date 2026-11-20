@@ -385,9 +385,7 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 												<Autocomplete
 													freeSolo
 													options={shops}
-													getOptionLabel={s => s.name}
-													getOptionKey={s => s.id}
-													value={field.value || null}
+													value={field.value || ''}
 													onChange={(_e, value) => field.onChange(value ?? '')}
 													// Стрелка-маркер списка: у freeSolo можно и вписать
 													// руками, поэтому индикатор не MUI-шный по умолчанию,
