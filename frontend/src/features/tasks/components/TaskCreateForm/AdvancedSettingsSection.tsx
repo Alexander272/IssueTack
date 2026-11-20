@@ -2,20 +2,23 @@ import { useEffect, useMemo, useRef } from 'react'
 import { Autocomplete, Box, Checkbox, FormControlLabel, Stack, TextField, Tooltip, Typography } from '@mui/material'
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
 import { Controller, useFormContext, useWatch } from 'react-hook-form'
+import { CircleQuestionMarkIcon } from 'lucide-mui'
 import dayjs from 'dayjs'
+
 import type { Priority } from '../../types/task'
+import type { FormValues } from './types'
 import { PRIORITY_MAP } from '../../constants/taskMaps'
+import { fieldLabelSx } from './styles'
+import { autoDueDateISO } from '../../utils/workDays'
 import { useGetAllCategoriesQuery } from '@/features/categories/categoriesApiSlice'
 import { useGetAllGroupsQuery } from '@/features/groups/groupsApiSlice'
 import { useGetRealmUsersQuery } from '@/features/user/usersApiSlice'
+import { useGetProductionCalendarQuery } from '@/features/calendar/calendarApiSlice'
+import { DateTextField } from '@/components/DatePicker/DatePicker'
 import { CustomerSelector } from './CustomerSelector'
 import { NotifierSelector } from './NotifierSelector'
 import { SectionCard } from './SectionCard'
 import { PriorityCard } from './PriorityCard'
-import { fieldLabelSx } from './styles'
-import type { FormValues } from './types'
-import { DateTextField } from '@/components/DatePicker/DatePicker'
-import { CircleQuestionMarkIcon } from 'lucide-mui'
 import { useTaskFormSettings } from './taskFormMode'
 
 type Props = {
@@ -24,11 +27,7 @@ type Props = {
 	subtitle?: string
 }
 
-export const AdvancedSettingsSection = ({
-	number = 4,
-	title = 'Расширенные настройки',
-	subtitle = '',
-}: Props) => {
+export const AdvancedSettingsSection = ({ number = 4, title = 'Расширенные настройки', subtitle = '' }: Props) => {
 	const {
 		mode,
 		creatorId,
@@ -49,12 +48,14 @@ export const AdvancedSettingsSection = ({
 	const { data: ownersData } = useGetRealmUsersQuery('all')
 	const { data: executorsData } = useGetRealmUsersQuery('executors')
 	const { data: allUsersData } = useGetRealmUsersQuery('all')
+	const { data: calendarData } = useGetProductionCalendarQuery()
 
 	const categories = useMemo(() => categoriesData?.data ?? [], [categoriesData])
 	const groups = useMemo(() => groupsData?.data ?? [], [groupsData])
 	const owners = useMemo(() => ownersData?.data ?? [], [ownersData])
 	const executors = useMemo(() => executorsData?.data ?? [], [executorsData])
 	const allUsers = useMemo(() => allUsersData?.data ?? [], [allUsersData])
+	const calendar = calendarData?.data
 
 	const selectedCategoryId = useWatch({ control, name: 'categoryId' })
 	const selectedGroupId = useWatch({ control, name: 'groupId' })
@@ -88,14 +89,12 @@ export const AdvancedSettingsSection = ({
 		}
 		// Автосрок из категории: форма показывает тот же дефолт, который бэкенд
 		// применил бы сам, пока dueDate пуст (только на создании — autoAssign).
-		// Срок ставится на конец выбранного дня, как и при ручном выборе даты.
+		// Срок считается в рабочих днях (с учётом выходных и праздников) и ставится
+		// на конец целевого рабочего дня в календарной таймзоне.
 		// Категория без автосрока сбрасывает поле: иначе в форме остался бы срок
 		// предыдущей категории и уехал бы на заявку, хотя бэкенд его не применял бы.
-		setValue(
-			'dueDate',
-			cat?.defaultDueDays != null ? dayjs().add(cat.defaultDueDays, 'day').endOf('day').toISOString() : null,
-		)
-	}, [selectedCategoryId, categories, autoAssign, setValue])
+		setValue('dueDate', autoDueDateISO(cat?.defaultDueDays, calendar))
+	}, [selectedCategoryId, categories, autoAssign, setValue, calendar])
 
 	useEffect(() => {
 		if (!autoAssign) return

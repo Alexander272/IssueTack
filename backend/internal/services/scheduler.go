@@ -29,6 +29,9 @@ type SchedulerService struct {
 	equipmentReturn *equipmentReturnReminder
 	// equipmentPeriodicTasks — сервис периодических задач оборудования.
 	equipmentPeriodicTasks *EquipmentPeriodicTaskService
+	// calendar — производственный календарь: ежемесячная синхронизация праздников.
+	calendar     WorkCalendar
+	calendarConf config.CalendarConfig
 }
 
 // SchedulerDeps содержит зависимости для создания SchedulerService.
@@ -42,6 +45,8 @@ type SchedulerDeps struct {
 	Users                  Users
 	MMSender               mattermostSender
 	EquipmentPeriodicTasks *EquipmentPeriodicTaskService
+	Calendar               WorkCalendar
+	CalendarConf           config.CalendarConfig
 }
 
 // Scheduler описывает сервис планировщика фоновых заданий.
@@ -71,6 +76,8 @@ func NewSchedulerService(deps *SchedulerDeps) *SchedulerService {
 			Sender:    deps.MMSender,
 		}),
 		equipmentPeriodicTasks: deps.EquipmentPeriodicTasks,
+		calendar:               deps.Calendar,
+		calendarConf:           deps.CalendarConf,
 	}
 }
 
@@ -188,6 +195,18 @@ func (s *SchedulerService) Start(conf *config.TicketConfig) error {
 		}
 		registered = true
 		logger.Info("equipment-periodic-tasks scheduler started, schedule: " + conf.EquipmentPeriodicTasksSchedule)
+	}
+
+	if s.calendar != nil && s.calendarConf.Enabled && s.calendarConf.SyncSchedule != "" {
+		_, err := s.cron.NewJob(
+			gocron.CronJob(s.calendarConf.SyncSchedule, false),
+			gocron.NewTask(s.calendarSyncJob),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create production-calendar-sync job. error: %w", err)
+		}
+		registered = true
+		logger.Info("production-calendar-sync scheduler started, schedule: " + s.calendarConf.SyncSchedule)
 	}
 
 	if registered {
@@ -370,5 +389,17 @@ func (s *SchedulerService) equipmentPeriodicTasksJob(ctx context.Context) {
 	if err := s.equipmentPeriodicTasks.ProcessPendingTasks(ctx); err != nil {
 		logger.Error("failed to process equipment periodic tasks:", logger.ErrAttr(err))
 		return
+	}
+}
+
+// calendarSyncJob — фоновая задача cron: синхронизирует производственный календарь
+// (текущий и следующий год) из внешнего источника.
+func (s *SchedulerService) calendarSyncJob(ctx context.Context) {
+	if s.calendar == nil {
+		return
+	}
+	now := time.Now()
+	if err := s.calendar.Sync(ctx, now.Year(), now.Year()+1); err != nil {
+		logger.Error("failed to sync production calendar:", logger.ErrAttr(err))
 	}
 }

@@ -29,6 +29,7 @@ type TicketService struct {
 	sites         Sites
 	dueRequests   repository.DueDateRequests
 	favorites     FavoriteCleaner
+	calendar      WorkCalendar
 }
 
 // NewTicketService создаёт новый сервис тикетов на основе переданных зависимостей.
@@ -48,6 +49,7 @@ func NewTicketService(deps *TicketDeps) *TicketService {
 		sites:         deps.Sites,
 		dueRequests:   deps.DueDateRequests,
 		favorites:     deps.Favorites,
+		calendar:      deps.Calendar,
 	}
 }
 
@@ -74,6 +76,7 @@ type TicketDeps struct {
 	Sites           Sites
 	DueDateRequests repository.DueDateRequests
 	Favorites       FavoriteCleaner
+	Calendar        WorkCalendar
 }
 
 // Tickets — интерфейс сервиса тикетов: описывает чтение, создание,
@@ -280,6 +283,15 @@ func (s *TicketService) GetRealmIDByTicketID(ctx context.Context, id uuid.UUID) 
 		return uuid.Nil, fmt.Errorf("failed to get ticket realm: %w", err)
 	}
 	return realmID, nil
+}
+
+// addWorkingDays возвращает конец N-го рабочего дня после base. При отсутствии
+// внедрённого календаря используется фолбэк Mon–Fri в локальной таймзоне сервера.
+func (s *TicketService) addWorkingDays(base time.Time, days int) time.Time {
+	if s.calendar != nil {
+		return s.calendar.AddWorkingDays(base, days)
+	}
+	return addWorkingDaysMonFri(base, days, time.Local)
 }
 
 // GetByID возвращает тикет по идентификатору с проверкой права чтения,

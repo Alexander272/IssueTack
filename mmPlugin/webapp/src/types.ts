@@ -50,6 +50,17 @@ export interface PluginSite {
     updatedAt: string;
 }
 
+export interface PluginCalendarException {
+    date: string;
+    isWorking: boolean;
+}
+
+export interface PluginCalendar {
+    timezone: string;
+    years?: number[];
+    exceptions: PluginCalendarException[];
+}
+
 export interface PluginGroupShort {
     id: string;
     name: string;
@@ -95,6 +106,9 @@ export interface PluginContextResult {
     groups: PluginGroupShort[];
     executors: PluginUserShort[];
     customers: PluginUserShort[];
+    // Производственный календарь (таймзона + исключения) для расчёта автосрока
+    // по рабочим дням так же, как на бэкенде.
+    calendar?: PluginCalendar;
 }
 
 export interface PluginTicketShort {

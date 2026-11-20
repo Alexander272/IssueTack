@@ -46,6 +46,7 @@ type modifierValuesInput struct {
 	Category    *models.Category
 	MayOverride bool
 	Base        time.Time
+	Calendar    WorkCalendar
 }
 
 func modifierID(t *models.Ticket) *uuid.UUID {
@@ -103,7 +104,8 @@ func (s *TicketService) prepareCreateModifier(ctx context.Context, in *createMod
 	return applyModifierValues(&modifierValuesInput{
 		DTO: dto, Modifier: modifier, Category: category,
 		MayOverride: in.Supervisor || in.IsExecutor,
-		Base:        time.Now().UTC(),
+		Base:        time.Now(),
+		Calendar:    s.calendar,
 	})
 }
 
@@ -185,12 +187,13 @@ func (s *TicketService) prepareUpdateModifier(ctx context.Context, in *updateMod
 	// «омолаживалась»: N дней считались бы от сегодня, а не от создания.
 	base := old.CreatedAt
 	if base.IsZero() {
-		base = time.Now().UTC()
+		base = time.Now()
 	}
 	if err := applyModifierValues(&modifierValuesInput{
 		DTO: dto, Modifier: modifier, Category: category,
 		MayOverride: result.MayOverride,
 		Base:        base,
+		Calendar:    s.calendar,
 	}); err != nil {
 		return result, err
 	}
@@ -225,7 +228,12 @@ func applyModifierValues(in *modifierValuesInput) error {
 			days = *in.Category.DefaultDueDays
 		}
 		if days > 0 {
-			dd := in.Base.UTC().AddDate(0, 0, days)
+			var dd time.Time
+			if in.Calendar != nil {
+				dd = in.Calendar.AddWorkingDays(in.Base, days)
+			} else {
+				dd = addWorkingDaysMonFri(in.Base, days, time.Local)
+			}
 			dto.DueDate = &dd
 		} else {
 			dto.DueDate = nil

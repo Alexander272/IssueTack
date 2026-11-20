@@ -5,6 +5,8 @@ import { LocalizationProvider } from '@mui/x-date-pickers'
 import { ToastContainer } from 'react-toastify'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
+import utc from 'dayjs/plugin/utc'
+import timezone from 'dayjs/plugin/timezone'
 import 'dayjs/locale/ru'
 import '@fontsource/roboto/400.css'
 
@@ -14,6 +16,8 @@ import { theme } from '@/theme/theme'
 
 dayjs.locale('ru') // глобальная локализация дат
 dayjs.extend(relativeTime)
+dayjs.extend(utc)
+dayjs.extend(timezone)
 
 function App() {
 	return (

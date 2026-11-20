@@ -25,6 +25,7 @@ type (
 		Tickets       TicketConfig     `yaml:"tickets"`
 		Equipment     EquipmentConfig  `yaml:"equipment"`
 		Mattermost    MattermostConfig `yaml:"mattermost"`
+		Calendar      CalendarConfig   `yaml:"calendar"`
 	}
 
 	// EquipmentConfig — настройки учёта оборудования, не привязанные к отдельной
@@ -159,6 +160,22 @@ type (
 		// PluginToken — общий сервисный токен, которым MM-плагин аутентифицирует
 		// свои запросы в /api/v1/plugin/* (Authorization: Bearer). Пустой = отключено.
 		PluginToken string `yaml:"plugin_token" env:"MATTERMOST_PLUGIN_TOKEN" env-default:""`
+	}
+
+	// CalendarConfig — производственный календарь для расчёта автосроков в рабочих днях.
+	// Праздники/переносы загружаются из внешнего источника (XML) и хранятся в БД;
+	// при недоступности источника или пустой БД используется фолбэк Mon–Fri.
+	// Дефолты, которые допускают явное «пусто» (timezone, sync_schedule), заданы в
+	// config.yaml, а не env-default: cleanenv перетёр бы пустое значение дефолтом.
+	CalendarConfig struct {
+		// Шаблон URL источника, %d — год (например xmlcalendar.ru).
+		SourceURL string `yaml:"source_url" env:"CALENDAR_SOURCE_URL" env-default:"https://xmlcalendar.ru/data/ru/%d/calendar.xml"`
+		// Расписание синхронизации (robfig/cron). Пусто — по расписанию не синхронизировать.
+		SyncSchedule string `yaml:"sync_schedule" env:"CALENDAR_SYNC_SCHEDULE"`
+		// Часовой пояс календаря (IANA). Пусто — наследует tickets.working_hours.timezone, иначе время сервера.
+		Timezone string `yaml:"timezone" env:"CALENDAR_TIMEZONE"`
+		// Включить учёт праздников/исключений из календаря. false — считать только Mon–Fri.
+		Enabled bool `yaml:"enabled" env:"CALENDAR_ENABLED"`
 	}
 )
 

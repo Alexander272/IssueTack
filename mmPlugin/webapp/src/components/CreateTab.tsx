@@ -14,6 +14,7 @@ import type {
 import { formatBytes } from '../labels'
 import { clearDraft, loadDraft, saveDraft } from '../createDraft'
 import { useClipboardFiles } from '../useClipboardFiles'
+import { autoDueDateLocal, dueDateValueForSubmit } from '../workDays'
 import { FileIcon } from './icons'
 import { NotifierField } from './Form/NotifierField'
 
@@ -67,16 +68,7 @@ function pluginUserLabel(u: PluginUserShort): string {
 	return u.username
 }
 
-// pluginDueDateFromCategory — значение для <input type="datetime-local">: срок
-// в днях от сегодняшнего дня на конец дня. Бэкенд (parsePluginDueDate) принимает
-// формат datetime-local, поэтому toISOString() не подходит.
-function pluginDueDateFromCategory(days: number): string {
-	const d = new Date()
-	d.setDate(d.getDate() + days)
-	d.setHours(23, 59, 0, 0)
-	const pad = (n: number) => String(n).padStart(2, '0')
-	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
+
 
 export default function CreateTab({ scope, context, onCreated, onOpen, onDraftChange }: CreateTabProps) {
 	const userSiteId =
@@ -203,11 +195,12 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		const cat = categories.find(c => c.id === categoryId)
 		setGroupId(cat?.groupId ?? '')
 		if (cat?.priority) setPriority(cat.priority)
-		// Автосрок из категории — зеркало веба: дефолт категории проставляется в
-		// поле срока, а категория без автосрока его сбрасывает, иначе в форме
-		// остался бы срок предыдущей категории.
-		setDueDate(cat?.defaultDueDays != null ? pluginDueDateFromCategory(cat.defaultDueDays) : '')
-	}, [categoryId, categories, isManager, isExecutor])
+		// Автосрок из категории — зеркало веба/бэкенда: дефолт категории
+		// проставляется в поле срока в рабочих днях (с учётом выходных и праздников,
+		// конец целевого рабочего дня в календарной TZ), а категория без автосрока
+		// его сбрасывает, иначе в форме остался бы срок предыдущей категории.
+		setDueDate(autoDueDateLocal(cat?.defaultDueDays, context.calendar) ?? '')
+	}, [categoryId, categories, isManager, isExecutor, context.calendar])
 
 	// Эффект 1а: подкатегория → приоритет + срок. Как и в веб-форме, значения
 	// берутся из подкатегории, а пустые поля наследуются от категории. Срабатывает
@@ -223,8 +216,8 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		const cat = categories.find(c => c.id === categoryId)
 		setPriority(modifier.priority || cat?.priority || '')
 		const days = modifier.defaultDueDays ?? cat?.defaultDueDays
-		setDueDate(days != null && days > 0 ? pluginDueDateFromCategory(days) : '')
-	}, [categoryModifierId, categories, categoryId])
+		setDueDate(days != null && days > 0 ? autoDueDateLocal(days, context.calendar) ?? '' : '')
+	}, [categoryModifierId, categories, categoryId, context.calendar])
 
 	useEffect(() => {
 		if (!isManager) return
@@ -388,14 +381,14 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 				if (groupId) payload.groupId = groupId
 				if (assigneeId) payload.assigneeId = assigneeId
 				if (ownerId) payload.ownerId = ownerId
-				if (dueDate) payload.dueDate = dueDate
+				if (dueDate) payload.dueDate = dueDateValueForSubmit(dueDate, context.calendar)
 				if (ownerMuted && ownerId) payload.ownerMuted = true
 				payload.notifierIds = notifierIds
 			} else if (isExecutor) {
 				if (ownerId) payload.ownerId = ownerId
 				if (assigneeId) payload.assigneeId = assigneeId
 				if (priority) payload.priority = priority
-				if (dueDate) payload.dueDate = dueDate
+				if (dueDate) payload.dueDate = dueDateValueForSubmit(dueDate, context.calendar)
 				payload.notifierIds = notifierIds
 			} else if (notifierIds.length > 0) {
 				payload.notifierIds = notifierIds

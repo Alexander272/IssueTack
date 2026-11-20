@@ -221,7 +221,7 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 			return fmt.Errorf("failed to get category: %w", err)
 		}
 		if category.DefaultDueDays != nil && *category.DefaultDueDays > 0 {
-			dd := time.Now().UTC().AddDate(0, 0, *category.DefaultDueDays)
+			dd := s.addWorkingDays(time.Now(), *category.DefaultDueDays)
 			dto.DueDate = &dd
 		}
 	}

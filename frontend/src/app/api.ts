@@ -139,4 +139,7 @@ export const API = {
 		getSettings: '/notifications',
 		deadlineReminders: '/notifications/deadline-reminders',
 	},
+	calendar: {
+		base: '/calendar' as const,
+	},
 }

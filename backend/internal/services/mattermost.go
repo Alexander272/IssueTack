@@ -52,6 +52,7 @@ type MattermostDeps struct {
 	EventBus    *events.PolicyEventManager
 	Most        *mattermost.Most
 	BaseURL     string
+	Calendar    WorkCalendar
 }
 
 // mmChannel — контекст переписки пользователя в Mattermost (DM или канал из
@@ -88,6 +89,7 @@ type MattermostService struct {
 	pendingFiles  sync.Map
 	recentTickets sync.Map
 	pluginCache   *pluginContextCache
+	calendar      WorkCalendar
 }
 
 // NewMattermostService создаёт фасад Mattermost с переданными зависимостями.
@@ -112,6 +114,7 @@ func NewMattermostService(deps *MattermostDeps) *MattermostService {
 		wsClients:   make(map[string]*mattermost.WSClient),
 		wsGuard:     newInboundGuard(),
 		pluginCache: newPluginContextCache(),
+		calendar:    deps.Calendar,
 	}
 }
 

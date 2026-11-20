@@ -98,6 +98,14 @@ func main() {
 	handlers := transport.NewHandler(keycloak, service, hub)
 
 	//* HTTP Server
+	{
+		calCtx, calCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := service.Calendar.Ensure(calCtx); err != nil {
+			logger.Warn("failed to ensure production calendar", logger.ErrAttr(err))
+		}
+		calCancel()
+	}
+
 	if err := service.Scheduler.Start(&conf.Tickets); err != nil {
 		log.Fatalf("failed to start scheduler. error: %s\n", err.Error())
 	}

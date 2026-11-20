@@ -444,6 +444,18 @@ func (s *MattermostService) PluginContext(ctx context.Context, scope models.Plug
 	executors := s.pluginMembers(ctx, settings.RealmID, models.MembershipExecutors)
 	customers := s.pluginMembers(ctx, settings.RealmID, models.MembershipAll)
 
+	var calData *models.CalendarData
+	if s.calendar != nil {
+		var err error
+		calData, err = s.calendar.Data(ctx, nil)
+		if err != nil {
+			logger.Warn("plugin context: failed to get production calendar",
+				logger.StringAttr("realm_id", settings.RealmID.String()),
+				logger.ErrAttr(err))
+			calData = nil
+		}
+	}
+
 	return &models.PluginContextResult{
 		Bound:          true,
 		RealmID:        settings.RealmID,
@@ -457,6 +469,7 @@ func (s *MattermostService) PluginContext(ctx context.Context, scope models.Plug
 		Groups:         groups,
 		Executors:      executors,
 		Customers:      customers,
+		Calendar:       calData,
 	}, nil
 }
 

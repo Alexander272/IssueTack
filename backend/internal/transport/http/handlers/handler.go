@@ -8,6 +8,7 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/attachments"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/audit_log"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/auth"
+	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/calendar"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/categories"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/category_groups"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/checklists"
@@ -89,6 +90,7 @@ func (h *Handler) Init(group *gin.RouterGroup) {
 	favorites.Register(secure, h.services.TicketFavorites, h.middleware)
 	activity_log.Register(secure, h.services.ActivityLog, h.middleware)
 	audit_log.Register(secure, h.services.AuditLogs, h.middleware)
+	calendar.Register(secure, h.services.Calendar, h.middleware)
 
 	mattermost.Register(v1, h.services.Mattermost, h.conf.Mattermost)
 }

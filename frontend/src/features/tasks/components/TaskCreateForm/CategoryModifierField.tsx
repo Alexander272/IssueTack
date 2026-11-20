@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, type FC } from 'react'
 import { Autocomplete, Box, TextField, Typography, type SxProps } from '@mui/material'
 import { Controller, useFormContext, useWatch } from 'react-hook-form'
-import dayjs from 'dayjs'
 
 import type { FormValues } from './types'
 import { fieldLabelSx } from './styles'
 import { useGetAllCategoriesQuery, useGetAllCategoryModifiersQuery } from '@/features/categories/categoriesApiSlice'
+import { useGetProductionCalendarQuery } from '@/features/calendar/calendarApiSlice'
+import { autoDueDateISO } from '../../utils/workDays'
 import { useTaskFormSettings } from './taskFormMode'
 
 /**
@@ -22,9 +23,11 @@ export const CategoryModifierField: FC<{ sx?: SxProps }> = ({ sx }) => {
 	const { control, setValue } = useFormContext<FormValues>()
 	const { data: categoriesData } = useGetAllCategoriesQuery()
 	const { data: modifiersData } = useGetAllCategoryModifiersQuery()
+	const { data: calendarData } = useGetProductionCalendarQuery()
 
 	const categories = useMemo(() => categoriesData?.data ?? [], [categoriesData])
 	const allModifiers = useMemo(() => modifiersData?.data ?? [], [modifiersData])
+	const calendar = calendarData?.data
 	const selectedCategoryId = useWatch({ control, name: 'categoryId' })
 	const selectedModifierId = useWatch({ control, name: 'categoryModifierId' })
 
@@ -46,9 +49,9 @@ export const CategoryModifierField: FC<{ sx?: SxProps }> = ({ sx }) => {
 
 	// Разовая подстановка при выборе подкатегории: срок и приоритет берутся из неё,
 	// а пустые значения наследуются от категории. Отсчёт срока — от даты создания
-	// заявки (в форме редактирования), на создании — от сейчас. Явный выбор
-	// пользователя после этого остаётся в форме (у ролей с правом переопределения
-	// бэкенд его сохранит).
+	// заявки (в форме редактирования), на создании — от сейчас (в рабочих днях).
+	// Явный выбор пользователя после этого остаётся в форме (у ролей с правом
+	// переопределения бэкенд его сохранит).
 	const prevModifierId = useRef(selectedModifierId)
 	useEffect(() => {
 		if (prevModifierId.current === selectedModifierId) return
@@ -59,9 +62,8 @@ export const CategoryModifierField: FC<{ sx?: SxProps }> = ({ sx }) => {
 		const category = categories.find(c => c.id === selectedCategoryId)
 		setValue('priority', modifier.priority ?? category?.priority ?? 'medium')
 		const days = modifier.defaultDueDays ?? category?.defaultDueDays
-		const base = dueDateBase ? dayjs(dueDateBase) : dayjs()
-		setValue('dueDate', days != null ? base.add(days, 'day').endOf('day').toISOString() : null)
-	}, [selectedModifierId, allModifiers, categories, selectedCategoryId, dueDateBase, setValue])
+		setValue('dueDate', autoDueDateISO(days, calendar, dueDateBase ?? null))
+	}, [selectedModifierId, allModifiers, categories, selectedCategoryId, dueDateBase, setValue, calendar])
 
 	if (!canPickModifier || modifiers.length === 0) return null
 

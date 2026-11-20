@@ -57,6 +57,7 @@ var Tables = struct {
 	ReminderLastSent               string
 	TicketDueDateRequests          string
 	TicketNotifiers                string
+	ProductionCalendar             string
 }{
 	Sites:                          "sites",
 	Realms:                         "realms",
@@ -102,4 +103,5 @@ var Tables = struct {
 	ReminderLastSent:               "reminder_last_sent",
 	TicketDueDateRequests:          "ticket_due_date_requests",
 	TicketNotifiers:                "ticket_notifiers",
+	ProductionCalendar:             "production_calendar",
 }

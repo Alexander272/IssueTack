@@ -98,6 +98,10 @@ type Mattermost interface {
 	postgres.MattermostRepoInterface
 }
 
+type Calendar interface {
+	postgres.CalendarRepo
+}
+
 type Repository struct {
 	Transaction
 	Realms
@@ -126,6 +130,7 @@ type Repository struct {
 	Equipment
 	DueDateRequests
 	Mattermost
+	Calendar
 }
 
 func NewRepository(pool *pgxpool.Pool, memDB *redis.Client, conf config.AuthConfig) *Repository {
@@ -161,5 +166,6 @@ func NewRepository(pool *pgxpool.Pool, memDB *redis.Client, conf config.AuthConf
 		Equipment:           postgres.NewEquipmentRepo(pool, transaction),
 		DueDateRequests:     postgres.NewDueDateRequestRepo(pool, transaction),
 		Mattermost:          postgres.NewMattermostRepo(pool, transaction),
+		Calendar:            postgres.NewCalendarRepo(pool),
 	}
 }

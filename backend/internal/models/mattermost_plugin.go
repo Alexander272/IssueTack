@@ -43,6 +43,9 @@ type PluginContextResult struct {
 	// (та же разбивка по членству, что в веб /users/by-realm).
 	Executors []UserShort `json:"executors"`
 	Customers []UserShort `json:"customers"`
+	// Calendar — производственный календарь (таймзона + исключения) для расчёта
+	// автосрока по рабочим дням в форме создания заявки на клиенте.
+	Calendar *CalendarData `json:"calendar,omitempty"`
 }
 
 // PluginScope — контекст запроса webapp-плагина, из которого определяется

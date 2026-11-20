@@ -472,10 +472,15 @@ func TestTicketService_Create_CategoryDefaultDueDays(t *testing.T) {
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: id}).Return(&models.Ticket{ID: id}, nil)
 	mockNotifications.On("TicketCreated", mock.Anything, mock.AnythingOfType("*models.Ticket"), mock.AnythingOfType("uuid.UUID")).Return(nil)
 
+	before := time.Now()
 	err := svc.Create(context.Background(), dto)
+	after := time.Now()
 	require.NoError(t, err)
 	require.NotNil(t, dto.DueDate)
-	assert.WithinDuration(t, time.Now().UTC().AddDate(0, 0, days), *dto.DueDate, time.Minute)
+	expectedA := addWorkingDaysMonFri(before, days, time.Local)
+	expectedB := addWorkingDaysMonFri(after, days, time.Local)
+	assert.True(t, dto.DueDate.Equal(expectedA) || dto.DueDate.Equal(expectedB),
+		"due=%v expected %v or %v", *dto.DueDate, expectedA, expectedB)
 }
 
 // TestTicketService_Create_CategoryDefaultDueDays_NotManager проверяет, что
@@ -516,16 +521,15 @@ func TestTicketService_Create_CategoryDefaultDueDays_NotManager(t *testing.T) {
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: id}).Return(&models.Ticket{ID: id}, nil)
 	mockNotifications.On("TicketCreated", mock.Anything, mock.AnythingOfType("*models.Ticket"), mock.AnythingOfType("uuid.UUID")).Return(nil)
 
+	before := time.Now()
 	err := svc.Create(context.Background(), dto)
+	after := time.Now()
 	require.NoError(t, err)
-	// Автосрок применён: 3 дня от текущего времени (UTC, конец дня).
-	assert.NotNil(t, dto.DueDate)
-	// Проверяем, что дата примерно через 3 дня (допуск 1 час на время выполнения теста).
-	expectedDays := 3 * 24 * time.Hour
-	now := time.Now().UTC()
-	diff := dto.DueDate.Sub(now)
-	assert.Greater(t, diff, expectedDays-1*time.Hour)
-	assert.Less(t, diff, expectedDays+24*time.Hour)
+	require.NotNil(t, dto.DueDate)
+	expectedA := addWorkingDaysMonFri(before, days, time.Local)
+	expectedB := addWorkingDaysMonFri(after, days, time.Local)
+	assert.True(t, dto.DueDate.Equal(expectedA) || dto.DueDate.Equal(expectedB),
+		"due=%v expected %v or %v", *dto.DueDate, expectedA, expectedB)
 }
 
 func TestTicketService_Create_WithSubtasks_Success(t *testing.T) {
@@ -721,10 +725,15 @@ func TestTicketService_Create_CategoryDefaultDueDays_Executor(t *testing.T) {
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: id}).Return(&models.Ticket{ID: id}, nil)
 	mockNotifications.On("TicketCreated", mock.Anything, mock.AnythingOfType("*models.Ticket"), mock.AnythingOfType("uuid.UUID")).Return(nil)
 
+	before := time.Now()
 	err := svc.Create(context.Background(), dto)
+	after := time.Now()
 	require.NoError(t, err)
 	require.NotNil(t, dto.DueDate)
-	assert.WithinDuration(t, time.Now().UTC().AddDate(0, 0, days), *dto.DueDate, time.Minute)
+	expectedA := addWorkingDaysMonFri(before, days, time.Local)
+	expectedB := addWorkingDaysMonFri(after, days, time.Local)
+	assert.True(t, dto.DueDate.Equal(expectedA) || dto.DueDate.Equal(expectedB),
+		"due=%v expected %v or %v", *dto.DueDate, expectedA, expectedB)
 }
 
 func TestTicketService_Create_MissingGroup(t *testing.T) {

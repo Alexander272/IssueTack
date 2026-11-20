@@ -48,6 +48,7 @@ type Services struct {
 	EquipmentImport        *EquipmentImportService
 	EquipmentPeriodicTasks *EquipmentPeriodicTaskService
 	// Интеграции
+	Calendar WorkCalendar
 	Scheduler
 	Mattermost
 }
@@ -130,6 +131,11 @@ func NewServices(deps *Deps) *Services {
 	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs, users, access)
 	statistics := NewStatisticsService(deps.Repo.Statistics, groups, access)
 	subscriptionOps := NewTicketSubscriptionOpsService(deps.Repo.TicketSubscriptions)
+	calendar := NewWorkCalendar(&WorkCalendarDeps{
+		Repo:           deps.Repo.Calendar,
+		Conf:           deps.Conf.Calendar,
+		WorkingHoursTZ: deps.Conf.Tickets.WorkingHours.Timezone,
+	})
 
 	// Канал уведомлений в Mattermost: DM от бота реалма. Собирается до NotificationService,
 	// чтобы уведомления всех событий тикетов доставлялись в Mattermost через него.
@@ -166,6 +172,7 @@ func NewServices(deps *Deps) *Services {
 		Sites:           sites,
 		DueDateRequests: deps.Repo.DueDateRequests,
 		Favorites:       deps.Repo.TicketFavorites,
+		Calendar:        calendar,
 	})
 
 	// Оборудование заводит заявку в 1C:ERP при выдаче/возврате, а заявку создаёт
@@ -201,6 +208,8 @@ func NewServices(deps *Deps) *Services {
 		Users:                  users,
 		MMSender:               mmMost,
 		EquipmentPeriodicTasks: equipmentPeriodicTasks,
+		Calendar:               calendar,
+		CalendarConf:           deps.Conf.Calendar,
 	})
 
 	mattermostSvc := NewMattermostService(&MattermostDeps{
@@ -220,6 +229,7 @@ func NewServices(deps *Deps) *Services {
 		EventBus:    updatePolicyEvent,
 		Most:        mmMost,
 		BaseURL:     deps.Conf.Http.BaseURL,
+		Calendar:    calendar,
 	})
 
 	return &Services{
@@ -255,6 +265,7 @@ func NewServices(deps *Deps) *Services {
 		EquipmentPeriodicTasks: equipmentPeriodicTasks,
 
 		// Интеграции
+		Calendar:   calendar,
 		Scheduler:  scheduler,
 		Mattermost: mattermostSvc,
 	}

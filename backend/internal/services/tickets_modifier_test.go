@@ -74,7 +74,7 @@ func TestTicketModifier_ApplyValues_InheritCategory(t *testing.T) {
 	}))
 	assert.Equal(t, models.PriorityHigh, dto.Priority)
 	require.NotNil(t, dto.DueDate)
-	assert.WithinDuration(t, base.AddDate(0, 0, days), *dto.DueDate, time.Second)
+	assert.Equal(t, addWorkingDaysMonFri(base, days, time.Local), *dto.DueDate)
 	assert.True(t, dto.HasField("priority"))
 	assert.True(t, dto.HasField("dueDate"))
 }
@@ -129,8 +129,8 @@ func TestTicketModifier_DueDateFromCreatedAt(t *testing.T) {
 			require.NoError(t, err)
 			assert.True(t, result.Applied)
 			require.NotNil(t, dto.DueDate)
-			assert.WithinDuration(t, created.AddDate(0, 0, days), *dto.DueDate, time.Second,
-				"срок считается от даты создания заявки")
+			assert.Equal(t, addWorkingDaysMonFri(created, days, time.Local), *dto.DueDate,
+				"срок считается от даты создания заявки (рабочие дни, конец дня)")
 			assert.True(t, dto.DueDate.Before(time.Now().UTC()),
 				"срок не должен считаться от момента смены подкатегории")
 		})
@@ -254,9 +254,11 @@ func TestTicketModifier_PrepareCreate(t *testing.T) {
 					Return(&models.Category{ID: categoryID, Priority: models.PriorityMedium, DefaultDueDays: &days}, nil)
 			}
 
+			before := time.Now()
 			err := svc.prepareCreateModifier(context.Background(), &createModifierInput{
 				DTO: dto, Supervisor: tc.supervisor, IsExecutor: tc.isExecutor,
 			})
+			after := time.Now()
 			if tc.wantErr != nil {
 				require.ErrorIs(t, err, tc.wantErr)
 				if !tc.wantLookup {
@@ -268,7 +270,10 @@ func TestTicketModifier_PrepareCreate(t *testing.T) {
 			assert.Equal(t, tc.wantPriority, dto.Priority)
 			if tc.wantDue == nil {
 				require.NotNil(t, dto.DueDate)
-				assert.WithinDuration(t, time.Now().UTC().AddDate(0, 0, days), *dto.DueDate, time.Minute)
+				expectedA := addWorkingDaysMonFri(before, days, time.Local)
+				expectedB := addWorkingDaysMonFri(after, days, time.Local)
+				assert.True(t, dto.DueDate.Equal(expectedA) || dto.DueDate.Equal(expectedB),
+					"due=%v expected %v or %v", *dto.DueDate, expectedA, expectedB)
 			} else {
 				assert.Equal(t, tc.wantDue, dto.DueDate)
 			}
@@ -393,7 +398,9 @@ func TestTicketModifier_PrepareUpdate_ChangeRules(t *testing.T) {
 					Return(&models.Category{ID: categoryID, Priority: models.PriorityMedium}, nil)
 			}
 
+			before := time.Now()
 			result, err := svc.prepareUpdateModifier(context.Background(), &updateModifierInput{DTO: dto, Old: old, ActorID: actor})
+			after := time.Now()
 			if tc.wantErr != nil {
 				require.ErrorIs(t, err, tc.wantErr)
 				return
@@ -404,7 +411,10 @@ func TestTicketModifier_PrepareUpdate_ChangeRules(t *testing.T) {
 			assert.Equal(t, tc.supervisor, result.MayOverride, "начальник области сохраняет право ручной правки полей")
 			assert.Equal(t, models.PriorityUrgent, dto.Priority)
 			require.NotNil(t, dto.DueDate)
-			assert.WithinDuration(t, time.Now().UTC().AddDate(0, 0, days), *dto.DueDate, time.Minute)
+			expectedA := addWorkingDaysMonFri(before, days, time.Local)
+			expectedB := addWorkingDaysMonFri(after, days, time.Local)
+			assert.True(t, dto.DueDate.Equal(expectedA) || dto.DueDate.Equal(expectedB),
+				"due=%v expected %v or %v", *dto.DueDate, expectedA, expectedB)
 		})
 	}
 }
@@ -523,10 +533,15 @@ func TestTicketService_Update_ModifierByNonCreatorAssignee(t *testing.T) {
 	logs.On("Create", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	notifications.On("TicketUpdated", mock.Anything, mock.Anything, actor, mock.Anything).Return(nil)
 
+	before := time.Now()
 	require.NoError(t, svc.Update(context.Background(), dto))
+	after := time.Now()
 	assert.Equal(t, models.PriorityUrgent, dto.Priority, "приоритет подкатегории применён разово")
 	require.NotNil(t, dto.DueDate)
-	assert.WithinDuration(t, time.Now().UTC().AddDate(0, 0, days), *dto.DueDate, time.Minute)
+	expectedA := addWorkingDaysMonFri(before, days, time.Local)
+	expectedB := addWorkingDaysMonFri(after, days, time.Local)
+	assert.True(t, dto.DueDate.Equal(expectedA) || dto.DueDate.Equal(expectedB),
+		"due=%v expected %v or %v", *dto.DueDate, expectedA, expectedB)
 }
 
 func ptrPriority(p models.Priority) *models.Priority {
