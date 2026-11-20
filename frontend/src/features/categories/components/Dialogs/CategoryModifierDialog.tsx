@@ -12,11 +12,12 @@ import {
 	Stack,
 	Switch,
 	TextField,
+	Tooltip,
 	Typography,
 } from '@mui/material'
 import { Controller, useForm } from 'react-hook-form'
 import { toast } from 'react-toastify'
-import { XIcon } from 'lucide-mui'
+import { CircleQuestionMarkIcon, XIcon } from 'lucide-mui'
 
 import type { IFetchError } from '@/app/types/error'
 import type { ICategory, ICategoryModifierDTO } from '../../types/category'
@@ -157,7 +158,7 @@ export const CategoryModifierDialog: FC<Props> = ({ modifier, categories, open, 
 						name='defaultDueDays'
 						render={({ field }) => (
 							<TextField
-								label='Автоматический срок, дней'
+								label='Автоматический срок, рабочих дней'
 								size='small'
 								fullWidth
 								type='number'
@@ -167,7 +168,17 @@ export const CategoryModifierDialog: FC<Props> = ({ modifier, categories, open, 
 									field.onChange(raw === '' ? null : Math.max(0, Number.parseInt(raw, 10) || 0))
 								}}
 								slotProps={{ htmlInput: { min: 0, step: 1 } }}
-								helperText='Пусто — наследовать срок категории'
+								helperText={
+									<Box
+										component='span'
+										sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
+									>
+										Пусто — наследовать срок категории
+										<Tooltip title='Выходные и праздничные дни не учитываются'>
+											<CircleQuestionMarkIcon sx={{ fontSize: 14, cursor: 'pointer' }} />
+										</Tooltip>
+									</Box>
+								}
 							/>
 						)}
 					/>

@@ -1,5 +1,5 @@
 import { type FC } from 'react'
-import { MenuItem, Stack, TextField, Typography } from '@mui/material'
+import { MenuItem, Stack, TextField, Tooltip, Typography } from '@mui/material'
 import { Controller, type Control } from 'react-hook-form'
 
 import type { ICategoryDTO } from '../../types/category'
@@ -7,6 +7,7 @@ import type { ICategoryGroup } from '@/features/categories/types/categoryGroup'
 import type { IGroup } from '@/features/groups/types/group'
 import { PRIORITY_MAP } from '@/features/tasks/constants/taskMaps'
 import { Switch } from '@/components/TextSwitch/Switch'
+import { CircleQuestionMarkIcon } from 'lucide-mui'
 
 type Props = {
 	control: Control<ICategoryDTO>
@@ -139,7 +140,10 @@ export const Form: FC<Props> = ({ control, groups, categoryGroups }) => {
 
 			<Stack>
 				<Typography variant='caption' sx={{ fontWeight: 600, mb: 0.5, display: 'block' }}>
-					Автоматический срок, дней
+					Автоматический срок, рабочих дней{' '}
+					<Tooltip title='Выходные и праздничные дни не учитываются'>
+						<CircleQuestionMarkIcon sx={{ fontSize: 14, cursor: 'pointer' }} />
+					</Tooltip>
 				</Typography>
 				<Controller
 					control={control}

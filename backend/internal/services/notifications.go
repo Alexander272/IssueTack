@@ -80,10 +80,10 @@ type Notifications interface {
 	// приоритета; before > 0 ограничивает по сроку только заявки с due_date, заявки без
 	// срока попадают в выборку всегда.
 	GetActiveByPriorityGlobal(ctx context.Context, priority models.Priority, before time.Duration) ([]uuid.UUID, error)
-	// NotifyReminderHigh оповещает о задаче с высоким приоритетом (периодическое напоминание).
+	// NotifyReminderHigh напоминает исполнителю о задаче с высоким приоритетом.
 	// interval — настроенная частота напоминаний; из неё выводится минимальный интервал дедупа.
 	NotifyReminderHigh(ctx context.Context, ticket *models.Ticket, interval time.Duration) error
-	// NotifyReminderUrgent оповещает о задаче с критичным приоритетом (периодическое напоминание).
+	// NotifyReminderUrgent напоминает исполнителю о задаче с критичным приоритетом.
 	NotifyReminderUrgent(ctx context.Context, ticket *models.Ticket, interval time.Duration) error
 	// NotifyDeadlineSoon оповещает исполнителя о приближении срока тикета (ticket.deadline_soon).
 	NotifyDeadlineSoon(ctx context.Context, ticket *models.Ticket) error
@@ -230,8 +230,11 @@ func (s *NotificationService) NotifyReminderUrgent(ctx context.Context, ticket *
 	})
 }
 
-// notifyPriorityReminder — общая логика периодических напоминаний по приоритету. Получатели:
-// исполнитель, менеджер и подписчики категории/группы на соответствующее событие.
+// notifyPriorityReminder — общая логика периодических напоминаний по приоритету.
+// Это напоминание исполнителю «не забудь о важной задаче»: менеджер тикета не добавляется
+// по роли (у него другая задача — контроль выполнения), но может получить напоминание,
+// если сам включил событие в настройках уведомлений. Автоподписка на тикет таким согласием
+// не считается — учитываются только явные подписки по событиям категории.
 // Все параметры события — в p (models.NotificationReminderDTO).
 func (s *NotificationService) notifyPriorityReminder(ctx context.Context, p *models.NotificationReminderDTO) error {
 	if p == nil || p.Ticket == nil {
@@ -250,18 +253,19 @@ func (s *NotificationService) notifyPriorityReminder(ctx context.Context, p *mod
 	if ticket.Assignee != nil {
 		recipients[ticket.Assignee.ID] = struct{}{}
 	}
-	if ticket.Manager != nil {
-		recipients[ticket.Manager.ID] = struct{}{}
-	}
 
-	subs, err := s.subscribersByEvent(ctx, ticket, p.Event)
-	if err != nil {
-		return err
-	}
-	for _, id := range subs {
-		recipients[id] = struct{}{}
-	}
+	// В отличие от других событий, здесь нельзя падать на subscribersByEvent: без категории
+	// он вернул бы всех подписанных на тикет, т.е. напоминания получили бы и авто-подписанные
+	// при создании менеджер/надзиратели. Нужен явный opt-in в матрице категории.
 	if ticket.Category != nil {
+		subs, err := s.subscriptions.GetSubscribersByEvent(ctx, ticket.ID, ticket.Category.ID, models.EventFieldName(p.Event))
+		if err != nil {
+			return fmt.Errorf("failed to get %s subscribers: %w", p.Event, err)
+		}
+		for _, id := range subs {
+			recipients[id] = struct{}{}
+		}
+
 		catSubs, err := s.repo.GetCategoryEventSubscribers(ctx, ticket.Category.ID, models.EventFieldName(p.Event))
 		if err != nil {
 			return fmt.Errorf("failed to get %s category subscribers: %w", p.Event, err)

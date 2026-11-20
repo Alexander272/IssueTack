@@ -13,18 +13,39 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func notificationServiceFixtures() (*MockNotificationsRepo, *MockNotifier, *NotificationService) {
+// notificationFixtureSubs задаёт подписчиков для тестов рассылок. По умолчанию списки пустые.
+type notificationFixtureSubs struct {
+	ticketSubs   []uuid.UUID // подписка на сам тикет (в т.ч. авто-подписка при создании)
+	eventSubs    []uuid.UUID // явный opt-in в матрице «категория × событие»
+	categorySubs []uuid.UUID // подписка на события категории
+}
+
+func notificationServiceFixtures(subs ...notificationFixtureSubs) (*MockNotificationsRepo, *MockNotifier, *NotificationService) {
 	mockRepo := new(MockNotificationsRepo)
 	mockSubs := new(MockTicketSubscriptionOps)
 	mockUserRealms := new(MockUserRealmsService)
 	mockGroups := new(MockGroupsRepo)
 	mockNotifier := new(MockNotifier)
 
+	fixtureSubs := notificationFixtureSubs{}
+	if len(subs) > 0 {
+		fixtureSubs = subs[0]
+	}
+	if fixtureSubs.ticketSubs == nil {
+		fixtureSubs.ticketSubs = []uuid.UUID{}
+	}
+	if fixtureSubs.eventSubs == nil {
+		fixtureSubs.eventSubs = []uuid.UUID{}
+	}
+	if fixtureSubs.categorySubs == nil {
+		fixtureSubs.categorySubs = []uuid.UUID{}
+	}
+
 	mockUserRealms.On("GetRealmSupervisors", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
-	mockSubs.On("GetByTicket", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
-	mockSubs.On("GetSubscribersByEvent", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
+	mockSubs.On("GetByTicket", mock.Anything, mock.Anything).Return(fixtureSubs.ticketSubs, nil).Maybe()
+	mockSubs.On("GetSubscribersByEvent", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(fixtureSubs.eventSubs, nil).Maybe()
 	mockGroups.On("GetByID", mock.Anything, mock.Anything).Return(&models.Group{}, nil).Maybe()
-	mockRepo.On("GetCategoryEventSubscribers", mock.Anything, mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
+	mockRepo.On("GetCategoryEventSubscribers", mock.Anything, mock.Anything, mock.Anything).Return(fixtureSubs.categorySubs, nil).Maybe()
 	mockRepo.On("GetGroupEventSubscribers", mock.Anything, mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
 	mockRepo.On("GetOverdueTicketIDs", mock.Anything, mock.Anything).Return([]uuid.UUID{}, nil).Maybe()
 	mockNotifier.On("Name").Return("mock").Maybe()
@@ -886,7 +907,107 @@ func TestNotificationService_NotifyReminderHigh_Success(t *testing.T) {
 	}
 
 	mockRepo.On("CanSendReminder", mock.Anything, ticket.ID, models.EventReminderHigh, reminderDedupInterval(3*time.Hour)).Return(true, nil).Once()
+	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID)
+	mockNotifier.AssertNotCalled(t, "Notify", mock.Anything, managerID, mock.Anything, mock.Anything)
+
+	err := svc.NotifyReminderHigh(context.Background(), ticket, 3*time.Hour)
+
+	require.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
+}
+
+func TestNotificationService_NotifyReminderHigh_AutoSubscribedManagerExcluded(t *testing.T) {
+	assigneeID := uuid.New()
+	managerID := uuid.New()
+	// Менеджера авто-подписали на тикет при создании, но он не включал напоминания в настройках.
+	mockRepo, mockNotifier, svc := notificationServiceFixtures(notificationFixtureSubs{ticketSubs: []uuid.UUID{managerID}})
+	ticket := &models.Ticket{
+		ID:       uuid.New(),
+		Title:    "High priority task",
+		Assignee: &models.UserShort{ID: assigneeID},
+		Manager:  &models.UserShort{ID: managerID},
+	}
+
+	mockRepo.On("CanSendReminder", mock.Anything, ticket.ID, models.EventReminderHigh, reminderDedupInterval(3*time.Hour)).Return(true, nil).Once()
+	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID)
+	mockNotifier.AssertNotCalled(t, "Notify", mock.Anything, managerID, mock.Anything, mock.Anything)
+
+	err := svc.NotifyReminderHigh(context.Background(), ticket, 3*time.Hour)
+
+	require.NoError(t, err)
+	// Напоминания не должны падать на общий GetByTicket: автоподписка не равна opt-in.
+	mockSubs := svc.subscriptions.(*MockTicketSubscriptionOps)
+	mockSubs.AssertNotCalled(t, "GetByTicket", mock.Anything, ticket.ID)
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
+}
+
+func TestNotificationService_NotifyReminderHigh_ManagerOptedIn_Notified(t *testing.T) {
+	assigneeID := uuid.New()
+	managerID := uuid.New()
+	categoryID := uuid.New()
+	// Менеджер сам включил reminderHigh в матрице «категория × событие».
+	mockRepo, mockNotifier, svc := notificationServiceFixtures(notificationFixtureSubs{eventSubs: []uuid.UUID{managerID}})
+	ticket := &models.Ticket{
+		ID:       uuid.New(),
+		Title:    "High priority task",
+		Assignee: &models.UserShort{ID: assigneeID},
+		Manager:  &models.UserShort{ID: managerID},
+		Category: &models.CategoryShort{ID: categoryID},
+	}
+
+	mockRepo.On("CanSendReminder", mock.Anything, ticket.ID, models.EventReminderHigh, reminderDedupInterval(3*time.Hour)).Return(true, nil).Once()
 	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID, managerID)
+
+	err := svc.NotifyReminderHigh(context.Background(), ticket, 3*time.Hour)
+
+	require.NoError(t, err)
+	mockSubs := svc.subscriptions.(*MockTicketSubscriptionOps)
+	mockSubs.AssertCalled(t, "GetSubscribersByEvent", mock.Anything, ticket.ID, categoryID, models.EventFieldName(models.EventReminderHigh))
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
+}
+
+func TestNotificationService_NotifyReminderHigh_CategorySubscribedManager_Notified(t *testing.T) {
+	assigneeID := uuid.New()
+	managerID := uuid.New()
+	otherID := uuid.New()
+	categoryID := uuid.New()
+	// Подписка на саму категорию — тоже осознанный opt-in, менеджер получает напоминание.
+	mockRepo, mockNotifier, svc := notificationServiceFixtures(notificationFixtureSubs{categorySubs: []uuid.UUID{managerID, otherID}})
+	ticket := &models.Ticket{
+		ID:       uuid.New(),
+		Title:    "High priority task",
+		Assignee: &models.UserShort{ID: assigneeID},
+		Manager:  &models.UserShort{ID: managerID},
+		Category: &models.CategoryShort{ID: categoryID},
+	}
+
+	mockRepo.On("CanSendReminder", mock.Anything, ticket.ID, models.EventReminderHigh, reminderDedupInterval(3*time.Hour)).Return(true, nil).Once()
+	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID, managerID, otherID)
+
+	err := svc.NotifyReminderHigh(context.Background(), ticket, 3*time.Hour)
+
+	require.NoError(t, err)
+	mockRepo.AssertCalled(t, "GetCategoryEventSubscribers", mock.Anything, categoryID, models.EventFieldName(models.EventReminderHigh))
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
+}
+
+func TestNotificationService_NotifyReminderHigh_ManagerIsAssignee_Notified(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	userID := uuid.New()
+	ticket := &models.Ticket{
+		ID:       uuid.New(),
+		Title:    "High priority task",
+		Assignee: &models.UserShort{ID: userID},
+		Manager:  &models.UserShort{ID: userID},
+	}
+
+	mockRepo.On("CanSendReminder", mock.Anything, ticket.ID, models.EventReminderHigh, reminderDedupInterval(3*time.Hour)).Return(true, nil).Once()
+	expectDeliverAndPersist(mockRepo, mockNotifier, userID)
 
 	err := svc.NotifyReminderHigh(context.Background(), ticket, 3*time.Hour)
 
@@ -917,14 +1038,17 @@ func TestNotificationService_NotifyReminderUrgent_Success(t *testing.T) {
 	mockRepo, mockNotifier, svc := notificationServiceFixtures()
 
 	assigneeID := uuid.New()
+	managerID := uuid.New()
 	ticket := &models.Ticket{
 		ID:       uuid.New(),
 		Title:    "Urgent task",
 		Assignee: &models.UserShort{ID: assigneeID},
+		Manager:  &models.UserShort{ID: managerID},
 	}
 
 	mockRepo.On("CanSendReminder", mock.Anything, ticket.ID, models.EventReminderUrgent, reminderDedupInterval(time.Hour)).Return(true, nil).Once()
 	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID)
+	mockNotifier.AssertNotCalled(t, "Notify", mock.Anything, managerID, mock.Anything, mock.Anything)
 
 	err := svc.NotifyReminderUrgent(context.Background(), ticket, time.Hour)
 
