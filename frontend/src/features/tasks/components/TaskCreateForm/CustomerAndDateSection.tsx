@@ -24,7 +24,8 @@ export const CustomerAndDateSection = ({
 	title = 'Заказчик и сроки',
 	subtitle = 'Укажите заказчика и желаемый срок выполнения',
 }: Props) => {
-	const { creatorId, canEditNotifiers, showOwner, showDueDate, showNotifierFieldLabel } = useTaskFormSettings()
+	const { creatorId, canEditNotifiers, showOwner, showDueDate, showNotifierFieldLabel, dueDateDisabled } =
+		useTaskFormSettings()
 	const { control } = useFormContext<FormValues>()
 	const { data: customersData } = useGetRealmUsersQuery('all')
 	const customers = useMemo(() => customersData?.data ?? [], [customersData])
@@ -91,6 +92,7 @@ export const CustomerAndDateSection = ({
 								onChange={date =>
 									field.onChange(date ? (field.value ? date : date.endOf('day')).toISOString() : null)
 								}
+								disabled={dueDateDisabled}
 								slots={{ textField: DateTextField }}
 								slotProps={{ textField: { fullWidth: true } }}
 							/>

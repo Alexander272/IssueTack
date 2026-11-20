@@ -74,11 +74,7 @@ export const DescriptionSection = ({ files, onFilesChange, readOnly = false }: P
 							multiline
 							minRows={6}
 							disabled={readOnly}
-							placeholder={
-								readOnly
-									? undefined
-									: 'Опишите, что произошло:&#10;• Что вы делали перед проблемой?&#10;• Что именно не работает?&#10;• Появляются ли ошибки?&#10;• Когда это началось?'
-							}
+							placeholder='Опишите, что произошло:&#10;• Что вы делали перед проблемой?&#10;• Что именно не работает?&#10;• Появляются ли ошибки?&#10;• Когда это началось?'
 						/>
 					)}
 				/>

@@ -1045,6 +1045,154 @@ func TestHandleDialogSubmission_ReopenCancelled(t *testing.T) {
 	assert.Empty(t, capture.patches)
 }
 
+// modifierActionFixture — заявка с доступным выбором подкатегории и каталогом
+// подкатегорий, готовый к нажатию кнопки «Подкатегория».
+type modifierActionFixture struct {
+	*statusActionFixture
+	categoryID uuid.UUID
+	modifierID uuid.UUID
+}
+
+func newModifierActionFixture(t *testing.T) (*modifierActionFixture, *mmCapture) {
+	t.Helper()
+	base, capture := newStatusActionFixture(t, models.StatusOpen)
+	categoryID, modifierID := uuid.New(), uuid.New()
+	base.svc.categories = &fakeCategoriesSvc{getByID: func(_ context.Context, req *models.GetCategoryByIdDTO) (*models.Category, error) {
+		assert.Equal(t, categoryID, req.ID)
+		assert.Equal(t, base.realmID, req.RealmID)
+		return &models.Category{
+			ID: categoryID,
+			Modifiers: []*models.CategoryModifier{
+				{ID: modifierID, CategoryID: categoryID, Name: "Утечка", IsActive: true, SortOrder: 1},
+				{ID: uuid.New(), CategoryID: categoryID, Name: "Архивная", IsActive: false, SortOrder: 2},
+				{ID: uuid.New(), CategoryID: uuid.New(), Name: "Чужая категория", IsActive: true, SortOrder: 3},
+			},
+		}, nil
+	}}
+	num := 42
+	base.tickets.On("GetByID", mock.Anything, mock.MatchedBy(func(d *models.GetTicketByIdDTO) bool {
+		return d.ID == base.ticketID && d.Actor != nil && d.Actor.ID == base.userID
+	})).Return(&models.Ticket{
+		ID: base.ticketID, Status: models.StatusOpen, TicketNumber: &num, Title: "Не открывается 1С",
+		Category: &models.CategoryShort{ID: categoryID, Name: "1С"},
+		Access:   &models.AccessFlags{CanPickModifier: true},
+	}, nil)
+	return &modifierActionFixture{statusActionFixture: base, categoryID: categoryID, modifierID: modifierID}, capture
+}
+
+// Нажатие «Подкатегория» открывает диалог, но не меняет заявку: выбор делается
+// сабмитом. В селекте — только активные подкатегории категории заявки.
+func TestHandleInteractiveAction_ModifierOpensDialog(t *testing.T) {
+	fixture, capture := newModifierActionFixture(t)
+
+	result, err := fixture.pressAction(t, actionModifier, models.StatusOpen)
+	require.NoError(t, err)
+	assert.Nil(t, result)
+	fixture.tickets.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+	assert.Empty(t, capture.patches)
+	assert.Empty(t, capture.deletedPostIDs)
+
+	require.Len(t, capture.dialogs, 1)
+	sent := capture.dialogs[0]
+	dialog := sent.Dialog
+	assert.Equal(t, modifierCallbackPrefix+fixture.ticketID.String(), dialog.CallbackId)
+	assert.Equal(t, "trigger1", sent.TriggerId)
+	assert.Equal(t, "Подкатегория заявки", dialog.Title)
+	assert.Equal(t, "Сохранить", dialog.SubmitLabel)
+	assert.Contains(t, dialog.IntroductionText, "Заявка №42")
+	require.Len(t, dialog.Elements, 1)
+	element := dialog.Elements[0]
+	assert.Equal(t, "categoryModifierId", element.Name)
+	assert.Equal(t, "select", element.Type)
+	require.Len(t, element.Options, 2, "неактивная и чужая подкатегории не предлагаются")
+	assert.Equal(t, modifierNoneValue, element.Options[0].Value)
+	assert.Equal(t, "Без подкатегории", element.Options[0].Text)
+	assert.Equal(t, fixture.modifierID.String(), element.Options[1].Value)
+	assert.Equal(t, "Утечка", element.Options[1].Text)
+	assert.JSONEq(t, `{"from":0,"post_id":"p1"}`, dialog.State)
+}
+
+// Подделанная кнопка не открывает диалог: право и категорию бот берёт из
+// ticketDetail, а не из контекста, пришедшего от клиента.
+func TestHandleInteractiveAction_ModifierWithoutRight(t *testing.T) {
+	fixture, capture := newStatusActionFixture(t, models.StatusOpen)
+	fixture.tickets.On("GetByID", mock.Anything, mock.Anything).Return(&models.Ticket{
+		ID: fixture.ticketID, Status: models.StatusOpen,
+		Category: &models.CategoryShort{ID: uuid.New()},
+	}, nil)
+
+	result, err := fixture.pressAction(t, actionModifier, models.StatusOpen)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Contains(t, result.Ephemeral, "Подкатегорию можно выбирать")
+	assert.Empty(t, capture.dialogs)
+	fixture.tickets.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+}
+
+// submitModifierDialog отправляет сабмит диалога подкатегории.
+func (f *modifierActionFixture) submitModifierDialog(t *testing.T, value string) error {
+	t.Helper()
+	return f.svc.HandleDialogSubmission(context.Background(), &model.SubmitDialogRequest{
+		CallbackId: modifierCallbackPrefix + f.ticketID.String(),
+		UserId:     "mm1",
+		ChannelId:  "ch1",
+		State:      `{"from":0,"post_id":"p1"}`,
+		Submission: map[string]interface{}{"categoryModifierId": value},
+	})
+}
+
+// Сабмит диалога меняет подкатегорию через TicketService.Update с явно
+// помеченным полем и перерисовывает карточку в списке.
+func TestHandleDialogSubmission_Modifier(t *testing.T) {
+	fixture, capture := newModifierActionFixture(t)
+	fixture.tickets.On("Update", mock.Anything, mock.MatchedBy(func(dto *models.TicketDTO) bool {
+		return dto.ID != nil && *dto.ID == fixture.ticketID &&
+			dto.CategoryModifierID != nil && *dto.CategoryModifierID == fixture.modifierID &&
+			dto.Provided["categoryModifierId"] &&
+			dto.Actor != nil && dto.Actor.ID == fixture.userID &&
+			dto.RealmID != nil && *dto.RealmID == fixture.realmID
+	})).Return(nil).Once()
+	fixture.tickets.On("Get", mock.Anything, mock.Anything).Return(
+		ticketFixtures(0, 1, fixture.userID, models.StatusOpen), 1, nil)
+
+	require.NoError(t, fixture.submitModifierDialog(t, fixture.modifierID.String()))
+	fixture.tickets.AssertNumberOfCalls(t, "Update", 1)
+
+	patched, ok := capture.patches["p1"]
+	require.True(t, ok, "карточка должна перерисоваться на месте")
+	assert.Equal(t, "**Ваши активные заявки** (1):", patched.message)
+	require.Len(t, *capture.posts, 1)
+	assert.Equal(t, "Подкатегория обновлена.", (*capture.posts)[0].message)
+	assert.Equal(t, "ch1", (*capture.posts)[0].channelID)
+}
+
+// «Без подкатегории» снимает выбранное значение: в DTO уходит nil, но поле
+// остаётся Provided — иначе сервис принял бы это за отсутствие изменения.
+func TestHandleDialogSubmission_ModifierClear(t *testing.T) {
+	fixture, capture := newModifierActionFixture(t)
+	fixture.tickets.On("Update", mock.Anything, mock.MatchedBy(func(dto *models.TicketDTO) bool {
+		return dto.ID != nil && *dto.ID == fixture.ticketID &&
+			dto.CategoryModifierID == nil && dto.Provided["categoryModifierId"]
+	})).Return(nil).Once()
+	fixture.tickets.On("Get", mock.Anything, mock.Anything).Return(
+		ticketFixtures(0, 1, fixture.userID, models.StatusOpen), 1, nil)
+
+	require.NoError(t, fixture.submitModifierDialog(t, modifierNoneValue))
+	fixture.tickets.AssertNumberOfCalls(t, "Update", 1)
+	require.Len(t, *capture.posts, 1)
+	assert.Equal(t, "Подкатегория снята.", (*capture.posts)[0].message)
+}
+
+// Некорректный id из сабмита не доходит до сервиса тикетов: ошибка вернётся
+// хендлером как 200 {"error": ...}, и Mattermost оставит диалог открытым.
+func TestHandleDialogSubmission_ModifierInvalidID(t *testing.T) {
+	fixture, _ := newModifierActionFixture(t)
+
+	err := fixture.submitModifierDialog(t, "not-a-uuid")
+	assert.ErrorIs(t, err, models.ErrInvalidInput)
+	fixture.tickets.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+}
+
 // ticketFixture — заявка для проверки разбиения списка на сообщения.
 func ticketFixture(i int, status models.TicketStatus, ownerID uuid.UUID) *models.Ticket {
 	num := i + 1
@@ -1132,6 +1280,30 @@ func TestCardSummary_EdgeCases(t *testing.T) {
 	assert.Equal(t, cardSummaryLimit, len([]rune(cardSummary(strings.Repeat("я", cardSummaryLimit)))))
 }
 
+// Карточка по номеру показывает подкатегорию и кнопку выбора даже заявке без
+// владельца — исполнителю она доступна по его роли, а не по владению.
+func TestTicketCard_Modifier(t *testing.T) {
+	svc := NewMattermostService(&MattermostDeps{BaseURL: testBaseURL})
+	id := uuid.New()
+	detail := &models.PluginTicketDetail{
+		ID: id, Status: models.StatusOpen,
+		CategoryModifier: &models.CategoryModifierShort{ID: uuid.New(), Name: "Утечка"},
+		CanPickModifier:  true,
+	}
+	card := svc.ticketCard(detail)
+	fields := make(map[string]string, len(card.Fields))
+	for _, f := range card.Fields {
+		fields[f.Title] = f.Value
+	}
+	assert.Equal(t, "Утечка", fields["Подкатегория"])
+	require.Len(t, card.Buttons, 1)
+	assert.Equal(t, actionModifier, card.Buttons[0].Context["action"])
+	assert.Equal(t, ticketActionID(id, actionModifier), card.Buttons[0].ID)
+
+	detail.CanPickModifier = false
+	assert.Empty(t, svc.ticketCard(detail).Buttons)
+}
+
 func TestMyTicketsChunks_EmptyList(t *testing.T) {
 	svc := NewMattermostService(&MattermostDeps{BaseURL: testBaseURL})
 
@@ -1180,6 +1352,36 @@ func TestMyTicketActionButtons_ByStatusAndOwner(t *testing.T) {
 			assert.Equal(t, tt.want, names)
 		})
 	}
+}
+
+// Подкатегорию выбирает исполнитель/начальник области — в том числе когда он
+// не владелец заявки. Остальные действия в карточке остаются за владельцем.
+func TestMyTicketActionButtons_Modifier(t *testing.T) {
+	svc := NewMattermostService(&MattermostDeps{BaseURL: testBaseURL})
+	ownerID, executorID := uuid.New(), uuid.New()
+
+	ticket := ticketFixture(0, models.StatusOpen, ownerID)
+	ticket.Access = &models.AccessFlags{CanPickModifier: true}
+	buttons := svc.myTicketActionButtons(ticket, executorID, 3)
+	require.Len(t, buttons, 1)
+	assert.Equal(t, "Подкатегория", buttons[0].Text)
+	assert.Equal(t, actionModifier, buttons[0].Context["action"])
+	assert.Equal(t, "3", buttons[0].Context["from"])
+	assert.Equal(t, ticketActionID(ticket.ID, actionModifier), buttons[0].ID)
+
+	// Владелец с правом выбора видит оба действия: подкатегорию и отмену.
+	buttons = svc.myTicketActionButtons(ticket, ownerID, 0)
+	require.Len(t, buttons, 2)
+	assert.Equal(t, actionModifier, buttons[0].Context["action"])
+	assert.Equal(t, actionCancel, buttons[1].Context["action"])
+
+	// На решённой заявке choice недоступен (CanPickModifier уже false).
+	ticket.Status = models.StatusResolved
+	ticket.Access = nil
+	buttons = svc.myTicketActionButtons(ticket, ownerID, 0)
+	require.Len(t, buttons, 2)
+	assert.Equal(t, actionConfirm, buttons[0].Context["action"])
+	assert.Equal(t, actionReopen, buttons[1].Context["action"])
 }
 
 // action_id действий должен быть уникален в пределах поста: Mattermost ищет

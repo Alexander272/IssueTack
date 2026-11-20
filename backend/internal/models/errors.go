@@ -69,6 +69,7 @@ var (
 	ErrGroupHasOpenTickets    = NewDomainError(errors.New("group has open tickets"), http.StatusConflict, "GR001", "Нельзя удалить группу, пока в ней есть незакрытые заявки")
 	ErrCategoryHasOpenTickets = NewDomainError(errors.New("category has open tickets"), http.StatusConflict, "CT001", "Нельзя удалить категорию, пока в ней есть незакрытые заявки")
 	ErrCategoryGroupInUse     = NewDomainError(errors.New("category group has categories"), http.StatusConflict, "CT002", "Нельзя удалить раздел, пока в нём есть категории")
+	ErrCategoryModifierInUse  = NewDomainError(errors.New("category modifier has tickets"), http.StatusConflict, "CT003", "Нельзя удалить подкатегорию, пока она указана в заявках")
 
 	// 409 Conflict (оборудование)
 	ErrEquipmentTypeInUse             = NewDomainError(errors.New("equipment type has equipment"), http.StatusConflict, "EQ001", "Нельзя удалить тип, пока к нему привязано оборудование")

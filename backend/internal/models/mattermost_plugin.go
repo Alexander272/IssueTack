@@ -28,6 +28,12 @@ type PluginContextResult struct {
 	// IsManager — менеджер реалма: начальник области ИЛИ управляет хотя бы одной
 	// группой. Зеркало веб-selector'а getIsManager (isRealmAdmin || managedGroupIds>0).
 	IsManager bool `json:"isManager"`
+	// IsRealmAdmin — начальник области. Отличается от IsManager: manager'ом
+	// считается и управляющий группой. Подкатегорию при создании выбирает
+	// исполнитель (участник группы) или начальник области — независимо от того,
+	// кто назначен исполнителем новой заявки. Роль нужна форме плагина, чтобы
+	// не показывать поле тем, кому бэкенд отказал бы.
+	IsRealmAdmin bool `json:"isRealmAdmin"`
 	// MemberGroupIds — группы, в которых состоит пользователь: по ним фронт
 	// определяет исполнителя (isExecutor = !isManager && memberGroupIds>0).
 	MemberGroupIds []uuid.UUID `json:"memberGroupIds"`
@@ -97,12 +103,15 @@ type PluginCreateTicketInput struct {
 	Title       string
 	Description string
 	CategoryID  uuid.UUID
-	SiteID      uuid.UUID
-	Priority    string
-	GroupID     uuid.UUID
-	AssigneeID  uuid.UUID
-	OwnerID     uuid.UUID
-	DueDate     *time.Time
+	// CategoryModifierID — выбранная подкатегория (только для новой заявки).
+	// Ролевые проверки и разовую подстановку срока/приоритета делает TicketService.Create.
+	CategoryModifierID uuid.UUID
+	SiteID             uuid.UUID
+	Priority           string
+	GroupID            uuid.UUID
+	AssigneeID         uuid.UUID
+	OwnerID            uuid.UUID
+	DueDate            *time.Time
 	// NotifierIDs — наблюдатели («Уведомлять»), выбранные в форме. Пустой список
 	// означает «никого не уведомлять» и неотличим от «поле не передано», что для
 	// создания одно и то же.
@@ -167,10 +176,12 @@ type PluginTicketDetail struct {
 	CreatedAt   time.Time      `json:"createdAt"`
 	DueDate     *time.Time     `json:"dueDate,omitempty"`
 	Category    *CategoryShort `json:"category,omitempty"`
-	Site        *SiteShort     `json:"site,omitempty"`
-	Creator     UserShort      `json:"creator"`
-	Owner       *UserShort     `json:"owner,omitempty"`
-	Assignee    *UserShort     `json:"assignee,omitempty"`
+	// CategoryModifier — подкатегория заявки, если выбрана.
+	CategoryModifier *CategoryModifierShort `json:"categoryModifier,omitempty"`
+	Site             *SiteShort             `json:"site,omitempty"`
+	Creator          UserShort              `json:"creator"`
+	Owner            *UserShort             `json:"owner,omitempty"`
+	Assignee         *UserShort             `json:"assignee,omitempty"`
 	// Notifiers — список «Уведомлять»: наблюдатели получают уведомления по
 	// ключевым событиям заявки (в вебе это блок «Наблюдатели» в Participants).
 	Notifiers []UserShort `json:"notifiers,omitempty"`
@@ -184,6 +195,9 @@ type PluginTicketDetail struct {
 	CanConfirm bool `json:"canConfirm,omitempty"`
 	CanReopen  bool `json:"canReopen,omitempty"`
 	CanCancel  bool `json:"canCancel,omitempty"`
+	// CanPickModifier — подкатегорию может выбрать исполнитель или начальник
+	// области, пока заявка открыта (тот же флаг, что в AccessFlags веба).
+	CanPickModifier bool `json:"canPickModifier,omitempty"`
 }
 
 // PluginAttachment — вложение заявки для плагина. Ссылка на скачивание строится

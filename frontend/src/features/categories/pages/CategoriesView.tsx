@@ -1,26 +1,18 @@
-import { useMemo, useState, type FC } from 'react'
-import { Box, Button, Typography, useTheme } from '@mui/material'
+import { useState, type FC } from 'react'
+import { Button, MenuItem, MenuList, Popover, Box, Typography } from '@mui/material'
+import { CornerDownRightIcon, FolderIcon, PlusIcon, LayersIcon } from 'lucide-mui'
 
-import type { ICategory, ICategoryDTO } from '../types/category'
-import { useGetAllCategoriesQuery } from '../categoriesApiSlice'
-import { useGetAllCategoryGroupsQuery } from '@/features/categoryGroups/categoryGroupsApiSlice'
-import { CategoryGroupsSection } from '@/features/categoryGroups/components/CategoryGroupsSection'
-import { useGetAllGroupsQuery } from '@/features/groups/groupsApiSlice'
+import type { CategoryDialogRequest } from '../types/dialogs'
 import { useDebounce } from '@/hooks/useDebounce'
-import { PlusIcon } from 'lucide-mui'
+import { useCategoryDialogs } from '../hooks/useCategoryDialogs'
+import { useGetAllGroupsQuery } from '@/features/groups/groupsApiSlice'
+import { useGetAllCategoriesQuery, useGetAllCategoryModifiersQuery } from '../categoriesApiSlice'
+import { useGetAllCategoryGroupsQuery } from '../categoryGroupsApiSlice'
 import { CategoryFilters, type CategoryFilterState } from '../components/CategoryFilters'
-import { CategoryCardList } from '../components/CategoryCardList'
-import { CategoryTable } from '../components/CategoryTable'
-import { CategoryViewDialog } from '../components/CategoryViewDialog'
-import { CategoryDialog } from '../components/Dialogs/CategoryDialog'
+import { CategoryTable } from '../components/CategoryTable/index'
+import { CategoryDialogs } from '../components/Dialogs/CategoryDialogs'
 
 export const CategoriesView: FC = () => {
-	const { palette } = useTheme()
-
-	const [open, setOpen] = useState(false)
-	const [category, setCategory] = useState<ICategoryDTO | null>(null)
-	const [viewCategory, setViewCategory] = useState<ICategory | null>(null)
-
 	const [filters, setFilters] = useState<CategoryFilterState>({
 		group: 'all',
 		status: 'all',
@@ -29,59 +21,25 @@ export const CategoriesView: FC = () => {
 	})
 	const debouncedSearch = useDebounce(filters.search, 300) as string
 
+	const [createAnchor, setCreateAnchor] = useState<HTMLElement | null>(null)
+
 	const { data: categories } = useGetAllCategoriesQuery()
 	const { data: categoryGroups } = useGetAllCategoryGroupsQuery()
 	const { data: groups } = useGetAllGroupsQuery()
-
-	const groupsMap = useMemo(() => {
-		const map = new Map<string, string>()
-		groups?.data?.forEach(g => map.set(g.id, g.name))
-		return map
-	}, [groups?.data])
-
-	const filtered = useMemo(() => {
-		const q = debouncedSearch.toLowerCase()
-		return categories?.data?.filter(c => {
-			if (filters.group !== 'all' && c.groupId !== filters.group) return false
-			if (filters.status === 'active' && !c.isActive) return false
-			if (filters.status === 'inactive' && c.isActive) return false
-			if (filters.priority !== 'all' && c.priority !== filters.priority) return false
-			if (q && !c.name.toLowerCase().includes(q) && !c.description.toLowerCase().includes(q)) return false
-			return true
-		})
-	}, [categories, filters, debouncedSearch])
-
-	const openCreate = () => {
-		setCategory(null)
-		setOpen(true)
-	}
-
-	const openEdit = (cat: ICategory) => {
-		setCategory({
-			id: cat.id,
-			name: cat.name,
-			description: cat.description,
-			groupId: cat.groupId,
-			categoryGroupId: cat.categoryGroupId ?? null,
-			priority: cat.priority,
-			isActive: cat.isActive,
-			isHidden: cat.isHidden,
-			defaultDueDays: cat.defaultDueDays ?? null,
-		})
-		setOpen(true)
-	}
-
-	const openView = (cat: ICategory) => {
-		setViewCategory(cat)
-	}
-
-	const closeDialog = () => {
-		setCategory(null)
-		setOpen(false)
-	}
+	const { data: modifiers } = useGetAllCategoryModifiersQuery()
 
 	const resetFilters = () => {
 		setFilters({ group: 'all', status: 'all', priority: 'all', search: '' })
+	}
+
+	const { dialog, openDialog, closeDialog } = useCategoryDialogs({
+		groups: groups?.data || [],
+		categories: categories?.data || [],
+	})
+
+	const create = (request: CategoryDialogRequest) => {
+		setCreateAnchor(null)
+		openDialog(request)
 	}
 
 	return (
@@ -100,10 +58,11 @@ export const CategoriesView: FC = () => {
 					<Typography variant='h5' sx={{ fontWeight: 'bold', color: '#1f2937' }}>
 						Категории задач
 					</Typography>
-					<Typography variant='body2' sx={{ color: '#6b7280', display: { xs: 'none', sm: 'block' } }}>
+					<Typography variant='body2' sx={{ color: '#6b7280', mt: 0.25 }}>
 						Управление разделами и категориями, их привязкой к группам исполнителей
 					</Typography>
 				</Box>
+
 				<Button
 					variant='outlined'
 					sx={{
@@ -112,14 +71,32 @@ export const CategoriesView: FC = () => {
 						background: '#fff',
 						width: { xs: '100%', sm: 'auto' },
 					}}
-					onClick={openCreate}
+					onClick={e => setCreateAnchor(e.currentTarget)}
 				>
-					<PlusIcon sx={{ color: palette.primary.main, fontSize: 16, mr: 1.5 }} />
-					Создать категорию
+					<PlusIcon color='primary' sx={{ fontSize: 16, mr: 1 }} />
+					Создать
 				</Button>
+				<Popover
+					open={Boolean(createAnchor)}
+					anchorEl={createAnchor}
+					onClose={() => setCreateAnchor(null)}
+					anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+					transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+					slotProps={{ paper: { sx: { borderRadius: 2.5, minWidth: 210, p: 0.5 } } }}
+				>
+					<MenuList>
+						<MenuItem onClick={() => create({ kind: 'create-category', sectionId: null })}>
+							<FolderIcon sx={{ fontSize: 16, mr: 1 }} /> Категорию
+						</MenuItem>
+						<MenuItem onClick={() => create({ kind: 'create-section' })}>
+							<LayersIcon sx={{ fontSize: 16, mr: 1 }} /> Раздел
+						</MenuItem>
+						<MenuItem onClick={() => create({ kind: 'create-modifier' })}>
+							<CornerDownRightIcon sx={{ fontSize: 16, mr: 1 }} /> Подкатегорию
+						</MenuItem>
+					</MenuList>
+				</Popover>
 			</Box>
-
-			<CategoryGroupsSection categories={categories?.data || []} />
 
 			<CategoryFilters
 				groups={groups?.data || []}
@@ -128,34 +105,20 @@ export const CategoriesView: FC = () => {
 				onReset={resetFilters}
 			/>
 
-			<Box sx={{ display: { xs: 'none', md: 'block' } }}>
-				<CategoryTable categories={filtered || []} groupsMap={groupsMap} onView={openView} onEdit={openEdit} />
-			</Box>
-			<Box sx={{ display: { xs: 'block', md: 'none' } }}>
-				<CategoryCardList
-					categories={filtered || []}
-					groupsMap={groupsMap}
-					onView={openView}
-					onEdit={openEdit}
-				/>
-			</Box>
-
-			<CategoryViewDialog
-				category={viewCategory}
-				groupsMap={groupsMap}
-				onClose={() => setViewCategory(null)}
-				onEdit={cat => {
-					setViewCategory(null)
-					setCategory(cat)
-					setOpen(true)
-				}}
-			/>
-
-			<CategoryDialog
-				category={category || undefined}
-				groups={groups?.data || []}
+			<CategoryTable
+				categories={categories?.data || []}
 				categoryGroups={categoryGroups?.data || []}
-				open={open}
+				groups={groups?.data || []}
+				modifiers={modifiers?.data}
+				filters={filters}
+				search={debouncedSearch}
+				onDialog={openDialog}
+			/>
+			<CategoryDialogs
+				state={dialog}
+				groups={groups?.data || []}
+				categories={categories?.data || []}
+				categoryGroups={categoryGroups?.data || []}
 				onClose={closeDialog}
 			/>
 		</Box>

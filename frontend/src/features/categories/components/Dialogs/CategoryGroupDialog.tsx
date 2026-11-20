@@ -87,7 +87,7 @@ export const CategoryGroupDialog: FC<Props> = ({ categoryGroup, open, onClose })
 		>
 			<DialogTitle sx={{ m: 0, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
 				<Typography variant='h6' component='div' sx={{ fontWeight: 'bold' }}>
-					{categoryGroup ? 'Редактировать раздел' : 'Создать раздел'}
+					{categoryGroup?.id ? 'Редактировать раздел' : 'Создать раздел'}
 				</Typography>
 				<IconButton size='large' onClick={onClose} sx={{ color: 'text.secondary' }}>
 					<XIcon sx={{ fontSize: 20 }} />
@@ -142,8 +142,8 @@ export const CategoryGroupDialog: FC<Props> = ({ categoryGroup, open, onClose })
 							)}
 						/>
 						<Typography variant='caption' sx={{ color: 'text.secondary', mt: 0.5, display: 'block' }}>
-							Скрытый раздел не видят заказчики — только менеджеры и исполнители. Все категории раздела скрываются
-							автоматически.
+							Скрытый раздел не видят заказчики — только менеджеры и исполнители. Все категории раздела
+							скрываются автоматически.
 						</Typography>
 					</Box>
 				</Box>

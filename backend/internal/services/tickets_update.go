@@ -217,7 +217,29 @@ func (s *TicketService) updateTicket(
 			}
 		}
 
+		// Подкатегория: смена только в open, только исполнителем/начальником области;
+		// при смене категории она сбрасывается. Параметры применяются разово.
+		modifierResult, err := s.prepareUpdateModifier(ctx, &updateModifierInput{
+			DTO: dto, Old: oldTicket, ActorID: dto.Actor.ID,
+		})
+		if err != nil {
+			return err
+		}
+
 		changes = dto.GetChanges(oldTicket)
+
+		// У заявки с подкатегорией срок и приоритет вправе править только
+		// начальник области, менеджер группы или исполнитель-создатель (пока
+		// open и он остаётся исполнителем). Разовую подстановку при выборе
+		// подкатегории это ограничение не блокирует.
+		if !modifierResult.MayOverride && !modifierResult.Applied &&
+			(modifierID(oldTicket) != nil || dto.CategoryModifierID != nil) {
+			for _, change := range changes {
+				if change.Tag == models.ActionDueDateChanged || change.Tag == models.ActionPriorityChanged {
+					return models.ErrPermissionDenied
+				}
+			}
+		}
 
 		// Неактивные статусы (resolved/closed/cancelled) — «замороженные»: менять
 		// разрешено только сам статус (resolved→closed, resolved→in_progress и т.п.).
@@ -339,6 +361,16 @@ func (s *TicketService) updateTicket(
 					// допустимо только для админа/менеджера группы: авторизация
 					// проведена в «тонких правах» выше (исполнитель с work-доступом
 					// сюда не попадает — его передача идёт через Transfer)
+				case models.ActionSubcategoryChanged:
+					// авторизовано prepareUpdateModifier: подкатегорию может
+					// менять исполнитель даже при обычном work-доступе.
+				case models.ActionDueDateChanged, models.ActionPriorityChanged:
+					// разовая подстановка при выборе подкатегории: значения
+					// сгенерированы сервером в prepareUpdateModifier. Произвольную
+					// правку срока/приоритета исполнитель-не-создатель не получает.
+					if !modifierResult.Applied {
+						return models.ErrPermissionDenied
+					}
 				default:
 					return models.ErrPermissionDenied
 				}

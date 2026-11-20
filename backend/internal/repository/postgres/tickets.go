@@ -62,6 +62,8 @@ type nullableTicketAssoc struct {
 	GroupName                                                                     *string
 	EquipmentID                                                                   *uuid.UUID
 	EquipmentName                                                                 *string
+	ModifierID                                                                    *uuid.UUID
+	ModifierName                                                                  *string
 }
 
 func (a *nullableTicketAssoc) assign(ticket *models.Ticket) {
@@ -92,6 +94,13 @@ func (a *nullableTicketAssoc) assign(ticket *models.Ticket) {
 	if a.EquipmentID != nil {
 		ticket.Equipment = &models.EquipmentShort{ID: *a.EquipmentID, Name: *a.EquipmentName}
 	}
+	if a.ModifierID != nil {
+		name := ""
+		if a.ModifierName != nil {
+			name = *a.ModifierName
+		}
+		ticket.CategoryModifier = &models.CategoryModifierShort{ID: *a.ModifierID, Name: name}
+	}
 }
 
 // ticketSelectBase — общий SELECT с джойнами для постраничной выборки заявок
@@ -106,6 +115,7 @@ func ticketSelectBase() string {
 			u_manager.id, u_manager.username AS manager_username, u_manager.first_name AS manager_first_name, u_manager.last_name AS manager_last_name, u_manager.internal_number AS manager_internal_number,
 			g.id, g.name,
 			c.id, c.name, cg.name AS category_group_name,
+			cm.id AS modifier_id, cm.name AS modifier_name,
 			s.id, s.name,
 			e.id AS equipment_id, e.name AS equipment_name,
 			COUNT(*) OVER() AS total_count
@@ -117,10 +127,11 @@ func ticketSelectBase() string {
 		LEFT JOIN %s g ON t.group_id = g.id
 		JOIN %s c ON t.category_id = c.id
 		LEFT JOIN %s cg ON c.category_group_id = cg.id
+		LEFT JOIN %s cm ON t.category_modifier_id = cm.id
 		JOIN %s s ON t.site_id = s.id
 		LEFT JOIN %s e ON t.equipment_id = e.id`,
 		Tables.Tickets, Tables.Users, Tables.Users, Tables.Users, Tables.Users,
-		Tables.Groups, Tables.Categories, Tables.CategoryGroups, Tables.Sites,
+		Tables.Groups, Tables.Categories, Tables.CategoryGroups, Tables.CategoryModifiers, Tables.Sites,
 		Tables.Equipment,
 	)
 }
@@ -145,6 +156,7 @@ func scanTicketRow(row rowScanner) (*models.Ticket, int, error) {
 		&assoc.ManagerID, &assoc.ManagerUsername, &assoc.ManagerFirstName, &assoc.ManagerLastName, &assoc.ManagerInternalNumber,
 		&assoc.GroupID, &assoc.GroupName,
 		&ticket.Category.ID, &ticket.Category.Name, &ticket.Category.CategoryGroupName,
+		&assoc.ModifierID, &assoc.ModifierName,
 		&ticket.Site.ID, &ticket.Site.Name,
 		&assoc.EquipmentID, &assoc.EquipmentName,
 		&total,
@@ -259,6 +271,8 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 			g.id, g.name,
 			-- Данные категории
 			c.id, c.name, cg.name AS category_group_name,
+			-- Данные подкатегории
+			cm.id AS modifier_id, cm.name AS modifier_name,
 			-- Данные площадки
 			s.id, s.name,
 			e.id AS equipment_id, e.name AS equipment_name
@@ -270,11 +284,12 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 		LEFT JOIN %s g ON t.group_id = g.id
 		JOIN %s c ON t.category_id = c.id
 		LEFT JOIN %s cg ON c.category_group_id = cg.id
+		LEFT JOIN %s cm ON t.category_modifier_id = cm.id
 		JOIN %s s ON t.site_id = s.id
 		LEFT JOIN %s e ON t.equipment_id = e.id
 		WHERE t.id = $1;`,
 		Tables.Tickets, Tables.Users, Tables.Users, Tables.Users, Tables.Users,
-		Tables.Groups, Tables.Categories, Tables.CategoryGroups, Tables.Sites,
+		Tables.Groups, Tables.Categories, Tables.CategoryGroups, Tables.CategoryModifiers, Tables.Sites,
 		Tables.Equipment,
 	)
 
@@ -295,6 +310,7 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 		&assoc.ManagerID, &assoc.ManagerUsername, &assoc.ManagerFirstName, &assoc.ManagerLastName, &assoc.ManagerInternalNumber,
 		&assoc.GroupID, &assoc.GroupName,
 		&ticket.Category.ID, &ticket.Category.Name, &ticket.Category.CategoryGroupName,
+		&assoc.ModifierID, &assoc.ModifierName,
 		&ticket.Site.ID, &ticket.Site.Name,
 		&assoc.EquipmentID, &assoc.EquipmentName,
 	); err != nil {
@@ -343,8 +359,8 @@ func (r *TicketRepo) Create(ctx context.Context, tx Tx, dto *models.TicketDTO) e
 	dto.TicketNumber = ticketNumber
 
 	query := fmt.Sprintf(`INSERT INTO %s (id, title, description, status, priority, site_id, category_id,
-		creator_id, owner_id, group_id, assignee_id, manager_id, due_date, ticket_number, realm_id, owner_muted, equipment_id) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16, $17)`,
+		category_modifier_id, creator_id, owner_id, group_id, assignee_id, manager_id, due_date, ticket_number, realm_id, owner_muted, equipment_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
 		Tables.Tickets,
 	)
 
@@ -358,7 +374,7 @@ func (r *TicketRepo) Create(ctx context.Context, tx Tx, dto *models.TicketDTO) e
 
 	_, err := r.getExec(tx).Exec(
 		ctx, query, dto.ID, dto.Title, dto.Description, dto.Status, dto.Priority, siteID, categoryID,
-		dto.CreatorID, dto.OwnerID, dto.GroupID, dto.AssigneeID, dto.ManagerID, dto.DueDate, ticketNumber, dto.RealmID, dto.OwnerMuted, dto.EquipmentID,
+		dto.CategoryModifierID, dto.CreatorID, dto.OwnerID, dto.GroupID, dto.AssigneeID, dto.ManagerID, dto.DueDate, ticketNumber, dto.RealmID, dto.OwnerMuted, dto.EquipmentID,
 	)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
@@ -386,6 +402,7 @@ func (r *TicketRepo) Update(ctx context.Context, tx Tx, dto *models.TicketDTO) e
 	add("priority", "priority", dto.Priority)
 	add("siteId", "site_id", dto.SiteID)
 	add("categoryId", "category_id", dto.CategoryID)
+	add("categoryModifierId", "category_modifier_id", dto.CategoryModifierID)
 	add("groupId", "group_id", dto.GroupID)
 	add("assigneeId", "assignee_id", dto.AssigneeID)
 	add("managerId", "manager_id", dto.ManagerID)

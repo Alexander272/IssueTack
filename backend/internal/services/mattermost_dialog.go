@@ -414,10 +414,14 @@ func (s *MattermostService) HandleDialogSubmission(ctx context.Context, submissi
 
 	// Не наш диалог создания заявки — callback_id несёт действие над заявкой.
 	if action, ticketID, ok := parseTicketActionCallback(submission.CallbackId); ok {
-		if action == actionReopen {
+		switch action {
+		case actionReopen:
 			return s.handleReopenSubmission(ctx, submission, ticketID)
+		case actionModifier:
+			return s.handleModifierSubmission(ctx, submission, ticketID)
+		default:
+			return s.handleCancelSubmission(ctx, submission, action, ticketID)
 		}
-		return s.handleCancelSubmission(ctx, submission, action, ticketID)
 	}
 
 	realmID, err := uuid.Parse(submission.CallbackId)
@@ -552,6 +556,9 @@ func (s *MattermostService) HandleInteractiveAction(ctx context.Context, input *
 	case actionCancel, actionConfirm, actionReopen:
 		return s.handleTicketStatusAction(ctx, action, input)
 
+	case actionModifier:
+		return s.handleModifierAction(ctx, input)
+
 	default:
 		return nil, nil
 	}
@@ -592,6 +599,112 @@ func (s *MattermostService) handleTicketStatusAction(ctx context.Context, action
 		return s.openReopenDialog(ctx, p)
 	}
 	return s.openCancelDialog(ctx, p, action)
+}
+
+// handleModifierAction отвечает на кнопку «Подкатегория» в карточке заявки.
+// В отличие от действий владельца, смена подкатегории не необратима, но и не
+// делается сразу: пользователь должен увидеть список активных подкатегорий и
+// явно выбрать одну (или снять ранее выбранную) в нативном диалоге Mattermost.
+//
+// Право и категорию берём из ticketDetail — он прогоняет атрибутную модель
+// доступа и заполняет CanPickModifier из того же AccessFlags, что и веб. Клиент
+// не может подсунуть свою категорию или роль через контекст кнопки.
+func (s *MattermostService) handleModifierAction(ctx context.Context, input *models.InteractiveActionDTO) (*ActionResult, error) {
+	ticketID, err := uuid.Parse(input.Context["ticket_id"])
+	if err != nil {
+		return nil, fmt.Errorf("invalid ticket_id: %w", err)
+	}
+	from, _ := strconv.Atoi(input.Context["from"])
+
+	realmID, err := s.tickets.GetRealmIDByTicketID(ctx, ticketID)
+	if err != nil {
+		logger.Warn("mattermost action: failed to resolve ticket realm", logger.ErrAttr(err))
+		return &ActionResult{Ephemeral: "Заявка не найдена"}, nil
+	}
+	settings, err := s.repo.GetByRealm(ctx, realmID)
+	if err != nil || settings == nil {
+		return nil, fmt.Errorf("failed to find realm settings: %w", err)
+	}
+
+	detail, err := s.ticketDetail(ctx, settings, input.UserID, ticketID)
+	if err != nil {
+		logger.Info("mattermost modifier action rejected",
+			logger.StringAttr("ticket_id", ticketID.String()),
+			logger.ErrAttr(err),
+		)
+		return &ActionResult{Ephemeral: "Не удалось открыть выбор подкатегории"}, nil
+	}
+	if !detail.CanPickModifier || detail.Category == nil {
+		return &ActionResult{Ephemeral: "Подкатегорию можно выбирать, пока заявка открыта: исполнителю или начальнику области."}, nil
+	}
+
+	p := &models.TicketDialogDTO{
+		Settings: settings,
+		TicketID: ticketID,
+		RealmID:  realmID,
+		From:     from,
+		Input:    input,
+	}
+	return s.openModifierDialog(ctx, p, detail)
+}
+
+// openModifierDialog открывает селект подкатегорий категории заявки. Список
+// берётся из CategoryService.GetByID — репозиторий приклеивает подкатегории к
+// категории, поэтому отдельная зависимость CategoryModifiers боту не нужна.
+// Неактивные подкатегории и подкатегории другой категории отсекаются: сервис
+// заявок отклонил бы их на сабмите, пользователю нечего предлагать.
+func (s *MattermostService) openModifierDialog(ctx context.Context, p *models.TicketDialogDTO, detail *models.PluginTicketDetail) (*ActionResult, error) {
+	if p.Input.TriggerID == "" {
+		return &ActionResult{Ephemeral: "Не удалось открыть диалог: Mattermost не передал trigger_id"}, nil
+	}
+	if s.categories == nil {
+		return &ActionResult{Ephemeral: "Не удалось загрузить подкатегории"}, nil
+	}
+
+	category, err := s.categories.GetByID(ctx, &models.GetCategoryByIdDTO{ID: detail.Category.ID, RealmID: p.RealmID})
+	if err != nil || category == nil {
+		logger.Warn("failed to load category modifiers for dialog",
+			logger.StringAttr("category_id", detail.Category.ID.String()),
+			logger.ErrAttr(err),
+		)
+		return &ActionResult{Ephemeral: "Не удалось загрузить подкатегории"}, nil
+	}
+
+	opts := []*model.PostActionOptions{{Text: "Без подкатегории", Value: modifierNoneValue}}
+	for _, m := range category.Modifiers {
+		if m == nil || !m.IsActive || m.CategoryID != category.ID {
+			continue
+		}
+		opts = append(opts, &model.PostActionOptions{Text: m.Name, Value: m.ID.String()})
+	}
+	if len(opts) == 1 {
+		return &ActionResult{Ephemeral: "У этой категории нет доступных подкатегорий."}, nil
+	}
+
+	intro := "Выберите подкатегорию — срок и приоритет будут подставлены из неё."
+	if detail.Number > 0 {
+		intro = fmt.Sprintf("Заявка №%d. ", detail.Number) + intro
+	}
+	err = s.most.Dialog.Open(p.Settings.BotToken, mattermost.OpenRequest{
+		TriggerID:    p.Input.TriggerID,
+		RealmID:      p.RealmID.String(),
+		CallbackID:   modifierCallbackPrefix + p.TicketID.String(),
+		Title:        "Подкатегория заявки",
+		Introduction: intro,
+		SubmitLabel:  "Сохранить",
+		Elements: []mattermost.DialogElement{{
+			DisplayName: "Подкатегория",
+			Name:        "categoryModifierId",
+			Type:        "select",
+			Options:     opts,
+		}},
+		State: fmt.Sprintf(`{"from":%d,"post_id":%q}`, p.From, p.Input.PostID),
+	})
+	if err != nil {
+		logger.Warn("failed to open modifier dialog", logger.ErrAttr(err))
+		return &ActionResult{Ephemeral: "Не удалось открыть диалог"}, nil
+	}
+	return nil, nil
 }
 
 // openCancelDialog просит подтвердить необратимый переход: отмену заявки или
@@ -676,6 +789,84 @@ func (s *MattermostService) changeTicketStatus(ctx context.Context, user *models
 	}
 	dto.MarkProvided("status")
 	return s.tickets.Update(ctx, dto)
+}
+
+// changeTicketModifier меняет подкатегорию через тот же TicketService.Update,
+// что использует веб: там проверяется open-статус, роль исполнителя/начальника
+// области и разовая подстановка срока/приоритета. DTO собран вручную, поэтому
+// поле помечается Provided — иначе сервис не увидит изменение.
+func (s *MattermostService) changeTicketModifier(ctx context.Context, user *models.UserData, realmID, ticketID uuid.UUID, modifierID *uuid.UUID) error {
+	dto := &models.TicketDTO{
+		ID:                 &ticketID,
+		CategoryModifierID: modifierID,
+		Actor:              &models.Actor{ID: user.ID, Name: user.Username},
+		RealmID:            &realmID,
+	}
+	dto.MarkProvided("categoryModifierId")
+	return s.tickets.Update(ctx, dto)
+}
+
+// handleModifierSubmission применяет выбор из диалога подкатегории. Выбранное
+// значение приходит из клиента, поэтому недоверенный id не разбирается здесь
+// «на administered»: валидацию существования, активности и принадлежности
+// категории делает TicketService.Update. Отказ показывается в диалоге (хендлер
+// вернёт 200 с error), карточку при этом не трогаем.
+func (s *MattermostService) handleModifierSubmission(ctx context.Context, submission *model.SubmitDialogRequest, ticketID uuid.UUID) error {
+	realmID, err := s.tickets.GetRealmIDByTicketID(ctx, ticketID)
+	if err != nil {
+		return fmt.Errorf("failed to resolve ticket realm: %w", err)
+	}
+	user, err := s.resolveOrCreateUser(ctx, realmID, submission.UserId, nil)
+	if err != nil {
+		return fmt.Errorf("failed to resolve user: %w", err)
+	}
+
+	var modifierID *uuid.UUID
+	switch raw, _ := submission.Submission["categoryModifierId"].(string); raw {
+	case "", modifierNoneValue:
+		// Снятие подкатегории — сообщение об этом уходит отдельным постом.
+	default:
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			return models.ErrInvalidInput
+		}
+		modifierID = &id
+	}
+
+	if err := s.changeTicketModifier(ctx, user, realmID, ticketID, modifierID); err != nil {
+		logger.Info("mattermost modifier submission rejected",
+			logger.StringAttr("ticket_id", ticketID.String()),
+			logger.ErrAttr(err),
+		)
+		return err
+	}
+
+	settings, err := s.repo.GetByRealm(ctx, realmID)
+	if err != nil || settings == nil || settings.BotToken == "" {
+		return nil
+	}
+
+	// Заявка осталась в активном списке: перерисовываем карточку на месте,
+	// чтобы в ней сразу отразились подкатегория и подставленные срок/приоритет.
+	state := parseDialogState(submission.State)
+	if err := s.applyListEdit(ctx, settings, realmID, user, state, false); err != nil {
+		logger.Warn("failed to update list post after modifier change",
+			logger.StringAttr("post_id", state.PostID),
+			logger.ErrAttr(err),
+		)
+	}
+
+	msg := "Подкатегория обновлена."
+	if modifierID == nil {
+		msg = "Подкатегория снята."
+	}
+	if _, err := s.most.Post.Create(settings.BotToken, mattermost.CreatePostDTO{
+		ChannelID: submission.ChannelId,
+		Message:   msg,
+	}); err != nil {
+		logger.Warn("failed to send modifier confirmation", logger.ErrAttr(err))
+	}
+	return nil
 }
 
 // openReopenDialog спрашивает причину возврата заявки в работу. Порядок как в
@@ -891,14 +1082,15 @@ func parseDialogState(raw string) dialogState {
 }
 
 // parseTicketActionCallback разбирает callback_id диалогов над заявкой:
-// «ticket_cancel:<id>», «ticket_confirm:<id>», «ticket_reopen:<id>».
+// «ticket_cancel:<id>», «ticket_confirm:<id>», «ticket_reopen:<id>»,
+// «ticket_modifier:<id>».
 func parseTicketActionCallback(callbackID string) (string, uuid.UUID, bool) {
 	action, raw, ok := strings.Cut(callbackID, ":")
 	if !ok {
 		return "", uuid.Nil, false
 	}
 	switch action {
-	case actionCancel, actionConfirm, actionReopen:
+	case actionCancel, actionConfirm, actionReopen, actionModifier:
 	default:
 		return "", uuid.Nil, false
 	}

@@ -1,7 +1,7 @@
 import { toast } from 'react-toastify'
 
 import type { IBaseFetchError } from '@/app/types/error'
-import type { ICategory, ICategoryDTO } from './types/category'
+import type { ICategory, ICategoryDTO, ICategoryModifier, ICategoryModifierDTO } from './types/category'
 import { apiSlice } from '@/app/apiSlice'
 import { API } from '@/app/api'
 
@@ -77,6 +77,59 @@ const categoriesApiSlice = apiSlice.injectEndpoints({
 			}),
 			invalidatesTags: [{ type: 'Categories', id: 'ALL' }],
 		}),
+
+		// Подкатегории приходят и отдельным списком, и вложенными в категории
+		// (форма заявки берёт их из категории). Оба кэша инвалидируются вместе.
+		getAllCategoryModifiers: builder.query<{ data: ICategoryModifier[] }, void>({
+			query: () => ({
+				url: API.categoryModifiers.base,
+				method: 'GET',
+			}),
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+			providesTags: [{ type: 'CategoryModifiers', id: 'ALL' }],
+		}),
+
+		createCategoryModifier: builder.mutation<ICategoryModifier, Omit<ICategoryModifierDTO, 'id'>>({
+			query: body => ({
+				url: API.categoryModifiers.base,
+				method: 'POST',
+				body,
+			}),
+			invalidatesTags: [
+				{ type: 'CategoryModifiers', id: 'ALL' },
+				{ type: 'Categories', id: 'ALL' },
+			],
+		}),
+
+		updateCategoryModifier: builder.mutation<ICategoryModifier, ICategoryModifierDTO>({
+			query: body => ({
+				url: API.categoryModifiers.byId(body.id || ''),
+				method: 'PUT',
+				body,
+			}),
+			invalidatesTags: [
+				{ type: 'CategoryModifiers', id: 'ALL' },
+				{ type: 'Categories', id: 'ALL' },
+			],
+		}),
+
+		deleteCategoryModifier: builder.mutation<void, string>({
+			query: id => ({
+				url: API.categoryModifiers.byId(id),
+				method: 'DELETE',
+			}),
+			invalidatesTags: [
+				{ type: 'CategoryModifiers', id: 'ALL' },
+				{ type: 'Categories', id: 'ALL' },
+			],
+		}),
 	}),
 })
 
@@ -87,4 +140,8 @@ export const {
 	useUpdateCategoryMutation,
 	useDeleteCategoryMutation,
 	useReorderCategoriesMutation,
+	useGetAllCategoryModifiersQuery,
+	useCreateCategoryModifierMutation,
+	useUpdateCategoryModifierMutation,
+	useDeleteCategoryModifierMutation,
 } = categoriesApiSlice

@@ -3505,6 +3505,7 @@ func TestTicketService_GetAccessFlags_ThinRights(t *testing.T) {
 		canCreateSubtask  bool
 		canAttachToTicket bool
 		canManage         bool
+		canPickModifier   bool
 	}{
 		{
 			name:   "creator and group manager",
@@ -3536,6 +3537,7 @@ func TestTicketService_GetAccessFlags_ThinRights(t *testing.T) {
 			userID:            creatorID,
 			canCreateSubtask:  true,
 			canAttachToTicket: true,
+			canPickModifier:   true,
 		},
 		{
 			name:   "notifier",
@@ -3577,6 +3579,7 @@ func TestTicketService_GetAccessFlags_ThinRights(t *testing.T) {
 			assert.Equal(t, tc.canCreateSubtask, flags.CanCreateSubtask, "canCreateSubtask")
 			assert.Equal(t, tc.canAttachToTicket, flags.CanAttachToTicket, "canAttachToTicket")
 			assert.Equal(t, tc.canManage, flags.CanManage, "canManage")
+			assert.Equal(t, tc.canPickModifier, flags.CanPickModifier, "canPickModifier")
 		})
 	}
 }

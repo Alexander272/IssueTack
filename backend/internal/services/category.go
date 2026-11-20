@@ -15,12 +15,13 @@ import (
 type CategoryService struct {
 	repo       repository.Categories
 	tickets    TicketCounter
+	modifiers  repository.CategoryModifiers
 	visibility *CategoryVisibility
 }
 
 // NewCategoryService создаёт CategoryService.
-func NewCategoryService(repo repository.Categories, tickets TicketCounter, visibility *CategoryVisibility) *CategoryService {
-	return &CategoryService{repo: repo, tickets: tickets, visibility: visibility}
+func NewCategoryService(repo repository.Categories, tickets TicketCounter, modifiers repository.CategoryModifiers, visibility *CategoryVisibility) *CategoryService {
+	return &CategoryService{repo: repo, tickets: tickets, modifiers: modifiers, visibility: visibility}
 }
 
 // Categories — интерфейс работы с категориями.
@@ -108,6 +109,17 @@ func (s *CategoryService) Delete(ctx context.Context, dto *models.DelCategoryDTO
 	}
 	if count > 0 {
 		return models.ErrCategoryHasOpenTickets
+	}
+	// Подкатегории удаляются вместе с категорией (CASCADE), а ссылка в заявке
+	// при этом просто очистилась бы — не даём потерять её подпись.
+	if s.modifiers != nil {
+		used, err := s.modifiers.CountTicketsByCategory(ctx, dto.ID)
+		if err != nil {
+			return fmt.Errorf("failed to count tickets by category modifiers: %w", err)
+		}
+		if used > 0 {
+			return models.ErrCategoryModifierInUse
+		}
 	}
 
 	if err := s.repo.Delete(ctx, dto); err != nil {

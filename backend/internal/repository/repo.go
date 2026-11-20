@@ -52,6 +52,9 @@ type Categories interface {
 type CategoryGroups interface {
 	postgres.CategoryGroups
 }
+type CategoryModifiers interface {
+	postgres.CategoryModifiers
+}
 type Sites interface {
 	postgres.Sites
 }
@@ -108,6 +111,7 @@ type Repository struct {
 	Groups
 	Categories
 	CategoryGroups
+	CategoryModifiers
 	Sites
 	Tickets
 	Statistics
@@ -142,6 +146,7 @@ func NewRepository(pool *pgxpool.Pool, memDB *redis.Client, conf config.AuthConf
 		Groups:              postgres.NewGroupRepo(pool, transaction),
 		Categories:          postgres.NewCategoryRepo(pool),
 		CategoryGroups:      postgres.NewCategoryGroupRepo(pool),
+		CategoryModifiers:   postgres.NewCategoryModifierRepo(pool),
 		Sites:               postgres.NewSiteRepo(pool),
 		Tickets:             postgres.NewTicketRepo(pool, transaction),
 		Statistics:          postgres.NewStatisticsRepo(pool),

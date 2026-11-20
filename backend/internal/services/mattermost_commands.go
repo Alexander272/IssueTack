@@ -279,6 +279,9 @@ func (s *MattermostService) ticketCard(detail *models.PluginTicketDetail) matter
 	if detail.Category != nil && detail.Category.Name != "" {
 		fields = append(fields, mattermost.AttachmentField{Title: "Категория", Value: detail.Category.Name, Short: true})
 	}
+	if detail.CategoryModifier != nil && detail.CategoryModifier.Name != "" {
+		fields = append(fields, mattermost.AttachmentField{Title: "Подкатегория", Value: detail.CategoryModifier.Name, Short: true})
+	}
 	if detail.Site != nil && detail.Site.Name != "" {
 		fields = append(fields, mattermost.AttachmentField{Title: "Площадка", Value: detail.Site.Name, Short: true})
 	}
@@ -319,12 +322,25 @@ func (s *MattermostService) ticketCard(detail *models.PluginTicketDetail) matter
 	return card
 }
 
-// detailActionButtons — действия владельца на карточке заявки. Правила те же, что
-// в плагине: отмена только для новой заявки, подтверждение решения и возврат в
-// работу — только для решённой. Заявка не владельца остаётся без кнопок.
+// detailActionButtons — действия на карточке заявки по номеру. Действия владельца
+// (отмена/подтверждение/возврат) приходят из ownerDecisions, а выбор подкатегории
+// — из AccessFlags: исполнителю или начальнику области кнопка доступна, даже если
+// он не владелец заявки.
 func (s *MattermostService) detailActionButtons(detail *models.PluginTicketDetail) []mattermost.InteractiveButton {
+	var buttons []mattermost.InteractiveButton
+	if detail.CanPickModifier {
+		buttons = append(buttons, mattermost.InteractiveButton{
+			Text: "Подкатегория",
+			URL:  s.actionURL(),
+			Context: map[string]string{
+				"action":    actionModifier,
+				"ticket_id": detail.ID.String(),
+			},
+			ID: ticketActionID(detail.ID, actionModifier),
+		})
+	}
 	if detail.Owner == nil {
-		return nil
+		return buttons
 	}
 	btnCtx := func(action string, status models.TicketStatus) map[string]string {
 		return map[string]string{
@@ -336,16 +352,14 @@ func (s *MattermostService) detailActionButtons(detail *models.PluginTicketDetai
 
 	switch detail.Status {
 	case models.StatusOpen:
-		if !detail.CanCancel {
-			return nil
+		if detail.CanCancel {
+			buttons = append(buttons, mattermost.InteractiveButton{
+				Text: "Отменить заявку", Style: "danger",
+				URL: s.actionURL(), Context: btnCtx(actionCancel, models.StatusCancelled),
+				ID: ticketActionID(detail.ID, actionCancel),
+			})
 		}
-		return []mattermost.InteractiveButton{{
-			Text: "Отменить заявку", Style: "danger",
-			URL: s.actionURL(), Context: btnCtx(actionCancel, models.StatusCancelled),
-			ID: ticketActionID(detail.ID, actionCancel),
-		}}
 	case models.StatusResolved:
-		var buttons []mattermost.InteractiveButton
 		if detail.CanConfirm {
 			buttons = append(buttons, mattermost.InteractiveButton{
 				Text: "Подтвердить решение", Style: "primary",
@@ -360,10 +374,8 @@ func (s *MattermostService) detailActionButtons(detail *models.PluginTicketDetai
 				ID: ticketActionID(detail.ID, actionReopen),
 			})
 		}
-		return buttons
-	default:
-		return nil
 	}
+	return buttons
 }
 
 // detailText — описание заявки для карточки: переносы схлопнуты в абзацы, а не

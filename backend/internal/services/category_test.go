@@ -16,7 +16,7 @@ import (
 // остаётся сплошной.
 func TestCategoryService_Reorder_KeepsUnlistedCategories(t *testing.T) {
 	repo := new(MockCategoriesRepo)
-	svc := NewCategoryService(repo, nil, nil)
+	svc := NewCategoryService(repo, nil, nil, nil)
 
 	realmID := uuid.New()
 	first := &models.Category{ID: uuid.New(), Name: "первая"}
@@ -47,7 +47,7 @@ func TestCategoryService_Reorder_KeepsUnlistedCategories(t *testing.T) {
 // «размыть» последовательность реалма, дописав чужой id.
 func TestCategoryService_Reorder_RejectsForeignCategory(t *testing.T) {
 	repo := new(MockCategoriesRepo)
-	svc := NewCategoryService(repo, nil, nil)
+	svc := NewCategoryService(repo, nil, nil, nil)
 
 	realmID := uuid.New()
 	own := &models.Category{ID: uuid.New(), Name: "своя"}

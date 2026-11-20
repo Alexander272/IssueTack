@@ -151,6 +151,8 @@ export interface CreateTicketPayload {
     title: string;
     description?: string;
     categoryId?: string | null;
+    // Подкатегория: сервер проверит право и разово применит её параметры.
+    categoryModifierId?: string;
     siteId?: string | null;
     files: File[];
     // Доп. секции формы (менеджер/исполнитель). Сервер сам применяет ролевые
@@ -329,6 +331,9 @@ export async function createTicket(scope: PluginScope, payload: CreateTicketPayl
     }
     if (payload.categoryId) {
         fd.append('categoryId', payload.categoryId);
+    }
+    if (payload.categoryModifierId) {
+        fd.append('categoryModifierId', payload.categoryModifierId);
     }
     if (payload.siteId) {
         fd.append('siteId', payload.siteId);

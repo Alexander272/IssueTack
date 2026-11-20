@@ -24,8 +24,9 @@ func NewHandler(service services.Categories) *Handler {
 	}
 }
 
-func Register(api *gin.RouterGroup, service services.Categories, middleware *middleware.Middleware) {
+func Register(api *gin.RouterGroup, service services.Categories, modifiers services.CategoryModifiers, middleware *middleware.Middleware) {
 	handlers := NewHandler(service)
+	registerModifiers(api, modifiers, middleware)
 
 	categories := api.Group("/categories", middleware.CheckPermissions(access.Reg.R(access.ResourceCategory).Read()))
 	{

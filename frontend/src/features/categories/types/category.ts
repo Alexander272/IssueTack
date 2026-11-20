@@ -15,8 +15,35 @@ export interface ICategory {
 	// выводится из него: блок раздела стоит там, где стоит его первая
 	// категория. Меняется переупорядочиванием (см. reorderCategories).
 	sortOrder: number
+	/** Подкатегории категории: параметры разово применяются к новой заявке. */
+	modifiers?: ICategoryModifier[]
 	createdAt: string
 	updatedAt: string
+}
+
+/** Подкатегория (модификатор категории). Пустой defaultDueDays/priority = наследовать категорию. */
+export interface ICategoryModifier {
+	id: string
+	realmId: string
+	categoryId: string
+	name: string
+	description: string
+	defaultDueDays: number | null
+	priority: Priority | null
+	isActive: boolean
+	sortOrder: number
+	createdAt: string
+	updatedAt: string
+}
+
+export interface ICategoryModifierDTO {
+	id: string | null
+	categoryId: string
+	name: string
+	description: string
+	defaultDueDays: number | null
+	priority: Priority | null
+	isActive: boolean
 }
 
 export interface ICategoryGroupShort {

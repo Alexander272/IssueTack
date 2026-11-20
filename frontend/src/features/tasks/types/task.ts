@@ -16,6 +16,11 @@ export interface ICategoryShort {
 	categoryGroupName?: string | null
 }
 
+export interface ICategoryModifierShort {
+	id: string
+	name: string
+}
+
 export interface IGroupShort {
 	id: string
 	name: string
@@ -64,6 +69,8 @@ export interface IAccessFlags {
 	canAttachToTicket?: boolean
 	/** Управление тикетом: начальник области или менеджер его группы. */
 	canManage?: boolean
+	/** Выбор подкатегории: исполнитель или начальник области, пока заявка открыта. */
+	canPickModifier?: boolean
 }
 
 export interface ITask {
@@ -76,6 +83,7 @@ export interface ITask {
 	realmId?: string
 	site: ISiteShort
 	category: ICategoryShort
+	categoryModifier?: ICategoryModifierShort | null
 	creator: IUserShort
 	owner: IUserShort | null
 	group: IGroupShort | null
@@ -153,6 +161,8 @@ export interface ITaskDTO {
 	realmId: string
 	siteId: string
 	categoryId: string
+	/** Подкатегория: разово перезаписывает срок и приоритет новой заявки. */
+	categoryModifierId?: string | null
 	creatorId: string
 	ownerId?: string | null
 	groupId?: string | null

@@ -51,6 +51,10 @@ export const API = {
 		base: '/category-groups' as const,
 		byId: (id: string) => `/category-groups/${id}` as const,
 	},
+	categoryModifiers: {
+		base: '/category-modifiers' as const,
+		byId: (id: string) => `/category-modifiers/${id}` as const,
+	},
 	groups: {
 		base: '/groups' as const,
 		byId: (id: string) => `/groups/${id}` as const,

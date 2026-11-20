@@ -6,7 +6,7 @@ import { toast } from 'react-toastify'
 import type { ITask, ITaskDTO } from '../../types/task'
 import type { FormValues } from './types'
 import { useAppSelector } from '@/hooks/redux'
-import { getHasNoGroups } from '@/features/user/userSlice'
+import { getHasNoGroups, getUserId } from '@/features/user/userSlice'
 import { useUpdateTaskMutation } from '../../tasksApiSlice'
 import { AdvancedSettingsSection } from '../TaskCreateForm/AdvancedSettingsSection'
 import { CategoryAndSiteSection } from '../TaskCreateForm/CategoryAndSiteSection'
@@ -25,6 +25,7 @@ type Props = {
 
 export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChange }: Props) => {
 	const hasNoGroups = useAppSelector(getHasNoGroups)
+	const currentUserId = useAppSelector(getUserId)
 	const canEditNotifiers = !hasNoGroups
 
 	// Управление заявкой: менеджер её группы или начальник области. Тот же флаг
@@ -41,12 +42,27 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 	// но не содержимое (см. режим adminOnlyEdit в TicketService.Update).
 	const canEditContent = Boolean(task.access?.canEditFields)
 
+	// Подкатегорию на уже созданной заявке меняют исполнитель и начальник области,
+	// и только пока заявка новая (open). Формулу считает бэкенд и отдаёт готовым
+	// флагом — здесь не дублируем её, чтобы форма и сервер не разъехались.
+	const canPickModifier = Boolean(task.access?.canPickModifier)
+	const hasModifier = Boolean(task.categoryModifier)
+	// Исполнитель-создатель — исключение: пока open и он остаётся исполнителем,
+	// ему можно править срок и приоритет заявки с подкатегорией.
+	const executorCreator =
+		task.status === 'open' && task.creator.id === currentUserId && task.assignee?.id === currentUserId
+	const canOverrideModifierValues = canManage || executorCreator
+
 	const formSettings = useMemo<TaskFormSettings>(
 		() => ({
 			mode: 'edit',
 			creatorId: task.creator.id,
 			canEditContent,
 			canEditDueDate: canManage,
+			dueDateDisabled: hasModifier && !canOverrideModifierValues,
+			// Подкатегория считает срок от даты создания, а не от момента правки.
+			dueDateBase: task.createdAt,
+			canPickModifier,
 			canPickAssignee: true,
 			canEditPriority: canManage,
 			canEditGroup: canManage,
@@ -56,7 +72,17 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 			showDueDate: canEditOwnerAndDueDate,
 			showNotifierFieldLabel: canEditOwnerAndDueDate,
 		}),
-		[task.creator.id, canEditContent, canManage, canEditNotifiers, canEditOwnerAndDueDate],
+		[
+			task.creator.id,
+			task.createdAt,
+			canEditContent,
+			canManage,
+			canEditNotifiers,
+			canEditOwnerAndDueDate,
+			hasModifier,
+			canOverrideModifierValues,
+			canPickModifier,
+		],
 	)
 
 	const [updateTask, { isLoading }] = useUpdateTaskMutation()
@@ -71,6 +97,7 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 			description: task.description,
 			priority: task.priority,
 			categoryId: task.category.id,
+			categoryModifierId: task.categoryModifier?.id ?? null,
 			groupId: task.group?.id ?? null,
 			ownerId: task.owner?.id ?? null,
 			assigneeId: task.assignee?.id ?? null,
@@ -99,6 +126,7 @@ export const TaskEditForm = ({ task, onSuccess, onCancel, embedded, onSavingChan
 				realmId: task.realmId ?? '',
 				siteId: data.siteId,
 				categoryId: data.categoryId,
+				categoryModifierId: canPickModifier ? data.categoryModifierId || null : undefined,
 				creatorId: task.creator.id,
 				ownerId: data.ownerId || null,
 				groupId: data.groupId || null,

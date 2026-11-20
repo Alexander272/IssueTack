@@ -23,10 +23,23 @@ export interface PluginCategory {
     // Дефолтный срок в днях: если задан, форма создания подставляет его в
     // поле «Срок выполнения» при выборе категории.
     defaultDueDays?: number | null;
+    // Подкатегории приходят вложенными в категорию (CategoryRepo.Get). Пустые
+    // defaultDueDays/priority означают наследование значения категории.
+    modifiers?: PluginCategoryModifier[];
     isActive: boolean;
     realmId: string;
     createdAt: string;
     updatedAt: string;
+}
+
+export interface PluginCategoryModifier {
+    id: string;
+    categoryId: string;
+    name: string;
+    description?: string;
+    defaultDueDays?: number | null;
+    priority?: Priority | null;
+    isActive: boolean;
 }
 
 export interface PluginSite {
@@ -75,6 +88,9 @@ export interface PluginContextResult {
     // членства — секцию исполнителя «Заказчик». Зеркало веб-формы: условия
     // показа секций совпадают с web, финальные права всё равно у TicketService.Create.
     isManager: boolean;
+    // Начальник области — подмножество isManager. Подкатегорию может выбрать
+    // он или исполнитель заявки; менеджер группы без исполнения — нет.
+    isRealmAdmin?: boolean;
     memberGroupIds: string[];
     groups: PluginGroupShort[];
     executors: PluginUserShort[];
@@ -124,6 +140,7 @@ export interface PluginTicketDetail {
     createdAt: string;
     dueDate?: string;
     category?: {id: string; name: string};
+    categoryModifier?: {id: string; name: string};
     site?: {id: string; name: string};
     creator?: PluginUserShort;
     owner?: PluginUserShort;

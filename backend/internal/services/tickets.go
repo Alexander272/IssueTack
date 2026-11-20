@@ -23,6 +23,7 @@ type TicketService struct {
 	notifications Notifications
 	groups        Groups
 	categories    Categories
+	modifiers     CategoryModifiers
 	access        TicketAccessChecker
 	users         Users
 	sites         Sites
@@ -41,6 +42,7 @@ func NewTicketService(deps *TicketDeps) *TicketService {
 		notifications: deps.Notifications,
 		groups:        deps.Groups,
 		categories:    deps.Categories,
+		modifiers:     deps.Modifiers,
 		access:        deps.Access,
 		users:         deps.Users,
 		sites:         deps.Sites,
@@ -66,6 +68,7 @@ type TicketDeps struct {
 	Notifications   Notifications
 	Groups          Groups
 	Categories      Categories
+	Modifiers       CategoryModifiers
 	Access          TicketAccessChecker
 	Users           Users
 	Sites           Sites

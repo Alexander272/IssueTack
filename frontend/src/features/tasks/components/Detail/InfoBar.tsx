@@ -1,6 +1,6 @@
 import { Box, Button, Menu, MenuItem } from '@mui/material'
 import { ChevronDown, Check, CheckCircle2, RotateCcw, XCircle, Hand, CalendarClock } from 'lucide-mui'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import type { ITask, TicketStatus } from '../../types/task'
 import { STATUS_MAP } from '../../constants/taskMaps'
@@ -12,17 +12,22 @@ import { TaskStatusBadge } from '../TaskStatusBadge'
 import { TaskPriorityBadge } from '../TaskPriorityBadge'
 import { StatusChangeDialog } from './StatusChangeDialog'
 import { DeadlinePopover } from './DeadlinePopover'
+import { ModifierPopover } from './ModifierPopover'
 import { DueDateRequestDialog } from './DueDateRequestDialog'
 import { DueDateRequestCard } from './DueDateRequestCard'
 
 const ACTIVE_STATUSES: TicketStatus[] = ['open', 'in_progress', 'pending', 'on_hold']
 const COMMENT_REQUIRED_STATUSES: TicketStatus[] = ['on_hold', 'pending']
+const TERMINAL_STATUSES: TicketStatus[] = ['closed', 'cancelled']
 
 interface Props {
 	task: ITask
+	/** Смена подкатегории: общий обработчик поднят в TaskDetailPage, чтобы
+	 * кнопка здесь и меню «Ещё» в шапке отправляли одно и то же обновление. */
+	onSetModifier: (id: string | null) => void
 }
 
-export const InfoBar = ({ task }: Props) => {
+export const InfoBar = ({ task, onSetModifier }: Props) => {
 	const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
 	const [pendingStatus, setPendingStatus] = useState<TicketStatus | null>(null)
 	const [updateTask] = useUpdateTaskMutation()
@@ -114,6 +119,26 @@ export const InfoBar = ({ task }: Props) => {
 
 	const [dueDateRequestDialogOpen, setDueDateRequestDialogOpen] = useState(false)
 
+	const statusOptions = useMemo(() => {
+		return (Object.keys(STATUS_MAP) as TicketStatus[])
+			.filter(status => {
+				if (canSeeTerminalStatuses || status === task.status) return true
+				return !TERMINAL_STATUSES.includes(status)
+			})
+			.map(status => {
+				const isCurrent = status === task.status
+				const isAllowed = !allowedStatuses || allowedStatuses.includes(status)
+
+				return {
+					value: status,
+					info: STATUS_MAP[status],
+					isCurrent,
+					isAllowed,
+					isDisabled: !isAllowed && !isCurrent,
+				}
+			})
+	}, [canSeeTerminalStatuses, task.status, allowedStatuses])
+
 	return (
 		<Box
 			sx={{
@@ -144,6 +169,12 @@ export const InfoBar = ({ task }: Props) => {
 
 				{!hasNoGroups && isManager && isActive && !task.dueDate && (
 					<DeadlinePopover onSetDueDate={handleSetDueDate} />
+				)}
+
+				{/* Пока подкатегории нет — заметная кнопка в строке действий. Когда она
+				    выбрана, имя уже показано в Meta, а менять её можно из меню «Ещё» в шапке. */}
+				{task.access?.canPickModifier && !task.categoryModifier && (
+					<ModifierPopover task={task} onSelect={onSetModifier} />
 				)}
 
 				{canCancel && (
@@ -217,37 +248,23 @@ export const InfoBar = ({ task }: Props) => {
 							},
 						}}
 					>
-						{(
-							Object.entries(STATUS_MAP) as [TicketStatus, (typeof STATUS_MAP)[TicketStatus]][]
-						)
-							.filter(
-								([value]) =>
-									canSeeTerminalStatuses ||
-									(value !== 'closed' && value !== 'cancelled') ||
-									value === task.status,
+						{statusOptions.map(({ value, info, isCurrent, isAllowed, isDisabled }) => {
+							const Icon = info.icon
+
+							return (
+								<MenuItem
+									key={value}
+									disabled={isDisabled}
+									selected={isCurrent}
+									onClick={() => isAllowed && changeStatus(value)}
+									sx={{ fontSize: '0.875rem', gap: 1.5 }}
+								>
+									<Icon sx={{ fontSize: 16, color: info.textColor }} />
+									{info.label}
+									{isCurrent && <Check sx={{ fontSize: 14, ml: 'auto', color: 'primary.main' }} />}
+								</MenuItem>
 							)
-							.map(([value, info]) => {
-								const isAllowed = !allowedStatuses || allowedStatuses.includes(value)
-								const isCurrent = value === task.status
-								return (
-									<MenuItem
-										key={value}
-										disabled={!isAllowed && !isCurrent}
-										selected={isCurrent}
-										onClick={() => isAllowed && changeStatus(value)}
-										sx={{ fontSize: '0.875rem', gap: 1.5 }}
-									>
-										<info.icon sx={{ fontSize: 16, color: info.textColor }} />
-										{info.label}
-										{isCurrent && (
-											<Box sx={{ ml: 'auto', color: 'primary.main', display: 'flex' }}>
-												<Check sx={{ fontSize: 14 }} />
-											</Box>
-										)}
-									</MenuItem>
-								)
-							},
-						)}
+						})}
 					</Menu>
 				)}
 			</Box>
@@ -267,7 +284,11 @@ export const InfoBar = ({ task }: Props) => {
 				/>
 			)}
 
-			<DueDateRequestDialog open={dueDateRequestDialogOpen} task={task} onClose={() => setDueDateRequestDialogOpen(false)} />
+			<DueDateRequestDialog
+				open={dueDateRequestDialogOpen}
+				task={task}
+				onClose={() => setDueDateRequestDialogOpen(false)}
+			/>
 		</Box>
 	)
 }

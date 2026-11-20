@@ -294,6 +294,12 @@ export default function TicketDetail({ scope, ticketId, onBack, onChanged, backL
 								</span>
 							</div>
 						) : null}
+						{detail.categoryModifier && detail.categoryModifier.name ? (
+							<div className='it-ticket-detail__row'>
+								<span className='it-ticket-detail__label'>Подкатегория</span>
+								<span className='it-ticket-detail__value'>{detail.categoryModifier.name}</span>
+							</div>
+						) : null}
 						{detail.site && detail.site.name ? (
 							<div className='it-ticket-detail__row'>
 								<span className='it-ticket-detail__label'>Площадка</span>

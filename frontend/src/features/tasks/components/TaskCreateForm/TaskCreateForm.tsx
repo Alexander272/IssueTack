@@ -40,6 +40,7 @@ const EMPTY_FORM: FormValues = {
 	equipmentId: null,
 	notifierIds: [],
 	ownerMuted: false,
+	categoryModifierId: null,
 }
 
 export type TaskCreateFormHandle = { requestReset: () => void }
@@ -56,27 +57,6 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 		// (см. buildCreateDTO). Одна формула вместо повторов isManager/isExecutor
 		// на каждое поле.
 		const role: CreateRole = isManager ? 'manager' : isExecutor ? 'executor' : 'customer'
-
-		// Права секций формы создания: менеджер настраивает группу, приоритет, срок
-		// и уведомления заказчика; исполнитель — заказчика и исполнителя; обычный
-		// заявитель видит только список дополнительных уведомляемых.
-		const formSettings = useMemo<TaskFormSettings>(
-			() => ({
-				mode: 'create',
-				creatorId: currentUserId ?? null,
-				canEditContent: true,
-				canEditDueDate: true,
-				canPickAssignee: true,
-				canEditPriority: true,
-				canEditGroup: isManager,
-				canEditOwnerMuted: isManager,
-				canEditNotifiers: true,
-				showOwner: role !== 'customer',
-				showDueDate: role !== 'customer',
-				showNotifierFieldLabel: role !== 'customer',
-			}),
-			[currentUserId, isManager, role],
-		)
 
 		const [createTask, { isLoading: isCreating }] = useCreateTaskMutation()
 		const [uploadAttachment, { isLoading: isUploading }] = useUploadAttachmentMutation()
@@ -97,6 +77,34 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 			mode: 'onTouched',
 		})
 		const { control, getValues, handleSubmit, reset, setValue, formState } = methods
+
+		// Подкатегорию при создании выбирает исполнитель (участник любой группы
+		// реалма) или начальник области. Право не привязано к assignee новой заявки:
+		// исполнитель видит поле, даже если в форме выбран другой исполнитель.
+		const canPickModifier = capabilities.isRealmAdmin || capabilities.memberGroupIds.length > 0
+
+		// Права секций формы создания: менеджер настраивает группу, приоритет, срок
+		// и уведомления заказчика; исполнитель — заказчика и исполнителя; обычный
+		// заявитель видит только список дополнительных уведомляемых.
+		const formSettings = useMemo<TaskFormSettings>(
+			() => ({
+				mode: 'create',
+				creatorId: currentUserId ?? null,
+				canEditContent: true,
+				canEditDueDate: true,
+				dueDateDisabled: false,
+				canPickModifier,
+				canPickAssignee: true,
+				canEditPriority: true,
+				canEditGroup: isManager,
+				canEditOwnerMuted: isManager,
+				canEditNotifiers: true,
+				showOwner: role !== 'customer',
+				showDueDate: role !== 'customer',
+				showNotifierFieldLabel: role !== 'customer',
+			}),
+			[currentUserId, isManager, role, canPickModifier],
+		)
 
 		const filesRef = useRef<File[]>([])
 		const watchedValues = useWatch({ control }) as FormValues
@@ -185,6 +193,7 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 					role,
 					realmId: realm.id,
 					currentUserId,
+					canPickModifier,
 				})
 
 				try {

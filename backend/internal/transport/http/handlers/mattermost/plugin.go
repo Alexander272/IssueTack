@@ -341,6 +341,7 @@ func (h *Handler) handlePluginCreateTicket(c *gin.Context) {
 		field string
 		set   func(uuid.UUID)
 	}{
+		{field: "categoryModifierId", set: func(id uuid.UUID) { input.CategoryModifierID = id }},
 		{field: "groupId", set: func(id uuid.UUID) { input.GroupID = id }},
 		{field: "assigneeId", set: func(id uuid.UUID) { input.AssigneeID = id }},
 		{field: "ownerId", set: func(id uuid.UUID) { input.OwnerID = id }},

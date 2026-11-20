@@ -73,6 +73,7 @@ export const apiSlice = createApi({
 		'Realms',
 		'Categories',
 		'CategoryGroups',
+		'CategoryModifiers',
 		'Groups',
 		'Sites',
 		'Comments',

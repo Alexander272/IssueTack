@@ -31,15 +31,22 @@ const (
 // myTicketAction* — действия кнопок в списке «Мои заявки». Правила переходов
 // те же, что в плагине (см. PluginChangeStatus).
 const (
-	actionCancel  = "ticket_cancel"
-	actionConfirm = "ticket_confirm"
-	actionReopen  = "ticket_reopen"
+	actionCancel   = "ticket_cancel"
+	actionConfirm  = "ticket_confirm"
+	actionReopen   = "ticket_reopen"
+	actionModifier = "ticket_modifier"
 	// reopenCallbackPrefix — префикс callback_id диалога «Вернуть в работу».
 	reopenCallbackPrefix = actionReopen + ":"
 	// cancelCallbackPrefix и confirmCallbackPrefix — префиксы callback_id
 	// диалогов подтверждения необратимых переходов: отмены и закрытия заявки.
 	cancelCallbackPrefix  = actionCancel + ":"
 	confirmCallbackPrefix = actionConfirm + ":"
+	// modifierCallbackPrefix — префикс callback_id диалога выбора подкатегории.
+	modifierCallbackPrefix = actionModifier + ":"
+	// modifierNoneValue — значение опции «Без подкатегории» в селекте диалога.
+	// Пустую строку как значение опции Mattermost не гарантирует, поэтому снятие
+	// подкатегории кодируется явным маркером.
+	modifierNoneValue = "none"
 )
 
 // actionTargetStatus — статус, в который переводит заявку действие из списка
@@ -103,6 +110,24 @@ func (s *MattermostService) myActiveTickets(ctx context.Context, realmID uuid.UU
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user tickets: %w", err)
+	}
+
+	// Tickets.Get не заполняет Access (его считает только GetByID), а кнопка
+	// подкатегории в карточке должна показываться по тому же правилу, что и в
+	// деталях: открытая заявка и исполнитель/начальник области. Считаем флаг
+	// один раз на всю выборку, чтобы карточки оставались чистыми функциями от
+	// данных заявки. isAdmin берём из того же TicketAccessChecker, что и
+	// GetAccessFlags; в тестах без него флаг просто остаётся false.
+	isAdmin := false
+	if s.access != nil {
+		isAdmin = s.isRealmSupervisor(ctx, user.ID, realmID)
+	}
+	for _, t := range tickets {
+		if t.Access == nil {
+			t.Access = &models.AccessFlags{}
+		}
+		t.Access.CanPickModifier = t.Status == models.StatusOpen &&
+			(isAdmin || (t.Assignee != nil && t.Assignee.ID == user.ID))
 	}
 	return tickets, nil
 }
@@ -218,6 +243,9 @@ func (s *MattermostService) myTicketCard(t *models.Ticket, user *models.UserData
 	if t.Site != nil && t.Site.Name != "" {
 		fields = append(fields, mattermost.AttachmentField{Title: "Площадка", Value: t.Site.Name, Short: true})
 	}
+	if t.CategoryModifier != nil && t.CategoryModifier.Name != "" {
+		fields = append(fields, mattermost.AttachmentField{Title: "Подкатегория", Value: t.CategoryModifier.Name, Short: true})
+	}
 
 	titleLink := pluginDeepLink(t.ID)
 	if s.showWebLink(user, t.RealmID) {
@@ -248,13 +276,26 @@ func cardSummary(text string) string {
 	return string([]rune(summary)[:cardSummaryLimit]) + "…"
 }
 
-// myTicketActionButtons — действия владельца заявки в списке «Мои заявки».
-// Правила те же, что в плагине: отменить можно только новую заявку,
-// подтвердить решение и вернуть в работу — только решённую. Заявки, где
-// пользователь не владелец, остаются без кнопок.
+// myTicketActionButtons — действия в карточке списка «Мои заявки». Действия
+// владельца (отмена/подтверждение/возврат) и выбор подкатегории неравнозначны:
+// подкатегорию может выбирать исполнитель или начальник области, даже если он
+// не владелец заявки, поэтому флаг CanPickModifier проверяется до владельца.
 func (s *MattermostService) myTicketActionButtons(t *models.Ticket, ownerID uuid.UUID, from int) []mattermost.InteractiveButton {
+	var buttons []mattermost.InteractiveButton
+	if t.Access != nil && t.Access.CanPickModifier {
+		buttons = append(buttons, mattermost.InteractiveButton{
+			Text: "Подкатегория",
+			URL:  s.actionURL(),
+			Context: map[string]string{
+				"action":    actionModifier,
+				"ticket_id": t.ID.String(),
+				"from":      strconv.Itoa(from),
+			},
+			ID: ticketActionID(t.ID, actionModifier),
+		})
+	}
 	if t.Owner == nil || t.Owner.ID != ownerID {
-		return nil
+		return buttons
 	}
 
 	btnCtx := func(action string, status models.TicketStatus) map[string]string {
@@ -268,26 +309,26 @@ func (s *MattermostService) myTicketActionButtons(t *models.Ticket, ownerID uuid
 
 	switch t.Status {
 	case models.StatusOpen:
-		return []mattermost.InteractiveButton{{
+		return append(buttons, mattermost.InteractiveButton{
 			Text: "Отменить заявку", Style: "danger",
 			URL: s.actionURL(), Context: btnCtx(actionCancel, models.StatusCancelled),
 			ID: ticketActionID(t.ID, actionCancel),
-		}}
+		})
 	case models.StatusResolved:
-		return []mattermost.InteractiveButton{
-			{
+		return append(buttons,
+			mattermost.InteractiveButton{
 				Text: "Подтвердить решение", Style: "primary",
 				URL: s.actionURL(), Context: btnCtx(actionConfirm, models.StatusClosed),
 				ID: ticketActionID(t.ID, actionConfirm),
 			},
-			{
+			mattermost.InteractiveButton{
 				Text: "Вернуть в работу",
 				URL:  s.actionURL(), Context: btnCtx(actionReopen, models.StatusInProgress),
 				ID: ticketActionID(t.ID, actionReopen),
 			},
-		}
+		)
 	default:
-		return nil
+		return buttons
 	}
 }
 

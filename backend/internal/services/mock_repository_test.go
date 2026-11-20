@@ -603,6 +603,40 @@ func (m *MockCategoriesRepo) CanSeeHidden(ctx context.Context, userID, realmID u
 	return false
 }
 
+// MockCategoryModifiers — двойник сервисного интерфейса CategoryModifiers.
+// TicketService использует только GetByID, но мок реализует весь интерфейс,
+// чтобы его можно было передать и в CategoryService.
+type MockCategoryModifiers struct {
+	mock.Mock
+}
+
+func (m *MockCategoryModifiers) Get(ctx context.Context, req *models.GetCategoryModifiersDTO) ([]*models.CategoryModifier, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.CategoryModifier), args.Error(1)
+}
+func (m *MockCategoryModifiers) GetByID(ctx context.Context, req *models.GetCategoryModifierByIDDTO) (*models.CategoryModifier, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.CategoryModifier), args.Error(1)
+}
+func (m *MockCategoryModifiers) Create(ctx context.Context, dto *models.CategoryModifierDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+func (m *MockCategoryModifiers) Update(ctx context.Context, dto *models.CategoryModifierDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+func (m *MockCategoryModifiers) Delete(ctx context.Context, dto *models.DelCategoryModifierDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+
 type MockSitesRepo struct {
 	mock.Mock
 }

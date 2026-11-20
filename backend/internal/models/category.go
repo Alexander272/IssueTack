@@ -27,6 +27,9 @@ type Category struct {
 	DefaultDueDays *int      `json:"defaultDueDays" db:"default_due_days"`
 	CreatedAt      time.Time `json:"createdAt" db:"created_at"`
 	UpdatedAt      time.Time `json:"updatedAt" db:"updated_at"`
+	// Modifiers — подкатегории категории. Загружаются отдельным запросом на
+	// реалм и разложены по категориям репозиторием (не колонка строки).
+	Modifiers []*CategoryModifier `json:"modifiers,omitempty" db:"-"`
 }
 
 type CategoryShort struct {

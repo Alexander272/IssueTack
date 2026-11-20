@@ -2,13 +2,14 @@ import { useState } from 'react'
 import { Box, Grid } from '@mui/material'
 import { useParams } from 'react-router'
 
-import { useGetTaskByIdQuery } from '../tasksApiSlice'
+import { useGetTaskByIdQuery, useUpdateTaskMutation } from '../tasksApiSlice'
 import { BoxFallback } from '@/components/Fallback/BoxFallback'
 import { useAppSelector } from '@/hooks/redux'
 import { getIsManager, getUserId } from '@/features/user/userSlice'
 import { useTicketControls } from '../hooks/useTicketControls'
 import { Header } from '../components/Detail/Header'
 import { InfoBar } from '../components/Detail/InfoBar'
+import { ModifierPopover } from '../components/Detail/ModifierPopover'
 import { Description } from '../components/Detail/Description'
 import { Subtasks } from '../components/Detail/Subtasks'
 import { Attachments } from '../components/Detail/Attachments'
@@ -25,17 +26,33 @@ export const TaskDetailPage = () => {
 	const { data, isLoading } = useGetTaskByIdQuery(id!)
 	const [editOpen, setEditOpen] = useState(false)
 	const [transferOpen, setTransferOpen] = useState(false)
+	// Якорь хранится вместе с id заявки: при переходе к другой заявке старый
+	// якорь просто перестаёт совпадать, и поповер не открывается сам собой.
+	const [modifierAnchor, setModifierAnchor] = useState<{ taskId?: string; anchor: HTMLElement | null } | null>(null)
+	const [updateTask] = useUpdateTaskMutation()
 	const isManager = useAppSelector(getIsManager)
 	const userId = useAppSelector(getUserId)
 
-	// Все права детали считаются одной формулой из access-флагов бэкенда; хук
-	// вызывается до ранних возвратов, чтобы порядок хуков не менялся.
+	// Все права детали считаются одной формулой из access-флагов бэкенда; хуки
+	// вызываются до ранних возвратов, чтобы порядок хуков не менялся.
 	const controls = useTicketControls(data?.data)
 
 	if (isLoading) return <BoxFallback />
 	if (!data?.data) return <DetailNotFound />
 
 	const task = data.data
+	const modifierState = modifierAnchor?.taskId === id ? modifierAnchor : null
+
+	// Один обработчик на оба входа: кнопку в InfoBar (когда подкатегории нет)
+	// и пункт меню «Ещё» (когда она уже выбрана). В Update уходит только id
+	// и categoryModifierId, остальные поля не задеваются.
+	const handleSetModifier = async (categoryModifierId: string | null) => {
+		try {
+			await updateTask({ id: task.id, categoryModifierId })
+		} catch {
+			// handled by toast in apiSlice
+		}
+	}
 
 	return (
 		<>
@@ -54,9 +71,21 @@ export const TaskDetailPage = () => {
 							task={task}
 							onEdit={controls.canEdit ? () => setEditOpen(true) : undefined}
 							onTransfer={() => setTransferOpen(true)}
+							onEditModifier={anchor => setModifierAnchor({ taskId: id, anchor })}
 						/>
 
-						<InfoBar task={task} />
+						<InfoBar task={task} onSetModifier={handleSetModifier} />
+
+						{task.access?.canPickModifier && task.categoryModifier && (
+							<ModifierPopover
+								task={task}
+								onSelect={handleSetModifier}
+								hideTrigger
+								open={Boolean(modifierState?.anchor)}
+								anchorEl={modifierState?.anchor ?? null}
+								onClose={() => setModifierAnchor(null)}
+							/>
+						)}
 					</Box>
 
 					<Grid container spacing={2} sx={{ mt: 2 }}>

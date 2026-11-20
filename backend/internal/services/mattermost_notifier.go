@@ -398,6 +398,7 @@ var changeTagLabels = map[models.ActivityType]string{
 	models.ActionDueDateChanged:     "Срок",
 	models.ActionSiteChanged:        "Площадка",
 	models.ActionCategoryChanged:    "Категория",
+	models.ActionSubcategoryChanged: "Подкатегория",
 	models.ActionNotifiersChanged:   "Наблюдатели",
 }
 
@@ -465,6 +466,8 @@ func (n *mattermostNotifier) changeLine(ctx context.Context, userID uuid.UUID, c
 		return "Площадка: изменена", true
 	case models.ActionCategoryChanged:
 		return "Категория: изменена", true
+	case models.ActionSubcategoryChanged:
+		return "Подкатегория: изменена", true
 	case models.ActionNotifiersChanged:
 		return "Наблюдатели: изменены", true
 	}

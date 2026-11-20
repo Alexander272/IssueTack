@@ -111,6 +111,13 @@ func (s *TicketService) logValues(ctx context.Context, old *models.Ticket, chang
 				oldVal = logEntityName(old.Category.Name, old.Category.ID)
 			}
 			newVal = s.resolveCategoryLabel(ctx, old, c.NewVal)
+		case models.ActionSubcategoryChanged:
+			if old.CategoryModifier == nil {
+				oldVal = "none"
+			} else {
+				oldVal = logEntityName(old.CategoryModifier.Name, old.CategoryModifier.ID)
+			}
+			newVal = s.resolveCategoryModifierLabel(ctx, old, c.NewVal)
 		case models.ActionNotifiersChanged:
 			oldVal = logNotifierUsers(old.Notifiers)
 			newVal = resolveNotifierLabels(ctx, s.users, c.NewVal)
@@ -202,6 +209,21 @@ func (s *TicketService) resolveCategoryLabel(ctx context.Context, old *models.Ti
 		return raw
 	}
 	return logEntityName(c.Name, c.ID)
+}
+
+func (s *TicketService) resolveCategoryModifierLabel(ctx context.Context, old *models.Ticket, raw string) string {
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	if s.modifiers == nil || old.RealmID == nil {
+		return raw
+	}
+	m, err := s.modifiers.GetByID(ctx, &models.GetCategoryModifierByIDDTO{ID: id, RealmID: *old.RealmID})
+	if err != nil || m == nil {
+		return raw
+	}
+	return logEntityName(m.Name, m.ID)
 }
 
 // logNotifierUsers — список имён наблюдателей тикета для журнала; пустой — "none".

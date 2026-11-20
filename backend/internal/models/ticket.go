@@ -19,8 +19,9 @@ type Ticket struct {
 	TicketNumber *int       `json:"ticketNumber,omitempty"`
 	RealmID      *uuid.UUID `json:"realmId,omitempty"`
 
-	Site     *SiteShort     `json:"site"`     // Площадка выполнения
-	Category *CategoryShort `json:"category"` // Категория
+	Site             *SiteShort             `json:"site"`             // Площадка выполнения
+	Category         *CategoryShort         `json:"category"`         // Категория
+	CategoryModifier *CategoryModifierShort `json:"categoryModifier"` // Подкатегория (модификатор)
 
 	// Кто участвует
 	Creator  UserShort   `json:"creator"`  // Кто фактически создал (может быть Manager)
@@ -66,6 +67,11 @@ type AccessFlags struct {
 	CanRequestDueDate bool `json:"canRequestDueDate"`
 	// CanDecideDueDate — менеджер группы/начальник области может утверждать/отклонять запросы переноса срока.
 	CanDecideDueDate bool `json:"canDecideDueDate"`
+	// CanPickModifier — исполнитель или начальник области может выбрать подкатегорию
+	// на открытой заявке; при создании право то же (prepareCreateModifier), но без
+	// привязки к конкретному assignee. Формула повторяет prepareUpdateModifier, чтобы
+	// фронт не дублировал серверные правила и не показывал контрол там, где его не пропустят.
+	CanPickModifier bool `json:"canPickModifier"`
 
 	// CanCreateSubtask/CanAttachToTicket/CanManage — «тонкие» права, которые фронт
 	// раньше вычислял сам по access.isManager/isAssignee/isCreator. Считаются теми же
@@ -152,10 +158,11 @@ type TicketDTO struct {
 	Status   TicketStatus `json:"status" db:"status"`
 	Priority Priority     `json:"priority" db:"priority"`
 
-	TicketNumber int        `json:"ticketNumber,omitempty"`
-	RealmID      *uuid.UUID `json:"realmId"`
-	SiteID       uuid.UUID  `json:"siteId"`     // Площадка выполнения
-	CategoryID   uuid.UUID  `json:"categoryId"` // Категория
+	TicketNumber       int        `json:"ticketNumber,omitempty"`
+	RealmID            *uuid.UUID `json:"realmId"`
+	SiteID             uuid.UUID  `json:"siteId"`                                       // Площадка выполнения
+	CategoryID         uuid.UUID  `json:"categoryId"`                                   // Категория
+	CategoryModifierID *uuid.UUID `json:"categoryModifierId" db:"category_modifier_id"` // Подкатегория (модификатор)
 
 	// Кто участвует
 	CreatorID  uuid.UUID  `json:"creatorId" db:"creator_id"`   // Кто фактически создал (может быть Manager)
@@ -306,6 +313,18 @@ func (dto *TicketDTO) GetChanges(old *Ticket) []*FieldChange {
 			changes = append(changes, &FieldChange{ActionCategoryChanged, old.Category.ID.String(), dto.CategoryID.String()})
 		} else if old.Category == nil {
 			changes = append(changes, &FieldChange{ActionCategoryChanged, "none", dto.CategoryID.String()})
+		}
+	}
+	if dto.HasField("categoryModifierId") {
+		oldVal, newVal := "none", "none"
+		if old.CategoryModifier != nil {
+			oldVal = old.CategoryModifier.ID.String()
+		}
+		if dto.CategoryModifierID != nil {
+			newVal = dto.CategoryModifierID.String()
+		}
+		if oldVal != newVal {
+			changes = append(changes, &FieldChange{ActionSubcategoryChanged, oldVal, newVal})
 		}
 	}
 

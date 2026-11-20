@@ -6,7 +6,7 @@ import type { FormValues } from './types'
 // подхватить чужой черновик. Вложения (File) не сохраняются — их нельзя
 // сериализовать.
 
-const VERSION = 4
+const VERSION = 5
 
 function draftKey(realmId: string, userId: string) {
 	return `@issueTrack/taskCreateDraft:${realmId}:${userId}`
@@ -27,7 +27,7 @@ function isFormValues(value: unknown): value is FormValues {
 	const v = value as Record<string, unknown>
 
 	const requiredStrings = [v.title, v.description, v.priority, v.categoryId, v.siteId]
-	const nullableStrings = [v.groupId, v.ownerId, v.assigneeId, v.dueDate, v.equipmentId]
+	const nullableStrings = [v.categoryModifierId, v.groupId, v.ownerId, v.assigneeId, v.dueDate, v.equipmentId]
 
 	return (
 		requiredStrings.every(isString) &&
@@ -83,6 +83,7 @@ export function hasDraftContent(values: FormValues, filesCount: number): boolean
 
 	const selectedFields = [
 		values.categoryId,
+		values.categoryModifierId,
 		values.groupId,
 		values.ownerId,
 		values.assigneeId,

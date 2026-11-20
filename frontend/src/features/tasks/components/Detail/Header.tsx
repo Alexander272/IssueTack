@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Box, IconButton, Tooltip, Typography, Menu, MenuItem, ListItemIcon } from '@mui/material'
-import { Star, MoreVertical, ArrowLeftIcon, Pin, Pencil, UserRound } from 'lucide-mui'
+import { Star, MoreVertical, ArrowLeftIcon, Pin, Pencil, UserRound, ListTree } from 'lucide-mui'
 import { useLocation, useNavigate } from 'react-router'
 
 import type { ITask } from '../../types/task'
@@ -18,9 +18,11 @@ interface Props {
 	task: ITask
 	onEdit?: () => void
 	onTransfer?: () => void
+	/** Открыть выбор подкатегории из меню «Ещё» (когда она уже выбрана). */
+	onEditModifier?: (anchor: HTMLElement | null) => void
 }
 
-export const Header = ({ task, onEdit, onTransfer }: Props) => {
+export const Header = ({ task, onEdit, onTransfer, onEditModifier }: Props) => {
 	const navigate = useNavigate()
 	const location = useLocation()
 
@@ -73,7 +75,10 @@ export const Header = ({ task, onEdit, onTransfer }: Props) => {
 		}
 	}
 
-	const hasAnyAction = Boolean(onEdit) || (Boolean(onTransfer) && canTransfer) || !hasNoGroups
+	// Подкатегорию меняют из меню «Ещё», только когда она уже выбрана: пока её нет,
+	// в InfoBar видна отдельная кнопка-триггер. Право берём из готового флага бэкенда.
+	const canEditModifier = Boolean(task.access?.canPickModifier && task.categoryModifier && onEditModifier)
+	const hasAnyAction = Boolean(onEdit) || (Boolean(onTransfer) && canTransfer) || !hasNoGroups || canEditModifier
 
 	return (
 		<Box
@@ -161,6 +166,22 @@ export const Header = ({ task, onEdit, onTransfer }: Props) => {
 										<Pencil sx={{ fontSize: 18, color: '#9ca3af' }} />
 									</ListItemIcon>
 									Редактировать
+								</MenuItem>
+							)}
+							{canEditModifier && (
+								<MenuItem
+									onClick={() => {
+										// Якорь берём у кнопки «Ещё»: сам MenuItem после закрытия
+										// меню исчезнет, и поповер остался бы без якоря.
+										const anchor = anchorEl
+										handleMenuClose()
+										onEditModifier?.(anchor)
+									}}
+								>
+									<ListItemIcon>
+										<ListTree sx={{ fontSize: 18, color: '#9ca3af' }} />
+									</ListItemIcon>
+									Изменить подкатегорию
 								</MenuItem>
 							)}
 							{onTransfer && canTransfer && (

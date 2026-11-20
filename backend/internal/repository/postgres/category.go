@@ -71,6 +71,11 @@ func (r *CategoryRepo) Get(ctx context.Context, req *models.GetCategoriesDTO) ([
 		return nil, MapError(fmt.Errorf("rows iteration error: %w", err))
 	}
 
+	modifiers, err := loadCategoryModifiers(ctx, r.db, req.RealmID)
+	if err != nil {
+		return nil, err
+	}
+	attachCategoryModifiers(data, modifiers)
 	return data, nil
 }
 
@@ -81,6 +86,11 @@ func (r *CategoryRepo) GetByID(ctx context.Context, req *models.GetCategoryByIdD
 	if err := scanCategory(r.db.QueryRow(ctx, query, req.ID, req.RealmID), category); err != nil {
 		return nil, MapError(err)
 	}
+	modifiers, err := loadCategoryModifiers(ctx, r.db, req.RealmID)
+	if err != nil {
+		return nil, err
+	}
+	attachCategoryModifiers([]*models.Category{category}, modifiers)
 	return category, nil
 }
 

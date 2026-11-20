@@ -272,10 +272,11 @@ func (s *stubCaptureCreate) PluginCreateTicket(_ context.Context, in *models.Plu
 
 // TestPluginCreateTicketParsesExtendedFields проверяет, что хендлер разбирает
 // поля доп. секций менеджера/исполнителя и кладёт их в input: priority enum,
-// uuid-поля и дату срока.
+// uuid-поля (включая подкатегорию) и дату срока.
 func TestPluginCreateTicketParsesExtendedFields(t *testing.T) {
 	ownerID := uuid.New()
 	groupID := uuid.New()
+	modifierID := uuid.New()
 	notifierID1 := uuid.New()
 	notifierID2 := uuid.New()
 	engine := gin.New()
@@ -292,6 +293,7 @@ func TestPluginCreateTicketParsesExtendedFields(t *testing.T) {
 	require.NoError(t, mw.WriteField("userId", "u1"))
 	require.NoError(t, mw.WriteField("title", "t"))
 	require.NoError(t, mw.WriteField("priority", "urgent"))
+	require.NoError(t, mw.WriteField("categoryModifierId", modifierID.String()))
 	require.NoError(t, mw.WriteField("groupId", groupID.String()))
 	require.NoError(t, mw.WriteField("ownerId", ownerID.String()))
 	require.NoError(t, mw.WriteField("dueDate", "2026-11-05T14:30"))
@@ -309,6 +311,7 @@ func TestPluginCreateTicketParsesExtendedFields(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.NotNil(t, stub.got)
 	assert.Equal(t, "urgent", stub.got.Priority)
+	assert.Equal(t, modifierID, stub.got.CategoryModifierID)
 	assert.Equal(t, groupID, stub.got.GroupID)
 	assert.Equal(t, ownerID, stub.got.OwnerID)
 	require.NotNil(t, stub.got.DueDate)

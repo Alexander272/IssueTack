@@ -119,8 +119,26 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		}
 	}
 
-	if dto.GroupID == nil {
-		return fmt.Errorf("group is required")
+	// Группа обязательна. Если не передана явно, берём её из категории —
+	// так же, как это делает плагин Mattermost (PluginCreateTicket) и
+	// путь исполнителя (applyExecutorCreateRestrictions). У категории
+	// группа определена всегда, поэтому явный выбор нужен только там,
+	// где его хочет сделать менеджер; пустое значение = «по категории».
+	if dto.GroupID == nil || *dto.GroupID == uuid.Nil {
+		if dto.CategoryID == uuid.Nil || dto.RealmID == nil {
+			return fmt.Errorf("group is required: %w", models.ErrInvalidInput)
+		}
+		category, err := s.categories.GetByID(ctx, &models.GetCategoryByIdDTO{ID: dto.CategoryID, RealmID: *dto.RealmID})
+		if err != nil {
+			return fmt.Errorf("failed to get category for group: %w", err)
+		}
+		if category.GroupID == uuid.Nil {
+			return fmt.Errorf("category has no group")
+		}
+		dto.GroupID = &category.GroupID
+		if !dto.Priority.IsValid() {
+			dto.Priority = category.Priority
+		}
 	}
 
 	// Заказчик необязателен: если он не указан, заявка выполняется для создателя.
@@ -147,6 +165,7 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 	}
 
 	canSetDueDate := false
+	isExecutor := false
 
 	isManager, err := s.isManagerOfGroup(ctx, &models.GroupShort{ID: *dto.GroupID}, dto.Actor.ID)
 	if err != nil {
@@ -167,23 +186,31 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		}
 	}
 
-	if isManager || supervisor {
-		canSetDueDate = true
-	} else {
-		// Проверяем, является ли пользователь "исполнителем" (участником хотя бы одной группы в реалме)
-		// Мы делаем этот запрос только если пользователь не менеджер и не супервизор, чтобы сэкономить ресурсы
+	// Исполнитель — участник хотя бы одной группы реалма (а не «тот, кто выбран
+	// исполнителем этой заявки»): право на подкатегорию от назначения не зависит.
+	// Запрос нужен и для срока, и для подкатегории; у менеджера/супервизора он
+	// делается только при выбранной подкатегории — для срока они уже прошли.
+	modifierSelected := dto.CategoryModifierID != nil && *dto.CategoryModifierID != uuid.Nil
+	if (!isManager && !supervisor) || modifierSelected {
 		memberGroups, err := s.groups.GetMemberGroups(ctx, dto.Actor.ID, dto.RealmID)
 		if err != nil {
-			return fmt.Errorf("failed to get member groups for due date check: %w", err)
+			return fmt.Errorf("failed to get member groups: %w", err)
 		}
-		if len(memberGroups) > 0 {
-			canSetDueDate = true
-		}
+		isExecutor = len(memberGroups) > 0
 	}
+	canSetDueDate = isManager || supervisor || isExecutor
 
 	// 1. Если пользователь пытается вручную установить срок, но не имеет прав — блокируем
 	if dto.DueDate != nil && !canSetDueDate {
 		return models.ErrPermissionDenied
+	}
+
+	// Подкатегорию при создании выбирает исполнитель (участник группы) или
+	// начальник области — независимо от того, кто станет исполнителем заявки.
+	if err := s.prepareCreateModifier(ctx, &createModifierInput{
+		DTO: dto, Supervisor: supervisor, IsExecutor: isExecutor,
+	}); err != nil {
+		return err
 	}
 
 	// 2. Автосрок из категории применяется всем (свойство категории, а не право

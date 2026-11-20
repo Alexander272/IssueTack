@@ -11,6 +11,7 @@ import { EquipmentTypeIcon } from '@/features/equipment/components/EquipmentType
 import { SectionCard } from './SectionCard'
 import { fieldLabelSx } from './styles'
 import { CategoryField, SiteField } from '@/components/FormFields'
+import { CategoryModifierField } from './CategoryModifierField'
 
 type Props = {
 	number?: number
@@ -89,6 +90,8 @@ export const CategoryAndSiteSection: FC<Props> = ({ number = 1 }) => {
 					</Typography>
 					<SiteField name='siteId' rules={{ required: 'Обязательное поле' }} />
 				</Box>
+
+				<CategoryModifierField sx={{ gridColumn: { xs: '1 / -1', sm: '1 / -1' } }} />
 
 				{canSeeEquipment && (
 					<Box sx={{ gridColumn: { xs: '1 / -1', sm: '1 / -1' } }}>
@@ -203,4 +206,3 @@ export const CategoryAndSiteSection: FC<Props> = ({ number = 1 }) => {
 		</SectionCard>
 	)
 }
-

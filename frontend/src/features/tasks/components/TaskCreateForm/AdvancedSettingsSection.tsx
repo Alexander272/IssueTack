@@ -33,6 +33,7 @@ export const AdvancedSettingsSection = ({
 		mode,
 		creatorId,
 		canEditDueDate,
+		dueDateDisabled,
 		canPickAssignee,
 		canEditPriority,
 		canEditGroup,
@@ -286,7 +287,7 @@ export const AdvancedSettingsSection = ({
 											date ? (field.value ? date : date.endOf('day')).toISOString() : null,
 										)
 									}
-									disabled={!canEditDueDate}
+									disabled={!canEditDueDate || dueDateDisabled}
 									slots={{ textField: DateTextField }}
 									slotProps={{ textField: { fullWidth: true, size: 'small' } }}
 								/>

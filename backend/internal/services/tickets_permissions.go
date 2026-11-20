@@ -343,6 +343,14 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 	// начальник области (realm supervisor) — те же, кому backend разрешает править срок.
 	flags.CanDecideDueDate = isManager || isAdmin
 
+	// CanPickModifier — выбор подкатегории на существующей заявке доступен, пока
+	// она открыта, исполнителю или начальнику области. При создании право то же,
+	// но определяется по участию в группе реалма, а не по assignee заявки
+	// (prepareCreateModifier). Формула повторяет prepareUpdateModifier: менеджер
+	// группы без роли исполнителя подкатегорию не выбирает.
+	flags.CanPickModifier = ticket.Status == models.StatusOpen &&
+		(isAdmin || (ticket.Assignee != nil && ticket.Assignee.ID == userID))
+
 	// «Тонкие» права для контролов детали/подзадач/вложений. Все три формулы уже
 	// использованы выше (isCustomer/CanWork/isAdmin/isManager), поэтому новых
 	// запросов и методов TicketAccessChecker здесь нет.

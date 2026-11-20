@@ -10,6 +10,7 @@ export interface FormValues {
 	description: string
 	priority: Priority
 	categoryId: string
+	categoryModifierId: string | null
 	groupId: string | null
 	ownerId: string | null
 	assigneeId: string | null

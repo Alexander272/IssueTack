@@ -3,7 +3,7 @@ import { MenuItem, Stack, TextField, Typography } from '@mui/material'
 import { Controller, type Control } from 'react-hook-form'
 
 import type { ICategoryDTO } from '../../types/category'
-import type { ICategoryGroup } from '@/features/categoryGroups/types/categoryGroup'
+import type { ICategoryGroup } from '@/features/categories/types/categoryGroup'
 import type { IGroup } from '@/features/groups/types/group'
 import { PRIORITY_MAP } from '@/features/tasks/constants/taskMaps'
 import { Switch } from '@/components/TextSwitch/Switch'

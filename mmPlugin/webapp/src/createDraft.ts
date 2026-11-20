@@ -8,6 +8,8 @@ export interface PluginCreateDraft {
 	title: string
 	description: string
 	categoryId: string
+	// Подкатегория для новой заявки (только исполнитель/начальник области).
+	categoryModifierId?: string
 	siteId: string
 	// Доп. секции менеджера/исполнителя — опциональны: поле появляется только
 	// если пользователь выбрал его, у «чистого» заявителя их нет вовсе.
@@ -25,7 +27,7 @@ export interface PluginCreateDraft {
 	ownerMuted?: boolean
 }
 
-const VERSION = 2
+const VERSION = 3
 
 function draftKey(realmId: string, userId: string) {
 	return `it-plugin-create-draft:${realmId}:${userId}`
@@ -54,6 +56,7 @@ function isDraft(value: unknown): value is PluginCreateDraft {
 		typeof d.title === 'string' &&
 		typeof d.description === 'string' &&
 		typeof d.categoryId === 'string' &&
+		isOptionalStr(d.categoryModifierId) &&
 		typeof d.siteId === 'string' &&
 		isOptionalStr(d.priority) &&
 		isOptionalStr(d.groupId) &&

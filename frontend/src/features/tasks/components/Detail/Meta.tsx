@@ -72,6 +72,28 @@ export const Meta = ({ task }: Props) => {
 						)
 					}
 				/>
+				{task.categoryModifier && !hasNoGroups && (
+					<MetaRow
+						label='Подкатегория'
+						icon={<Layers sx={{ fontSize: 14 }} />}
+						value={
+							<Box
+								sx={{
+									display: 'inline-flex',
+									px: 1.5,
+									py: 0.25,
+									borderRadius: '999px',
+									fontSize: '0.75rem',
+									fontWeight: 500,
+									bgcolor: '#e0f2fe',
+									color: '#075985',
+								}}
+							>
+								{task.categoryModifier.name}
+							</Box>
+						}
+					/>
+				)}
 				<MetaRow label='Площадка' icon={<Building2 sx={{ fontSize: 14 }} />} value={task.site?.name || '—'} />
 				{task.equipment && (
 					<MetaRow

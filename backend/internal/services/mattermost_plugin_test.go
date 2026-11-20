@@ -863,6 +863,25 @@ func TestPluginGetTicket_OwnerFlags(t *testing.T) {
 	assert.False(t, detail.CanCancel)
 }
 
+// CanPickModifier приходит из AccessFlags заявки: плагин и бот не вычисляют
+// правило исполнителя/начальника области сами.
+func TestPluginGetTicket_ModifierFlag(t *testing.T) {
+	realmID := uuid.New()
+	userID := uuid.New()
+	ticketID := uuid.New()
+	repo, users, userRealms, tickets := pluginMocks()
+
+	pluginGetTicketWithTicket(repo, users, userRealms, tickets, realmID, userID, ticketID, &models.Ticket{
+		ID: ticketID, Status: models.StatusOpen,
+		Access: &models.AccessFlags{CanPickModifier: true},
+	})
+	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
+
+	detail, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture("ch1"), ticketID.String())
+	require.NoError(t, err)
+	assert.True(t, detail.CanPickModifier)
+}
+
 func TestPluginGetTicket_OwnerOpenCanCancel(t *testing.T) {
 	realmID := uuid.New()
 	userID := uuid.New()

@@ -64,12 +64,21 @@ interface BuildCreateDTOArgs {
 	role: CreateRole
 	realmId: string
 	currentUserId: string
+	/** Подкатегорию может выбрать исполнитель (участник группы) или начальник области. */
+	canPickModifier: boolean
 }
 
 // buildCreateDTO собирает тело запроса на создание заявки. Живёт отдельно от формы
 // (и покрывается здесь же), потому что правило «какие поля от какой роли» — это
 // доменное правило, а не деталь разметки.
-export const buildCreateDTO = ({ data, category, role, realmId, currentUserId }: BuildCreateDTOArgs): ITaskDTO => {
+export const buildCreateDTO = ({
+	data,
+	category,
+	role,
+	realmId,
+	currentUserId,
+	canPickModifier,
+}: BuildCreateDTOArgs): ITaskDTO => {
 	const fields = roleFields(role, data, category)
 
 	return {
@@ -81,6 +90,7 @@ export const buildCreateDTO = ({ data, category, role, realmId, currentUserId }:
 		realmId,
 		siteId: data.siteId,
 		categoryId: data.categoryId,
+		categoryModifierId: canPickModifier ? data.categoryModifierId || null : null,
 		creatorId: currentUserId,
 		managerId: null,
 		closedAt: null,

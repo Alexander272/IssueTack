@@ -141,19 +141,20 @@ func (s *MattermostService) ticketDetail(ctx context.Context, settings *models.R
 	}
 
 	detail := &models.PluginTicketDetail{
-		ID:          ticket.ID,
-		Title:       ticket.Title,
-		Description: ticket.Description,
-		Status:      ticket.Status,
-		Priority:    ticket.Priority,
-		CreatedAt:   ticket.CreatedAt,
-		DueDate:     ticket.DueDate,
-		Category:    ticket.Category,
-		Site:        ticket.Site,
-		Creator:     ticket.Creator,
-		Owner:       ticket.Owner,
-		Assignee:    ticket.Assignee,
-		Notifiers:   ticket.Notifiers,
+		ID:               ticket.ID,
+		Title:            ticket.Title,
+		Description:      ticket.Description,
+		Status:           ticket.Status,
+		Priority:         ticket.Priority,
+		CreatedAt:        ticket.CreatedAt,
+		DueDate:          ticket.DueDate,
+		Category:         ticket.Category,
+		CategoryModifier: ticket.CategoryModifier,
+		Site:             ticket.Site,
+		Creator:          ticket.Creator,
+		Owner:            ticket.Owner,
+		Assignee:         ticket.Assignee,
+		Notifiers:        ticket.Notifiers,
 	}
 	if ticket.TicketNumber != nil {
 		detail.Number = *ticket.TicketNumber
@@ -172,6 +173,9 @@ func (s *MattermostService) ticketDetail(ctx context.Context, settings *models.R
 	// Решения владельца — из общей формулы ownerDecisions, чтобы плагин и веб
 	// (AccessFlags) не разъезжались в наборе кнопок.
 	detail.CanCancel, detail.CanConfirm, detail.CanReopen = ownerDecisions(ticket, user.ID)
+	if ticket.Access != nil {
+		detail.CanPickModifier = ticket.Access.CanPickModifier
+	}
 
 	return detail, nil
 }
@@ -408,7 +412,8 @@ func (s *MattermostService) PluginContext(ctx context.Context, scope models.Plug
 	// контекст: пользователь просто увидит базовую форму (права всё равно
 	// финально проверяет TicketService.Create). Исполнитель (участник групп)
 	// теперь может выбрать исполнителя, приоритет и срок — как в веб-форме.
-	isManager := s.isRealmSupervisor(ctx, user.ID, settings.RealmID)
+	supervisor := s.isRealmSupervisor(ctx, user.ID, settings.RealmID)
+	isManager := supervisor
 	memberGroups, err := s.groups.GetMemberGroups(ctx, user.ID, &settings.RealmID)
 	if err != nil {
 		logger.Warn("plugin context: failed to get member groups",
@@ -447,6 +452,7 @@ func (s *MattermostService) PluginContext(ctx context.Context, scope models.Plug
 		Categories:     categories,
 		Sites:          sites,
 		IsManager:      isManager,
+		IsRealmAdmin:   supervisor,
 		MemberGroupIds: memberGroups,
 		Groups:         groups,
 		Executors:      executors,
@@ -621,6 +627,13 @@ func (s *MattermostService) PluginCreateTicket(ctx context.Context, input *model
 		if input.Priority == "" && cat.Priority != "" {
 			dto.Priority = cat.Priority
 		}
+	}
+	if input.CategoryModifierID != uuid.Nil {
+		// Подкатегория приходит из формы плагина, но решает всё TicketService.Create:
+		// он проверит роль, статус, принадлежность к категории и разово подставит
+		// срок/приоритет. MarkProvided обязателен — DTO собран вручную, а не из JSON.
+		dto.CategoryModifierID = &input.CategoryModifierID
+		dto.MarkProvided("categoryModifierId")
 	}
 	if input.GroupID != uuid.Nil {
 		dto.GroupID = &input.GroupID

@@ -28,6 +28,7 @@ type Services struct {
 	Groups
 	Categories
 	CategoryGroups
+	CategoryModifiers
 	Sites
 	Tickets
 	Statistics
@@ -116,7 +117,8 @@ func NewServices(deps *Deps) *Services {
 	session := NewSessionService(deps.Keycloak, policies, userRealms, users, groups, access, cacheSvc)
 
 	categoryVisibility := NewCategoryVisibility(access, groups)
-	categories := NewCategoryService(deps.Repo.Categories, deps.Repo.Tickets, categoryVisibility)
+	categoryModifiers := NewCategoryModifierService(deps.Repo.CategoryModifiers, deps.Repo.Categories)
+	categories := NewCategoryService(deps.Repo.Categories, deps.Repo.Tickets, deps.Repo.CategoryModifiers, categoryVisibility)
 	categoryGroups := NewCategoryGroupService(deps.Repo.CategoryGroups, categoryVisibility)
 	sites := NewSiteService(deps.Repo.Sites)
 	equipment := NewEquipmentService(deps.Repo.Equipment, transaction, &deps.Conf.FileServer)
@@ -158,6 +160,7 @@ func NewServices(deps *Deps) *Services {
 		Notifications:   notifications,
 		Groups:          groups,
 		Categories:      categories,
+		Modifiers:       categoryModifiers,
 		Access:          access,
 		Users:           users,
 		Sites:           sites,
@@ -234,6 +237,7 @@ func NewServices(deps *Deps) *Services {
 		Groups:                 groups,
 		Categories:             categories,
 		CategoryGroups:         categoryGroups,
+		CategoryModifiers:      categoryModifiers,
 		Sites:                  sites,
 		Tickets:                tickets,
 		Statistics:             statistics,

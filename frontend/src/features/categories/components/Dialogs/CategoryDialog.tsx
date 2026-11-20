@@ -5,7 +5,7 @@ import { toast } from 'react-toastify'
 
 import type { IFetchError } from '@/app/types/error'
 import type { ICategoryDTO } from '../../types/category'
-import type { ICategoryGroup } from '@/features/categoryGroups/types/categoryGroup'
+import type { ICategoryGroup } from '@/features/categories/types/categoryGroup'
 import type { IGroup } from '@/features/groups/types/group'
 import {
 	useCreateCategoryMutation,
@@ -91,7 +91,7 @@ export const CategoryDialog: FC<Props> = ({ category, groups, categoryGroups, op
 		>
 			<DialogTitle sx={{ m: 0, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
 				<Typography variant='h6' component='div' sx={{ fontWeight: 'bold' }}>
-					{category ? 'Редактировать категорию' : 'Создать категорию'}
+					{category?.id ? 'Редактировать категорию' : 'Создать категорию'}
 				</Typography>
 				<IconButton size='large' onClick={onClose} sx={{ color: 'text.secondary' }}>
 					<XIcon sx={{ fontSize: 20 }} />

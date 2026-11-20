@@ -26,6 +26,7 @@ var Tables = struct {
 	GroupMembers                   string
 	Categories                     string
 	CategoryGroups                 string
+	CategoryModifiers              string
 	Tickets                        string
 	Subtasks                       string
 	Attachments                    string
@@ -70,6 +71,7 @@ var Tables = struct {
 	GroupMembers:                   "group_members",
 	Categories:                     "categories",
 	CategoryGroups:                 "category_groups",
+	CategoryModifiers:              "category_modifiers",
 	Tickets:                        "tickets",
 	Subtasks:                       "subtasks",
 	Attachments:                    "attachments",

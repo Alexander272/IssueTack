@@ -86,6 +86,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 	// участник групп) — секцию «Заказчик». Финальные права не здесь, а в
 	// TicketService.Create, сервер применит ограничения даже при подмене полей.
 	const isManager = Boolean(context.isManager)
+	const isRealmAdmin = Boolean(context.isRealmAdmin)
 	const isExecutor = !isManager && (context.memberGroupIds || []).length > 0
 	const customers = context.customers || []
 	const executors = context.executors || []
@@ -95,6 +96,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 	const [title, setTitle] = useState(initialDraft?.title ?? '')
 	const [description, setDescription] = useState(initialDraft?.description ?? '')
 	const [categoryId, setCategoryId] = useState(initialDraft?.categoryId ?? '')
+	const [categoryModifierId, setCategoryModifierId] = useState(initialDraft?.categoryModifierId ?? '')
 	const [siteId, setSiteId] = useState(initialDraft?.siteId || userSiteId)
 	const [siteTouched, setSiteTouched] = useState(false)
 	const [priority, setPriority] = useState(initialDraft?.priority ?? '')
@@ -166,6 +168,11 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 	}, [categories])
 	const sites = context.sites || []
 	const selectedSite = sites.find(s => s.id === siteId) || null
+	// Подкатегорию выбирает исполнитель (участник любой группы реалма) или
+	// начальник области. Право не привязано к assignee новой заявки: исполнитель
+	// видит поле, даже если в форме выбран другой исполнитель.
+	const canPickModifier = isRealmAdmin || (context.memberGroupIds || []).length > 0
+	const modifiers = (categories.find(c => c.id === categoryId)?.modifiers || []).filter(m => m.isActive !== false)
 
 	// Авто-назначение в стиле веба (AdvancedSettingsSection + onChange категории
 	// в TaskCreateForm): смена категории подставляет группу и дефолтный приоритет
@@ -176,6 +183,16 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 	// совпадают с теми, что TicketService.Create применил бы сам при пустых полях.
 	const prevCategoryId = useRef(categoryId)
 	const prevGroupId = useRef(groupId)
+	const prevModifierCategoryId = useRef(categoryId)
+	const prevCategoryModifierId = useRef(categoryModifierId)
+
+	// Подкатегория принадлежит категории: при смене категории форма сбрасывает её
+	// следом за сервером (иначе в запрос ушёл бы чужой id).
+	useEffect(() => {
+		if (prevModifierCategoryId.current === categoryId) return
+		prevModifierCategoryId.current = categoryId
+		setCategoryModifierId('')
+	}, [categoryId])
 
 	// Эффект 1: категория → группа + приоритет + срок (менеджер И исполнитель).
 	// Исполнитель создаёт заявку и должен получать те же авто-подстановки, что и менеджер.
@@ -191,6 +208,23 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		// остался бы срок предыдущей категории.
 		setDueDate(cat?.defaultDueDays != null ? pluginDueDateFromCategory(cat.defaultDueDays) : '')
 	}, [categoryId, categories, isManager, isExecutor])
+
+	// Эффект 1а: подкатегория → приоритет + срок. Как и в веб-форме, значения
+	// берутся из подкатегории, а пустые поля наследуются от категории. Срабатывает
+	// только на реальном выборе пользователя, не на восстановлении черновика.
+	useEffect(() => {
+		if (prevCategoryModifierId.current === categoryModifierId) return
+		prevCategoryModifierId.current = categoryModifierId
+		if (!categoryModifierId) return
+		const modifier = (categories.find(c => c.id === categoryId)?.modifiers || []).find(
+			m => m.id === categoryModifierId,
+		)
+		if (!modifier) return
+		const cat = categories.find(c => c.id === categoryId)
+		setPriority(modifier.priority || cat?.priority || '')
+		const days = modifier.defaultDueDays ?? cat?.defaultDueDays
+		setDueDate(days != null && days > 0 ? pluginDueDateFromCategory(days) : '')
+	}, [categoryModifierId, categories, categoryId])
 
 	useEffect(() => {
 		if (!isManager) return
@@ -209,6 +243,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 			title,
 			description,
 			categoryId,
+			categoryModifierId,
 			siteId,
 			priority,
 			groupId,
@@ -224,6 +259,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		title,
 		description,
 		categoryId,
+		categoryModifierId,
 		siteId,
 		priority,
 		groupId,
@@ -240,6 +276,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 			title.trim() ||
 			description.trim() ||
 			categoryId ||
+			categoryModifierId ||
 			files.length > 0 ||
 			(siteId && siteId !== userSiteId) ||
 			priority ||
@@ -256,6 +293,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		title,
 		description,
 		categoryId,
+		categoryModifierId,
 		siteId,
 		files,
 		userSiteId,
@@ -274,6 +312,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		setTitle('')
 		setDescription('')
 		setCategoryId('')
+		setCategoryModifierId('')
 		setSiteId(userSiteId)
 		setSiteTouched(false)
 		setPriority('')
@@ -340,6 +379,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 				title: title.trim(),
 				description: description.trim(),
 				categoryId: categoryId || null,
+				...(canPickModifier && categoryModifierId ? {categoryModifierId} : {}),
 				siteId: siteId || null,
 				files,
 			}
@@ -367,6 +407,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 			setTitle('')
 			setDescription('')
 			setCategoryId('')
+			setCategoryModifierId('')
 			setSiteId(userSiteId)
 			setSiteTouched(false)
 			setPriority('')
@@ -459,6 +500,27 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 								<span className='it-f__err'>{fieldErrors.categoryId}</span>
 							) : null}
 						</label>
+
+						{canPickModifier && modifiers.length > 0 ? (
+							<label className='it-f-label'>
+								<span className='it-f-label__text'>Подкатегория</span>
+								<select
+									className='it-f'
+									value={categoryModifierId}
+									onChange={e => setCategoryModifierId(e.target.value)}
+								>
+									<option value=''>— Без подкатегории —</option>
+									{modifiers.map(m => (
+										<option key={m.id} value={m.id}>
+											{m.name}
+										</option>
+									))}
+								</select>
+								<span className='it-f-label__hint'>
+									При выборе срок и приоритет подставятся из подкатегории
+								</span>
+							</label>
+						) : null}
 
 						<label className='it-f-label'>
 							<span className='it-f-label__text'>
