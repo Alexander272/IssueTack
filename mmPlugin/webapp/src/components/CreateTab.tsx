@@ -68,8 +68,6 @@ function pluginUserLabel(u: PluginUserShort): string {
 	return u.username
 }
 
-
-
 export default function CreateTab({ scope, context, onCreated, onOpen, onDraftChange }: CreateTabProps) {
 	const userSiteId =
 		context.user?.siteId && (context.sites || []).some(s => s.id === context.user.siteId) ? context.user.siteId : ''
@@ -216,7 +214,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 		const cat = categories.find(c => c.id === categoryId)
 		setPriority(modifier.priority || cat?.priority || '')
 		const days = modifier.defaultDueDays ?? cat?.defaultDueDays
-		setDueDate(days != null && days > 0 ? autoDueDateLocal(days, context.calendar) ?? '' : '')
+		setDueDate(days != null && days > 0 ? (autoDueDateLocal(days, context.calendar) ?? '') : '')
 	}, [categoryModifierId, categories, categoryId, context.calendar])
 
 	useEffect(() => {
@@ -372,7 +370,7 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 				title: title.trim(),
 				description: description.trim(),
 				categoryId: categoryId || null,
-				...(canPickModifier && categoryModifierId ? {categoryModifierId} : {}),
+				...(canPickModifier && categoryModifierId ? { categoryModifierId } : {}),
 				siteId: siteId || null,
 				files,
 			}
@@ -494,27 +492,6 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 							) : null}
 						</label>
 
-						{canPickModifier && modifiers.length > 0 ? (
-							<label className='it-f-label'>
-								<span className='it-f-label__text'>Подкатегория</span>
-								<select
-									className='it-f'
-									value={categoryModifierId}
-									onChange={e => setCategoryModifierId(e.target.value)}
-								>
-									<option value=''>— Без подкатегории —</option>
-									{modifiers.map(m => (
-										<option key={m.id} value={m.id}>
-											{m.name}
-										</option>
-									))}
-								</select>
-								<span className='it-f-label__hint'>
-									При выборе срок и приоритет подставятся из подкатегории
-								</span>
-							</label>
-						) : null}
-
 						<label className='it-f-label'>
 							<span className='it-f-label__text'>
 								Площадка <span className='it-f-required'>*</span>
@@ -540,6 +517,29 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 								<span className='it-f-label__hint'>{selectedSite.address}</span>
 							) : null}
 						</label>
+
+						{canPickModifier && modifiers.length > 0 ? (
+							<div style={{ gridColumn: '1 / -1' }}>
+								<label className='it-f-label'>
+									<span className='it-f-label__text'>Подкатегория</span>
+									<select
+										className='it-f'
+										value={categoryModifierId}
+										onChange={e => setCategoryModifierId(e.target.value)}
+									>
+										<option value=''>— Без подкатегории —</option>
+										{modifiers.map(m => (
+											<option key={m.id} value={m.id}>
+												{m.name}
+											</option>
+										))}
+									</select>
+									<span className='it-f-label__hint'>
+										При выборе срок и приоритет подставятся из подкатегории
+									</span>
+								</label>
+							</div>
+						) : null}
 					</div>
 				</div>
 			</section>
