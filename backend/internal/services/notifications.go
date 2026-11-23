@@ -561,7 +561,9 @@ func (s *NotificationService) TicketDeleted(ctx context.Context, ticket *models.
 }
 
 // TicketCommented оповещает исполнителя и подписанных о новом комментарии по заявке.
-// Самому автору комментария уведомление не отправляется.
+// Самому автору комментария уведомление не отправляется. Внутренний комментарий
+// оповещает только команду: заказчик (owner) и наблюдатели («Уведомлять») в него
+// не попадают, внешний — оповещает всех участников заявки.
 func (s *NotificationService) TicketCommented(ctx context.Context, c *models.NotificationCommentDTO) error {
 	if c == nil || c.Ticket == nil {
 		return nil
@@ -596,7 +598,11 @@ func (s *NotificationService) TicketCommented(ctx context.Context, c *models.Not
 	}
 
 	// Заказчик (owner) и наблюдатели («Уведомлять») получают уведомление о новом комментарии.
-	addOwnerAndNotifiers(recipients, ticket, &c.ActorID)
+	// Внутренний комментарий — команда только: заказчика и наблюдателей он не обсуждает,
+	// поэтому уведомление им не отправляем (исполняющий и подписанные уже в получателях).
+	if !c.IsInternal {
+		addOwnerAndNotifiers(recipients, ticket, &c.ActorID)
+	}
 
 	delete(recipients, c.ActorID)
 

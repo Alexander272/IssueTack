@@ -170,6 +170,7 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 			ActorID:     actorID,
 			CommentText: comment.Text,
 			AuthorLabel: authorLabel,
+			IsInternal:  comment.IsInternal,
 		})
 		if err != nil {
 			logger.Warn("failed to notify about comment", logger.StringAttr("ticket_id", comment.TicketID.String()), logger.ErrAttr(err))

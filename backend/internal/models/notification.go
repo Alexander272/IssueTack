@@ -46,6 +46,10 @@ type NotificationCommentDTO struct {
 	ActorID     uuid.UUID
 	CommentText string
 	AuthorLabel string
+	// IsInternal: true для внутреннего комментаря — уведомление адресовано только
+	// команде (исполняющему и подписанным), заказчик (owner) и наблюдатели не в него
+	// попадают («внутренний» = команда, внешний = заявка/заказчик).
+	IsInternal bool
 }
 
 type NotificationSettings struct {

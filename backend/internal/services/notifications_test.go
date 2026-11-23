@@ -1146,6 +1146,34 @@ func TestNotificationService_TicketCommented_NotifiesOwnerAndNotifiers(t *testin
 	mockNotifier.AssertExpectations(t)
 }
 
+func TestNotificationService_TicketCommented_InternalComment_NotifiesAssigneeOnly(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	assigneeID := uuid.New()
+	managerID := uuid.New()
+	ticket := &models.Ticket{
+		ID:        uuid.New(),
+		Title:     "Internal comment ticket",
+		Assignee: &models.UserShort{ID: assigneeID},
+		Owner:     &models.UserShort{ID: uuid.New()},
+		Notifiers: []models.UserShort{{ID: uuid.New()}},
+	}
+
+	// Внутренний комментарий команда видит (исполняющий), заказчик и наблюдатели — нет.
+	expectDeliverAndPersist(mockRepo, mockNotifier, assigneeID)
+
+	err := svc.TicketCommented(context.Background(), &models.NotificationCommentDTO{
+		Ticket:      ticket,
+		ActorID:     managerID,
+		CommentText: "внутренняя заметка",
+		AuthorLabel: "Менеджер",
+		IsInternal:  true,
+	})
+	require.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
+}
+
 func TestNotificationService_AttachmentAdded_NotifiesOwnerAndNotifiers(t *testing.T) {
 	mockRepo, mockNotifier, svc := notificationServiceFixtures()
 
