@@ -201,6 +201,8 @@ type PluginTicketDetail struct {
 	// CanPickModifier — подкатегорию может выбрать исполнитель или начальник
 	// области, пока заявка открыта (тот же флаг, что в AccessFlags веба).
 	CanPickModifier bool `json:"canPickModifier,omitempty"`
+	// DuplicateOfNumber — номер основной заявки, если эта помечена дублем.
+	DuplicateOfNumber *int `json:"duplicateOfNumber,omitempty"`
 }
 
 // PluginAttachment — вложение заявки для плагина. Ссылка на скачивание строится
