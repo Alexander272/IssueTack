@@ -101,6 +101,42 @@ func TestTicketService_LinkDuplicate_ClosesAndNotifies(t *testing.T) {
 	notifications.AssertExpectations(t)
 }
 
+// Наблюдатели дубля из «Уведомлять» следуют за основной наравне с автором и
+// заказчиком. Исходный список дубля не трогается: при отвязке его не нужно
+// восстанавливать — DeleteDuplicateNotifiers снимет только производные строки.
+func TestTicketService_LinkDuplicate_WatchersFollowPrimary(t *testing.T) {
+	repo, logs, notifications, _, svc, _, dupID, primaryID, creator, actor := duplicateFixtures(t)
+	watcher := uuid.New()
+	dup := duplicateTicket(dupID, creator, actor.ID, models.StatusInProgress)
+	// Повтор автора в списке не должен дать второй AddDuplicateNotifier.
+	dup.Notifiers = []models.UserShort{{ID: watcher}, {ID: creator}}
+	primary := primaryTicket(primaryID, actor.ID, models.StatusOpen)
+	expectDuplicateReads(repo, dup, primary)
+
+	repo.On("GetDuplicateChain", mock.Anything, mock.Anything, dupID).
+		Return([]postgres.DuplicateNode{{ID: dupID}}, nil).Once()
+	repo.On("GetDuplicateChain", mock.Anything, mock.Anything, primaryID).
+		Return([]postgres.DuplicateNode{{ID: primaryID}}, nil).Twice()
+	expectDuplicateTxFallback(repo)
+
+	repo.On("SetDuplicate", mock.Anything, mock.Anything, dupID, primaryID, models.StatusInProgress).Return(nil).Once()
+	repo.On("AddDuplicateNotifier", mock.Anything, mock.Anything, primaryID, creator, dupID, actor.ID).Return(nil).Once()
+	repo.On("AddDuplicateNotifier", mock.Anything, mock.Anything, primaryID, watcher, dupID, actor.ID).Return(nil).Once()
+	logs.On("Create", mock.Anything, mock.Anything, mock.Anything).Return(nil).Twice()
+	notifications.On("NotifyDuplicate", mock.Anything, dup, primary, actor.ID, true).Return(nil).Once()
+
+	_, err := svc.LinkDuplicate(context.Background(), &models.LinkDuplicateDTO{
+		ID: dupID, PrimaryID: primaryID, Actor: actor,
+	})
+	require.NoError(t, err)
+	repo.AssertNumberOfCalls(t, "AddDuplicateNotifier", 2)
+	repo.AssertNotCalled(t, "SyncNotifiers", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	assert.Equal(t, watcher, dup.Notifiers[0].ID, "явный список дубля остаётся источником данных")
+	repo.AssertExpectations(t)
+	logs.AssertExpectations(t)
+	notifications.AssertExpectations(t)
+}
+
 // Регресс: связывающий дубль пользователь часто является его автором. Исключать
 // актора из списка наблюдателей основной было неверно — он терял read-доступ к
 // ней после снятия своей же прямой связи. Уведомление о собственном действии
@@ -348,6 +384,8 @@ func TestTicketService_UnlinkDuplicate_RestoresStatus(t *testing.T) {
 	dup.DuplicateOf = &primaryID
 	dup.PreviousStatus = &previous
 	dup.ResolvedAt = &resolvedAt
+	watcher := uuid.New()
+	dup.Notifiers = []models.UserShort{{ID: watcher}}
 	primary := primaryTicket(primaryID, actor.ID, models.StatusOpen)
 	expectDuplicateReads(repo, dup, primary)
 	repo.On("GetDuplicateChain", mock.Anything, mock.Anything, primaryID).
@@ -362,6 +400,8 @@ func TestTicketService_UnlinkDuplicate_RestoresStatus(t *testing.T) {
 	result, err := svc.UnlinkDuplicate(context.Background(), &models.UnlinkDuplicateDTO{ID: dupID, Actor: actor})
 	require.NoError(t, err)
 	assert.Equal(t, primaryID, result.RootID)
+	repo.AssertNotCalled(t, "SyncNotifiers", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	assert.Equal(t, watcher, dup.Notifiers[0].ID, "явный список дубля при отвязке не перезаписывается")
 	repo.AssertExpectations(t)
 	logs.AssertExpectations(t)
 	notifications.AssertExpectations(t)

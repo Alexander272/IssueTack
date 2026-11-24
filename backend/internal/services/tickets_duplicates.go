@@ -356,11 +356,12 @@ func (s *TicketService) LinkDuplicate(ctx context.Context, dto *models.LinkDupli
 			// observers ниже всё равно остаются привязанными к корню.
 		}
 
-		// Автор и заказчик дубля становятся наблюдателями основной — иначе
-		// ссылка из уведомления будет для них неоткрываемой. Актора НЕ исключаем:
-		// если он сам автор дубля, ему всё равно нужен доступ к основной. От
-		// уведомления о собственном действии его отсекает NotifyDuplicate.
-		for _, userID := range duplicateRecipients(duplicate) {
+		// Автор, заказчик и явные наблюдатели дубля становятся неявными
+		// наблюдателями основной — иначе ссылка из уведомления будет для них
+		// неоткрываемой. Актора НЕ исключаем: если он сам автор дубля, ему всё
+		// равно нужен доступ к основной. От уведомления о собственном действии
+		// его отсекает NotifyDuplicate.
+		for _, userID := range duplicateObserverIDs(duplicate) {
 			if err := s.repo.AddDuplicateNotifier(ctx, tx, root, userID, duplicate.ID, dto.Actor.ID); err != nil {
 				return err
 			}
@@ -602,16 +603,32 @@ func (s *TicketService) notifyDuplicateBestEffort(ctx context.Context, duplicate
 	}
 }
 
-// duplicateRecipients — автор и заказчик дубля, которых регистрируем наблюда-
-// телями основной. Это не список получателей события: актор исключается только
-// при рассылке самого уведомления (NotifyDuplicate), но не здесь.
-func duplicateRecipients(t *models.Ticket) []uuid.UUID {
+// duplicateObserverIDs — все, кто должен следить за основной после связывания:
+// автор и заказчик дубля плюс его явный список «Уведомлять». Источник явного
+// списка (ticket_notifiers дубля) не трогается: при отвязке DeleteDuplicateNotifiers
+// убирает только эти производные строки, а наблюдатели остаются на дубле.
+// Это не список получателей события: актор исключается только при рассылке
+// уведомления (NotifyDuplicate), но не здесь.
+func duplicateObserverIDs(t *models.Ticket) []uuid.UUID {
 	ids := []uuid.UUID{}
-	if t.Creator.ID != uuid.Nil {
-		ids = append(ids, t.Creator.ID)
+	seen := make(map[uuid.UUID]struct{})
+	add := func(id uuid.UUID) {
+		if id == uuid.Nil {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
 	}
-	if t.Owner != nil && t.Owner.ID != uuid.Nil && t.Owner.ID != t.Creator.ID {
-		ids = append(ids, t.Owner.ID)
+
+	add(t.Creator.ID)
+	if t.Owner != nil {
+		add(t.Owner.ID)
+	}
+	for i := range t.Notifiers {
+		add(t.Notifiers[i].ID)
 	}
 	return ids
 }

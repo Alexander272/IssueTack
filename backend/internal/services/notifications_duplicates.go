@@ -10,9 +10,9 @@ import (
 )
 
 // NotifyDuplicate рассылает событие связывания/отвязки дубля. Получатели —
-// автор и заказчик дубля, а также автор и заказчик основной заявки; актор
-// уведомление о собственном действии не получает. Опрос качества здесь не
-// отправляется: дубль — не новое решение, а уточнение связи.
+// автор, заказчик и наблюдатели дубля, а также автор и заказчик основной
+// заявки; актор уведомление о собственном действии не получает. Опрос качества
+// здесь не отправляется: дубль — не новое решение, а уточнение связи.
 func (s *NotificationService) NotifyDuplicate(ctx context.Context, ticket, primary *models.Ticket, actorID uuid.UUID, linked bool) error {
 	if ticket == nil || primary == nil {
 		return nil
@@ -27,6 +27,12 @@ func (s *NotificationService) NotifyDuplicate(ctx context.Context, ticket, prima
 	}
 	add(&ticket.Creator)
 	add(ticket.Owner)
+	// Наблюдатели дубля следят за основной после связывания, поэтому событие
+	// link/unlink должно доходить и до них. Повторные id (например, watcher,
+	// который одновременно автор дубля) гасит множество recipients.
+	for i := range ticket.Notifiers {
+		add(&ticket.Notifiers[i])
+	}
 	add(&primary.Creator)
 	add(primary.Owner)
 

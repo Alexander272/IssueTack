@@ -174,6 +174,81 @@ func TestTicketDuplicates_NotifierSourcesSeparate_IT(t *testing.T) {
 	assert.Equal(t, implicitID, implicit[0].ID)
 }
 
+// Явные наблюдатели дубля становятся неявными наблюдателями основной, но
+// остаются в ticket_notifiers дубля. После отвязки производные строки уходят,
+// а исходный список — без отдельного restore — снова становится рабочим.
+func TestTicketDuplicates_WatchersFollowPrimary_IT(t *testing.T) {
+	pool := itPool(t)
+	ctx := context.Background()
+	f := newItFixture()
+	t.Cleanup(func() { f.cleanup(t, pool) })
+
+	realmID := f.realm(ctx, pool)
+	suffix := realmID.String()[:8]
+	groupID := f.group(ctx, pool, realmID, "Группа наблюдателей дубля "+suffix)
+	roleID := f.role(ctx, pool, f.slug(realmID, "dup-watchers"), realmID)
+	primaryUser := f.user(ctx, pool, "primary-"+suffix)
+	dupCreator := f.user(ctx, pool, "dup-creator-"+suffix)
+	dupOwner := f.user(ctx, pool, "dup-owner-"+suffix)
+	watcher := f.user(ctx, pool, "watcher-"+suffix)
+	for _, userID := range []uuid.UUID{primaryUser, dupCreator, dupOwner, watcher} {
+		f.joinRealm(ctx, pool, userID, realmID, roleID)
+	}
+
+	primaryID := f.ticket(ctx, pool, realmID, groupID, primaryUser, primaryUser)
+	dupID := f.ticket(ctx, pool, realmID, groupID, dupCreator, dupOwner)
+
+	txRepo := NewTransactionRepo(pool)
+	repo := NewTicketRepo(pool, txRepo)
+
+	// Так LinkDuplicate теперь наполняет основную: автор, заказчик и наблюдатель
+	// дубля — всё в ticket_duplicate_notifiers, явный список дубля не тронут.
+	require.NoError(t, withItTx(ctx, txRepo, func(tx Tx) error {
+		if err := repo.SyncNotifiers(ctx, tx, dupID, dupCreator, []uuid.UUID{watcher}); err != nil {
+			return err
+		}
+		if err := repo.SetDuplicate(ctx, tx, dupID, primaryID, models.StatusOpen); err != nil {
+			return err
+		}
+		for _, userID := range []uuid.UUID{dupCreator, dupOwner, watcher} {
+			if err := repo.AddDuplicateNotifier(ctx, tx, primaryID, userID, dupID, dupCreator); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+
+	explicitDup, err := repo.GetNotifiers(ctx, dupID)
+	require.NoError(t, err)
+	require.Len(t, explicitDup, 1)
+	assert.Equal(t, watcher, explicitDup[0].ID)
+
+	implicitPrimary, err := repo.GetDuplicateNotifiers(ctx, primaryID)
+	require.NoError(t, err)
+	require.Len(t, implicitPrimary, 3)
+	ids := make([]uuid.UUID, 0, len(implicitPrimary))
+	for _, u := range implicitPrimary {
+		ids = append(ids, u.ID)
+	}
+	assert.ElementsMatch(t, []uuid.UUID{dupCreator, dupOwner, watcher}, ids)
+	explicitPrimary, err := repo.GetNotifiers(ctx, primaryID)
+	require.NoError(t, err)
+	assert.Empty(t, explicitPrimary, "неявные наблюдатели не должны попадать в форму основной")
+
+	// UnlinkDuplicate удаляет только производные строки по duplicate_ticket_id.
+	require.NoError(t, withItTx(ctx, txRepo, func(tx Tx) error {
+		return repo.DeleteDuplicateNotifiers(ctx, tx, dupID)
+	}))
+
+	implicitPrimary, err = repo.GetDuplicateNotifiers(ctx, primaryID)
+	require.NoError(t, err)
+	assert.Empty(t, implicitPrimary, "наблюдатели сняты с основной")
+	explicitDup, err = repo.GetNotifiers(ctx, dupID)
+	require.NoError(t, err)
+	require.Len(t, explicitDup, 1)
+	assert.Equal(t, watcher, explicitDup[0].ID, "список «Уведомлять» дубля восстановлен сам")
+}
+
 func withItTx(ctx context.Context, tr *TransactionRepo, fn func(Tx) error) error {
 	tx, err := tr.BeginTx(ctx)
 	if err != nil {

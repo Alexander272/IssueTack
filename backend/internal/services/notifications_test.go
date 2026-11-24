@@ -1306,3 +1306,38 @@ func TestNotificationService_NotifyDuplicate_Wording(t *testing.T) {
 		})
 	}
 }
+
+// Наблюдатели дубля получают событие связывания/отвязки наравне с автором и
+// заказчиком. Актор уведомление о своём действии не получает, повторный id в
+// списке не даёт повторной доставки.
+func TestNotificationService_NotifyDuplicate_WatchersAreRecipients(t *testing.T) {
+	for _, linked := range []bool{true, false} {
+		name := "связывание"
+		if !linked {
+			name = "отвязка"
+		}
+		t.Run(name, func(t *testing.T) {
+			mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+			actorID, dupCreator, watcher, primaryCreator := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+			ticket := &models.Ticket{
+				ID:        uuid.New(),
+				Title:     "Дубль",
+				Creator:   models.UserShort{ID: dupCreator},
+				Notifiers: []models.UserShort{{ID: watcher}, {ID: dupCreator}},
+			}
+			primary := &models.Ticket{
+				ID:      uuid.New(),
+				Title:   "Основная",
+				Creator: models.UserShort{ID: primaryCreator},
+			}
+
+			expectDeliverAndPersist(mockRepo, mockNotifier, dupCreator, watcher, primaryCreator)
+
+			require.NoError(t, svc.NotifyDuplicate(context.Background(), ticket, primary, actorID, linked))
+			mockNotifier.AssertNotCalled(t, "Notify", mock.Anything, actorID, mock.Anything, mock.Anything)
+			mockRepo.AssertExpectations(t)
+			mockNotifier.AssertExpectations(t)
+		})
+	}
+}
