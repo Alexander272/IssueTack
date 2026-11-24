@@ -67,24 +67,28 @@ type mmChannel struct {
 // личных сообщений, диалоги создания заявок, интерактивные кнопки и веб-сокеты,
 // делегируя низкоуровневую работу с Mattermost пакету pkg/mattermost.
 type MattermostService struct {
-	repo          repository.Mattermost
-	users         Users
-	userRealms    UserRealms
-	roles         Roles
-	realms        Realms
-	tickets       Tickets
-	groups        Groups
-	categories    Categories
-	sites         Sites
-	attachments   Attachments
-	comments      Comments
-	access        TicketAccessChecker
-	policies      AccessPolicies
-	eventBus      *events.PolicyEventManager
-	most          *mattermost.Most
-	baseURL       string
-	wsClients     map[string]*mattermost.WSClient
-	wsMu          sync.Mutex
+	repo        repository.Mattermost
+	users       Users
+	userRealms  UserRealms
+	roles       Roles
+	realms      Realms
+	tickets     Tickets
+	groups      Groups
+	categories  Categories
+	sites       Sites
+	attachments Attachments
+	comments    Comments
+	access      TicketAccessChecker
+	policies    AccessPolicies
+	eventBus    *events.PolicyEventManager
+	most        *mattermost.Most
+	baseURL     string
+	wsClients   map[string]*mattermost.WSClient
+	wsMu        sync.Mutex
+	// syncMu не даёт автосинку и ручной кнопке/команде бежать одновременно:
+	// сопоставление по email/username без mattermost_id иначе может создать
+	// одного и того же пользователя дважды.
+	syncMu        sync.Mutex
 	wsGuard       *inboundGuard
 	pendingFiles  sync.Map
 	recentTickets sync.Map

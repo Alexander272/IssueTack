@@ -333,27 +333,60 @@ func UnmarshalSubmission(data []byte, s *model.SubmitDialogRequest) error {
 	return json.Unmarshal(data, s)
 }
 
-func (c *Client) GetAllUsers(botToken string) ([]*model.User, error) {
+// getUsersPages читает постранично /users с заданным фильтром (active=true
+// либо inactive=true). GetUsers из SDK не умеет такой фильтр, поэтому запрос
+// идёт через DoAPIGet. Боты и деактивированные пользователи здесь не отсекаются
+// намеренно: для активного списка это делает syncFilter в GetAllUsers, а
+// неактивный список нужен именно для деактивации локальных учётных записей.
+func (c *Client) getUsersPages(botToken, filterQuery string) ([]*model.User, error) {
 	api := c.newAPI(botToken)
-	var allUsers []*model.User
-	var filter syncFilter
+	var all []*model.User
 	page := 0
 	const perPage = 100
 	for {
-		users, _, err := api.GetUsers(context.Background(), page, perPage, "")
+		url := fmt.Sprintf("/users?%s&page=%d&per_page=%d", filterQuery, page, perPage)
+		resp, err := api.DoAPIGet(context.Background(), url, "")
 		if err != nil {
 			return nil, fmt.Errorf("failed to get users page %d: %w", page, err)
 		}
-		for _, u := range users {
-			if !filter.skip(u) {
-				allUsers = append(allUsers, u)
-			}
+
+		var users []*model.User
+		decodeErr := json.NewDecoder(resp.Body).Decode(&users)
+		resp.Body.Close()
+		if decodeErr != nil {
+			return nil, fmt.Errorf("failed to decode users page %d: %w", page, decodeErr)
 		}
+
+		all = append(all, users...)
 		if len(users) < perPage {
 			break
 		}
 		page++
 	}
+	return all, nil
+}
+
+// GetAllUsers возвращает активных пользователей Mattermost для импорта.
+func (c *Client) GetAllUsers(botToken string) ([]*model.User, error) {
+	raw, err := c.getUsersPages(botToken, "active=true")
+	if err != nil {
+		return nil, err
+	}
+
+	var filter syncFilter
+	allUsers := make([]*model.User, 0, len(raw))
+	for _, u := range raw {
+		if !filter.skip(u) {
+			allUsers = append(allUsers, u)
+		}
+	}
 	filter.log("all")
 	return allUsers, nil
+}
+
+// GetInactiveUsers возвращает деактивированных пользователей Mattermost.
+// Нужен синку, чтобы локальные учётные записи с source=mattermost тоже переводились
+// в неактивные и не попадали в селекты заказчика/исполнителя.
+func (c *Client) GetInactiveUsers(botToken string) ([]*model.User, error) {
+	return c.getUsersPages(botToken, "inactive=true")
 }

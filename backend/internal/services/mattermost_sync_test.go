@@ -23,13 +23,15 @@ type syncFixture struct {
 	repo       *MockMattermostRepo
 	users      *MockUserService
 	userRealms *MockUserRealmsService
+	access     *MockTicketAccessChecker
 	realmID    uuid.UUID
 	actor      *models.Actor
 }
 
 type syncFixtureOpts struct {
-	mmUsers   []*model.User
-	teamUsers map[string][]*model.User
+	mmUsers       []*model.User
+	inactiveUsers []*model.User
+	teamUsers     map[string][]*model.User
 	// sysUsers — системные пользователи, по которым ищется совпадение
 	// (email/username/ФИО). По умолчанию пусто.
 	sysUsers      []*models.UserData
@@ -59,7 +61,7 @@ func syncService(t *testing.T, opts syncFixtureOpts) *syncFixture {
 	access.On("IsRealmSupervisor", mock.Anything, actorID, realmID.String()).
 		Return(opts.isSupervisor, opts.supervisorErr)
 
-	capture := &mmCapture{users: opts.mmUsers, teamUsers: opts.teamUsers}
+	capture := &mmCapture{users: opts.mmUsers, teamUsers: opts.teamUsers, inactiveUsers: opts.inactiveUsers}
 	srv := mmServer(t, capture)
 
 	svc := NewMattermostService(&MattermostDeps{
@@ -74,7 +76,7 @@ func syncService(t *testing.T, opts syncFixtureOpts) *syncFixture {
 	})
 
 	return &syncFixture{svc: svc, repo: repo, users: users, userRealms: userRealms,
-		realmID: realmID, actor: actor}
+		access: access, realmID: realmID, actor: actor}
 }
 
 // fakeRolesSvc отдаёт id роли «user» для ensureRealmMembership.
@@ -361,4 +363,96 @@ func TestSyncRealmUsers_SyncsByTeamNames(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, result.Created, "синк ограничен указанными командами")
+}
+
+// TestSyncRealmUsers_PropagatesMattermostActivity фиксирует главное для селекта
+// заказчика: деактивация в Mattermost снимает локальный is_active, а повторная
+// активация его возвращает. Пользователи Keycloak не трогаются — их активностью
+// управляет Keycloak.
+func TestSyncRealmUsers_PropagatesMattermostActivity(t *testing.T) {
+	f := syncService(t, syncFixtureOpts{
+		mmUsers: []*model.User{{Id: "mm-returned", Username: "returned"}},
+		inactiveUsers: []*model.User{
+			{Id: "mm-gone", Username: "gone", DeleteAt: 1712345678000},
+			{Id: "mm-kc", Username: "kc", DeleteAt: 1712345678000},
+		},
+		isActive: true, botToken: "tok", isSupervisor: true,
+	})
+
+	returnedID := uuid.New()
+	goneID := uuid.New()
+	kcID := uuid.New()
+	f.users.On("GetByMattermostID", mock.Anything, "mm-returned").Return(
+		&models.UserData{ID: returnedID, Username: "returned", IsActive: false,
+			Source: models.UserSourceMattermost}, nil)
+	f.users.On("GetByMattermostID", mock.Anything, "mm-gone").Return(
+		&models.UserData{ID: goneID, Username: "gone", IsActive: true,
+			Source: models.UserSourceMattermost, MattermostID: strPtr("mm-gone"),
+			InternalNumber: "123"}, nil)
+	f.users.On("GetByMattermostID", mock.Anything, "mm-kc").Return(
+		&models.UserData{ID: kcID, Username: "kc", IsActive: true,
+			Source: models.UserSourceKeycloak}, nil)
+
+	var updates []*models.UpdateAccountDTO
+	f.users.On("UpdateAccount", mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			updates = append(updates, args.Get(1).(*models.UpdateAccountDTO))
+		}).Return(nil)
+	f.userRealms.On("GetByUserAndRealm", mock.Anything, returnedID, f.realmID).
+		Return(&models.UserRealm{UserID: returnedID, RealmID: f.realmID}, nil)
+
+	result, err := f.svc.SyncRealmUsers(context.Background(), f.realmID, f.actor, nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, result.Linked)
+	assert.Equal(t, 1, result.Deactivated, "деактивированный в MM пользователь снимается с локального учёта")
+	assert.Equal(t, 1, result.Reactivated, "возвращённый в MM пользователь снова активен локально")
+	assert.Equal(t, 0, result.Failed)
+
+	require.Len(t, updates, 2, "пользователь Keycloak не обновляется")
+	byID := make(map[uuid.UUID]*models.UpdateAccountDTO, len(updates))
+	for _, dto := range updates {
+		byID[dto.ID] = dto
+		assert.Equal(t, f.actor, dto.Actor)
+		assert.Empty(t, dto.Realms, "привязки realm при смене активности не меняются")
+	}
+
+	deactivated := byID[goneID]
+	require.NotNil(t, deactivated)
+	assert.False(t, deactivated.IsActive)
+	require.NotNil(t, deactivated.MattermostID)
+	assert.Equal(t, "mm-gone", *deactivated.MattermostID)
+	assert.Equal(t, "123", deactivated.InternalNumber, "внутренний номер не теряется")
+
+	reactivated := byID[returnedID]
+	require.NotNil(t, reactivated)
+	assert.True(t, reactivated.IsActive)
+	assert.NotContains(t, byID, kcID, "Keycloak-пользователь деактивации из MM не подвергается")
+}
+
+// TestSyncAllActiveRealms_SkipsIntegrationWithoutToken проверяет фоновый синк:
+// обход активных интеграций не требует администратора, но пропускает реалм без
+// токена бота, не прерывая остальные. Ошибки одного реалма не валят задачу.
+func TestSyncAllActiveRealms_SkipsIntegrationWithoutToken(t *testing.T) {
+	f := syncService(t, syncFixtureOpts{isActive: true, botToken: "tok", isSupervisor: true})
+	secondRealm := uuid.New()
+	noTokenRealm := uuid.New()
+
+	f.repo.On("GetActive", mock.Anything).Return([]*models.RealmMattermost{
+		{RealmID: f.realmID, BotToken: "tok", IsActive: true},
+		{RealmID: secondRealm, BotToken: "tok2", IsActive: true},
+		{RealmID: noTokenRealm, BotToken: "", IsActive: true},
+	}, nil).Once()
+	f.repo.On("GetByRealm", mock.Anything, secondRealm).Return(
+		&models.RealmMattermost{RealmID: secondRealm, BotToken: "tok2", IsActive: true}, nil).Once()
+
+	err := f.svc.SyncAllActiveRealms(context.Background())
+	require.NoError(t, err)
+
+	// Синк без токена не читает настройки реалма и не лезет в пользователей.
+	f.repo.AssertNumberOfCalls(t, "GetByRealm", 2)
+	f.users.AssertNumberOfCalls(t, "GetAll", 2)
+	f.repo.AssertNotCalled(t, "GetByRealm", mock.Anything, noTokenRealm)
+	// Автосинк не должен требовать прав администратора — проверка прав в нём отсутствует.
+	f.access.AssertNotCalled(t, "IsRealmSupervisor", mock.Anything, mock.Anything, mock.Anything)
 }

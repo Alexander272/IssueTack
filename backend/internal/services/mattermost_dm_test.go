@@ -41,6 +41,9 @@ type mmCapture struct {
 	// teamUsers — на тот же запрос с фильтром in_team (синк по командам).
 	users     []*model.User
 	teamUsers map[string][]*model.User
+	// inactiveUsers отдаётся на GET /api/v4/users?inactive=true (деактивация
+	// локальных учётных записей при синке). По умолчанию пусто.
+	inactiveUsers []*model.User
 	// botID отдаётся на GET /api/v4/users/me: id бота, авторитетный для токена
 	// (см. resolveBotUserID). Пустая строка — заглушка отвечает ошибкой, как
 	// недоступный Mattermost.
@@ -128,7 +131,9 @@ func mmServer(t *testing.T, capture *mmCapture) *httptest.Server {
 			// отдаём весь список, на остальных — пусто.
 			page := r.URL.Query().Get("page")
 			list := capture.users
-			if teamID := r.URL.Query().Get("in_team"); teamID != "" {
+			if r.URL.Query().Get("inactive") == "true" {
+				list = capture.inactiveUsers
+			} else if teamID := r.URL.Query().Get("in_team"); teamID != "" {
 				list = capture.teamUsers[teamID]
 			}
 			if page != "0" {

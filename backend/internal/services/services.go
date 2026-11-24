@@ -200,18 +200,6 @@ func NewServices(deps *Deps) *Services {
 
 	// --- Кластер интеграций ---------------------------------------------
 	audit.StartListening(deps.Ctx, updatePolicyEvent)
-	scheduler := NewSchedulerService(&SchedulerDeps{
-		Tickets:                tickets,
-		Notifications:          notifications,
-		Favorites:              favorites,
-		EquipmentReturns:       deps.Repo.Equipment,
-		MMRepo:                 deps.Repo.Mattermost,
-		Users:                  users,
-		MMSender:               mmMost,
-		EquipmentPeriodicTasks: equipmentPeriodicTasks,
-		Calendar:               calendar,
-		CalendarConf:           deps.Conf.Calendar,
-	})
 
 	mattermostSvc := NewMattermostService(&MattermostDeps{
 		Repo:        deps.Repo.Mattermost,
@@ -231,6 +219,22 @@ func NewServices(deps *Deps) *Services {
 		Most:        mmMost,
 		BaseURL:     deps.Conf.Http.BaseURL,
 		Calendar:    calendar,
+	})
+
+	// Планировщик создаётся после MattermostService: автосинк пользователей
+	// работает через тот же фасад, что и ручная кнопка/команда.
+	scheduler := NewSchedulerService(&SchedulerDeps{
+		Tickets:                tickets,
+		Notifications:          notifications,
+		Favorites:              favorites,
+		EquipmentReturns:       deps.Repo.Equipment,
+		MMRepo:                 deps.Repo.Mattermost,
+		Users:                  users,
+		MMSender:               mmMost,
+		EquipmentPeriodicTasks: equipmentPeriodicTasks,
+		Calendar:               calendar,
+		CalendarConf:           deps.Conf.Calendar,
+		MattermostSync:         mattermostSvc,
 	})
 
 	return &Services{

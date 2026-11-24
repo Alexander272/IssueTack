@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -9,7 +10,56 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
+
+// stubMattermostUserSyncer считает вызовы автосинка без обращения к БД/Mattermost.
+type stubMattermostUserSyncer struct {
+	calls int
+	err   error
+}
+
+func (s *stubMattermostUserSyncer) SyncAllActiveRealms(context.Context) error {
+	s.calls++
+	return s.err
+}
+
+func TestSchedulerService_Start_MattermostUsersSync(t *testing.T) {
+	explicit := config.OptionalString{Value: "@hourly", Set: true}
+	syncer := &stubMattermostUserSyncer{}
+	svc := NewSchedulerService(&SchedulerDeps{Tickets: new(MockTicketsService), MattermostSync: syncer})
+
+	err := svc.Start(&config.TicketConfig{MattermostUsersSyncSchedule: explicit})
+	require.NoError(t, err)
+	assert.Len(t, svc.cron.Jobs(), 1, "автосинк регистрируется отдельной задачей")
+
+	svc.mattermostUsersSyncJob(t.Context())
+	assert.Equal(t, 1, syncer.calls)
+	assert.NoError(t, svc.Stop())
+
+	// Явное пустое значение отключает задачу.
+	disabled := config.OptionalString{Value: "", Set: true}
+	syncer2 := &stubMattermostUserSyncer{}
+	svc2 := NewSchedulerService(&SchedulerDeps{Tickets: new(MockTicketsService), MattermostSync: syncer2})
+	require.NoError(t, svc2.Start(&config.TicketConfig{MattermostUsersSyncSchedule: disabled}))
+	assert.Len(t, svc2.cron.Jobs(), 0)
+	assert.NoError(t, svc2.Stop())
+
+	// Ключа нет в конфиге — работает дефолт из кода, автосинк включён.
+	syncer3 := &stubMattermostUserSyncer{}
+	svc3 := NewSchedulerService(&SchedulerDeps{Tickets: new(MockTicketsService), MattermostSync: syncer3})
+	require.NoError(t, svc3.Start(&config.TicketConfig{}))
+	assert.Len(t, svc3.cron.Jobs(), 1, "без ключа конфига берётся дефолт @hourly")
+	assert.NoError(t, svc3.Stop())
+}
+
+func TestSchedulerService_MattermostUsersSyncJob_Error(t *testing.T) {
+	// Ошибка автосинка логируется, но не роняет планировщик и не мешает следующим запускам.
+	syncer := &stubMattermostUserSyncer{err: assert.AnError}
+	svc := NewSchedulerService(&SchedulerDeps{MattermostSync: syncer})
+	svc.mattermostUsersSyncJob(t.Context())
+	assert.Equal(t, 1, syncer.calls)
+}
 
 func TestSchedulerService_Start_Disabled(t *testing.T) {
 	_, _, _, _, _, _, _, ticketSvc := ticketServiceFixtures()

@@ -67,6 +67,11 @@ type (
 		EquipmentReturnSchedule string `yaml:"equipment_return_schedule" env:"TICKETS_EQUIPMENT_RETURN_SCHEDULE" env-default:"@daily"`
 		// Расписание создания периодических задач оборудования ("@hourly", "" — отключено)
 		EquipmentPeriodicTasksSchedule string `yaml:"equipment_periodic_tasks_schedule" env:"TICKETS_EQUIPMENT_PERIODIC_TASKS_SCHEDULE" env-default:"@hourly"`
+		// Расписание автоматической синхронизации пользователей Mattermost для всех
+		// активных интеграций. Tri-state: ключа нет — код берёт дефолт "@hourly",
+		// явно пустое значение (yaml или env) — автосинк отключён. env-default тут
+		// нельзя: cleanenv подставил бы дефолт вместо явного «пусто».
+		MattermostUsersSyncSchedule OptionalString `yaml:"mattermost_users_sync_schedule" env:"TICKETS_MATTERMOST_USERS_SYNC_SCHEDULE"`
 		// Рабочее время периодических уведомлений: прогоны джоб вне окна пропускаются.
 		// Дефолты живут в config.yaml, а не в env-default: cleanenv подставляет
 		// env-default в незаполненное поле и перетёр бы явный «пусто» (выключение).
@@ -178,6 +183,29 @@ type (
 		Enabled bool `yaml:"enabled" env:"CALENDAR_ENABLED"`
 	}
 )
+
+// OptionalString различает «не задано» и «задано пусто». Для расписаний это
+// критично: отсутствующий ключ должен давать дефолт, а явное ” — выключать задачу.
+// Реализует encoding.TextUnmarshaler, поэтому работает и в yaml, и в env через cleanenv.
+type OptionalString struct {
+	Value string
+	Set   bool
+}
+
+func (o *OptionalString) UnmarshalText(text []byte) error {
+	o.Value = string(text)
+	o.Set = true
+	return nil
+}
+
+// OrDefault возвращает Value, если значение было явно задано (в том числе пустое),
+// иначе def. def — дефолт в коде, а не env-default: пустое значение не перетирается.
+func (o OptionalString) OrDefault(def string) string {
+	if !o.Set {
+		return def
+	}
+	return o.Value
+}
 
 func Init(path string) (*Config, error) {
 	var conf Config

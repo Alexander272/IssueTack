@@ -32,6 +32,16 @@ type SchedulerService struct {
 	// calendar — производственный календарь: ежемесячная синхронизация праздников.
 	calendar     WorkCalendar
 	calendarConf config.CalendarConfig
+	// mattermostSync — автоматическая синхронизация пользователей по всем
+	// активным интеграциям. Не является каналом уведомлений, поэтому не гейтится
+	// workingHours: деактивированный в MM сотрудник должен пропадать из селектов
+	// и вне рабочего окна.
+	mattermostSync MattermostUserSyncer
+}
+
+// MattermostUserSyncer — узкий срез MattermostService, нужный планировщику.
+type MattermostUserSyncer interface {
+	SyncAllActiveRealms(ctx context.Context) error
 }
 
 // SchedulerDeps содержит зависимости для создания SchedulerService.
@@ -47,6 +57,7 @@ type SchedulerDeps struct {
 	EquipmentPeriodicTasks *EquipmentPeriodicTaskService
 	Calendar               WorkCalendar
 	CalendarConf           config.CalendarConfig
+	MattermostSync         MattermostUserSyncer
 }
 
 // Scheduler описывает сервис планировщика фоновых заданий.
@@ -78,6 +89,7 @@ func NewSchedulerService(deps *SchedulerDeps) *SchedulerService {
 		equipmentPeriodicTasks: deps.EquipmentPeriodicTasks,
 		calendar:               deps.Calendar,
 		calendarConf:           deps.CalendarConf,
+		mattermostSync:         deps.MattermostSync,
 	}
 }
 
@@ -209,6 +221,23 @@ func (s *SchedulerService) Start(conf *config.TicketConfig) error {
 		logger.Info("production-calendar-sync scheduler started, schedule: " + s.calendarConf.SyncSchedule)
 	}
 
+	// Отсутствующий ключ конфига означает дефолт; явное '' — выключение.
+	mmSyncSchedule := conf.MattermostUsersSyncSchedule.OrDefault("@hourly")
+	if s.mattermostSync != nil && mmSyncSchedule != "" {
+		_, err := s.cron.NewJob(
+			gocron.CronJob(mmSyncSchedule, false),
+			gocron.NewTask(s.mattermostUsersSyncJob),
+			// Синк проходит по всем реалмам и может идти дольше интервала — не запускать
+			// вторую копию, пока первая не закончила (сервис дополнительно держит syncMu).
+			gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create mattermost users sync job. error: %w", err)
+		}
+		registered = true
+		logger.Info("mattermost-users-sync scheduler started, schedule: " + mmSyncSchedule)
+	}
+
 	if registered {
 		s.cron.Start()
 	}
@@ -221,6 +250,17 @@ func (s *SchedulerService) Stop() error {
 		return fmt.Errorf("failed to shutdown cron scheduler. error: %w", err)
 	}
 	return nil
+}
+
+// mattermostUsersSyncJob — фоновая синхронизация пользователей всех активных
+// Mattermost-интеграций. Сервис сам логирует итоги по реалмам и частичные ошибки.
+func (s *SchedulerService) mattermostUsersSyncJob(ctx context.Context) {
+	if s.mattermostSync == nil {
+		return
+	}
+	if err := s.mattermostSync.SyncAllActiveRealms(ctx); err != nil {
+		logger.Error("failed to sync mattermost users", logger.ErrAttr(err))
+	}
 }
 
 // autoCloseJob — фоновая задача cron: автоматически закрывает resolved-тикеты, которые "зависли"

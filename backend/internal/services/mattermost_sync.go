@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -341,6 +342,9 @@ func (s *MattermostService) handleSync(ctx context.Context, ch *mmChannel, messa
 	}
 
 	msg := fmt.Sprintf("Синхронизация завершена. Создано: %d, привязано: %d, с ошибкой: %d", result.Created, result.Linked, result.Failed)
+	if result.Deactivated > 0 || result.Reactivated > 0 {
+		msg += fmt.Sprintf(", деактивировано: %d, реактивировано: %d", result.Deactivated, result.Reactivated)
+	}
 	if err := s.most.DM.Send(ch.Settings.BotToken, ch.Settings.BotUserID, ch.MmUserID, msg); err != nil {
 		bestEffortError("failed to send sync result", err, map[string]string{"mm_user_id": ch.MmUserID})
 	}
@@ -348,23 +352,94 @@ func (s *MattermostService) handleSync(ctx context.Context, ch *mmChannel, messa
 }
 
 // SyncUsersResult — итог импорта пользователей Mattermost в realm.
+// Deactivated/Reactivated — изменения активности локальных учётных записей,
+// которые уже были связаны с Mattermost (не новые пользователи).
 type SyncUsersResult struct {
-	Created int `json:"created"`
-	Linked  int `json:"linked"`
-	Failed  int `json:"failed"`
+	Created     int `json:"created"`
+	Linked      int `json:"linked"`
+	Failed      int `json:"failed"`
+	Deactivated int `json:"deactivated"`
+	Reactivated int `json:"reactivated"`
 }
 
-// SyncRealmUsers сопоставляет пользователей Mattermost с системными (по
-// mattermost_id, затем по email, username и ФИО) и создаёт недостающих
-// локальных пользователей в указанном realm. actor идёт в аудит привязок
-// пользователя к realm. Пустой teamNames означает «все пользователи сервера».
-// Запускается из бота (команда «синхронизировать») и из веба (кнопка в
-// настройках realm), поэтому синхронизация разрешена только администратору realm.
+// setLocalUserActive обновляет флаг активности локальной учётной записи,
+// связанной с Mattermost. Остальные поля DTO обязаны нести текущие значения:
+// repo.UpdateAccount перезаписывает mattermost_id и internal_number безусловно.
+// Realms не передаётся — привязки к realm здесь не меняются, поэтому защита
+// кросс-реалмовых прав в UpdateAccount не срабатывает.
+func (s *MattermostService) setLocalUserActive(ctx context.Context, user *models.UserData, active bool, actor *models.Actor) error {
+	return s.users.UpdateAccount(ctx, &models.UpdateAccountDTO{
+		ID:             user.ID,
+		IsActive:       active,
+		MattermostID:   user.MattermostID,
+		InternalNumber: user.InternalNumber,
+		Actor:          actor,
+	})
+}
+
+// SyncRealmUsers — пользовательская точка входа (бот/веб): синхронизация
+// разрешена только администратору realm. Пустой teamNames означает «все
+// пользователи сервера».
 func (s *MattermostService) SyncRealmUsers(ctx context.Context, realmID uuid.UUID, actor *models.Actor, teamNames []string) (*SyncUsersResult, error) {
 	if actor == nil || !s.isRealmSupervisor(ctx, actor.ID, realmID) {
 		return nil, models.ErrPermissionDenied
 	}
 
+	s.syncMu.Lock()
+	defer s.syncMu.Unlock()
+	return s.syncRealmUsers(ctx, realmID, actor, teamNames)
+}
+
+// SyncAllActiveRealms — фоновая синхронизация всех активных интеграций.
+// Запускается планировщиком, поэтому проверки прав администратора здесь нет:
+// решение принимает сервер, а не пользовательский запрос. Ошибки отдельных
+// realm не прерывают остальные и не валят задачу — только логируются.
+func (s *MattermostService) SyncAllActiveRealms(ctx context.Context) error {
+	s.syncMu.Lock()
+	defer s.syncMu.Unlock()
+
+	settings, err := s.repo.GetActive(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get active mattermost settings: %w", err)
+	}
+
+	actor := &models.Actor{ID: uuid.Nil, Name: "Mattermost sync"}
+	failed := 0
+	for _, st := range settings {
+		if st.BotToken == "" {
+			logger.Warn("mattermost auto sync skipped: empty bot token",
+				logger.StringAttr("realm_id", st.RealmID.String()))
+			failed++
+			continue
+		}
+		result, err := s.syncRealmUsers(ctx, st.RealmID, actor, nil)
+		if err != nil {
+			logger.Error("mattermost auto sync failed",
+				logger.StringAttr("realm_id", st.RealmID.String()),
+				logger.ErrAttr(err),
+			)
+			failed++
+			continue
+		}
+		logger.Info("mattermost auto sync finished",
+			logger.StringAttr("realm_id", st.RealmID.String()),
+			logger.Int32Attr("created", int32(result.Created)),
+			logger.Int32Attr("linked", int32(result.Linked)),
+			logger.Int32Attr("deactivated", int32(result.Deactivated)),
+			logger.Int32Attr("reactivated", int32(result.Reactivated)),
+		)
+	}
+	logger.Info("mattermost auto sync completed",
+		logger.Int32Attr("realms", int32(len(settings))),
+		logger.Int32Attr("failed", int32(failed)),
+	)
+	return nil
+}
+
+// syncRealmUsers — общее ядро синхронизации: сопоставляет пользователей
+// Mattermost с системными (по mattermost_id, затем email, username и ФИО),
+// создаёт недостающих и распространяет active/deactivated. actor идёт в аудит.
+func (s *MattermostService) syncRealmUsers(ctx context.Context, realmID uuid.UUID, actor *models.Actor, teamNames []string) (*SyncUsersResult, error) {
 	settings, err := s.repo.GetByRealm(ctx, realmID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mattermost settings: %w", err)
@@ -376,6 +451,16 @@ func (s *MattermostService) SyncRealmUsers(ctx context.Context, realmID uuid.UUI
 	mmUsers, err := s.fetchMMUsers(settings.BotToken, teamNames)
 	if err != nil {
 		return nil, err
+	}
+
+	// GetAllUsers забирает из Mattermost только активных пользователей, поэтому
+	// деактивированный в MM сотрудник оставался активным локально и продолжал
+	// попадать в селекты заказчика/исполнителя. Отдельный запрос неактивных
+	// нужен, чтобы синк снимал флаг у уже связанных учётных записей.
+	// Ошибка не валит синк: импорт активных пользователей важнее.
+	inactiveMM, err := s.most.Client.GetInactiveUsers(settings.BotToken)
+	if err != nil {
+		logger.Warn("failed to get inactive mattermost users", logger.ErrAttr(err))
 	}
 
 	sysUsers, err := s.users.GetAll(ctx, nil)
@@ -402,6 +487,11 @@ func (s *MattermostService) SyncRealmUsers(ctx context.Context, realmID uuid.UUI
 	seen := make(map[string]struct{}, len(mmUsers))
 
 	for _, mmU := range mmUsers {
+		// Список по командам может включать деактивированных — для всех пользователей
+		// их отсекает syncFilter в GetAllUsers, здесь проверка повторяется явно.
+		if mmU.DeleteAt != 0 {
+			continue
+		}
 		if _, ok := seen[mmU.Id]; ok {
 			continue
 		}
@@ -409,6 +499,20 @@ func (s *MattermostService) SyncRealmUsers(ctx context.Context, realmID uuid.UUI
 
 		existing, existingErr := s.users.GetByMattermostID(ctx, mmU.Id)
 		if existingErr == nil {
+			// Возвращённого в MM сотрудника снова можно выбирать заказчиком:
+			// локальный флаг должен подняться на той же синхронизации.
+			if existing.Source.IsFromMattermost() && !existing.IsActive {
+				if err := s.setLocalUserActive(ctx, existing, true, actor); err != nil {
+					logger.Warn("failed to reactivate local mattermost user",
+						logger.StringAttr("mm_user_id", mmU.Id),
+						logger.StringAttr("user_id", existing.ID.String()),
+						logger.ErrAttr(err),
+					)
+					result.Failed++
+				} else {
+					result.Reactivated++
+				}
+			}
 			if err := s.ensureRealmMembership(ctx, &models.RealmMembershipDTO{
 				RealmID:   realmID,
 				UserID:    existing.ID,
@@ -511,11 +615,52 @@ func (s *MattermostService) SyncRealmUsers(ctx context.Context, realmID uuid.UUI
 		result.Created++
 	}
 
+	// Деактивированные в Mattermost: снимаем флаг только у локальных записей,
+	// созданных из Mattermost. Пользователи Keycloak остаются под управлением
+	// Keycloak — их активность перезаписывалась бы следующим keycloak-синком.
+	seenInactive := make(map[string]struct{}, len(inactiveMM))
+	for _, mmU := range inactiveMM {
+		if mmU.Id == "" || mmU.DeleteAt == 0 {
+			continue
+		}
+		if _, ok := seenInactive[mmU.Id]; ok {
+			continue
+		}
+		seenInactive[mmU.Id] = struct{}{}
+
+		existing, err := s.users.GetByMattermostID(ctx, mmU.Id)
+		if err != nil {
+			if !errors.Is(err, models.ErrNotFound) {
+				logger.Warn("failed to find local user for inactive mattermost user",
+					logger.StringAttr("mm_user_id", mmU.Id),
+					logger.ErrAttr(err),
+				)
+				result.Failed++
+			}
+			continue
+		}
+		if !existing.Source.IsFromMattermost() || !existing.IsActive {
+			continue
+		}
+		if err := s.setLocalUserActive(ctx, existing, false, actor); err != nil {
+			logger.Warn("failed to deactivate local mattermost user",
+				logger.StringAttr("mm_user_id", mmU.Id),
+				logger.StringAttr("user_id", existing.ID.String()),
+				logger.ErrAttr(err),
+			)
+			result.Failed++
+			continue
+		}
+		result.Deactivated++
+	}
+
 	logger.Info("mattermost users synced",
 		logger.StringAttr("realm_id", realmID.String()),
 		logger.Int32Attr("created", int32(result.Created)),
 		logger.Int32Attr("linked", int32(result.Linked)),
 		logger.Int32Attr("failed", int32(result.Failed)),
+		logger.Int32Attr("deactivated", int32(result.Deactivated)),
+		logger.Int32Attr("reactivated", int32(result.Reactivated)),
 	)
 
 	return result, nil

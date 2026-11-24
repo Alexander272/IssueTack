@@ -81,7 +81,10 @@ export const usersApiSlice = apiSlice.injectEndpoints({
 				method: 'POST',
 				params: arg?.force ? { force: 1 } : undefined,
 			}),
-			invalidatesTags: [{ type: 'Users', id: 'All' }],
+			invalidatesTags: [
+				{ type: 'Users', id: 'All' },
+				{ type: 'Users', id: 'available' },
+			],
 		}),
 
 		updateUser: builder.mutation<null, IUserDataDTO>({
@@ -90,7 +93,11 @@ export const usersApiSlice = apiSlice.injectEndpoints({
 				method: 'PUT',
 				body: user,
 			}),
-			invalidatesTags: [{ type: 'Users', id: 'All' }],
+			// Смена is_active влияет и на realm-селекты заказчика/исполнителя.
+			invalidatesTags: [
+				{ type: 'Users', id: 'All' },
+				{ type: 'Users', id: 'available' },
+			],
 		}),
 	}),
 })

@@ -54,7 +54,10 @@ export const MattermostTab: FC<Props> = ({ realmId }) => {
 	const onSyncUsers = async () => {
 		try {
 			const result = await syncUsers(realmId).unwrap()
-			toast.success(`Синхронизация завершена. Создано: ${result.data.created}, привязано: ${result.data.linked}`)
+			const { created, linked, deactivated, reactivated } = result.data
+			const activity =
+				deactivated || reactivated ? `, деактивировано: ${deactivated}, реактивировано: ${reactivated}` : ''
+			toast.success(`Синхронизация завершена. Создано: ${created}, привязано: ${linked}${activity}`)
 		} catch (error) {
 			const err = error as IFetchError
 			toast.error(err.data?.message, { autoClose: false })

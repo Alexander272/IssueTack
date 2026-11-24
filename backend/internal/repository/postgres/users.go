@@ -205,7 +205,11 @@ func (r *userRepo) GetByMattermostID(ctx context.Context, mattermostID string) (
 }
 
 // GetAll возвращает пользователей (вне realm — всех, с realm — только его
-// участников). Порядок — по фамилии, затем имени и username, как в GetByMembership.
+// активных участников). Realm-выборка питает селекты заказчика/исполнителя,
+// поэтому неактивные учётные записи и неактивное членство в realm в неё не
+// попадают. Глобальный список (realmID == nil) остаётся полным: он нужен
+// администратору, чтобы видеть и включать отключённых пользователей.
+// Порядок — по фамилии, затем имени и username, как в GetByMembership.
 func (r *userRepo) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.UserData, error) {
 	baseQuery := fmt.Sprintf(`SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.created_at,
 			u.mattermost_id,
@@ -231,7 +235,7 @@ func (r *userRepo) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.Us
 	var args []any
 
 	if realmID != nil {
-		query = baseQuery + ` WHERE ur.realm_id = $1 ORDER BY NULLIF(u.last_name, ''), u.first_name, u.username, rl.name`
+		query = baseQuery + ` WHERE ur.realm_id = $1 AND u.is_active = true AND ur.is_active = true ORDER BY NULLIF(u.last_name, ''), u.first_name, u.username, rl.name`
 		args = []any{*realmID}
 	} else {
 		query = baseQuery + ` ORDER BY NULLIF(u.last_name, ''), u.first_name, u.username, rl.name`
@@ -255,9 +259,11 @@ func (r *userRepo) GetAll(ctx context.Context, realmID *uuid.UUID) ([]*models.Us
 	return data, nil
 }
 
-// GetByMembership возвращает пользователей realm, отфильтрованных по членству в группах:
-// MembershipCustomers — пользователи вне всех групп («заказчики»), MembershipExecutors —
-// пользователи хотя бы в одной группе («исполнители»).
+// GetByMembership возвращает активных пользователей realm, отфильтрованных по
+// членству в группах: MembershipCustomers — пользователи вне всех групп
+// («заказчики»), MembershipExecutors — пользователи хотя бы в одной группе
+// («исполнители»). Как и realm-ветка GetAll, список питает селекты и потому
+// исключает отключённые учётные записи и неактивное членство в realm.
 // Оба списка селектов («Заявитель»/«Заказчик»/«Исполнитель») идут по порядку SQL:
 // по фамилии, затем имени и username; пользователь без фамилии — в конец списка.
 func (r *userRepo) GetByMembership(ctx context.Context, realmID uuid.UUID, membership models.MembershipFilter) ([]*models.UserData, error) {
@@ -290,7 +296,7 @@ func (r *userRepo) GetByMembership(ctx context.Context, realmID uuid.UUID, membe
 		LEFT JOIN %s ur ON u.id = ur.user_id
 		LEFT JOIN %s r ON ur.role_id = r.id
 		LEFT JOIN %s rl ON ur.realm_id = rl.id
-		WHERE ur.realm_id = $1
+		WHERE ur.realm_id = $1 AND u.is_active = true AND ur.is_active = true
 		%s
 		ORDER BY NULLIF(u.last_name, ''), u.first_name, u.username`,
 		Tables.Users, Tables.UserRealms, Tables.Roles, Tables.Realms, groupCondition,

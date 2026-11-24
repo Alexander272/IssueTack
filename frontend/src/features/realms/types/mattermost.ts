@@ -18,4 +18,6 @@ export interface IMattermostSyncResult {
 	created: number
 	linked: number
 	failed: number
+	deactivated: number
+	reactivated: number
 }
