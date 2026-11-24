@@ -61,6 +61,9 @@ type Notifications interface {
 	TicketUpdated(ctx context.Context, ticket *models.Ticket, actorID uuid.UUID, changes []*models.FieldChange) error
 	// TicketDeleted оповещает заинтересованных пользователей об удалении тикета.
 	TicketDeleted(ctx context.Context, ticket *models.Ticket) error
+	// NotifyDuplicate оповещает автора и заказчика дубля (и автора/заказчика
+	// основной заявки) о связывании или отвязке. linked=true — привязка.
+	NotifyDuplicate(ctx context.Context, ticket, primary *models.Ticket, actorID uuid.UUID, linked bool) error
 	// TicketCommented оповещает исполнителя и подписанных о новом комментарии.
 	// c.CommentText и c.AuthorLabel — текст комментария и «Фамилия Имя» его автора
 	// (пустая строка, если автора не удалось определить); они попадают в DM и в Data.
@@ -1082,12 +1085,16 @@ func addOwnerAndNotifiers(recipients map[uuid.UUID]struct{}, ticket *models.Tick
 			recipients[ticket.Owner.ID] = struct{}{}
 		}
 	}
-	for i := range ticket.Notifiers {
-		id := ticket.Notifiers[i].ID
-		if exclude != nil && id == *exclude {
-			continue
+	// Неявные наблюдатели дублей получают те же уведомления, что и явные, но
+	// хранятся отдельно и в списке «Уведомлять» формы не показываются.
+	for _, observers := range [][]models.UserShort{ticket.Notifiers, ticket.DuplicateNotifiers} {
+		for i := range observers {
+			id := observers[i].ID
+			if exclude != nil && id == *exclude {
+				continue
+			}
+			recipients[id] = struct{}{}
 		}
-		recipients[id] = struct{}{}
 	}
 }
 

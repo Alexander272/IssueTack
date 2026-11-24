@@ -73,6 +73,26 @@ func resolveUserLabel(ctx context.Context, users Users, raw string) string {
 	return logPersonName(u.FirstName, u.LastName, u.Username, u.ID)
 }
 
+// resolveTicketRefLabel резолвит id заявки в снапшоте событий dup_* в «№N» — тот же
+// вид, что ticketRef использует для новой стороны связи. Резолв best-effort:
+// нет заявки, ошибка загрузки или не-идентификатор ("none") остаются как есть,
+// операция из-за журнала не падает. Данные уведомлений не трогаются: там id
+// разбираются как uuid.
+func (s *TicketService) resolveTicketRefLabel(ctx context.Context, raw string) string {
+	if raw == "" || raw == "none" {
+		return raw
+	}
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	ticket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: id})
+	if err != nil || ticket == nil {
+		return raw
+	}
+	return ticketRef(ticket)
+}
+
 // logValues строит old/new-мапы снапшота журнала из изменений тикета: id
 // пользователей/групп/площадок/категорий заменяются именами. Старые значения
 // берутся из загруженного тикета, новые — резолвятся по id из change. Ошибки

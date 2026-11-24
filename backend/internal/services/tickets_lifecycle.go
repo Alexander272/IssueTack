@@ -238,6 +238,22 @@ func (s *TicketService) Delete(ctx context.Context, dto *models.DeleteTicketDTO)
 	// сохранить из транзакции наружу.
 	var deletedSubIDs []uuid.UUID
 	err := s.tx.WithinTransaction(ctx, func(newTx postgres.Tx) error {
+		// Основную заявку с дублями удалять нельзя: tickets.duplicate_of защищён
+		// ON DELETE RESTRICT. Блокируем строку FOR UPDATE (конфликтует с KEY SHARE,
+		// который берёт FK при связывании дубля) и проверяем ссылки в той же
+		// транзакции — иначе между проверкой и DELETE успели бы linked'нуть дубль,
+		// и пользователь получил бы сырую FK-ошибку вместо TK015.
+		if err := s.repo.LockTickets(ctx, newTx, []uuid.UUID{dto.ID}); err != nil {
+			return err
+		}
+		hasDuplicates, err := s.repo.HasDuplicateReferences(ctx, newTx, dto.ID)
+		if err != nil {
+			return fmt.Errorf("failed to check duplicate references: %w", err)
+		}
+		if hasDuplicates {
+			return models.ErrDuplicatePrimaryHasDuplicates
+		}
+
 		var loadErr error
 		ticket, loadErr = s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: dto.ID})
 		if loadErr != nil {
@@ -322,7 +338,7 @@ func (s *TicketService) AutoCloseResolved(ctx context.Context, delay time.Durati
 
 	cutoff := time.Now().Add(-delay)
 
-	var closed int64
+	var closedIDs []uuid.UUID
 	err := s.tx.WithinTransaction(ctx, func(newTx postgres.Tx) error {
 		ids, err := s.repo.CloseResolved(ctx, newTx, cutoff)
 		if err != nil {
@@ -334,8 +350,25 @@ func (s *TicketService) AutoCloseResolved(ctx context.Context, delay time.Durati
 		if err := s.favorites.DeleteTemporaryByTickets(ctx, newTx, ids); err != nil {
 			return fmt.Errorf("failed to cleanup favorites of auto-closed tickets: %w", err)
 		}
-		closed = int64(len(ids))
+		closedIDs = ids
 		return nil
 	})
-	return closed, err
+
+	// Автозакрытие идёт мимо TicketService.Update, поэтому уведомление о
+	// финальном статусе основной заявки (и, значит, о судьбе её дублей)
+	// отправляется здесь, после коммита. Наблюдатели дублей приходят в
+	// ticket.DuplicateNotifiers отдельно от редактируемого списка «Уведомлять».
+	changes := []*models.FieldChange{{Tag: models.ActionStatusChanged, OldVal: string(models.StatusResolved), NewVal: string(models.StatusClosed)}}
+	for _, id := range closedIDs {
+		ticket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: id})
+		if err != nil {
+			s.notifyBestEffort("auto_close", id, id.String(), err)
+			continue
+		}
+		if err := s.notifications.TicketUpdated(ctx, ticket, uuid.Nil, changes); err != nil {
+			s.notifyBestEffort("auto_close", id, ticket.Title, err)
+		}
+	}
+
+	return int64(len(closedIDs)), err
 }

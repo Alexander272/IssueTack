@@ -358,6 +358,27 @@ func (s *TicketService) GetAccessFlags(ctx context.Context, ticket *models.Ticke
 	flags.CanCreateSubtask = canCreateSubtaskByAttributes(ticket, userID, isCustomer, flags.CanManage)
 	flags.CanAttachToTicket = canAttachByAttributes(ticket, userID, flags.CanWork)
 
+	// Работа с дублями: связывают исполнители и менеджеры; отвязать может ещё
+	// и автор заявки — это осознанное исправление ошибочной привязки, а не
+	// обход заморозки статуса (ErrTicketFrozen).
+	flags.CanLinkDuplicate = (flags.CanWork && !nonWorker && !isCustomer) || flags.CanManage
+	flags.CanUnlinkDuplicate = flags.CanLinkDuplicate || ticket.Creator.ID == userID
+
+	// UnlinkDuplicate дополнительно разрешён менеджеру основной заявки: список
+	// дублей он видит на своей стороне, и кнопка в карточке дубля не должна
+	// расходиться с серверной проверкой.
+	if ticket.DuplicateOf != nil && !flags.CanUnlinkDuplicate {
+		primary, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: *ticket.DuplicateOf})
+		if err != nil {
+			return nil, err
+		}
+		manager, err := s.access.CanManage(ctx, userID, primary)
+		if err != nil {
+			return nil, err
+		}
+		flags.CanUnlinkDuplicate = manager
+	}
+
 	return flags, nil
 }
 

@@ -141,20 +141,21 @@ func (s *MattermostService) ticketDetail(ctx context.Context, settings *models.R
 	}
 
 	detail := &models.PluginTicketDetail{
-		ID:               ticket.ID,
-		Title:            ticket.Title,
-		Description:      ticket.Description,
-		Status:           ticket.Status,
-		Priority:         ticket.Priority,
-		CreatedAt:        ticket.CreatedAt,
-		DueDate:          ticket.DueDate,
-		Category:         ticket.Category,
-		CategoryModifier: ticket.CategoryModifier,
-		Site:             ticket.Site,
-		Creator:          ticket.Creator,
-		Owner:            ticket.Owner,
-		Assignee:         ticket.Assignee,
-		Notifiers:        ticket.Notifiers,
+		ID:                ticket.ID,
+		Title:             ticket.Title,
+		Description:       ticket.Description,
+		Status:            ticket.Status,
+		Priority:          ticket.Priority,
+		CreatedAt:         ticket.CreatedAt,
+		DueDate:           ticket.DueDate,
+		Category:          ticket.Category,
+		CategoryModifier:  ticket.CategoryModifier,
+		Site:              ticket.Site,
+		Creator:           ticket.Creator,
+		Owner:             ticket.Owner,
+		Assignee:          ticket.Assignee,
+		Notifiers:         ticket.Notifiers,
+		DuplicateOfNumber: ticket.DuplicateOfNumber,
 	}
 	if ticket.TicketNumber != nil {
 		detail.Number = *ticket.TicketNumber

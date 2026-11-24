@@ -33,6 +33,13 @@ type Ticket struct {
 	// OwnerMuted отключает уведомления заказчику и скрывает заявку из его списка заявок.
 	OwnerMuted bool `json:"ownerMuted" db:"owner_muted"`
 
+	// DuplicateOf — основная заявка, для которой эта заявка помечена дублем.
+	// PreviousStatus — статус дубля на момент привязки; нужен, чтобы осознанная
+	// отвязка вернула заявку в работу, а не оставила её закрытой навсегда.
+	DuplicateOf       *uuid.UUID    `json:"duplicateOf,omitempty" db:"duplicate_of"`
+	DuplicateOfNumber *int          `json:"duplicateOfNumber,omitempty" db:"-"`
+	PreviousStatus    *TicketStatus `json:"previousStatus,omitempty" db:"previous_status"`
+
 	// Сроки и планирование
 	DueDate    *time.Time `json:"dueDate" db:"due_date"`
 	ClosedAt   *time.Time `json:"closedAt" db:"closed_at"`
@@ -40,11 +47,17 @@ type Ticket struct {
 	CreatedAt  time.Time  `json:"createdAt" db:"created_at"`
 	UpdatedAt  time.Time  `json:"updatedAt" db:"updated_at"`
 
-	Subtasks    []*Subtask      `json:"subtasks,omitempty"`
-	Attachments []*Attachment   `json:"attachments,omitempty"`
-	Notifiers   []UserShort     `json:"notifiers,omitempty"`
-	Access      *AccessFlags    `json:"access,omitempty"`
-	Equipment   *EquipmentShort `json:"equipment,omitempty"`
+	Subtasks    []*Subtask    `json:"subtasks,omitempty"`
+	Attachments []*Attachment `json:"attachments,omitempty"`
+
+	// Notifiers — явный список «Уведомлять», который редактирует пользователь.
+	// DuplicateNotifiers — неявные наблюдатели (автор/заказчик дублей этой заявки):
+	// они получают доступ и уведомления, но не должны попадать в форму редактирования
+	// и не копируются в ticket_notifiers при SyncNotifiers.
+	Notifiers          []UserShort     `json:"notifiers,omitempty"`
+	DuplicateNotifiers []UserShort     `json:"-"`
+	Access             *AccessFlags    `json:"access,omitempty"`
+	Equipment          *EquipmentShort `json:"equipment,omitempty"`
 }
 
 type AccessFlags struct {
@@ -80,6 +93,12 @@ type AccessFlags struct {
 	CanCreateSubtask  bool `json:"canCreateSubtask"`
 	CanAttachToTicket bool `json:"canAttachToTicket"`
 	CanManage         bool `json:"canManage"`
+
+	// CanLinkDuplicate/CanUnlinkDuplicate — работа с дублями: связывать может
+	// исполнитель/менеджер (рабочий доступ, не заказчик); отвязывать — тот же круг
+	// плюс создатель основной заявки, чтобы можно было исправить ошибочную привязку.
+	CanLinkDuplicate   bool `json:"canLinkDuplicate"`
+	CanUnlinkDuplicate bool `json:"canUnlinkDuplicate"`
 
 	AllowedStatuses []TicketStatus `json:"allowedStatuses"`
 }
@@ -118,6 +137,10 @@ type TicketFilter struct {
 	// сам в группу тикета не входит (заявка группы, автор — рядовой заявитель).
 	ReadableBy *MyWorkFilter `json:"-"`
 	Archived   *bool         `form:"archived" json:"archived"`
+	// Duplicates — фильтр заявок-дублей: true — только дубли, false — только не-дубли,
+	// nil — все (обычный список). Применяется в архиве, где дубли оказываются после
+	// закрытия; в активной вкладке дублей быть не должно.
+	Duplicates *bool `form:"duplicates" json:"duplicates"`
 	// AllStatuses — отдаёт заявки всех статусов, минуя фильтр вкладки (statusMode):
 	// «все заявки по оборудованию» истории единицы включает closed/cancelled, а
 	// вкладочный набор («Активные»/«Архив») такого объединения не строит. nil/false —
@@ -246,6 +269,55 @@ type TransferTicketDTO struct {
 	Actor      *Actor     `json:"actor"`
 	AssigneeID *uuid.UUID `json:"assigneeId" db:"assignee_id"`
 	RealmID    string     `json:"realmId"`
+}
+
+// LinkDuplicateDTO — привязка заявки к основной. ID (дубль) берётся из URL,
+// PrimaryID — из тела; realm и актор добавляет хендлер.
+type LinkDuplicateDTO struct {
+	ID        uuid.UUID `json:"-" db:"id"`
+	PrimaryID uuid.UUID `json:"primaryId" db:"primary_id"`
+	Actor     *Actor    `json:"-"`
+	RealmID   string    `json:"-"`
+}
+
+// UnlinkDuplicateDTO — осознанная отвязка дубля от основной заявки.
+type UnlinkDuplicateDTO struct {
+	ID      uuid.UUID `json:"-" db:"id"`
+	Actor   *Actor    `json:"-"`
+	RealmID string    `json:"-"`
+}
+
+// DuplicateLinkResult — результат привязки/отвязки: корень цепочки и путь от
+// дубля к корню (включая оба конца), чтобы фронт мог показать, куда именно
+// переехала или вернулась заявка.
+type DuplicateLinkResult struct {
+	RootID uuid.UUID   `json:"rootId"`
+	Chain  []uuid.UUID `json:"chain"`
+}
+
+// GetDuplicatesDTO — запрос списка дублей со стороны основной заявки.
+// Actor обязателен: каждая найденная заявка проходит проверку read-доступа,
+// иначе список раскрывал бы чужие дубли из других групп.
+type GetDuplicatesDTO struct {
+	ID    uuid.UUID `json:"-"`
+	Actor *Actor    `json:"-"`
+}
+
+// DuplicateRef — компактная карточка связанной заявки на основной. Статус не
+// отдаётся намеренно: дубли всегда закрыты, он ничего не говорит пользователю.
+// Вместо этого показываем объём обсуждения — комментарии и вложения.
+type DuplicateRef struct {
+	ID               uuid.UUID `json:"id"`
+	TicketNumber     *int      `json:"ticketNumber,omitempty"`
+	Title            string    `json:"title"`
+	CreatorName      string    `json:"creatorName"`
+	AssigneeName     string    `json:"assigneeName"`
+	CommentsCount    int       `json:"commentsCount"`
+	AttachmentsCount int       `json:"attachmentsCount"`
+	CreatedAt        time.Time `json:"createdAt"`
+	// CanUnlink считается отдельно для каждого дубля: право отвязать чужую
+	// заявку с основной не совпадает с правом отвязать саму её.
+	CanUnlink bool `json:"canUnlink"`
 }
 
 // AccessCheckDTO — вход проверки доступа к тикету. Реалм намеренно не принимается:

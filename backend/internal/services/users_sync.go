@@ -18,13 +18,15 @@ var internalNumberRe = regexp.MustCompile(`^(.*?)\s*\((\d*)\)$`)
 
 // Sync синхронизирует пользователей из Keycloak с локальной БД: создаёт новых, обновляет изменённых и удаляет отсутствующих.
 //
-// force снимает защиту от удаления пользователей, у которых есть заявки (см. usersWithTickets).
-// Без него синхронизация останавливается с SY001: таких пользователей нет в группе
-// Keycloak, но tickets.creator_id/owner_id объявлены как ON DELETE CASCADE, поэтому
-// синк удалил бы их вместе с заявками. Проверка по факту наличия заявок, а не по
-// source/mattermost_id, потому что после бэкфилла связанный с Mattermost сотрудник
-// остаётся source=keycloak и в Keycloak не состоит — привязка к Mattermost не
-// защищает от удаления, а вот заявки защищают.
+// force снимает защиту от удаления пользователей, у которых есть заявки (см. usersWithTickets),
+// но не снимает пропуск владельцев/авторов основных заявок с дублями: те физически
+// убираются из toDelete, и каскадное удаление не ломает связь duplicate_of
+// (ON DELETE RESTRICT). Без force синхронизация останавливается с SY001: таких
+// пользователей нет в группе Keycloak, но tickets.creator_id/owner_id объявлены
+// как ON DELETE CASCADE, поэтому синк удалил бы их вместе с заявками. Проверка
+// по факту наличия заявок, а не по source/mattermost_id, потому что после бэкфилла
+// связанный с Mattermost сотрудник остаётся source=keycloak и в Keycloak не состоит —
+// привязка к Mattermost не защищает от удаления, а вот заявки защищают.
 func (s *userService) Sync(ctx context.Context, actor *models.Actor, force bool) error {
 	logger.Info("Sync users started")
 
@@ -133,6 +135,20 @@ func (s *userService) Sync(ctx context.Context, actor *models.Actor, force bool)
 			"usernames", strings.Join(unknownSource, ", "))
 	}
 
+	// Автор и заказчик основной заявки, на которую ссылаются дубли, не удаляются
+	// ни при каких условиях: каскадное удаление их заявок уперлось бы в
+	// tickets_duplicate_of_fkey (ON DELETE RESTRICT) и откатило всю пачку.
+	// force на этот пропуск не действует — пользователь убирается из toDelete.
+	toDelete, duplicatePrimaries, err := s.skipDuplicatePrimaries(ctx, toDelete, deleteUsernames)
+	if err != nil {
+		return err
+	}
+	if len(duplicatePrimaries) > 0 {
+		logger.Warn("keycloak sync skipped users whose tickets have duplicates",
+			"count", len(duplicatePrimaries),
+			"usernames", strings.Join(duplicatePrimaries, ", "))
+	}
+
 	usersWithTickets := make([]string, 0)
 	if len(toDelete) > 0 {
 		ids, err := s.repo.GetIDsWithTickets(ctx, toDelete)
@@ -179,7 +195,8 @@ func (s *userService) Sync(ctx context.Context, actor *models.Actor, force bool)
 			"updated", len(toUpdate),
 			"deleted", len(toDelete),
 			"deleted_with_tickets", len(usersWithTickets),
-			"skipped_unknown_source", len(unknownSource))
+			"skipped_unknown_source", len(unknownSource),
+			"skipped_duplicate_primaries", len(duplicatePrimaries))
 		return nil
 	})
 
@@ -195,6 +212,42 @@ func (s *userService) Sync(ctx context.Context, actor *models.Actor, force bool)
 	}
 	s.eventBus.Notify(event)
 	return nil
+}
+
+// skipDuplicatePrimaries убирает из кандидатов на удаление пользователей, которые
+// являются автором или заказчиком основной заявки с дублями. Проверка идёт до
+// usersWithTickets и до force: такой пользователь физически исчезает из toDelete,
+// поэтому ни SY001, ни force=1 не могут вернуть его в пачку удаления.
+func (s *userService) skipDuplicatePrimaries(
+	ctx context.Context, toDelete []uuid.UUID, usernames map[uuid.UUID]string,
+) ([]uuid.UUID, []string, error) {
+	skipped := make([]string, 0)
+	if s.tickets == nil || len(toDelete) == 0 {
+		return toDelete, skipped, nil
+	}
+
+	protected, err := s.tickets.GetIDsWithDuplicatePrimaries(ctx, toDelete)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to check duplicate primaries: %w", err)
+	}
+	if len(protected) == 0 {
+		return toDelete, skipped, nil
+	}
+
+	blocked := make(map[uuid.UUID]struct{}, len(protected))
+	for _, id := range protected {
+		blocked[id] = struct{}{}
+		if username, ok := usernames[id]; ok {
+			skipped = append(skipped, username)
+		}
+	}
+	kept := make([]uuid.UUID, 0, len(toDelete)-len(blocked))
+	for _, id := range toDelete {
+		if _, ok := blocked[id]; !ok {
+			kept = append(kept, id)
+		}
+	}
+	return kept, skipped, nil
 }
 
 // getAllGroupMembers постранично (по 1000 записей) выгружает всех участников группы из Keycloak,

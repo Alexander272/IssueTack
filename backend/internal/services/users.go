@@ -14,6 +14,7 @@ import (
 
 type userService struct {
 	repo      repository.Users
+	tickets   repository.Tickets
 	tm        TransactionManager
 	keycloak  *auth.KeycloakClient
 	userRealm UserRealms
@@ -23,6 +24,7 @@ type userService struct {
 // UsersDeps содержит зависимости для создания сервиса пользователей.
 type UsersDeps struct {
 	Repo      repository.Users
+	Tickets   repository.Tickets
 	TxManager TransactionManager
 	UserRealm UserRealms
 	Keycloak  *auth.KeycloakClient
@@ -33,6 +35,7 @@ type UsersDeps struct {
 func NewUserService(deps *UsersDeps) *userService {
 	return &userService{
 		repo:      deps.Repo,
+		tickets:   deps.Tickets,
 		tm:        deps.TxManager,
 		userRealm: deps.UserRealm,
 		keycloak:  deps.Keycloak,

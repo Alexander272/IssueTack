@@ -96,6 +96,18 @@ func (w *whereBuilder) statisticsWhere(query models.StatisticsQuery) {
 	w.statisticsRefinements(query.Filter)
 }
 
+// statisticsDuplicateExcluded — условие «дубля ещё не было на конец периода».
+// Дубль — не отдельная работа, но он исключается только с момента связи: заявка,
+// закрытая в прошлом и помеченная дублем сегодня, остаётся в историческом
+// отчёте. duplicate_of_set_at IS NULL у старых связей без даты — исключаем
+// всегда, чтобы они не «просочились» в отчёты после бэкфилла.
+func (w *whereBuilder) statisticsDuplicateExcluded(to time.Time) string {
+	w.idx++
+	toPh := fmt.Sprintf("$%d", w.idx)
+	w.args = append(w.args, to)
+	return fmt.Sprintf("(t.duplicate_of IS NULL OR (t.duplicate_of_set_at IS NOT NULL AND t.duplicate_of_set_at >= %s))", toPh)
+}
+
 // rangeArgs добавляет аргументы периода [from, to) и возвращает их плейсхолдеры.
 func (w *whereBuilder) rangeArgs(from, to time.Time) (string, string) {
 	w.idx++
@@ -118,21 +130,28 @@ func (r *StatisticsRepo) GetStatisticsSummary(ctx context.Context, q models.Stat
 	span := to.Sub(from)
 	prevFromPh, prevToPh := w.rangeArgs(from.Add(-span), from)
 
+	// Метрики текущего окна смотрят на его конец, предыдущего — на его конец
+	// (начало текущего). Один дубль по-разному учитывается в двух окнах.
+	dupCurrent := w.statisticsDuplicateExcluded(to)
+	dupPrev := w.statisticsDuplicateExcluded(from)
+
 	// Один проход по видимым заявкам: LEFT JOIN LATERAL считает подзадачи только
 	// для попавших в выборку тикетов (индекс subtasks(ticket_id)), а условные
 	// агрегаты дают и число карточек, и цифры блока «подзадачи» для каждой из них.
-	activeCond := "t.status IN ('open', 'in_progress', 'pending', 'on_hold')"
-	overdueCond := "t.due_date IS NOT NULL AND t.due_date < NOW() AND t.status NOT IN ('closed', 'cancelled', 'resolved')"
-	createdInPeriod := fmt.Sprintf("t.created_at >= %s AND t.created_at < %s", fromPh, toPh)
-	resolvedInPeriod := fmt.Sprintf("t.resolved_at >= %s AND t.resolved_at < %s", fromPh, toPh)
+	activeCond := "t.status IN ('open', 'in_progress', 'pending', 'on_hold') AND " + dupCurrent
+	overdueCond := "t.due_date IS NOT NULL AND t.due_date < NOW() AND t.status NOT IN ('closed', 'cancelled', 'resolved') AND " + dupCurrent
+	createdInPeriod := fmt.Sprintf("t.created_at >= %s AND t.created_at < %s AND %s", fromPh, toPh, dupCurrent)
+	resolvedInPeriod := fmt.Sprintf("t.resolved_at >= %s AND t.resolved_at < %s AND %s", fromPh, toPh, dupCurrent)
+	createdInPrev := fmt.Sprintf("t.created_at >= %s AND t.created_at < %s AND %s", prevFromPh, prevToPh, dupPrev)
+	resolvedInPrev := fmt.Sprintf("t.resolved_at >= %s AND t.resolved_at < %s AND %s", prevFromPh, prevToPh, dupPrev)
 
 	query := fmt.Sprintf(`SELECT
 			COUNT(*) FILTER (WHERE %[1]s),
 			COUNT(*) FILTER (WHERE %[2]s),
 			COUNT(*) FILTER (WHERE %[3]s),
 			COUNT(*) FILTER (WHERE %[4]s),
-			COUNT(*) FILTER (WHERE t.created_at >= %[5]s AND t.created_at < %[6]s),
-			COUNT(*) FILTER (WHERE t.resolved_at >= %[5]s AND t.resolved_at < %[6]s),
+			COUNT(*) FILTER (WHERE %[5]s),
+			COUNT(*) FILTER (WHERE %[6]s),
 			COUNT(*) FILTER (WHERE sc.cnt > 0 AND %[1]s),
 			COALESCE(SUM(sc.cnt) FILTER (WHERE %[1]s), 0)::bigint,
 			COUNT(*) FILTER (WHERE sc.cnt > 0 AND %[2]s),
@@ -145,7 +164,7 @@ func (r *StatisticsRepo) GetStatisticsSummary(ctx context.Context, q models.Stat
 		CROSS JOIN LATERAL (SELECT COUNT(*) AS cnt FROM %[8]s st WHERE st.ticket_id = t.id) sc
 		WHERE %[9]s`,
 		createdInPeriod, activeCond, overdueCond, resolvedInPeriod,
-		prevFromPh, prevToPh,
+		createdInPrev, resolvedInPrev,
 		Tables.Tickets, Tables.Subtasks,
 		strings.Join(w.clauses, " AND "),
 	)
@@ -170,6 +189,7 @@ func (r *StatisticsRepo) GetStatisticsByStatus(ctx context.Context, q models.Sta
 	from, to := q.Filter.From, q.Filter.To
 	w := &whereBuilder{}
 	w.statisticsWhere(q)
+	w.add(w.statisticsDuplicateExcluded(to))
 	fromPh, toPh := w.rangeArgs(from, to)
 
 	query := fmt.Sprintf(`SELECT t.status, COUNT(*) AS count
@@ -240,6 +260,7 @@ func (r *StatisticsRepo) GetStatisticsByDimension(ctx context.Context, q models.
 	from, to := q.Filter.From, q.Filter.To
 	w := &whereBuilder{}
 	w.statisticsWhere(q)
+	w.add(w.statisticsDuplicateExcluded(to))
 	fromPh, toPh := w.rangeArgs(from, to)
 
 	limit := q.Limit
@@ -291,6 +312,7 @@ func (r *StatisticsRepo) GetStatisticsByOwner(ctx context.Context, q models.Stat
 	from, to := q.Filter.From, q.Filter.To
 	w := &whereBuilder{}
 	w.statisticsWhere(q)
+	w.add(w.statisticsDuplicateExcluded(to))
 	fromPh, toPh := w.rangeArgs(from, to)
 
 	// 0 (или отрицательное) — без LIMIT: фронт сворачивает хвост в «Прочие»
@@ -347,10 +369,12 @@ func (r *StatisticsRepo) GetStatisticsWorkload(ctx context.Context, q models.Sta
 	// 1. Инициализируем твой билдер. idx=2 резервирует $1 и $2 под from/to.
 	w := &whereBuilder{idx: 2}
 
-	// Базовое условие realm_id
+	// Базовое условие realm_id. Дубли не учитываются ни в заданиях, ни в
+	// подзадачах — но только с момента связи (см. statisticsDuplicateExcluded).
 	w.add(fmt.Sprintf("t.realm_id = $%d", w.idx+1))
 	w.args = append(w.args, q.Scope.RealmID)
 	w.idx++
+	w.add(w.statisticsDuplicateExcluded(q.Filter.To))
 
 	// Scope условия
 	if !q.Scope.AllRealm {
@@ -516,6 +540,7 @@ func (r *StatisticsRepo) GetStatisticsTrend(ctx context.Context, q models.Statis
 
 	w := &whereBuilder{}
 	w.statisticsWhere(q)
+	w.add(w.statisticsDuplicateExcluded(to))
 	fromPh, toPh := w.rangeArgs(from, to)
 	where := strings.Join(w.clauses, " AND ")
 
@@ -585,6 +610,7 @@ func (r *StatisticsRepo) GetStatisticsTickets(ctx context.Context, q models.Stat
 
 	w := &whereBuilder{}
 	w.statisticsWhere(models.StatisticsQuery{Scope: q.Scope, Filter: q.Filter})
+	w.add(w.statisticsDuplicateExcluded(q.Filter.To))
 
 	fromPh, toPh := w.rangeArgs(q.Filter.From, q.Filter.To)
 	w.add(fmt.Sprintf("t.created_at >= %s AND t.created_at < %s", fromPh, toPh))
@@ -692,6 +718,7 @@ func (r *StatisticsRepo) GetKpiTickets(ctx context.Context, q models.StatisticsK
 
 	w := &whereBuilder{}
 	w.statisticsWhere(models.StatisticsQuery{Scope: q.Scope, Filter: q.Filter})
+	w.add(w.statisticsDuplicateExcluded(q.Filter.To))
 
 	switch q.CardKey {
 	case models.KpiTotal:

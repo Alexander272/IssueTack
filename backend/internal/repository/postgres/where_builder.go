@@ -40,6 +40,28 @@ func (w *whereBuilder) sites(ids []string) {
 	inList(w, "t.site_id", ids)
 }
 
+// duplicates сужает список до дублей или, наоборот, исключает их. Дубли в
+// архиве лежат рядом с обычными закрытыми заявками, поэтому без явного фильтра
+// их не отделить.
+func (w *whereBuilder) duplicates(v *bool) {
+	if v == nil {
+		return
+	}
+	if *v {
+		w.add("t.duplicate_of IS NOT NULL")
+		return
+	}
+	w.add("t.duplicate_of IS NULL")
+}
+
+// notifierReadSQL — читаемый через наблюдателей доступ к заявке: либо пользователь
+// занесён в список «Уведомлять», либо является владельцем одного из её дублей.
+func notifierReadSQL(user string) string {
+	return fmt.Sprintf(`(EXISTS (SELECT 1 FROM %s tn WHERE tn.ticket_id = t.id AND tn.user_id = %s)
+		OR EXISTS (SELECT 1 FROM %s dtn WHERE dtn.primary_ticket_id = t.id AND dtn.user_id = %s))`,
+		Tables.TicketNotifiers, user, Tables.TicketDuplicateNotifiers, user)
+}
+
 func (w *whereBuilder) statuses(st *models.TicketStatus, many []models.TicketStatus) {
 	if st != nil {
 		w.idx++
@@ -169,10 +191,10 @@ func (w *whereBuilder) creatorOrOwner(userID *uuid.UUID) {
 		return
 	}
 	w.idx++
-	w.add(fmt.Sprintf("(t.creator_id = $%d OR (t.owner_id = $%d AND NOT t.owner_muted) OR EXISTS (SELECT 1 FROM %s tn WHERE tn.ticket_id = t.id AND tn.user_id = $%d))",
-		w.idx, w.idx+1, Tables.TicketNotifiers, w.idx+2))
-	w.args = append(w.args, *userID, *userID, *userID)
-	w.idx += 2
+	user := fmt.Sprintf("$%d", w.idx)
+	w.add(fmt.Sprintf("(t.creator_id = %s OR (t.owner_id = %s AND NOT t.owner_muted) OR %s)",
+		user, user, notifierReadSQL(user)))
+	w.args = append(w.args, *userID)
 }
 
 // readableBy добавляет "(t.creator_id = $n OR (t.owner_id = $n AND NOT t.owner_muted) OR t.assignee_id = $n
@@ -187,14 +209,11 @@ func (w *whereBuilder) readableBy(f *models.MyWorkFilter) {
 	w.idx++
 	user := fmt.Sprintf("$%d", w.idx)
 	w.args = append(w.args, f.UserID)
-	w.idx++
-	notifierUser := fmt.Sprintf("$%d", w.idx)
-	w.args = append(w.args, f.UserID)
 	disj := []string{
 		"t.creator_id = " + user,
 		"(t.owner_id = " + user + " AND NOT t.owner_muted)",
 		"t.assignee_id = " + user,
-		fmt.Sprintf("EXISTS (SELECT 1 FROM %s tn WHERE tn.ticket_id = t.id AND tn.user_id = %s)", Tables.TicketNotifiers, notifierUser),
+		notifierReadSQL(user),
 	}
 	if len(f.GroupIDs) > 0 {
 		disj = append(disj, "t.group_id IN ("+w.place(len(f.GroupIDs))+")")

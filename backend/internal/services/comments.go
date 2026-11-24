@@ -127,13 +127,7 @@ func (s *CommentService) Create(ctx context.Context, tx postgres.Tx, dto *models
 			// за исполнителем/менеджером группы. Если заявка скрыта от заказчика
 			// (OwnerMuted), доступ по роли заказчика не предоставляется.
 			isOwner := ticket.Owner != nil && ticket.Owner.ID == dto.UserID && !ticket.OwnerMuted
-			isNotifier := false
-			for i := range ticket.Notifiers {
-				if ticket.Notifiers[i].ID == dto.UserID {
-					isNotifier = true
-					break
-				}
-			}
+			isNotifier := hasTicketNotifier(ticket, dto.UserID)
 			if dto.IsInternal || (!isOwner && !isNotifier) {
 				return nil, err
 			}

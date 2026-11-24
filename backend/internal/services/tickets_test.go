@@ -2095,6 +2095,11 @@ func TestTicketService_Update_Owner_ReturnToWork_FromResolved_Success(t *testing
 	assert.NoError(t, err)
 	assert.Nil(t, dto.ResolvedAt)
 	assert.Nil(t, dto.ClosedAt)
+	// Возврат основной в работу не снимает пометку дублей: они остаются
+	// закрытыми, пока исполнитель явно не отвяжет каждый из них.
+	mockRepo.AssertNotCalled(t, "ClearDuplicate", mock.Anything, mock.Anything, mock.Anything)
+	mockRepo.AssertNotCalled(t, "RepointDuplicates", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	mockRepo.AssertNotCalled(t, "DeleteDuplicateNotifiers", mock.Anything, mock.Anything, mock.Anything)
 	mockRepo.AssertExpectations(t)
 }
 
@@ -2483,10 +2488,18 @@ func TestTicketService_AutoCloseResolved_Disabled(t *testing.T) {
 }
 
 func TestTicketService_AutoCloseResolved_Success(t *testing.T) {
-	mockRepo, _, _, _, _, _, _, svc, favorites := ticketServiceFixturesWithFavorites()
+	mockRepo, _, _, _, mockNotifications, _, _, svc, favorites := ticketServiceFixturesWithFavorites()
 
 	closedIDs := []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}
 	mockRepo.On("CloseResolved", mock.Anything, nil, mock.Anything).Return(closedIDs, nil)
+	wantChanges := []*models.FieldChange{{Tag: models.ActionStatusChanged, OldVal: "resolved", NewVal: "closed"}}
+	for _, id := range closedIDs {
+		ticket := &models.Ticket{ID: id, Title: "closed ticket"}
+		mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: id}).Return(ticket, nil).Once()
+		// Автозакрытие идёт мимо Update — уведомление о финальном статусе
+		// основной (и о судьбе её дублей) уходит отсюда, после коммита.
+		mockNotifications.On("TicketUpdated", mock.Anything, ticket, uuid.Nil, wantChanges).Return(nil).Once()
+	}
 
 	n, err := svc.AutoCloseResolved(context.Background(), 24*time.Hour)
 	assert.NoError(t, err)
@@ -2494,6 +2507,7 @@ func TestTicketService_AutoCloseResolved_Success(t *testing.T) {
 	// Temporary-пины закрываемых заявок снимаются в той же транзакции.
 	assert.ElementsMatch(t, closedIDs, favorites.ticketIDs())
 	mockRepo.AssertExpectations(t)
+	mockNotifications.AssertExpectations(t)
 }
 
 func TestTicketService_AutoCloseResolved_NoTickets(t *testing.T) {
@@ -2536,6 +2550,8 @@ func TestTicketService_Delete_Success(t *testing.T) {
 	// ticket:delete, без связи с тикетом, теперь недостаточно.
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Delete)).Return(true, nil)
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(true, nil)
+	mockRepo.On("LockTickets", mock.Anything, mock.Anything, []uuid.UUID{ticketID}).Return(nil).Once()
+	mockRepo.On("HasDuplicateReferences", mock.Anything, mock.Anything, ticketID).Return(false, nil)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(ticket, nil)
 	mockAttachments.On("DeleteByEntity", mock.Anything, nil, "ticket", ticketID).Return(nil)
 	mockSubtasks.On("GetByTicketID", mock.Anything, ticketID, actorID).Return([]*models.Subtask{}, nil)
@@ -2567,6 +2583,8 @@ func TestTicketService_Delete_RemovesAttachmentDirsAfterCommit(t *testing.T) {
 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Delete)).Return(true, nil)
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(true, nil)
+	mockRepo.On("LockTickets", mock.Anything, mock.Anything, []uuid.UUID{ticketID}).Return(nil).Once()
+	mockRepo.On("HasDuplicateReferences", mock.Anything, mock.Anything, ticketID).Return(false, nil)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(ticket, nil)
 	mockAttachments.On("DeleteByEntity", mock.Anything, nil, "ticket", ticketID).Return(nil)
 	mockAttachments.On("DeleteByEntity", mock.Anything, nil, "subtask", subID).Return(nil)
@@ -2597,6 +2615,8 @@ func TestTicketService_Delete_RollbackKeepsFiles(t *testing.T) {
 
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Delete)).Return(true, nil)
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(true, nil)
+	mockRepo.On("LockTickets", mock.Anything, mock.Anything, []uuid.UUID{ticketID}).Return(nil).Once()
+	mockRepo.On("HasDuplicateReferences", mock.Anything, mock.Anything, ticketID).Return(false, nil)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(ticket, nil)
 	mockAttachments.On("DeleteByEntity", mock.Anything, nil, "ticket", ticketID).Return(nil)
 	mockSubtasks.On("GetByTicketID", mock.Anything, ticketID, actorID).Return([]*models.Subtask{}, nil)
@@ -3982,6 +4002,8 @@ func TestTicketService_Delete_LogValue_AssigneeName(t *testing.T) {
 	// области (обход через IsRealmSupervisor).
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceTicket), string(access.Delete)).Return(true, nil)
 	mockPolicies.On("Enforce", actorID.String(), "", string(access.ResourceCategory), string(access.Write)).Return(true, nil)
+	mockRepo.On("LockTickets", mock.Anything, mock.Anything, []uuid.UUID{ticketID}).Return(nil).Once()
+	mockRepo.On("HasDuplicateReferences", mock.Anything, mock.Anything, ticketID).Return(false, nil)
 	mockUsers.On("GetByID", mock.Anything, assigneeID).
 		Return(&models.UserData{ID: assigneeID, FirstName: "Иван", LastName: "Иванов", Username: "iivanov"}, nil)
 	mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: ticketID}).Return(ticket, nil)

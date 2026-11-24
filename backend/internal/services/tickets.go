@@ -107,6 +107,14 @@ type Tickets interface {
 	Transfer(ctx context.Context, dto *models.TransferTicketDTO) error
 	// Delete удаляет тикет.
 	Delete(ctx context.Context, dto *models.DeleteTicketDTO) error
+	// LinkDuplicate помечает заявку дублем основной, закрывая её и сохраняя
+	// прежний статус. Повторный вызов перенаправляет дубль на другую основную.
+	LinkDuplicate(ctx context.Context, dto *models.LinkDuplicateDTO) (*models.DuplicateLinkResult, error)
+	// UnlinkDuplicate снимает пометку дубля и возвращает заявку в прежний статус.
+	UnlinkDuplicate(ctx context.Context, dto *models.UnlinkDuplicateDTO) (*models.DuplicateLinkResult, error)
+	// GetDuplicates возвращает дубли, привязанные к основной заявке, с фильтрацией
+	// по read-доступу актора.
+	GetDuplicates(ctx context.Context, dto *models.GetDuplicatesDTO) ([]*models.DuplicateRef, error)
 	// UploadAttachment сохраняет вложение и рассылает уведомление о новом вложении
 	// подписанным и исполнителю (для standalone-вложений без комментария; вложения,
 	// привязанные к комментарию, уведомлением не дублируют TicketCommented).
@@ -140,6 +148,7 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 		if err := s.attachSubtasks(ctx, data); err != nil {
 			return nil, 0, fmt.Errorf("failed to attach subtasks. error: %w", err)
 		}
+		s.hideInaccessibleDuplicateRefs(ctx, data, req.Actor.ID)
 		return data, total, nil
 	}
 
@@ -218,7 +227,54 @@ func (s *TicketService) Get(ctx context.Context, req *models.TicketFilter) ([]*m
 	if err := s.attachSubtasks(ctx, data); err != nil {
 		return nil, 0, fmt.Errorf("failed to attach subtasks: %w", err)
 	}
+	s.hideInaccessibleDuplicateRefs(ctx, data, req.Actor.ID)
 	return data, total, nil
+}
+
+// duplicatePrimaryReadable проверяет read-доступ к основной заявке дубля.
+// Номер основной приходит из SQL-джойна вместе с самим дублем, то есть минуя
+// проверку доступа: участник группы дубля мог увидеть номер чужой основной.
+// При любой ошибке загрузки/проверки доступ считается отсутствующим — скрыть
+// ссылку безопаснее, чем раскрыть её.
+func (s *TicketService) duplicatePrimaryReadable(ctx context.Context, primaryID, userID uuid.UUID) bool {
+	primary, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: primaryID})
+	if err != nil {
+		return false
+	}
+	return s.access.CheckAccessOnTicket(ctx, primary, userID, string(access.Read)) == nil
+}
+
+// hideInaccessibleDuplicateRef убирает из ответа ссылку и номер основной,
+// если актору не разрешено её читать. Оба поля зачищаются вместе: иначе
+// фронт показал бы переход «№—» на закрытую для пользователя заявку.
+func (s *TicketService) hideInaccessibleDuplicateRef(ctx context.Context, ticket *models.Ticket, userID uuid.UUID) {
+	if ticket == nil || ticket.DuplicateOf == nil {
+		return
+	}
+	if !s.duplicatePrimaryReadable(ctx, *ticket.DuplicateOf, userID) {
+		ticket.DuplicateOf, ticket.DuplicateOfNumber = nil, nil
+	}
+}
+
+// hideInaccessibleDuplicateRefs — тот же гейт для списка. Основные заявки
+// кешируются по id: несколько дублей одной основной не должны порождать
+// по три запроса на каждую строку страницы.
+func (s *TicketService) hideInaccessibleDuplicateRefs(ctx context.Context, tickets []*models.Ticket, userID uuid.UUID) {
+	readable := make(map[uuid.UUID]bool)
+	for _, ticket := range tickets {
+		if ticket == nil || ticket.DuplicateOf == nil {
+			continue
+		}
+		primaryID := *ticket.DuplicateOf
+		allowed, checked := readable[primaryID]
+		if !checked {
+			allowed = s.duplicatePrimaryReadable(ctx, primaryID, userID)
+			readable[primaryID] = allowed
+		}
+		if !allowed {
+			ticket.DuplicateOf, ticket.DuplicateOfNumber = nil, nil
+		}
+	}
 }
 
 // unionGroupIDs объединяет два списка групп без дубликатов (порядок: managed, затем member).
@@ -310,6 +366,7 @@ func (s *TicketService) GetByID(ctx context.Context, req *models.GetTicketByIdDT
 	if err := s.access.CheckAccessOnTicket(ctx, data, req.Actor.ID, string(access.Read)); err != nil {
 		return nil, err
 	}
+	s.hideInaccessibleDuplicateRef(ctx, data, req.Actor.ID)
 
 	subtasks, err := s.subtasks.GetByTicketID(ctx, data.ID, req.Actor.ID)
 	if err != nil {

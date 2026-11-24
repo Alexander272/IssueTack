@@ -61,6 +61,16 @@ var (
 	ErrDueDateRequestAlreadyPending = NewDomainError(errors.New("due date request already pending"), http.StatusConflict, "TK006", "На этой заявке уже есть запрос на перенос срока")
 	// ErrDueDateRequestNotPending — запрос уже был решён и нельзя его изменить/решить повторно.
 	ErrDueDateRequestNotPending = NewDomainError(errors.New("due date request not pending"), http.StatusConflict, "TK007", "Запрос на перенос срока уже обработан")
+	// Ошибки связывания дублей (TK008–TK014).
+	ErrDuplicateOwnTicket        = NewDomainError(errors.New("ticket cannot be a duplicate of itself"), http.StatusBadRequest, "TK008", "Заявка не может быть дублем самой себя")
+	ErrDuplicateCycle            = NewDomainError(errors.New("duplicate cycle detected"), http.StatusConflict, "TK009", "Обнаружен цикл дублей: основная заявка сама ссылается на дубль")
+	ErrDuplicatePrimaryInactive  = NewDomainError(errors.New("primary ticket is inactive"), http.StatusConflict, "TK010", "Основную заявку нельзя указать: она отменена")
+	ErrDuplicateChainTooDeep     = NewDomainError(errors.New("duplicate chain is too deep"), http.StatusConflict, "TK011", "Цепочка дублей слишком длинная")
+	ErrDuplicateNotLinked        = NewDomainError(errors.New("ticket is not a duplicate"), http.StatusConflict, "TK012", "Заявка не является дублем")
+	ErrDuplicateStatusNotAllowed = NewDomainError(errors.New("duplicate status is not allowed"), http.StatusConflict, "TK013", "Дублем можно отметить только открытую, работу, ожидающую, отложенную, решённую или уже привязанную заявку")
+	ErrDuplicateNotFound         = NewDomainError(errors.New("primary ticket not found"), http.StatusNotFound, "TK014", "Основная заявка не найдена")
+	// TK015 — основная заявка с дублями не удаляется: duplicate_of объявлен ON DELETE RESTRICT.
+	ErrDuplicatePrimaryHasDuplicates = NewDomainError(errors.New("primary ticket has duplicates"), http.StatusConflict, "TK015", "Нельзя удалить заявку, на которую ссылаются дубли")
 
 	// 409 Conflict (шаблоны чек-листов)
 	ErrTemplateNameExists = NewDomainError(errors.New("checklist template with this title already exists"), http.StatusConflict, "CL001", "Шаблон с таким названием уже существует")

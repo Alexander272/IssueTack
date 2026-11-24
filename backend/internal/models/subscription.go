@@ -40,6 +40,8 @@ const (
 	NotificationTicketDueDateRequested NotificationType = "ticket.due_date_requested"
 	NotificationTicketDueDateApproved  NotificationType = "ticket.due_date_approved"
 	NotificationTicketDueDateRejected  NotificationType = "ticket.due_date_rejected"
+	NotificationDuplicateLinked        NotificationType = "ticket.duplicate_linked"
+	NotificationDuplicateUnlinked      NotificationType = "ticket.duplicate_unlinked"
 	// NotificationEquipmentReturnDue — напоминание о необходимости вернуть
 	// выданное оборудование: приходит тому, кто выдал, когда наступил срок
 	// возврата, а единица всё ещё у держателя.

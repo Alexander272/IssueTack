@@ -8,6 +8,37 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestDuplicatesFilter фиксирует фильтр «только дубли» / «только не-дубли»:
+// дубли лежат в архиве рядом с обычными закрытыми заявками и без явного
+// conditions не отделяются.
+func TestDuplicatesFilter(t *testing.T) {
+	only, notOnly := true, false
+
+	t.Run("only", func(t *testing.T) {
+		w := &whereBuilder{}
+		w.duplicates(&only)
+		assert.Equal(t, []string{"t.duplicate_of IS NOT NULL"}, w.clauses)
+		assert.Empty(t, w.args)
+	})
+
+	t.Run("exclude", func(t *testing.T) {
+		w := &whereBuilder{}
+		w.duplicates(&notOnly)
+		assert.Equal(t, []string{"t.duplicate_of IS NULL"}, w.clauses)
+		assert.Empty(t, w.args)
+	})
+
+	t.Run("nil", func(t *testing.T) {
+		w := &whereBuilder{}
+		w.duplicates(nil)
+		assert.Empty(t, w.clauses)
+	})
+}
+
+// notifierClause — один общий плейсхолдер $1 для обеих таблиц наблюдателей:
+// «Уведомлять» и владельцы заявок-дублей.
+const notifierClause = "(EXISTS (SELECT 1 FROM ticket_notifiers tn WHERE tn.ticket_id = t.id AND tn.user_id = $1)\n\t\tOR EXISTS (SELECT 1 FROM ticket_duplicate_notifiers dtn WHERE dtn.primary_ticket_id = t.id AND dtn.user_id = $1))"
+
 // TestReadableBy фиксирует scope поиска заявки по номеру: заявка доступна, если
 // пользователь её автор, заказчик (если заявка не скрыта от заказчика), исполнитель,
 // наблюдатель («Уведомлять») ИЛИ она в его группе. Именно отсутствие ветки creator_id
@@ -20,8 +51,8 @@ func TestReadableBy(t *testing.T) {
 		w.readableBy(&models.MyWorkFilter{UserID: userID, GroupIDs: []uuid.UUID{groupA, groupB}})
 
 		assert.Len(t, w.clauses, 1)
-		assert.Equal(t, "(t.creator_id = $1 OR (t.owner_id = $1 AND NOT t.owner_muted) OR t.assignee_id = $1 OR EXISTS (SELECT 1 FROM ticket_notifiers tn WHERE tn.ticket_id = t.id AND tn.user_id = $2) OR t.group_id IN ($3,$4))", w.clauses[0])
-		assert.Equal(t, []any{userID, userID, groupA, groupB}, w.args)
+		assert.Equal(t, "(t.creator_id = $1 OR (t.owner_id = $1 AND NOT t.owner_muted) OR t.assignee_id = $1 OR "+notifierClause+" OR t.group_id IN ($2,$3))", w.clauses[0])
+		assert.Equal(t, []any{userID, groupA, groupB}, w.args)
 	})
 
 	t.Run("without groups", func(t *testing.T) {
@@ -29,8 +60,8 @@ func TestReadableBy(t *testing.T) {
 		w.readableBy(&models.MyWorkFilter{UserID: userID})
 
 		assert.Len(t, w.clauses, 1)
-		assert.Equal(t, "(t.creator_id = $1 OR (t.owner_id = $1 AND NOT t.owner_muted) OR t.assignee_id = $1 OR EXISTS (SELECT 1 FROM ticket_notifiers tn WHERE tn.ticket_id = t.id AND tn.user_id = $2))", w.clauses[0])
-		assert.Equal(t, []any{userID, userID}, w.args)
+		assert.Equal(t, "(t.creator_id = $1 OR (t.owner_id = $1 AND NOT t.owner_muted) OR t.assignee_id = $1 OR "+notifierClause+")", w.clauses[0])
+		assert.Equal(t, []any{userID}, w.args)
 	})
 
 	t.Run("nil filter adds nothing", func(t *testing.T) {
@@ -43,7 +74,7 @@ func TestReadableBy(t *testing.T) {
 
 // TestCreatorOrOwner фиксирует scope «автор ИЛИ заказчик ИЛИ наблюдатель»: заявка
 // видна создателю, владельцу (owner, если заявка не скрыта от заказчика) и
-// пользователю из списка «Уведомлять».
+// пользователю из списка «Уведомлять» и владельцу заявки, ставшей дублем.
 func TestCreatorOrOwner(t *testing.T) {
 	userID := uuid.New()
 
@@ -52,8 +83,8 @@ func TestCreatorOrOwner(t *testing.T) {
 		w.creatorOrOwner(&userID)
 
 		assert.Len(t, w.clauses, 1)
-		assert.Equal(t, "(t.creator_id = $1 OR (t.owner_id = $2 AND NOT t.owner_muted) OR EXISTS (SELECT 1 FROM ticket_notifiers tn WHERE tn.ticket_id = t.id AND tn.user_id = $3))", w.clauses[0])
-		assert.Equal(t, []any{userID, userID, userID}, w.args)
+		assert.Equal(t, "(t.creator_id = $1 OR (t.owner_id = $1 AND NOT t.owner_muted) OR "+notifierClause+")", w.clauses[0])
+		assert.Equal(t, []any{userID}, w.args)
 	})
 
 	t.Run("nil filter adds nothing", func(t *testing.T) {

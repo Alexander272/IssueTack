@@ -1154,7 +1154,7 @@ func TestNotificationService_TicketCommented_InternalComment_NotifiesAssigneeOnl
 	ticket := &models.Ticket{
 		ID:        uuid.New(),
 		Title:     "Internal comment ticket",
-		Assignee: &models.UserShort{ID: assigneeID},
+		Assignee:  &models.UserShort{ID: assigneeID},
 		Owner:     &models.UserShort{ID: uuid.New()},
 		Notifiers: []models.UserShort{{ID: uuid.New()}},
 	}
@@ -1256,6 +1256,34 @@ func TestNotificationService_NotifyReminderHigh_DoesNotNotifyNotifiers(t *testin
 
 	err := svc.NotifyReminderHigh(context.Background(), ticket, 3*time.Hour)
 	require.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+	mockNotifier.AssertExpectations(t)
+}
+
+// ticketRef уже печатает «№N»: лишний префикс в формате давал «№№123 → №456».
+func TestNotificationService_NotifyDuplicate_BodyTicketRefs(t *testing.T) {
+	mockRepo, mockNotifier, svc := notificationServiceFixtures()
+
+	dupNumber, primaryNumber := 123, 456
+	actorID, recipient := uuid.New(), uuid.New()
+	ticket := &models.Ticket{
+		ID: uuid.New(), TicketNumber: &dupNumber, Title: "Дубль",
+		Creator: models.UserShort{ID: actorID},
+	}
+	primary := &models.Ticket{
+		ID: uuid.New(), TicketNumber: &primaryNumber, Title: "Основная",
+		Creator: models.UserShort{ID: recipient},
+	}
+
+	var bodies []string
+	mockNotifier.On("Notify", mock.Anything, recipient, mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			bodies = append(bodies, args.Get(2).(*models.CreateNotificationDTO).Body)
+		}).Return(true, nil).Once()
+	mockRepo.On("Create", mock.Anything, nil, mock.Anything).Return(nil).Once()
+
+	require.NoError(t, svc.NotifyDuplicate(context.Background(), ticket, primary, actorID, true))
+	require.Equal(t, []string{"№123 → №456"}, bodies)
 	mockRepo.AssertExpectations(t)
 	mockNotifier.AssertExpectations(t)
 }

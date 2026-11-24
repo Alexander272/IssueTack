@@ -239,10 +239,17 @@ func (s *TicketAccessService) checkTicketAttributes(ctx context.Context, ticket 
 	return models.ErrPermissionDenied
 }
 
-// hasTicketNotifier сообщает, есть ли пользователь в списке «Уведомлять» заявки.
+// hasTicketNotifier сообщает, есть ли пользователь среди наблюдателей заявки —
+// явных (список «Уведомлять») или неявных (автор/заказчик её дублей). Оба набора
+// дают одинаковый read-доступ, но только первый редактируется формой.
 func hasTicketNotifier(ticket *models.Ticket, userID uuid.UUID) bool {
 	for i := range ticket.Notifiers {
 		if ticket.Notifiers[i].ID == userID {
+			return true
+		}
+	}
+	for i := range ticket.DuplicateNotifiers {
+		if ticket.DuplicateNotifiers[i].ID == userID {
 			return true
 		}
 	}

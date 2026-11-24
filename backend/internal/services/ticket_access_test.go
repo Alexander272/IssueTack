@@ -440,6 +440,31 @@ func TestTicketAccessService_CheckAccessOnTicket_NotifierReadAllowed(t *testing.
 	require.NoError(t, err)
 }
 
+func TestTicketAccessService_CheckAccessOnTicket_DuplicateNotifierReadAllowed(t *testing.T) {
+	mockRepo := new(MockTicketsRepo)
+	mockGroups := new(MockGroupsRepo)
+	mockPolicies := new(MockAccessPolicies)
+	svc := NewTicketAccessService(mockRepo, mockGroups, mockPolicies)
+
+	userID := uuid.New()
+	realmID := uuid.New()
+	groupID := uuid.New()
+	ticket := &models.Ticket{
+		ID:                 uuid.New(),
+		RealmID:            &realmID,
+		Group:              &models.GroupShort{ID: groupID},
+		Creator:            models.UserShort{ID: uuid.New()},
+		DuplicateNotifiers: []models.UserShort{{ID: userID}},
+	}
+
+	mockGroups.On("GetManagedGroups", mock.Anything, userID, &realmID).Return([]uuid.UUID{}, nil)
+	mockGroups.On("GetMemberGroups", mock.Anything, userID, &realmID).Return([]uuid.UUID{}, nil)
+
+	err := svc.CheckAccessOnTicket(context.Background(), ticket, userID, "read")
+	require.NoError(t, err)
+	assert.Empty(t, ticket.Notifiers, "неявный наблюдатель не должен попадать в редактируемый список")
+}
+
 func TestTicketAccessService_CheckAccessOnTicket_NotifierWriteDenied(t *testing.T) {
 	mockRepo := new(MockTicketsRepo)
 	mockGroups := new(MockGroupsRepo)
@@ -543,4 +568,3 @@ func TestTicketAccessService_NotifierReadOnly(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, ro)
 }
-

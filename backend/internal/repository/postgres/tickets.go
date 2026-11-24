@@ -48,9 +48,41 @@ type Tickets interface {
 	CountNotClosedByGroup(ctx context.Context, groupID uuid.UUID) (int, error)
 	CountNotClosedByCategory(ctx context.Context, categoryID uuid.UUID) (int, error)
 	GetNotifiers(ctx context.Context, ticketID uuid.UUID) ([]models.UserShort, error)
-	GetNotifierIDs(ctx context.Context, ticketID uuid.UUID) ([]uuid.UUID, error)
+	GetDuplicateNotifiers(ctx context.Context, ticketID uuid.UUID) ([]models.UserShort, error)
 	SyncNotifiers(ctx context.Context, tx Tx, ticketID uuid.UUID, actorID uuid.UUID, userIDs []uuid.UUID) error
 	IsNotifier(ctx context.Context, ticketID, userID uuid.UUID) (bool, error)
+
+	// Работа с дублями: все методы меняют состояние в переданной транзакции.
+	GetDuplicateChain(ctx context.Context, tx Tx, start uuid.UUID) ([]DuplicateNode, error)
+	GetDuplicateDescendants(ctx context.Context, tx Tx, roots []uuid.UUID) ([]uuid.UUID, error)
+	LockTickets(ctx context.Context, tx Tx, ids []uuid.UUID) error
+	SetDuplicate(ctx context.Context, tx Tx, id, primaryID uuid.UUID, previousStatus models.TicketStatus) error
+	ClearDuplicate(ctx context.Context, tx Tx, id uuid.UUID) error
+	RepointDuplicates(ctx context.Context, tx Tx, from, to uuid.UUID) error
+	RepointOne(ctx context.Context, tx Tx, id, primaryID uuid.UUID) error
+	MoveDuplicateNotifiers(ctx context.Context, tx Tx, from, to uuid.UUID) error
+	MoveDuplicateNotifier(ctx context.Context, tx Tx, from, to, duplicateID uuid.UUID) error
+	DeleteDuplicateNotifiers(ctx context.Context, tx Tx, duplicateID uuid.UUID) error
+	AddDuplicateNotifier(ctx context.Context, tx Tx, primaryID, userID, duplicateID, actorID uuid.UUID) error
+	HasDuplicateReferences(ctx context.Context, tx Tx, ticketID uuid.UUID) (bool, error)
+	GetIDsWithDuplicatePrimaries(ctx context.Context, userIDs []uuid.UUID) ([]uuid.UUID, error)
+	// CountDuplicateActivity — счётчики комментариев и вложений для карточек
+	// связанных заявок. Один запрос на весь список, без загрузки самих записей.
+	CountDuplicateActivity(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]DuplicateActivityCounts, error)
+}
+
+// DuplicateActivityCounts — то, что полезно видеть в карточке связанной заявки:
+// дубли всегда закрыты, поэтому вместо статуса показываем объём обсуждения.
+type DuplicateActivityCounts struct {
+	Comments    int
+	Attachments int
+}
+
+// DuplicateNode — узел цепочки дублей: id, ссылка на основную и статус.
+type DuplicateNode struct {
+	ID          uuid.UUID
+	DuplicateOf *uuid.UUID
+	Status      models.TicketStatus
 }
 
 type nullableTicketAssoc struct {
@@ -108,7 +140,7 @@ func (a *nullableTicketAssoc) assign(ticket *models.Ticket) {
 // COUNT(*) OVER() AS total_count для тотала страницы.
 func ticketSelectBase() string {
 	return fmt.Sprintf(`SELECT 
-			t.id, t.title, t.description, t.status, t.priority, t.ticket_number, t.realm_id, t.due_date, t.closed_at, t.resolved_at, t.owner_muted, t.created_at, t.updated_at,
+			t.id, t.title, t.description, t.status, t.priority, t.ticket_number, t.realm_id, t.due_date, t.closed_at, t.resolved_at, t.owner_muted, t.created_at, t.updated_at, t.duplicate_of, pt.ticket_number, t.previous_status,
 			u_creator.id, u_creator.username AS creator_username, u_creator.first_name AS creator_first_name, u_creator.last_name AS creator_last_name, u_creator.internal_number AS creator_internal_number,
 			u_owner.id, u_owner.username AS owner_username, u_owner.first_name AS owner_first_name, u_owner.last_name AS owner_last_name, u_owner.internal_number AS owner_internal_number,
 			u_assignee.id, u_assignee.username AS assignee_username, u_assignee.first_name AS assignee_first_name, u_assignee.last_name AS assignee_last_name, u_assignee.internal_number AS assignee_internal_number,
@@ -129,10 +161,11 @@ func ticketSelectBase() string {
 		LEFT JOIN %s cg ON c.category_group_id = cg.id
 		LEFT JOIN %s cm ON t.category_modifier_id = cm.id
 		JOIN %s s ON t.site_id = s.id
-		LEFT JOIN %s e ON t.equipment_id = e.id`,
+		LEFT JOIN %s e ON t.equipment_id = e.id
+		LEFT JOIN %s pt ON t.duplicate_of = pt.id`,
 		Tables.Tickets, Tables.Users, Tables.Users, Tables.Users, Tables.Users,
 		Tables.Groups, Tables.Categories, Tables.CategoryGroups, Tables.CategoryModifiers, Tables.Sites,
-		Tables.Equipment,
+		Tables.Equipment, Tables.Tickets,
 	)
 }
 
@@ -150,6 +183,7 @@ func scanTicketRow(row rowScanner) (*models.Ticket, int, error) {
 		&ticket.Status, &ticket.Priority,
 		&ticket.TicketNumber, &ticket.RealmID,
 		&ticket.DueDate, &ticket.ClosedAt, &ticket.ResolvedAt, &ticket.OwnerMuted, &ticket.CreatedAt, &ticket.UpdatedAt,
+		&ticket.DuplicateOf, &ticket.DuplicateOfNumber, &ticket.PreviousStatus,
 		&ticket.Creator.ID, &ticket.Creator.Username, &ticket.Creator.FirstName, &ticket.Creator.LastName, &ticket.Creator.InternalNumber,
 		&assoc.OwnerID, &assoc.OwnerUsername, &assoc.OwnerFirstName, &assoc.OwnerLastName, &assoc.OwnerInternalNumber,
 		&assoc.AssigneeID, &assoc.AssigneeUsername, &assoc.AssigneeFirstName, &assoc.AssigneeLastName, &assoc.AssigneeInternalNumber,
@@ -171,6 +205,7 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 	w := &whereBuilder{}
 	w.sites(req.SiteIDs)
 	w.statuses(req.Status, req.Statuses)
+	w.duplicates(req.Duplicates)
 	eq(w, "t.owner_id", req.OwnerID)
 	eq(w, "t.assignee_id", req.AssigneeID)
 	w.groups(req.GroupIDs, req.IncludeUngroupedAssignedTo)
@@ -258,7 +293,7 @@ func (r *TicketRepo) Get(ctx context.Context, req *models.TicketFilter) ([]*mode
 
 func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) (*models.Ticket, error) {
 	query := fmt.Sprintf(`SELECT 
-			t.id, t.title, t.description, t.status, t.priority, t.ticket_number, t.realm_id, t.due_date, t.closed_at, t.resolved_at, t.owner_muted, t.created_at, t.updated_at,
+			t.id, t.title, t.description, t.status, t.priority, t.ticket_number, t.realm_id, t.due_date, t.closed_at, t.resolved_at, t.owner_muted, t.created_at, t.updated_at, t.duplicate_of, pt.ticket_number, t.previous_status,
 			-- Данные владельца
 			u_owner.id, u_owner.username AS owner_username, u_owner.first_name AS owner_first_name, u_owner.last_name AS owner_last_name, u_owner.internal_number AS owner_internal_number,
 			-- Данные создателя
@@ -287,10 +322,11 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 		LEFT JOIN %s cm ON t.category_modifier_id = cm.id
 		JOIN %s s ON t.site_id = s.id
 		LEFT JOIN %s e ON t.equipment_id = e.id
+		LEFT JOIN %s pt ON t.duplicate_of = pt.id
 		WHERE t.id = $1;`,
 		Tables.Tickets, Tables.Users, Tables.Users, Tables.Users, Tables.Users,
 		Tables.Groups, Tables.Categories, Tables.CategoryGroups, Tables.CategoryModifiers, Tables.Sites,
-		Tables.Equipment,
+		Tables.Equipment, Tables.Tickets,
 	)
 
 	ticket := &models.Ticket{
@@ -304,6 +340,7 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 		&ticket.ID, &ticket.Title, &ticket.Description, &ticket.Status, &ticket.Priority,
 		&ticket.TicketNumber, &ticket.RealmID,
 		&ticket.DueDate, &ticket.ClosedAt, &ticket.ResolvedAt, &ticket.OwnerMuted, &ticket.CreatedAt, &ticket.UpdatedAt,
+		&ticket.DuplicateOf, &ticket.DuplicateOfNumber, &ticket.PreviousStatus,
 		&assoc.OwnerID, &assoc.OwnerUsername, &assoc.OwnerFirstName, &assoc.OwnerLastName, &assoc.OwnerInternalNumber,
 		&ticket.Creator.ID, &ticket.Creator.Username, &ticket.Creator.FirstName, &ticket.Creator.LastName, &ticket.Creator.InternalNumber,
 		&assoc.AssigneeID, &assoc.AssigneeUsername, &assoc.AssigneeFirstName, &assoc.AssigneeLastName, &assoc.AssigneeInternalNumber,
@@ -324,6 +361,14 @@ func (r *TicketRepo) GetByID(ctx context.Context, req *models.GetTicketByIdDTO) 
 		return nil, err
 	}
 	ticket.Notifiers = notifiers
+
+	// Неявные наблюдатели дублей приходят отдельным полем: они не должны
+	// попадать в форму «Уведомлять» и перезаписываться при SyncNotifiers.
+	duplicateNotifiers, err := r.GetDuplicateNotifiers(ctx, req.ID)
+	if err != nil {
+		return nil, err
+	}
+	ticket.DuplicateNotifiers = duplicateNotifiers
 
 	return ticket, nil
 }
@@ -490,7 +535,9 @@ func (r *TicketRepo) CountNotClosedByCategory(ctx context.Context, categoryID uu
 	return count, nil
 }
 
-// GetNotifiers возвращает пользователей из списка «Уведомлять» заявки.
+// GetNotifiers возвращает только явный список «Уведомлять» заявки. Наблюдатели
+// дублей лежат в отдельной таблице и сюда не попадают: этот список редактируется
+// формой и полностью перезаписывается SyncNotifiers.
 func (r *TicketRepo) GetNotifiers(ctx context.Context, ticketID uuid.UUID) ([]models.UserShort, error) {
 	query := fmt.Sprintf(`SELECT u.id, u.username, u.first_name, u.last_name, u.internal_number
 		FROM %s tn
@@ -499,8 +546,27 @@ func (r *TicketRepo) GetNotifiers(ctx context.Context, ticketID uuid.UUID) ([]mo
 		ORDER BY tn.created_at ASC, u.last_name ASC, u.first_name ASC`,
 		Tables.TicketNotifiers, Tables.Users,
 	)
+	return r.queryNotifiers(ctx, query, ticketID)
+}
 
-	rows, err := r.db.Query(ctx, query, ticketID)
+// GetDuplicateNotifiers возвращает неявных наблюдателей: авторов и заказчиков
+// дублей этой заявки. Один пользователь может быть наблюдателем нескольких
+// дублей — в выдаче он остаётся одной строкой.
+func (r *TicketRepo) GetDuplicateNotifiers(ctx context.Context, ticketID uuid.UUID) ([]models.UserShort, error) {
+	query := fmt.Sprintf(`SELECT u.id, u.username, u.first_name, u.last_name, u.internal_number
+		FROM (
+			SELECT user_id, MIN(created_at) AS created_at FROM %s
+			WHERE primary_ticket_id = $1 GROUP BY user_id
+		) dtn
+		JOIN %s u ON u.id = dtn.user_id
+		ORDER BY dtn.created_at ASC, u.last_name ASC, u.first_name ASC`,
+		Tables.TicketDuplicateNotifiers, Tables.Users,
+	)
+	return r.queryNotifiers(ctx, query, ticketID)
+}
+
+func (r *TicketRepo) queryNotifiers(ctx context.Context, query string, args ...any) ([]models.UserShort, error) {
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to get ticket notifiers: %w", err))
 	}
@@ -518,30 +584,6 @@ func (r *TicketRepo) GetNotifiers(ctx context.Context, ticketID uuid.UUID) ([]mo
 		return nil, MapError(fmt.Errorf("ticket notifiers rows error: %w", err))
 	}
 	return notifiers, nil
-}
-
-// GetNotifierIDs возвращает идентификаторы пользователей из списка «Уведомлять».
-func (r *TicketRepo) GetNotifierIDs(ctx context.Context, ticketID uuid.UUID) ([]uuid.UUID, error) {
-	query := fmt.Sprintf(`SELECT user_id FROM %s WHERE ticket_id = $1`, Tables.TicketNotifiers)
-
-	rows, err := r.db.Query(ctx, query, ticketID)
-	if err != nil {
-		return nil, MapError(fmt.Errorf("failed to get ticket notifier ids: %w", err))
-	}
-	defer rows.Close()
-
-	ids := []uuid.UUID{}
-	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			return nil, MapError(fmt.Errorf("failed to scan ticket notifier id: %w", err))
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, MapError(fmt.Errorf("ticket notifier ids rows error: %w", err))
-	}
-	return ids, nil
 }
 
 // SyncNotifiers полностью заменяет список «Уведомлять» заявки переданным набором
@@ -585,10 +627,14 @@ func (r *TicketRepo) SyncNotifiers(ctx context.Context, tx Tx, ticketID uuid.UUI
 	return nil
 }
 
-// IsNotifier сообщает, состоит ли пользователь в списке «Уведомлять» заявки.
+// IsNotifier сообщает, состоит ли пользователь в списке «Уведомлять» заявки
+// (включая наблюдателей дублей этой заявки).
 func (r *TicketRepo) IsNotifier(ctx context.Context, ticketID, userID uuid.UUID) (bool, error) {
-	query := fmt.Sprintf(`SELECT EXISTS(SELECT 1 FROM %s WHERE ticket_id = $1 AND user_id = $2)`,
-		Tables.TicketNotifiers)
+	query := fmt.Sprintf(`SELECT EXISTS(
+			SELECT 1 FROM %s WHERE ticket_id = $1 AND user_id = $2
+			UNION ALL
+			SELECT 1 FROM %s WHERE primary_ticket_id = $1 AND user_id = $2)`,
+		Tables.TicketNotifiers, Tables.TicketDuplicateNotifiers)
 
 	var exists bool
 	if err := r.db.QueryRow(ctx, query, ticketID, userID).Scan(&exists); err != nil {

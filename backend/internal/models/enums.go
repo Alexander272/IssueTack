@@ -65,6 +65,9 @@ const (
 	ActionEquipmentChanged   ActivityType = "equipment_changed"   // Изменено оборудование
 	ActionNotifiersChanged   ActivityType = "notifiers_changed"   // Изменён список наблюдателей
 	ActionCommentAdded       ActivityType = "comment_added"
+	ActionDuplicateLinked    ActivityType = "dup_linked"    // Заявка помечена дублем другой
+	ActionDuplicateUnlinked  ActivityType = "dup_unlinked"  // Дубль отвязан, статус восстановлен
+	ActionDuplicateRepointed ActivityType = "dup_repointed" // Дубли перенаправлены на новую основную
 )
 
 func (a ActivityType) IsValid() bool {
@@ -73,7 +76,7 @@ func (a ActivityType) IsValid() bool {
 		ActionPriorityChanged, ActionAssigned, ActionAssignChanged, ActionOwnerChanged, ActionOwnerMutedChanged, ActionGroupChanged,
 		ActionGroupAssigned, ActionManagerChanged, ActionDueDateChanged, ActionDueDateRequested, ActionDueDateApproved,
 		ActionDueDateRejected, ActionSiteChanged, ActionCategoryChanged, ActionSubcategoryChanged, ActionEquipmentChanged, ActionNotifiersChanged,
-		ActionCommentAdded:
+		ActionCommentAdded, ActionDuplicateLinked, ActionDuplicateUnlinked, ActionDuplicateRepointed:
 		return true
 	}
 	return false

@@ -214,6 +214,10 @@ func (s *TicketService) updateTicket(
 					dto.ResolvedAt = nil
 					dto.MarkProvided("resolvedAt")
 				}
+				// Возврат владельцем решения в работу (resolved → in_progress)
+				// не отвязывает дубли: они остаются закрытыми со ссылкой на
+				// основную, пока исполнитель явно не снимет пометку через
+				// UnlinkDuplicate. Связь — отдельный факт, а не следствие статуса.
 			}
 		}
 

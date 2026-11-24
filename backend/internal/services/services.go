@@ -87,6 +87,7 @@ func NewServices(deps *Deps) *Services {
 	userRealms := NewUserRealmService(deps.Repo.UserRealms, transaction)
 	users := NewUserService(&UsersDeps{
 		Repo:      deps.Repo.Users,
+		Tickets:   deps.Repo.Tickets,
 		TxManager: transaction,
 		UserRealm: userRealms,
 		Keycloak:  deps.Keycloak,

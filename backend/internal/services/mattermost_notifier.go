@@ -135,6 +135,10 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 		prefix, action = "Задача", "срок перенесён"
 	case string(models.NotificationTicketDueDateRejected):
 		prefix, action = "Задача", "запрос отклонён"
+	case string(models.NotificationDuplicateLinked):
+		prefix, action = "Заявка", "отмечена дублем"
+	case string(models.NotificationDuplicateUnlinked):
+		prefix, action = "Заявка", "снята с дубля"
 	default:
 		prefix = "Уведомление"
 	}

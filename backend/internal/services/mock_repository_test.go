@@ -265,12 +265,12 @@ func (m *MockTicketsRepo) GetNotifiers(ctx context.Context, ticketID uuid.UUID) 
 	}
 	return args.Get(0).([]models.UserShort), args.Error(1)
 }
-func (m *MockTicketsRepo) GetNotifierIDs(ctx context.Context, ticketID uuid.UUID) ([]uuid.UUID, error) {
+func (m *MockTicketsRepo) GetDuplicateNotifiers(ctx context.Context, ticketID uuid.UUID) ([]models.UserShort, error) {
 	args := m.Called(ctx, ticketID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]uuid.UUID), args.Error(1)
+	return args.Get(0).([]models.UserShort), args.Error(1)
 }
 func (m *MockTicketsRepo) SyncNotifiers(ctx context.Context, tx postgres.Tx, ticketID uuid.UUID, actorID uuid.UUID, userIDs []uuid.UUID) error {
 	args := m.Called(ctx, tx, ticketID, actorID, userIDs)
@@ -279,6 +279,74 @@ func (m *MockTicketsRepo) SyncNotifiers(ctx context.Context, tx postgres.Tx, tic
 func (m *MockTicketsRepo) IsNotifier(ctx context.Context, ticketID, userID uuid.UUID) (bool, error) {
 	args := m.Called(ctx, ticketID, userID)
 	return args.Bool(0), args.Error(1)
+}
+func (m *MockTicketsRepo) GetDuplicateChain(ctx context.Context, tx postgres.Tx, start uuid.UUID) ([]postgres.DuplicateNode, error) {
+	args := m.Called(ctx, tx, start)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]postgres.DuplicateNode), args.Error(1)
+}
+func (m *MockTicketsRepo) GetDuplicateDescendants(ctx context.Context, tx postgres.Tx, roots []uuid.UUID) ([]uuid.UUID, error) {
+	args := m.Called(ctx, tx, roots)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
+func (m *MockTicketsRepo) LockTickets(ctx context.Context, tx postgres.Tx, ids []uuid.UUID) error {
+	args := m.Called(ctx, tx, ids)
+	return args.Error(0)
+}
+func (m *MockTicketsRepo) SetDuplicate(ctx context.Context, tx postgres.Tx, id, primaryID uuid.UUID, previousStatus models.TicketStatus) error {
+	args := m.Called(ctx, tx, id, primaryID, previousStatus)
+	return args.Error(0)
+}
+func (m *MockTicketsRepo) ClearDuplicate(ctx context.Context, tx postgres.Tx, id uuid.UUID) error {
+	args := m.Called(ctx, tx, id)
+	return args.Error(0)
+}
+func (m *MockTicketsRepo) RepointDuplicates(ctx context.Context, tx postgres.Tx, from, to uuid.UUID) error {
+	args := m.Called(ctx, tx, from, to)
+	return args.Error(0)
+}
+func (m *MockTicketsRepo) RepointOne(ctx context.Context, tx postgres.Tx, id, primaryID uuid.UUID) error {
+	args := m.Called(ctx, tx, id, primaryID)
+	return args.Error(0)
+}
+func (m *MockTicketsRepo) MoveDuplicateNotifiers(ctx context.Context, tx postgres.Tx, from, to uuid.UUID) error {
+	args := m.Called(ctx, tx, from, to)
+	return args.Error(0)
+}
+func (m *MockTicketsRepo) MoveDuplicateNotifier(ctx context.Context, tx postgres.Tx, from, to, duplicateID uuid.UUID) error {
+	args := m.Called(ctx, tx, from, to, duplicateID)
+	return args.Error(0)
+}
+func (m *MockTicketsRepo) DeleteDuplicateNotifiers(ctx context.Context, tx postgres.Tx, duplicateID uuid.UUID) error {
+	args := m.Called(ctx, tx, duplicateID)
+	return args.Error(0)
+}
+func (m *MockTicketsRepo) AddDuplicateNotifier(ctx context.Context, tx postgres.Tx, primaryID, userID, duplicateID, actorID uuid.UUID) error {
+	args := m.Called(ctx, tx, primaryID, userID, duplicateID, actorID)
+	return args.Error(0)
+}
+func (m *MockTicketsRepo) HasDuplicateReferences(ctx context.Context, tx postgres.Tx, ticketID uuid.UUID) (bool, error) {
+	args := m.Called(ctx, tx, ticketID)
+	return args.Bool(0), args.Error(1)
+}
+func (m *MockTicketsRepo) GetIDsWithDuplicatePrimaries(ctx context.Context, userIDs []uuid.UUID) ([]uuid.UUID, error) {
+	args := m.Called(ctx, userIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]uuid.UUID), args.Error(1)
+}
+func (m *MockTicketsRepo) CountDuplicateActivity(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]postgres.DuplicateActivityCounts, error) {
+	args := m.Called(ctx, ids)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[uuid.UUID]postgres.DuplicateActivityCounts), args.Error(1)
 }
 func (m *MockTicketsRepo) GetStatisticsSummary(ctx context.Context, query models.StatisticsQuery) (*models.StatisticsSummary, error) {
 	args := m.Called(ctx, query)
@@ -389,6 +457,27 @@ func (m *MockTicketsService) Transfer(ctx context.Context, dto *models.TransferT
 func (m *MockTicketsService) Delete(ctx context.Context, dto *models.DeleteTicketDTO) error {
 	args := m.Called(ctx, dto)
 	return args.Error(0)
+}
+func (m *MockTicketsService) LinkDuplicate(ctx context.Context, dto *models.LinkDuplicateDTO) (*models.DuplicateLinkResult, error) {
+	args := m.Called(ctx, dto)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.DuplicateLinkResult), args.Error(1)
+}
+func (m *MockTicketsService) UnlinkDuplicate(ctx context.Context, dto *models.UnlinkDuplicateDTO) (*models.DuplicateLinkResult, error) {
+	args := m.Called(ctx, dto)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.DuplicateLinkResult), args.Error(1)
+}
+func (m *MockTicketsService) GetDuplicates(ctx context.Context, dto *models.GetDuplicatesDTO) ([]*models.DuplicateRef, error) {
+	args := m.Called(ctx, dto)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.DuplicateRef), args.Error(1)
 }
 func (m *MockTicketsService) AutoCloseResolved(ctx context.Context, delay time.Duration) (int64, error) {
 	args := m.Called(ctx, delay)
@@ -892,6 +981,10 @@ func (m *MockNotificationService) TicketUpdated(ctx context.Context, ticket *mod
 }
 func (m *MockNotificationService) TicketDeleted(ctx context.Context, ticket *models.Ticket) error {
 	args := m.Called(ctx, ticket)
+	return args.Error(0)
+}
+func (m *MockNotificationService) NotifyDuplicate(ctx context.Context, ticket, primary *models.Ticket, actorID uuid.UUID, linked bool) error {
+	args := m.Called(ctx, ticket, primary, actorID, linked)
 	return args.Error(0)
 }
 func (m *MockNotificationService) SendUnread(ctx context.Context, client *ws_hub.Client) error {

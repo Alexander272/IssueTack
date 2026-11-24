@@ -32,6 +32,7 @@ func Register(api *gin.RouterGroup, service services.Tickets, middleware *middle
 	{
 		tickets.GET("", handlers.getAll)
 		tickets.GET("/:id", handlers.getByID)
+		tickets.GET("/:id/duplicates", handlers.getDuplicates)
 		tickets.POST("/:id/take", handlers.take)
 		tickets.POST("/:id/transfer", handlers.transfer)
 		tickets.GET("/:id/due-date-requests", handlers.getDueDateRequests)
@@ -41,6 +42,8 @@ func Register(api *gin.RouterGroup, service services.Tickets, middleware *middle
 		tickets.POST("", handlers.create)
 		tickets.PUT("/:id", handlers.update)
 		tickets.POST("/:id/due-date-requests/:requestId/decide", handlers.decideDueDateRequest)
+		tickets.POST("/:id/duplicate", handlers.linkDuplicate)
+		tickets.POST("/:id/unlink-duplicate", handlers.unlinkDuplicate)
 
 		tickets.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Delete()))
 		tickets.DELETE("/:id", handlers.delete)
@@ -168,6 +171,28 @@ func (h *Handler) getByID(c *gin.Context) {
 	realmIdStr := utils.GetRealmString(c)
 
 	data, err := h.service.GetByID(c, &models.GetTicketByIdDTO{ID: id, Actor: actor, RealmID: realmIdStr})
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	response.SendData(c, data)
+}
+
+// getDuplicates отдаёт дубли основной заявки. Роут закрыт тем же read-правом
+// ticket:read, что и детали заявки; атрибуты и каждого дубля проверяет сервис.
+func (h *Handler) getDuplicates(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+
+	data, err := h.service.GetDuplicates(c, &models.GetDuplicatesDTO{ID: id, Actor: actor})
 	if err != nil {
 		response.SendError(c, err)
 		return
@@ -326,6 +351,66 @@ func (h *Handler) decideDueDateRequest(c *gin.Context) {
 	dto.Actor = actor
 
 	data, err := h.service.DecideDueDateRequest(c, dto)
+	if err != nil {
+		response.SendError(c, err, dto)
+		return
+	}
+	response.SendData(c, data)
+}
+
+// linkDuplicate помечает заявку из URL дублом основной, id которой пришёл в теле.
+func (h *Handler) linkDuplicate(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	dto := &models.LinkDuplicateDTO{}
+	if err := c.ShouldBindJSON(dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+	dto.ID = id
+	if dto.PrimaryID == uuid.Nil {
+		response.SendError(c, models.ErrInvalidInput)
+		return
+	}
+	dto.RealmID = utils.GetRealmString(c)
+
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+	dto.Actor = actor
+
+	data, err := h.service.LinkDuplicate(c, dto)
+	if err != nil {
+		response.SendError(c, err, dto)
+		return
+	}
+	response.SendData(c, data)
+}
+
+// unlinkDuplicate снимает пометку дубля с заявки из URL.
+func (h *Handler) unlinkDuplicate(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	actor := utils.GetActor(c)
+	if actor == nil {
+		return
+	}
+
+	dto := &models.UnlinkDuplicateDTO{
+		ID:      id,
+		Actor:   actor,
+		RealmID: utils.GetRealmString(c),
+	}
+	data, err := h.service.UnlinkDuplicate(c, dto)
 	if err != nil {
 		response.SendError(c, err, dto)
 		return
