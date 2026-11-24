@@ -211,9 +211,12 @@ export default function TicketDetail({ scope, ticketId, onBack, onChanged, backL
 					<div className='it-ticket-detail__badges'>
 						<span
 							className='it-badge it-badge--status'
-							style={{ background: detailStatus.bg, color: detailStatus.text }}
+							style={{
+								background: detail.duplicateOfNumber != null ? '#EDE9FE' : detailStatus.bg,
+								color: detail.duplicateOfNumber != null ? '#6D28D9' : detailStatus.text,
+							}}
 						>
-							{detailStatus.label}
+							{detail.duplicateOfNumber != null ? `дубль #${detail.duplicateOfNumber}` : detailStatus.label}
 						</span>
 					</div>
 					{detail.canConfirm || detail.canReopen ? (

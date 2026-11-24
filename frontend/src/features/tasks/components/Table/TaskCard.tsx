@@ -85,7 +85,11 @@ export const TaskCard = ({ task, view, onClick }: Props) => {
 						</Typography>
 					)}
 
-					<TaskStatusBadge status={task.status} sx={{ px: 1, py: 0.5, fontSize: '0.625rem' }} />
+					<TaskStatusBadge
+						status={task.status}
+						duplicateOfNumber={task.duplicateOfNumber}
+						sx={{ px: 1, py: 0.5, fontSize: '0.625rem' }}
+					/>
 					{!view.hasNoGroups && (
 						<TaskPriorityBadge priority={task.priority} sx={{ px: 1, py: 0.5, fontSize: '0.625rem' }} />
 					)}

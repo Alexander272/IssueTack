@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Box, Grid } from '@mui/material'
 import { useParams } from 'react-router'
 
+import type { ITask } from '../types/task'
 import { useGetTaskByIdQuery, useUpdateTaskMutation } from '../tasksApiSlice'
 import { BoxFallback } from '@/components/Fallback/BoxFallback'
 import { useAppSelector } from '@/hooks/redux'
@@ -9,7 +10,6 @@ import { getIsManager, getUserId } from '@/features/user/userSlice'
 import { useTicketControls } from '../hooks/useTicketControls'
 import { Header } from '../components/Detail/Header'
 import { InfoBar } from '../components/Detail/InfoBar'
-import { ModifierPopover } from '../components/Detail/ModifierPopover'
 import { Description } from '../components/Detail/Description'
 import { Subtasks } from '../components/Detail/Subtasks'
 import { Attachments } from '../components/Detail/Attachments'
@@ -17,31 +17,27 @@ import { Comments } from '../components/Detail/Comments'
 import { Participants } from '../components/Detail/Participants'
 import { Meta } from '../components/Detail/Meta'
 import { Notifications } from '../components/Detail/Notifications'
+import { Duplicates } from '../components/Detail/Duplicates'
+import { DuplicateBanner } from '../components/Detail/DuplicateBanner'
 import { TaskEditModal } from '../components/TaskEditModal'
-import { TransferModal } from '../components/Detail/TransferModal'
 import DetailNotFound from './TaskDetailEmpty'
 
-export const TaskDetailPage = () => {
-	const { id } = useParams<{ id: string }>()
-	const { data, isLoading } = useGetTaskByIdQuery(id!)
+interface DetailContentProps {
+	task: ITask
+	controls: ReturnType<typeof useTicketControls>
+	isManager: boolean
+	userId?: string
+}
+
+/**
+ * Всё состояние детали живёт здесь и монтируется с key={task.id}. Роутер при
+ * переходе /tasks/:id → /tasks/:id2 переиспользует компонент маршрута, поэтому
+ * без key открытые модалки/поповеры и черновик комментария «переехали» бы на
+ * другую заявку (черновик — ещё и отправился бы с её id).
+ */
+const DetailContent = ({ task, controls, isManager, userId }: DetailContentProps) => {
 	const [editOpen, setEditOpen] = useState(false)
-	const [transferOpen, setTransferOpen] = useState(false)
-	// Якорь хранится вместе с id заявки: при переходе к другой заявке старый
-	// якорь просто перестаёт совпадать, и поповер не открывается сам собой.
-	const [modifierAnchor, setModifierAnchor] = useState<{ taskId?: string; anchor: HTMLElement | null } | null>(null)
 	const [updateTask] = useUpdateTaskMutation()
-	const isManager = useAppSelector(getIsManager)
-	const userId = useAppSelector(getUserId)
-
-	// Все права детали считаются одной формулой из access-флагов бэкенда; хуки
-	// вызываются до ранних возвратов, чтобы порядок хуков не менялся.
-	const controls = useTicketControls(data?.data)
-
-	if (isLoading) return <BoxFallback />
-	if (!data?.data) return <DetailNotFound />
-
-	const task = data.data
-	const modifierState = modifierAnchor?.taskId === id ? modifierAnchor : null
 
 	// Один обработчик на оба входа: кнопку в InfoBar (когда подкатегории нет)
 	// и пункт меню «Ещё» (когда она уже выбрана). В Update уходит только id
@@ -65,28 +61,19 @@ export const TaskDetailPage = () => {
 							bgcolor: 'white',
 							borderRadius: '12px',
 							border: '1px solid #e5e7eb',
+							mb: 2,
 						}}
 					>
 						<Header
 							task={task}
 							onEdit={controls.canEdit ? () => setEditOpen(true) : undefined}
-							onTransfer={() => setTransferOpen(true)}
-							onEditModifier={anchor => setModifierAnchor({ taskId: id, anchor })}
+							onSetModifier={handleSetModifier}
 						/>
 
 						<InfoBar task={task} onSetModifier={handleSetModifier} />
-
-						{task.access?.canPickModifier && task.categoryModifier && (
-							<ModifierPopover
-								task={task}
-								onSelect={handleSetModifier}
-								hideTrigger
-								open={Boolean(modifierState?.anchor)}
-								anchorEl={modifierState?.anchor ?? null}
-								onClose={() => setModifierAnchor(null)}
-							/>
-						)}
 					</Box>
+
+					{task.duplicateOf && <DuplicateBanner task={task} />}
 
 					<Grid container spacing={2} sx={{ mt: 2 }}>
 						<Grid size={{ xs: 12, lg: 9 }} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -101,7 +88,7 @@ export const TaskDetailPage = () => {
 								canCreateSubtask={controls.canCreateSubtask}
 								canDeleteSubtask={controls.canDeleteSubtask}
 								inactive={controls.isInactive}
-								userId={userId ?? undefined}
+								userId={userId}
 								canManage={controls.canManage}
 							/>
 							<Attachments
@@ -114,6 +101,7 @@ export const TaskDetailPage = () => {
 
 						<Grid size={{ xs: 12, lg: 3 }} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
 							<Participants task={task} />
+							<Duplicates task={task} />
 							<Meta task={task} />
 							{isManager && <Notifications taskId={task.id} />}
 						</Grid>
@@ -122,7 +110,31 @@ export const TaskDetailPage = () => {
 			</Box>
 
 			<TaskEditModal open={editOpen} onClose={() => setEditOpen(false)} task={task} />
-			<TransferModal open={transferOpen} onClose={() => setTransferOpen(false)} task={task} />
 		</>
+	)
+}
+
+export const TaskDetailPage = () => {
+	const { id } = useParams<{ id: string }>()
+	const { data, isLoading } = useGetTaskByIdQuery(id!)
+
+	const isManager = useAppSelector(getIsManager)
+	const userId = useAppSelector(getUserId)
+
+	// Все права детали считаются одной формулой из access-флагов бэкенда; хуки
+	// вызываются до ранних возвратов, чтобы порядок хуков не менялся.
+	const controls = useTicketControls(data?.data)
+
+	if (isLoading) return <BoxFallback />
+	if (!data?.data) return <DetailNotFound />
+
+	return (
+		<DetailContent
+			key={data.data.id}
+			task={data.data}
+			controls={controls}
+			isManager={isManager}
+			userId={userId ?? undefined}
+		/>
 	)
 }

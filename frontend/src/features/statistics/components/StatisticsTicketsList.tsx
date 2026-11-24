@@ -166,7 +166,7 @@ export const StatisticsTicketsList: FC<IStatisticsTicketsList> = ({
 								<Box sx={{ display: { xs: 'none', sm: 'flex' } }}>
 									<TaskPriorityBadge priority={task.priority} />
 								</Box>
-								<TaskStatusBadge status={task.status} />
+								<TaskStatusBadge status={task.status} duplicateOfNumber={task.duplicateOfNumber} />
 							</Box>
 
 							<Box

@@ -1,7 +1,7 @@
 import { toast } from 'react-toastify'
 
 import type { IBaseFetchError } from '@/app/types/error'
-import type { IDueDateRequest, ITask, ITaskDTO, ITaskFilter } from './types/task'
+import type { IDuplicateLinkResult, IDuplicateRef, IDueDateRequest, ITask, ITaskDTO, ITaskFilter } from './types/task'
 import { API } from '@/app/api'
 import { apiSlice } from '@/app/apiSlice'
 
@@ -41,6 +41,17 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 			},
 		}),
 
+		getTicketDuplicates: builder.query<{ data: IDuplicateRef[] }, string>({
+			query: id => ({
+				url: API.tickets.duplicates(id),
+				method: 'GET',
+			}),
+			providesTags: (_result, _error, id) => [
+				{ type: 'Tasks', id: 'duplicates:LIST' },
+				{ type: 'Tasks', id: `duplicates:${id}` },
+			],
+		}),
+
 		createTask: builder.mutation<{ id: string; message: string }, ITaskDTO>({
 			query: body => ({
 				url: API.tickets.base,
@@ -62,6 +73,8 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 			invalidatesTags: (_result, _error, arg) => [
 				{ type: 'Tasks', id: 'LIST' },
 				{ type: 'Tasks', id: arg.id },
+				{ type: 'Tasks', id: `duplicates:${arg.id}` },
+				{ type: 'Tasks', id: 'duplicates:LIST' },
 				{ type: 'Statistics', id: 'TICKETS' },
 			],
 			onQueryStarted: async (_arg, api) => {
@@ -115,6 +128,59 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 			},
 		}),
 
+		linkDuplicate: builder.mutation<{ data: IDuplicateLinkResult }, { id: string; primaryId: string }>({
+			query: ({ id, primaryId }) => ({
+				url: API.tickets.duplicate(id),
+				method: 'POST',
+				body: { primaryId },
+			}),
+			invalidatesTags: (_result, _error, arg) => [
+				{ type: 'Tasks', id: 'LIST' },
+				{ type: 'Tasks', id: arg.id },
+				{ type: 'Tasks', id: arg.primaryId },
+				{ type: 'Tasks', id: `duplicates:${arg.id}` },
+				{ type: 'Tasks', id: `duplicates:${arg.primaryId}` },
+				{ type: 'Tasks', id: 'duplicates:LIST' },
+				{ type: 'Statistics', id: 'TICKETS' },
+			],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		unlinkDuplicate: builder.mutation<{ data: IDuplicateLinkResult }, string>({
+			query: id => ({
+				url: API.tickets.unlinkDuplicate(id),
+				method: 'POST',
+			}),
+			invalidatesTags: (result, _error, id) => {
+				const rootTags: { type: 'Tasks'; id: string }[] = result?.data?.rootId
+					? [{ type: 'Tasks', id: `duplicates:${result.data.rootId}` }]
+					: []
+				return [
+					{ type: 'Tasks', id: 'LIST' },
+					{ type: 'Tasks', id },
+					{ type: 'Tasks', id: `duplicates:${id}` },
+					{ type: 'Tasks', id: 'duplicates:LIST' },
+					...rootTags,
+					{ type: 'Statistics', id: 'TICKETS' },
+				]
+			},
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
 		deleteTask: builder.mutation<void, string>({
 			query: id => ({
 				url: API.tickets.byId(id),
@@ -123,6 +189,8 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 			invalidatesTags: (_result, _error, id) => [
 				{ type: 'Tasks', id: 'LIST' },
 				{ type: 'Tasks', id },
+				{ type: 'Tasks', id: `duplicates:${id}` },
+				{ type: 'Tasks', id: 'duplicates:LIST' },
 				{ type: 'Statistics', id: 'TICKETS' },
 			],
 			onQueryStarted: async (_arg, api) => {
@@ -209,10 +277,13 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 export const {
 	useGetTasksQuery,
 	useGetTaskByIdQuery,
+	useGetTicketDuplicatesQuery,
 	useCreateTaskMutation,
 	useUpdateTaskMutation,
 	useTakeTaskMutation,
 	useTransferTaskMutation,
+	useLinkDuplicateMutation,
+	useUnlinkDuplicateMutation,
 	useDeleteTaskMutation,
 	useGetIsSubscribedQuery,
 	useSubscribeMutation,

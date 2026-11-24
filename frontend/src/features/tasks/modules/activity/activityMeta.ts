@@ -12,6 +12,8 @@ import {
 	Layers,
 	Plus,
 	Trash2,
+	CopyPlus,
+	Link2Off,
 } from 'lucide-mui'
 
 export type FieldKind = 'status' | 'priority' | 'diff' | 'date' | 'plain'
@@ -53,6 +55,9 @@ export const FIELD_META: Record<string, FieldMeta> = {
 	category_changed: meta('Категория', 'изменил категорию', Layers, '#a855f7', 'plain'),
 	subcategory_changed: meta('Подкатегория', 'изменил подкатегорию', Layers, '#a855f7', 'plain'),
 	notifiers_changed: meta('Наблюдатели', 'изменил наблюдателей', Users, '#6366f1', 'plain'),
+	dup_linked: meta('Дубль', 'отметил дублем', CopyPlus, '#8b5cf6', 'plain'),
+	dup_unlinked: meta('Дубль', 'отвязал дубль', Link2Off, '#8b5cf6', 'plain'),
+	dup_repointed: meta('Дубль', 'изменил основную заявку', CopyPlus, '#8b5cf6', 'plain'),
 	title: meta('Заголовок', 'изменил заголовок', Pencil, '#6b7280', 'diff'),
 	status: meta('Статус', 'изменил статус', ArrowRightLeft, '#3b82f6', 'status'),
 	priority: meta('Приоритет', 'изменил приоритет', Flag, '#f59e0b', 'priority'),

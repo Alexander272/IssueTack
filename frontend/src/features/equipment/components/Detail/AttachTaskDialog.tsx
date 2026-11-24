@@ -165,7 +165,11 @@ if (unit.isKit) {
 											{[task.category?.name, task.site?.name].filter(Boolean).join(' · ')}
 										</Typography>
 									</Box>
-									<TaskStatusBadge status={task.status} sx={{ px: 1, py: 0.5, flexShrink: 0 }} />
+									<TaskStatusBadge
+										status={task.status}
+										duplicateOfNumber={task.duplicateOfNumber}
+										sx={{ px: 1, py: 0.5, flexShrink: 0 }}
+									/>
 								</ListItemButton>
 							))}
 						</List>

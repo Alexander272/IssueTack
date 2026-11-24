@@ -20,6 +20,7 @@ export const TaskFilters: FC<TaskFiltersProps> = ({
 	statusOptions,
 	hideFilters = false,
 	equipmentLabel,
+	isArchive = false,
 }) => {
 	const canSeeEquipment = useCheckPermissions({ allOf: [PermRules.Equipment.Read] })
 	const [filterAnchorEl, setFilterAnchorEl] = useState<HTMLElement | null>(null)
@@ -57,9 +58,10 @@ export const TaskFilters: FC<TaskFiltersProps> = ({
 		if (filters.priorities?.length) count++
 		if (filters.assigneeId) count++
 		if (filters.statuses?.length) count++
+		if (isArchive && filters.duplicates) count++
 		if (filters.equipmentId) count++
 		return count
-	}, [filters])
+	}, [filters, isArchive])
 
 	const handleOpenFilter = useCallback((e: React.MouseEvent<HTMLElement>) => {
 		setFilterAnchorEl(e.currentTarget)
@@ -96,6 +98,7 @@ export const TaskFilters: FC<TaskFiltersProps> = ({
 					assigneeOptions={assigneeOptions}
 					statusOptions={statusOptions}
 					equipmentOptions={equipmentList}
+					isArchive={isArchive}
 				/>
 			)}
 
@@ -108,6 +111,7 @@ export const TaskFilters: FC<TaskFiltersProps> = ({
 					assigneeOptions={assigneeOptions}
 					equipmentLabel={equipmentLabel}
 					equipmentOptions={equipmentList}
+					isArchive={isArchive}
 				/>
 			)}
 		</>

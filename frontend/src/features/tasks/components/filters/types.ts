@@ -15,6 +15,8 @@ export interface FilterValues {
 	priorities?: Priority[]
 	assigneeId?: string
 	statuses?: TicketStatus[]
+	/** Только дубли (закрытые заявки со ссылкой на основную). Доступно в архиве. */
+	duplicates?: boolean
 	// equipmentId — фильтр по оборудованию: deep-link (?equipmentId=…) или выбор в
 	// фильтре (Popover/чип). Deep-link задаёт из URL, выбор — из UI.
 	equipmentId?: string
@@ -31,4 +33,6 @@ export interface TaskFiltersProps {
 	hideFilters?: boolean
 	// equipmentLabel — название единицы для чипа фильтра по оборудованию.
 	equipmentLabel?: string
+	// isArchive — вкладка «Архив»: там показываем переключатель «только дубли».
+	isArchive?: boolean
 }

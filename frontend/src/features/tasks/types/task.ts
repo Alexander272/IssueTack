@@ -71,6 +71,10 @@ export interface IAccessFlags {
 	canManage?: boolean
 	/** Выбор подкатегории: исполнитель или начальник области, пока заявка открыта. */
 	canPickModifier?: boolean
+	/** Отметить заявку дублем другой: рабочий доступ или управляющий тикетом. */
+	canLinkDuplicate?: boolean
+	/** Отвязать дубль: тот же доступ либо автор дубля. */
+	canUnlinkDuplicate?: boolean
 }
 
 export interface ITask {
@@ -104,6 +108,12 @@ export interface ITask {
 	/** Запрос исполнителя на перенос срока (только когда есть pending-решение менеджера). */
 	dueDateRequest?: IDueDateRequest | null
 	equipment?: IEquipmentShort | null
+	/** Основная заявка, для которой эта помечена дублем (дубли всегда закрыты). */
+	duplicateOf?: string | null
+	/** Номер основной заявки — для бейджа «дубль #N» без лишнего запроса. */
+	duplicateOfNumber?: number | null
+	/** Статус дубля на момент привязки; возвращается при отвязке. */
+	previousStatus?: TicketStatus | null
 }
 
 // Запрос исполнителя на перенос срока заявки (статус pending → approved/rejected).
@@ -145,6 +155,28 @@ export interface ITaskFilter {
 	offset?: number
 	mode?: string
 	equipmentId?: string
+	/** true — только дубли, false — только не-дубли. */
+	duplicates?: boolean
+}
+
+/** Ответ привязки/отвязки дубля: корень цепочки и путь от дубля к корню. */
+export interface IDuplicateLinkResult {
+	rootId: string
+	chain: string[]
+}
+
+/** Карточка связанной заявки на основной. Статус намеренно не отдаётся: дубли всегда закрыты. */
+export interface IDuplicateRef {
+	id: string
+	ticketNumber?: number
+	title: string
+	creatorName?: string
+	assigneeName?: string
+	commentsCount: number
+	attachmentsCount: number
+	createdAt: string
+	/** Право отвязать именно этого дубля — считается бэкендом для каждой строки. */
+	canUnlink: boolean
 }
 
 export interface ISubtaskCreateDTO {

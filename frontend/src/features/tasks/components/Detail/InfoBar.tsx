@@ -151,6 +151,7 @@ export const InfoBar = ({ task, onSetModifier }: Props) => {
 			}}
 		>
 			<Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1.5 }}>
+				{/* Дубль на детали обозначается баннером сверху; бейдж «дубль #N» остаётся только в списках. */}
 				<TaskStatusBadge status={task.status} sx={{ height: 33 }} />
 				{!hasNoGroups && <TaskPriorityBadge priority={task.priority} />}
 			</Box>

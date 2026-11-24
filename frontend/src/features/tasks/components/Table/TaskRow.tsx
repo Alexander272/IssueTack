@@ -284,7 +284,7 @@ export const TaskRow = ({ task, view, onClick, sx }: Props) => {
 
 			{show('status') && (
 				<TableCell sx={{ py: 1 }}>
-					<TaskStatusBadge status={task.status} />
+					<TaskStatusBadge status={task.status} duplicateOfNumber={task.duplicateOfNumber} />
 				</TableCell>
 			)}
 

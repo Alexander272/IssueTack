@@ -21,6 +21,7 @@ interface Props {
 	assigneeOptions: Option[]
 	equipmentLabel?: string
 	equipmentOptions?: Option[]
+	isArchive?: boolean
 }
 
 // Явно типизируем value, чтобы избежать неявного string
@@ -37,6 +38,7 @@ export const Chips: FC<Props> = ({
 	assigneeOptions,
 	equipmentLabel,
 	equipmentOptions,
+	isArchive = false,
 }) => {
 	const hasNoGroups = useAppSelector(getHasNoGroups)
 
@@ -126,8 +128,27 @@ export const Chips: FC<Props> = ({
 			})
 		}
 
+		if (isArchive && filters.duplicates) {
+			chips.push({
+				key: 'duplicates',
+				prefix: 'Дубли',
+				values: ['только дубли'],
+				onClear: () => onChange({ duplicates: undefined }),
+			})
+		}
+
 		return chips
-	}, [filters, onChange, ownerOptions, assigneeOptions, siteOptions, equipmentOptions, equipmentLabel, hasNoGroups])
+	}, [
+		filters,
+		onChange,
+		ownerOptions,
+		assigneeOptions,
+		siteOptions,
+		equipmentOptions,
+		equipmentLabel,
+		hasNoGroups,
+		isArchive,
+	])
 
 	if (activeChips.length === 0) return null
 

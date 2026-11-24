@@ -167,6 +167,8 @@ export interface PluginTicketDetail {
     canConfirm?: boolean;
     canReopen?: boolean;
     canCancel?: boolean;
+    // Номер основной заявки, если эта помечена дублем.
+    duplicateOfNumber?: number;
 }
 
 // PluginTicketLinkContext — ответ для страницы заявки, открытой по deep-link.

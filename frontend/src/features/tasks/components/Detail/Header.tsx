@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Box, IconButton, Tooltip, Typography, Menu, MenuItem, ListItemIcon } from '@mui/material'
-import { Star, MoreVertical, ArrowLeftIcon, Pin, Pencil, UserRound, ListTree } from 'lucide-mui'
+import { Star, MoreVertical, ArrowLeftIcon, Pin, Pencil, UserRound, ListTree, CopyPlusIcon } from 'lucide-mui'
 import { useLocation, useNavigate } from 'react-router'
 
 import type { ITask } from '../../types/task'
@@ -13,22 +13,33 @@ import {
 } from '@/features/favorites/favoritesApiSlice'
 import { useAppSelector } from '@/hooks/redux'
 import { getUserId, getHasNoGroups } from '@/features/user/userSlice'
+import { TransferModal } from './TransferModal'
+import { LinkDuplicateDialog } from './LinkDuplicateDialog'
+import { ModifierPopover } from './ModifierPopover'
+
+// Те же статусы, что пропускает LinkDuplicate (ErrDuplicateStatusNotAllowed).
+// Закрытая заявка добавляется ниже отдельно — но только если уже является дублем
+// (перенаправление), произвольную closed связывать нельзя.
+const LINKABLE_STATUSES = ['open', 'in_progress', 'pending', 'on_hold', 'resolved']
 
 interface Props {
 	task: ITask
 	onEdit?: () => void
-	onTransfer?: () => void
-	/** Открыть выбор подкатегории из меню «Ещё» (когда она уже выбрана). */
-	onEditModifier?: (anchor: HTMLElement | null) => void
+	onSetModifier: (categoryModifierId: string | null) => Promise<void>
 }
 
-export const Header = ({ task, onEdit, onTransfer, onEditModifier }: Props) => {
+export const Header = ({ task, onEdit, onSetModifier }: Props) => {
 	const navigate = useNavigate()
 	const location = useLocation()
 
 	const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
 	const currentUserId = useAppSelector(getUserId)
 	const hasNoGroups = useAppSelector(getHasNoGroups)
+
+	const [transferOpen, setTransferOpen] = useState(false)
+	const [duplicateOpen, setDuplicateOpen] = useState(false)
+
+	const [modifierAnchor, setModifierAnchor] = useState<HTMLElement | null>(null)
 
 	const { data: favState } = useGetFavoriteStateQuery(task.id)
 	const [addFavorite] = useAddFavoriteMutation()
@@ -39,6 +50,9 @@ export const Header = ({ task, onEdit, onTransfer, onEditModifier }: Props) => {
 	const starred = favState?.data?.permanent ?? false
 	const isAssignee = currentUserId != null && currentUserId === task.assignee?.id
 	const canTransfer = !isInactive && isAssignee
+	const canLink =
+		Boolean(task.access?.canLinkDuplicate) &&
+		(LINKABLE_STATUSES.includes(task.status) || (task.status === 'closed' && Boolean(task.duplicateOf)))
 
 	const handleMenuClose = () => setAnchorEl(null)
 
@@ -77,8 +91,8 @@ export const Header = ({ task, onEdit, onTransfer, onEditModifier }: Props) => {
 
 	// Подкатегорию меняют из меню «Ещё», только когда она уже выбрана: пока её нет,
 	// в InfoBar видна отдельная кнопка-триггер. Право берём из готового флага бэкенда.
-	const canEditModifier = Boolean(task.access?.canPickModifier && task.categoryModifier && onEditModifier)
-	const hasAnyAction = Boolean(onEdit) || (Boolean(onTransfer) && canTransfer) || !hasNoGroups || canEditModifier
+	const canEditModifier = Boolean(task.access?.canPickModifier && task.categoryModifier)
+	const hasAnyAction = Boolean(onEdit) || canTransfer || !hasNoGroups || canEditModifier
 
 	return (
 		<Box
@@ -168,6 +182,19 @@ export const Header = ({ task, onEdit, onTransfer, onEditModifier }: Props) => {
 									Редактировать
 								</MenuItem>
 							)}
+							{canLink && (
+								<MenuItem
+									onClick={() => {
+										handleMenuClose()
+										setDuplicateOpen(true)
+									}}
+								>
+									<ListItemIcon>
+										<CopyPlusIcon sx={{ fontSize: 18, color: '#9ca3af' }} />
+									</ListItemIcon>
+									{task.duplicateOf ? 'Изменить основную' : 'Отметить дублем'}
+								</MenuItem>
+							)}
 							{canEditModifier && (
 								<MenuItem
 									onClick={() => {
@@ -175,7 +202,7 @@ export const Header = ({ task, onEdit, onTransfer, onEditModifier }: Props) => {
 										// меню исчезнет, и поповер остался бы без якоря.
 										const anchor = anchorEl
 										handleMenuClose()
-										onEditModifier?.(anchor)
+										setModifierAnchor(anchor)
 									}}
 								>
 									<ListItemIcon>
@@ -184,11 +211,11 @@ export const Header = ({ task, onEdit, onTransfer, onEditModifier }: Props) => {
 									Изменить подкатегорию
 								</MenuItem>
 							)}
-							{onTransfer && canTransfer && (
+							{canTransfer && (
 								<MenuItem
 									onClick={() => {
 										handleMenuClose()
-										onTransfer()
+										setTransferOpen(true)
 									}}
 								>
 									<ListItemIcon>
@@ -209,6 +236,20 @@ export const Header = ({ task, onEdit, onTransfer, onEditModifier }: Props) => {
 					</>
 				)}
 			</Box>
+
+			{task.access?.canPickModifier && task.categoryModifier && (
+				<ModifierPopover
+					task={task}
+					onSelect={onSetModifier}
+					hideTrigger
+					open={Boolean(modifierAnchor)}
+					anchorEl={modifierAnchor}
+					onClose={() => setModifierAnchor(null)}
+				/>
+			)}
+
+			<TransferModal open={transferOpen} onClose={() => setTransferOpen(false)} task={task} />
+			<LinkDuplicateDialog open={duplicateOpen} task={task} onClose={() => setDuplicateOpen(false)} />
 		</Box>
 	)
 }

@@ -37,6 +37,7 @@ const DEFAULT_FILTERS: FilterValues = {
 	priorities: undefined,
 	assigneeId: undefined,
 	statuses: undefined,
+	duplicates: undefined,
 	equipmentId: undefined,
 }
 
@@ -132,10 +133,18 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 	const [page, setPage] = useState(0)
 	const [tab, setTab] = useState<Tab>('active')
 
+	const isArchive = tab === 'archive'
+
 	// Роль пользователя могла стать «без групп» при смене реалма: скрытые фильтры
 	// не вычищаем из состояния (иначе setState в эффекте), а отдаём производное
 	// значение — в запрос и в UI уходит уже очищенный набор.
-	const effectiveFilters = useMemo(() => clampFilters(filters), [filters, clampFilters])
+	// Фильтр «только дубли» доступен только в архиве: на активной вкладке его
+	// нельзя ни включить, ни увидеть чип, поэтому он не должен оставаться
+	// невидимым и резать список (состояние сохраняем, чтобы вернуть его в архиве).
+	const effectiveFilters = useMemo(
+		() => (isArchive ? clampFilters(filters) : { ...clampFilters(filters), duplicates: undefined }),
+		[filters, clampFilters, isArchive],
+	)
 
 	// Ссылку на другое оборудование можно открыть поверх уже смонтированного списка
 	// (возврат по истории к ссылке с оборудованием) — адрес остаётся источником правды.
@@ -155,8 +164,6 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 		delete saved.equipmentId
 		localStorage.setItem(STORAGE_KEY, JSON.stringify(saved))
 	}, [filters, STORAGE_KEY])
-
-	const isArchive = tab === 'archive'
 
 	// Статусы, доступные на текущей вкладке: на «Активных» нет закрытых/отменённых,
 	// на «Мои задачи» (assigned) — и решённых (они ушли в архив).
@@ -183,6 +190,8 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 			sort: effectiveFilters.sort,
 			mode: listMode,
 			archived: isArchive || undefined,
+			// Дубли всегда закрыты, поэтому фильтр имеет смысл только в архиве.
+			duplicates: isArchive && effectiveFilters.duplicates ? true : undefined,
 			// Deep link по оборудованию (?equipmentId=…): список «все заявки единицы» —
 			// история включает закрытые, поэтому на вкладке «Активные» (по умолчанию) статус
 			// отключаем целиком (`allStatuses`), а ручное переключение на «Архив» снимает
@@ -294,6 +303,7 @@ export const TaskList = ({ mode = 'created' }: Props) => {
 				hideFilters={hasNoGroups}
 				statusOptions={statusOptions}
 				equipmentLabel={equipmentLabel}
+				isArchive={isArchive}
 			/>
 
 			<TaskListView

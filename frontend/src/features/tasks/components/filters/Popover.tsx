@@ -8,6 +8,8 @@ import {
 	Autocomplete,
 	Popover as MuiPopover,
 	Chip,
+	Checkbox,
+	FormControlLabel,
 	Typography,
 } from '@mui/material'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
@@ -38,6 +40,7 @@ interface Props {
 	assigneeOptions: Option[]
 	statusOptions: TicketStatus[]
 	equipmentOptions: Option[]
+	isArchive?: boolean
 }
 
 const PRIORITY_OPTIONS = Object.entries(PRIORITY_MAP).map(([value, info]) => ({
@@ -70,6 +73,7 @@ export const Popover: FC<Props> = ({
 	assigneeOptions,
 	statusOptions,
 	equipmentOptions,
+	isArchive = false,
 }) => {
 	const hasNoGroups = useAppSelector(getHasNoGroups)
 	const canSeeEquipment = useCheckPermissions({ allOf: [PermRules.Equipment.Read] })
@@ -91,6 +95,7 @@ export const Popover: FC<Props> = ({
 			priorities: hasNoGroups || !local.priorities?.length ? undefined : local.priorities,
 			assigneeId: local.assigneeId || undefined,
 			statuses: local.statuses?.length ? local.statuses : undefined,
+			duplicates: local.duplicates || undefined,
 			equipmentId: local.equipmentId || undefined,
 		})
 		onClose()
@@ -107,6 +112,7 @@ export const Popover: FC<Props> = ({
 			priorities: [],
 			assigneeId: undefined,
 			statuses: [],
+			duplicates: undefined,
 			equipmentId: undefined,
 		}))
 	}
@@ -293,6 +299,24 @@ export const Popover: FC<Props> = ({
 						))}
 					</Select>
 				</Box>
+
+				{/* Дубли — только в архиве: дубли всегда закрыты и живут в архивной вкладке. */}
+				{isArchive && (
+					<Box sx={{ mb: 1 }}>
+						<Typography sx={SECTION_TITLE_SX}>Дубли</Typography>
+						<FormControlLabel
+							control={
+								<Checkbox
+									size='small'
+									checked={Boolean(local.duplicates)}
+									onChange={e => update('duplicates', e.target.checked || undefined)}
+								/>
+							}
+							label='Только заявки-дубли'
+							sx={{ '& .MuiFormControlLabel-label': { fontSize: 13 } }}
+						/>
+					</Box>
+				)}
 
 				{/* Кнопки действий */}
 				<Box
