@@ -98,16 +98,17 @@ func (n *mattermostNotifier) Notify(ctx context.Context, userID uuid.UUID, notif
 	return true, nil
 }
 
-// format собирает текст DM для конкретного события. Чтобы поправить сообщение
-// отдельного события — правится только соответствующая ветка префикса/дополнений.
 // format собирает текст DM для конкретного события. События «Задача …» («просрочена»,
 // «обновлена», «удалена») и «Скоро срок» выводят номер сразу после слова «Задача»/
 // «Скоро срок» («Задача №12 обновлена: …»), прочие типы — номер после префикса
-// («Новая задача №12: …»). Напоминания по приоритету («Важная задача»/
-// «Срочная задача!») набраны в две строки: заголовок жирной строкой, номер и
-// тема заявки — под ним обычным текстом. Для overdue и deadline_soon при заданном дедлайне
-// добавляется строка «Дедлайн: …». Блок ссылок общий для всех типов и добавляется
-// один раз (links), чтобы правило показа веб-ссылки жило в одном месте.
+// («Новая задача №12: …»). События дубля — исключение: фразы «Заявка №12 отмечена
+// дублем заявки №456» и «Заявка №12 больше не дубль заявки №456» самодостаточны
+// и печатаются без двоеточия. Напоминания по приоритету («Важная задача»/
+// «Срочная задача!») набраны в две строки: заголовок
+// жирной строкой, номер и тема заявки — под ним обычным текстом. Для overdue и
+// deadline_soon при заданном дедлайне добавляется строка «Дедлайн: …». Блок ссылок
+// общий для всех типов и добавляется один раз (links), чтобы правило показа
+// веб-ссылки жило в одном месте.
 func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, ticket *models.Ticket, notif *models.CreateNotificationDTO) string {
 	var prefix, action string
 	switch notif.Type {
@@ -136,9 +137,9 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 	case string(models.NotificationTicketDueDateRejected):
 		prefix, action = "Задача", "запрос отклонён"
 	case string(models.NotificationDuplicateLinked):
-		prefix, action = "Заявка", "отмечена дублем"
+		prefix, action = "Заявка", "отмечена дублем заявки"
 	case string(models.NotificationDuplicateUnlinked):
-		prefix, action = "Заявка", "снята с дубля"
+		prefix, action = "Заявка", "больше не дубль заявки"
 	default:
 		prefix = "Уведомление"
 	}
@@ -180,8 +181,14 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 	}
 
 	if action != "" {
-		// «Задача №12 обновлена: title» — действие идёт после номера.
-		text := fmt.Sprintf("**%s%s %s: %s**", prefix, number, action, title)
+		// «Задача №12 обновлена: title» — действие идёт после номера. У событий
+		// дубля фраза самодостаточна (например, «Заявка №12 больше не дубль
+		// заявки №456»), поэтому после действия идёт пробел, а не двоеточие.
+		separator := ": "
+		if notif.Type == string(models.NotificationDuplicateLinked) || notif.Type == string(models.NotificationDuplicateUnlinked) {
+			separator = " "
+		}
+		text := fmt.Sprintf("**%s%s %s%s%s**", prefix, number, action, separator, title)
 		text += creatorLine(ticket)
 		if ticket.Owner != nil {
 			if label := userShortLabel(ticket.Owner); label != "" {

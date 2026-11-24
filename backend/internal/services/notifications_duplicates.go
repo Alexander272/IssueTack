@@ -34,11 +34,12 @@ func (s *NotificationService) NotifyDuplicate(ctx context.Context, ticket, prima
 		return nil
 	}
 
+	dupRef, primaryRef := ticketRef(ticket), ticketRef(primary)
 	event := models.NotificationDuplicateLinked
-	title := "Заявка отмечена дублем"
+	title := fmt.Sprintf("Заявка %s отмечена дублем заявки %s", dupRef, primaryRef)
 	if !linked {
 		event = models.NotificationDuplicateUnlinked
-		title = "Дубль отвязан"
+		title = fmt.Sprintf("Заявка %s больше не дубль заявки %s", dupRef, primaryRef)
 	}
 
 	data, err := json.Marshal(map[string]any{
@@ -53,8 +54,10 @@ func (s *NotificationService) NotifyDuplicate(ctx context.Context, ticket, prima
 	dto := &models.CreateNotificationDTO{
 		Type:  string(event),
 		Title: title,
-		// ticketRef уже печатает «№N» — лишний префикс давал бы «№№123 → №456».
-		Body: fmt.Sprintf("%s → %s", ticketRef(ticket), ticketRef(primary)),
+		// Предикат и номер дубля собирает нотификатор; ticketRef уже печатает
+		// «№N», поэтому в Body уходит только основная заявка — без лишнего «№»
+		// и без старой стрелки «дубль → основная».
+		Body: primaryRef,
 		Data: data,
 	}
 	delivered := s.deliver(ctx, ticket, recipientsToSlice(recipients), dto)

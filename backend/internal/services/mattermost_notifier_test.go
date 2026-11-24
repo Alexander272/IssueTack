@@ -149,6 +149,50 @@ func TestMattermostNotifier_SendsReminderDM_HeaderOnOwnLine(t *testing.T) {
 	}
 }
 
+// Фраза о дубле самодостаточна: номер основной заявки идёт сразу после действия,
+// без двоеточия и без старой стрелки «№N → №M».
+func TestMattermostNotifier_SendsDuplicateDM_Wording(t *testing.T) {
+	tests := []struct {
+		name  string
+		ntype models.NotificationType
+		want  string
+	}{
+		{"связывание", models.NotificationDuplicateLinked, "**Заявка №12 отмечена дублем заявки №456**"},
+		{"отвязка", models.NotificationDuplicateUnlinked, "**Заявка №12 больше не дубль заявки №456**"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockMMRepo, mockUsers, mockSender, svc := mattermostNotifierServiceFixtures()
+
+			userID := uuid.New()
+			mmID := "mm-user-duplicate"
+			ticket := mmTicket()
+			realmID := *ticket.RealmID
+			dto := &models.CreateNotificationDTO{
+				Type:  string(tt.ntype),
+				Title: tt.want,
+				Body:  "№456",
+			}
+
+			mockMMRepo.On("GetByRealm", mock.Anything, realmID).Return(&models.RealmMattermost{RealmID: realmID, BotToken: "bt", BotUserID: "bb", IsActive: true}, nil)
+			mockUsers.On("GetByID", mock.Anything, userID).Return(&models.UserData{ID: userID, MattermostID: &mmID}, nil)
+			var sent string
+			mockSender.On("Send", "bt", "bb", mmID, mock.Anything).Run(func(args mock.Arguments) {
+				sent = args.String(3)
+			}).Return(nil).Once()
+
+			delivered, err := svc.Notify(context.Background(), userID, dto, ticket)
+			assert.NoError(t, err)
+			assert.True(t, delivered)
+			assert.Contains(t, sent, tt.want)
+			assert.NotContains(t, sent, "→")
+			assert.Contains(t, sent, "[Открыть](/plug/issuetrack/ticket/"+ticket.ID.String()+")")
+			mockSender.AssertExpectations(t)
+		})
+	}
+}
+
 func TestMattermostNotifier_SendsUpdatedDMWithChanges(t *testing.T) {
 	mockMMRepo, mockUsers, mockSender, svc := mattermostNotifierServiceFixtures()
 

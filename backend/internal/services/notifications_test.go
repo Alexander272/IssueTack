@@ -1260,30 +1260,49 @@ func TestNotificationService_NotifyReminderHigh_DoesNotNotifyNotifiers(t *testin
 	mockNotifier.AssertExpectations(t)
 }
 
-// ticketRef уже печатает «№N»: лишний префикс в формате давал «№№123 → №456».
-func TestNotificationService_NotifyDuplicate_BodyTicketRefs(t *testing.T) {
-	mockRepo, mockNotifier, svc := notificationServiceFixtures()
-
-	dupNumber, primaryNumber := 123, 456
-	actorID, recipient := uuid.New(), uuid.New()
-	ticket := &models.Ticket{
-		ID: uuid.New(), TicketNumber: &dupNumber, Title: "Дубль",
-		Creator: models.UserShort{ID: actorID},
-	}
-	primary := &models.Ticket{
-		ID: uuid.New(), TicketNumber: &primaryNumber, Title: "Основная",
-		Creator: models.UserShort{ID: recipient},
+// ticketRef уже печатает «№N»: DM собирает фразу целиком, поэтому в Body уходит
+// только основная заявка — без повторного «№» и без стрелки «дубль → основная».
+func TestNotificationService_NotifyDuplicate_Wording(t *testing.T) {
+	tests := []struct {
+		name      string
+		linked    bool
+		wantType  string
+		wantTitle string
+	}{
+		{"связывание", true, string(models.NotificationDuplicateLinked), "Заявка №123 отмечена дублем заявки №456"},
+		{"отвязка", false, string(models.NotificationDuplicateUnlinked), "Заявка №123 больше не дубль заявки №456"},
 	}
 
-	var bodies []string
-	mockNotifier.On("Notify", mock.Anything, recipient, mock.Anything, mock.Anything).
-		Run(func(args mock.Arguments) {
-			bodies = append(bodies, args.Get(2).(*models.CreateNotificationDTO).Body)
-		}).Return(true, nil).Once()
-	mockRepo.On("Create", mock.Anything, nil, mock.Anything).Return(nil).Once()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRepo, mockNotifier, svc := notificationServiceFixtures()
 
-	require.NoError(t, svc.NotifyDuplicate(context.Background(), ticket, primary, actorID, true))
-	require.Equal(t, []string{"№123 → №456"}, bodies)
-	mockRepo.AssertExpectations(t)
-	mockNotifier.AssertExpectations(t)
+			dupNumber, primaryNumber := 123, 456
+			actorID, recipient := uuid.New(), uuid.New()
+			ticket := &models.Ticket{
+				ID: uuid.New(), TicketNumber: &dupNumber, Title: "Дубль",
+				Creator: models.UserShort{ID: actorID},
+			}
+			primary := &models.Ticket{
+				ID: uuid.New(), TicketNumber: &primaryNumber, Title: "Основная",
+				Creator: models.UserShort{ID: recipient},
+			}
+
+			var got *models.CreateNotificationDTO
+			mockNotifier.On("Notify", mock.Anything, recipient, mock.Anything, mock.Anything).
+				Run(func(args mock.Arguments) {
+					dto := *args.Get(2).(*models.CreateNotificationDTO)
+					got = &dto
+				}).Return(true, nil).Once()
+			mockRepo.On("Create", mock.Anything, nil, mock.Anything).Return(nil).Once()
+
+			require.NoError(t, svc.NotifyDuplicate(context.Background(), ticket, primary, actorID, tt.linked))
+			require.NotNil(t, got)
+			require.Equal(t, tt.wantType, got.Type)
+			require.Equal(t, tt.wantTitle, got.Title)
+			require.Equal(t, "№456", got.Body)
+			mockRepo.AssertExpectations(t)
+			mockNotifier.AssertExpectations(t)
+		})
+	}
 }
