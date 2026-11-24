@@ -291,8 +291,9 @@ type UnlinkDuplicateDTO struct {
 // дубля к корню (включая оба конца), чтобы фронт мог показать, куда именно
 // переехала или вернулась заявка.
 type DuplicateLinkResult struct {
-	RootID uuid.UUID   `json:"rootId"`
-	Chain  []uuid.UUID `json:"chain"`
+	RootID           uuid.UUID   `json:"rootId"`
+	RootTicketNumber *int        `json:"rootTicketNumber,omitempty"`
+	Chain            []uuid.UUID `json:"chain"`
 }
 
 // GetDuplicatesDTO — запрос списка дублей со стороны основной заявки.

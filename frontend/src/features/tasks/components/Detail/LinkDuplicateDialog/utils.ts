@@ -20,7 +20,7 @@ export const unavailableReason = (candidate: ITask, task: ITask): string | null 
 	return null
 }
 
-export const linkSuccessMessage = (task: ITask, picked: ITask): string =>
+export const linkSuccessMessage = (task: ITask, picked: ITask, rootTicketNumber?: number | null): string =>
 	picked.duplicateOf
-		? `№${ticketNumber(task)} привязана к основной №${picked.duplicateOfNumber ?? '—'} (через №${ticketNumber(picked)})`
+		? `№${ticketNumber(task)} привязана к основной №${rootTicketNumber ?? picked.duplicateOfNumber ?? '—'} (через №${ticketNumber(picked)})`
 		: `№${ticketNumber(task)} отмечена дублем №${ticketNumber(picked)}`

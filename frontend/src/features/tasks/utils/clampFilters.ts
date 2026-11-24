@@ -34,6 +34,7 @@ export const clampHiddenFields = (
 			(f.priorities?.length ?? 0) > 0 ||
 			f.assigneeId !== undefined ||
 			(f.statuses?.length ?? 0) > 0 ||
+			f.duplicates !== undefined ||
 			f.sort !== defaults.sort
 		if (!hasVisible) return f
 		return { ...defaults, groupEnabled: false, equipmentId: f.equipmentId }

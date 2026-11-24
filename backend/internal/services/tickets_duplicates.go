@@ -317,6 +317,7 @@ func (s *TicketService) LinkDuplicate(ctx context.Context, dto *models.LinkDupli
 				return err
 			}
 		}
+		result.RootTicketNumber = primary.TicketNumber
 
 		previousStatus := duplicate.Status
 		oldPrimaryID := duplicate.DuplicateOf
@@ -442,7 +443,11 @@ func (s *TicketService) UnlinkDuplicate(ctx context.Context, dto *models.UnlinkD
 		if err := s.writeStatusLog(ctx, tx, dto.Actor, duplicate, status, restored); err != nil {
 			return err
 		}
-		result = &models.DuplicateLinkResult{RootID: oldPrimaryID, Chain: []uuid.UUID{duplicate.ID, oldPrimaryID}}
+		result = &models.DuplicateLinkResult{
+			RootID:           oldPrimaryID,
+			RootTicketNumber: primary.TicketNumber,
+			Chain:            []uuid.UUID{duplicate.ID, oldPrimaryID},
+		}
 		return nil
 	})
 	if err != nil {

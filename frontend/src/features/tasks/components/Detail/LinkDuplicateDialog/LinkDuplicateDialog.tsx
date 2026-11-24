@@ -74,8 +74,8 @@ export const LinkDuplicateDialog = ({ open, task, onClose }: Props) => {
 	const handleConfirm = async () => {
 		if (!picked || linking) return
 		try {
-			await linkDuplicate({ id: task.id, primaryId: picked.id }).unwrap()
-			toast.success(linkSuccessMessage(task, picked))
+			const res = await linkDuplicate({ id: task.id, primaryId: picked.id }).unwrap()
+			toast.success(linkSuccessMessage(task, picked, res.data?.rootTicketNumber))
 			onClose()
 		} catch {
 			// ошибка показана тостом в tasksApiSlice

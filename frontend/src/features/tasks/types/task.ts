@@ -162,6 +162,7 @@ export interface ITaskFilter {
 /** Ответ привязки/отвязки дубля: корень цепочки и путь от дубля к корню. */
 export interface IDuplicateLinkResult {
 	rootId: string
+	rootTicketNumber?: number
 	chain: string[]
 }
 
