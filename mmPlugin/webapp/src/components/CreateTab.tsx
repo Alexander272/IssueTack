@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { ApiError, createTicket } from '../api'
+import { ApiError, createTicket, getMattermostFile } from '../api'
 import type { CreateTicketPayload } from '../api'
 import type {
+	CreateTicketSeed,
 	PluginCategory,
 	PluginContextResult,
 	PluginCreateResult,
+	PluginPostFileRef,
 	PluginScope,
 	PluginSite,
 	PluginUserShort,
@@ -24,6 +26,10 @@ import { NotifierField } from './Form/NotifierField'
 interface CreateTabProps {
 	scope: PluginScope
 	context: PluginContextResult
+	// Предзаполнение из сообщения. Перебивает только свои поля: описание,
+	// заказчика (если пользователь вправе его выбрать) и вложения. Остальное
+	// берём из сохранённого черновика.
+	initialSeed?: CreateTicketSeed | null
 	onCreated: () => void
 	// onOpen открывает только что созданную заявку в карточке внутри этой же
 	// модалки, без перехода в веб-приложение.
@@ -40,6 +46,11 @@ interface FieldErrors {
 	ownerId?: string
 	priority?: string
 }
+
+// Лимиты вложений совпадают с бэкенд-плагином (handlers/mattermost/plugin.go):
+// 10 файлов и 64 МБ на один запрос создания.
+const MAX_SEED_FILES = 10
+const MAX_SEED_FILE_BYTES = 64 << 20
 
 // PRIORITY_ORDER — порядок карточек приоритета, PRIORITY_LABELS/COLORS/DESCRIPTIONS —
 // как в вебе (PRIORITY_MAP + priorityDescriptions в TaskCreateForm).
@@ -68,7 +79,7 @@ function pluginUserLabel(u: PluginUserShort): string {
 	return u.username
 }
 
-export default function CreateTab({ scope, context, onCreated, onOpen, onDraftChange }: CreateTabProps) {
+export default function CreateTab({ scope, context, initialSeed, onCreated, onOpen, onDraftChange }: CreateTabProps) {
 	const userSiteId =
 		context.user?.siteId && (context.sites || []).some(s => s.id === context.user.siteId) ? context.user.siteId : ''
 	// Роли — зеркало веб-формы: isManager (начальник области ИЛИ управляет
@@ -82,9 +93,19 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 	const executors = useMemo(() => context.executors || [], [context.executors])
 	const realmGroups = useMemo(() => context.groups || [], [context.groups])
 
+	// Автор сообщения становится заказчиком только у тех, кто вправе выбирать
+	// заказчика (менеджер/исполнитель), и только если он найден в реалме по
+	// mattermostId. Иначе остаётся значение из черновика.
+	const seedOwnerId = useMemo(() => {
+		if (!(isManager || isExecutor) || !initialSeed?.authorMmId) return ''
+		const author = customers.find(u => u.mattermostId && u.mattermostId === initialSeed.authorMmId)
+		return author?.id || ''
+	}, [isManager, isExecutor, initialSeed, customers])
+	const seedOwnerApplied = useRef(Boolean(seedOwnerId))
+
 	const [initialDraft] = useState(() => loadDraft(context.realmId, context.user.id))
 	const [title, setTitle] = useState(initialDraft?.title ?? '')
-	const [description, setDescription] = useState(initialDraft?.description ?? '')
+	const [description, setDescription] = useState(initialSeed?.description ?? initialDraft?.description ?? '')
 	const [categoryId, setCategoryId] = useState(initialDraft?.categoryId ?? '')
 	const [categoryModifierId, setCategoryModifierId] = useState(initialDraft?.categoryModifierId ?? '')
 	const [siteId, setSiteId] = useState(initialDraft?.siteId || userSiteId)
@@ -92,11 +113,12 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 	const [priority, setPriority] = useState(initialDraft?.priority ?? '')
 	const [groupId, setGroupId] = useState(initialDraft?.groupId ?? '')
 	const [assigneeId, setAssigneeId] = useState(initialDraft?.assigneeId ?? '')
-	const [ownerId, setOwnerId] = useState(initialDraft?.ownerId ?? '')
+	const [ownerId, setOwnerId] = useState(seedOwnerId || initialDraft?.ownerId || '')
 	const [notifierIds, setNotifierIds] = useState<string[]>(initialDraft?.notifierIds ?? [])
 	const [ownerMuted, setOwnerMuted] = useState(Boolean(initialDraft?.ownerMuted))
 	const [dueDate, setDueDate] = useState(initialDraft?.dueDate ?? '')
 	const [files, setFiles] = useState<File[]>([])
+	const [seedWarning, setSeedWarning] = useState<string | null>(null)
 	const [submitting, setSubmitting] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 	const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
@@ -131,6 +153,54 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 			setOwnerMuted(false)
 		}
 	}, [ownerId, ownerMuted])
+
+	// Контекст модалки может подтянуться свежим уже после открытия формы —
+	// подставляем заказчика один раз, когда список реалма с mattermostId готов.
+	useEffect(() => {
+		if (seedOwnerApplied.current || !seedOwnerId) return
+		seedOwnerApplied.current = true
+		setOwnerId(seedOwnerId)
+	}, [seedOwnerId])
+
+	// Вложения из сообщения качаем браузером с его сессией MM: у bot-токена
+	// может не быть доступа к файлам канала. Лимиты те же, что у бэкенда;
+	// пропущенное не пропадает молча — показываем причину в форме.
+	useEffect(() => {
+		if (!initialSeed?.files?.length) return
+		let cancelled = false
+		const accepted: PluginPostFileRef[] = []
+		let total = 0
+		let tooMany = false
+		let tooLarge = false
+		for (const ref of initialSeed.files) {
+			if (accepted.length >= MAX_SEED_FILES) {
+				tooMany = true
+				break
+			}
+			const size = typeof ref.size === 'number' ? ref.size : 0
+			if (total + size > MAX_SEED_FILE_BYTES) {
+				tooLarge = true
+				continue
+			}
+			accepted.push(ref)
+			total += size
+		}
+		Promise.all(accepted.map(ref => getMattermostFile(ref).catch(() => null)))
+			.then(results => {
+				if (cancelled) return
+				const loaded = results.filter((f): f is File => Boolean(f))
+				if (loaded.length) {
+					setFiles(prev => [...prev, ...loaded].slice(0, MAX_SEED_FILES))
+				}
+				const failed = accepted.length - loaded.length
+				const notes: string[] = []
+				if (tooMany) notes.push(`перенесено только ${MAX_SEED_FILES} вложений`)
+				if (tooLarge) notes.push('часть файлов превышает лимит 64 МБ')
+				if (failed) notes.push(`не удалось скачать ${failed} файл(ов)`)
+				if (notes.length) setSeedWarning(notes.join('; '))
+			})
+		return () => { cancelled = true }
+	}, [initialSeed])
 
 	const categories = (context.categories || []).filter((c: PluginCategory) => c.isActive !== false)
 	// Категории группируются по разделам (таксономия) — нативные optgroup.
@@ -592,6 +662,9 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 						<span className='it-f-label__text'>Вложения</span>
 						<input className='it-f it-f--file' type='file' multiple onChange={onPickFiles} />
 						<div className='it-f-label__hint'>Можно вставить из буфера обмена (Ctrl+V)</div>
+						{seedWarning ? (
+							<div className='it-f-label__hint'>Вложения из сообщения: {seedWarning}.</div>
+						) : null}
 						{files.length > 0 ? (
 							<ul className='it-ticket-files'>
 								{files.map(f => (

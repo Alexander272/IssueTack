@@ -527,7 +527,7 @@ func (s *MattermostService) resolveDMIntegration(ctx context.Context, mmUserID s
 
 // pluginMembers возвращает пользователей реалма по членству для селектов формы
 // плагина (исполнители/заказчики). Ошибка не роняет контекст — список пуст.
-func (s *MattermostService) pluginMembers(ctx context.Context, realmID uuid.UUID, membership models.MembershipFilter) []models.UserShort {
+func (s *MattermostService) pluginMembers(ctx context.Context, realmID uuid.UUID, membership models.MembershipFilter) []models.PluginMemberShort {
 	users, err := s.users.GetByMembership(ctx, realmID, membership)
 	if err != nil {
 		logger.Warn("plugin context: failed to get members",
@@ -536,17 +536,23 @@ func (s *MattermostService) pluginMembers(ctx context.Context, realmID uuid.UUID
 			logger.ErrAttr(err))
 		return nil
 	}
-	list := make([]models.UserShort, 0, len(users))
+	list := make([]models.PluginMemberShort, 0, len(users))
 	for _, u := range users {
 		if u == nil {
 			continue
 		}
-		list = append(list, models.UserShort{
-			ID:        u.ID,
-			Username:  u.Username,
-			FirstName: u.FirstName,
-			LastName:  u.LastName,
-			Email:     u.Email,
+		var mmID string
+		if u.MattermostID != nil {
+			mmID = *u.MattermostID
+		}
+		list = append(list, models.PluginMemberShort{
+			ID:             u.ID,
+			Username:       u.Username,
+			FirstName:      u.FirstName,
+			LastName:       u.LastName,
+			Email:          u.Email,
+			InternalNumber: u.InternalNumber,
+			MattermostID:   mmID,
 		})
 	}
 	return list

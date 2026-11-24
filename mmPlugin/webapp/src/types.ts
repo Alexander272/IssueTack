@@ -135,6 +135,9 @@ export interface PluginUserShort {
     firstName: string;
     lastName: string;
     internalNumber: string;
+    // Присутствует в списках /plugin/context: по нему сообщение Mattermost
+    // сопоставляется с заказчиком (автор сообщения → ownerId формы).
+    mattermostId?: string;
 }
 
 export interface PluginAttachment {
@@ -212,6 +215,35 @@ export interface PluginApiErrorBody {
     message?: string;
 }
 
+// Минимальные слепки поста и файла: registerPostActionComponent передаёт пост
+// компоненту напрямую. Никаких внутренних типов MM в бандл не тянем.
+export interface PluginPostFileRef {
+    id: string;
+    name: string;
+    mimeType?: string;
+    size?: number;
+}
+
+export interface PluginPostStub {
+    id?: string;
+    message?: string;
+    user_id?: string;
+    type?: string;
+    delete_at?: number;
+    file_ids?: string[];
+    metadata?: {files?: Array<{id: string; name: string; mime_type?: string; size?: number}>};
+}
+
+// CreateTicketSeed — предзаполнение формы создания из сообщения. Все поля
+// опциональны: seed перебивает только те, что реально пришли из сообщения,
+// остальное берётся из сохранённого черновика. File[] не храним — файлы
+// скачиваются по id уже внутри формы, с сессией пользователя MM.
+export interface CreateTicketSeed {
+    description?: string;
+    authorMmId?: string;
+    files?: PluginPostFileRef[];
+}
+
 // PluginChannel — минимальный слепок канала из стора Mattermost. Приходит в
 // action иконки App Bar; сама кнопка аргументы не использует (модалку хостит
 // ChannelHeaderIcon, смонтированный в шапке каждого канала).
@@ -240,6 +272,13 @@ export interface PluginStore {
 
 export interface PluginRegistry {
     registerChannelHeaderIcon(input: {component: ComponentType<{channel: {id: string}}>}): string;
+
+    // Иконка на панели действий сообщения (ховер/клавиатурная навигация).
+    // MM передаёт компоненту сам пост; пустые посты компонент скрывает сам.
+    // Метода может не быть в старых версиях MM — регистрируем под guard'ом.
+    registerPostActionComponent?(input: {
+        component: ComponentType<{post: PluginPostStub; handleDropdownOpened?: (open: boolean) => void}>;
+    }): string;
 
     // registerAppBarComponent добавляет иконку в правую колонку App Bar. action
     // вызывается с текущим каналом и участником, но кнопка их не использует:

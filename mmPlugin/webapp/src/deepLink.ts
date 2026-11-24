@@ -1,3 +1,5 @@
+import type {CreateTicketSeed} from './types';
+
 // deepLink.ts — открытие заявки из ссылки без навигации.
 //
 // Ссылка из DM ведёт на маршрут плагина /plug/issuetrack/ticket/<uuid>, где
@@ -219,6 +221,25 @@ export function subscribePluginOpen(listener: VoidListener): () => void {
 
 export function requestPluginOpen(): void {
     pluginOpenListeners.forEach(listener => listener());
+}
+
+// Предзаполнение формы из сообщения. Та же шина, что и открытие модалки
+// из App Bar, но с данными: хост модалки (ChannelHeaderIcon) живёт в шапке
+// канала, а иконка — на панели действий конкретного поста. Seed одноразовый:
+// он лежит в state хоста и сбрасывается при закрытии окна.
+type CreateSeedListener = (seed: CreateTicketSeed) => void;
+
+const createSeedListeners = new Set<CreateSeedListener>();
+
+export function subscribeCreateSeed(listener: CreateSeedListener): () => void {
+    createSeedListeners.add(listener);
+    return () => {
+        createSeedListeners.delete(listener);
+    };
+}
+
+export function requestCreateWithSeed(seed: CreateTicketSeed): void {
+    createSeedListeners.forEach(listener => listener(seed));
 }
 
 // installDeepLinkClickHandler перехватывает клик по ссылке на заявку, когда

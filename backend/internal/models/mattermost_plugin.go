@@ -13,6 +13,19 @@ import (
 // заявку внутри Mattermost без перехода в веб-приложение.
 const PluginRoutePrefix = "/plug/issuetrack"
 
+// PluginMemberShort — участник реалма для селектов формы плагина. В отличие от
+// общего UserShort, несёт mattermostId: по нему форма сопоставляет автора
+// сообщения с заказчиком заявки. Поле не светим в общих API пользователей.
+type PluginMemberShort struct {
+	ID             uuid.UUID `json:"id"`
+	Username       string    `json:"username"`
+	FirstName      string    `json:"firstName"`
+	LastName       string    `json:"lastName"`
+	Email          string    `json:"email,omitempty"`
+	InternalNumber string    `json:"internalNumber,omitempty"`
+	MattermostID   string    `json:"mattermostId,omitempty"`
+}
+
 // PluginContextResult — данные контекста канала для webapp-плагина MM:
 // реалм, связанный с каналом, резолвнутый системный пользователь и
 // справочники (категории, площадки) для формы создания заявки.
@@ -41,8 +54,8 @@ type PluginContextResult struct {
 	Groups []GroupShort `json:"groups"`
 	// Executors/Customers — списки для селектов «Исполнитель» и «Заказчик»
 	// (та же разбивка по членству, что в веб /users/by-realm).
-	Executors []UserShort `json:"executors"`
-	Customers []UserShort `json:"customers"`
+	Executors []PluginMemberShort `json:"executors"`
+	Customers []PluginMemberShort `json:"customers"`
 	// Calendar — производственный календарь (таймзона + исключения) для расчёта
 	// автосрока по рабочим дням в форме создания заявки на клиенте.
 	Calendar *CalendarData `json:"calendar,omitempty"`

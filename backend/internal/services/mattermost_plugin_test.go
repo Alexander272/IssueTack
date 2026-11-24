@@ -310,7 +310,9 @@ func TestPluginContext_HappyPath(t *testing.T) {
 	users.On("GetByMembership", mock.Anything, realmID, models.MembershipExecutors).Return([]*models.UserData{{ID: uuid.New(), Username: "ex1"}}, nil)
 	// Заказчиком может быть любой пользователь реалма, поэтому список для плагина
 	// запрашивается без фильтра по группам (MembershipAll), а не только «вне групп».
-	users.On("GetByMembership", mock.Anything, realmID, models.MembershipAll).Return([]*models.UserData{{ID: uuid.New(), Username: "cu1"}}, nil)
+	// mattermostId нужен фронту, чтобы сопоставить автора сообщения с заказчиком.
+	mmCustomerID := "mm-cu1"
+	users.On("GetByMembership", mock.Anything, realmID, models.MembershipAll).Return([]*models.UserData{{ID: uuid.New(), Username: "cu1", MattermostID: &mmCustomerID}}, nil)
 
 	access := new(MockTicketAccessChecker)
 	access.On("IsRealmSupervisor", mock.Anything, userID, realmID.String()).Return(false, nil)
@@ -342,6 +344,7 @@ func TestPluginContext_HappyPath(t *testing.T) {
 	assert.NotNil(t, result.Groups[0].DefaultAssigneeID)
 	assert.Len(t, result.Executors, 1)
 	assert.Len(t, result.Customers, 1)
+	assert.Equal(t, mmCustomerID, result.Customers[0].MattermostID)
 }
 
 // TestPluginContext_KnownUser_NoWrite фиксирует отсутствие записи в users на

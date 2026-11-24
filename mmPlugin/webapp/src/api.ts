@@ -1,6 +1,7 @@
 import type {
     PluginApiErrorBody,
     PluginComment,
+    PluginPostFileRef,
     PluginContextResult,
     PluginCreateResult,
     PluginDMScope,
@@ -145,6 +146,22 @@ async function request<T>(path: string, options?: RequestOptions): Promise<T> {
     }
 
     return body ? body.data as T : undefined as T;
+}
+
+// getMattermostFile скачивает вложение сообщения браузером с его сессией MM:
+// у bot-токена может не быть доступа к файлам произвольного канала. Ответ
+// /api/v4/files/{id} — бинарный, поэтому обычный request() (ждущий JSON с data)
+// здесь не подходит.
+export async function getMattermostFile(ref: PluginPostFileRef): Promise<File> {
+    const res = await fetch(`/api/v4/files/${encodeURIComponent(ref.id)}`, {
+        credentials: 'same-origin',
+        headers: apiHeaders(),
+    });
+    if (!res.ok) {
+        throw new ApiError(res.status, 'FILE', `Не удалось скачать ${ref.name || ref.id}`);
+    }
+    const blob = await res.blob();
+    return new File([blob], ref.name || ref.id, {type: blob.type || ref.mimeType || 'application/octet-stream'});
 }
 
 export interface CreateTicketPayload {

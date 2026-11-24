@@ -5,6 +5,7 @@ import { installDeepLinkClickHandler, requestPluginOpen } from './deepLink'
 import type { PluginRegistry, PluginStore } from './types'
 import appBarIcon from './assets/icon.jpg'
 import ChannelHeaderIcon from './components/ChannelHeaderIcon'
+import CreateTicketPostAction from './components/CreateTicketPostAction'
 import TicketDeepLinkPage from './components/TicketDeepLinkPage'
 
 class IssuetrackPlugin {
@@ -19,9 +20,16 @@ class IssuetrackPlugin {
 		if (typeof registry.registerAppBarComponent === 'function') {
 			registry.registerAppBarComponent({
 				iconUrl: appBarIcon,
-				tooltipText: 'Заявки в IT отдел',
+				tooltipText: 'Заявки в службу IT',
 				action: () => requestPluginOpen(),
 			})
+		}
+		// Иконка «Создать заявку» на панели действий сообщения: один клик вместо
+		// открытия меню. Компонент сам решает, есть ли что переносить в форму,
+		// и шлёт seed в ту же шину, что и иконка App Bar; модалку хостит
+		// ChannelHeaderIcon. Метод есть не во всех версиях MM — проверяем.
+		if (typeof registry.registerPostActionComponent === 'function') {
+			registry.registerPostActionComponent({ component: CreateTicketPostAction })
 		}
 		// Mattermost монтирует маршрут по адресу /plug/issuetrack/ticket/<uuid>.
 		// На этот адрес ведут ссылки из DM-уведомлений и подтверждения создания.

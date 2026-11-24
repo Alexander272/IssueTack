@@ -48,6 +48,41 @@
     flex: 0 0 auto;
 }
 
+/* Иконка «Создать заявку» в ряду действий сообщения. MM добавляет свой
+   post-menu__item, но набор стилей различается между версиями, поэтому
+   размеры и состояния задаём сами — только для своей кнопки. */
+.it-post-action.post-menu__item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    box-sizing: border-box;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+
+.it-post-action.post-menu__item:hover {
+    background: rgba(var(--center-channel-color-rgb, 61, 60, 64), 0.08);
+}
+
+.it-post-action.post-menu__item:focus-visible {
+    outline: 2px solid var(--button-bg, #1d76db);
+    outline-offset: -2px;
+}
+
+.it-post-action__icon {
+    display: block;
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+    border-radius: 2px;
+}
+
 /* Подложка модалки затемняется намеренно: без rgba(0,0,0,0.5) карточка
    сливается с живым каналом и модалка перестаёт читаться как отдельный слой.
    Проверено, что затемнение не связано с «блеклым меню» на маршруте плагина:

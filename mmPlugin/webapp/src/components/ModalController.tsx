@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 
-import type { PluginContextResult, PluginScope } from '../types'
+import type { CreateTicketSeed, PluginContextResult, PluginScope } from '../types'
 import CreateTab from './CreateTab'
 import MyTicketsTab from './MyTicketsTab'
 import { CloseIcon } from './icons'
@@ -13,6 +13,9 @@ interface ModalControllerProps {
 	// уже завершён: вкладка должна быть сразу «Мои заявки». На лету не меняется:
 	// при открытой модалке чат перекрыт подложкой, нажать вторую ссылку нельзя.
 	initialPendingOpenId?: string | null
+	// Предзаполнение из сообщения. Передаётся в CreateTab при монтировании;
+	// на лету не меняется (пока открыта модалка, пост недоступен).
+	initialCreateSeed?: CreateTicketSeed | null
 	onClose: () => void
 }
 
@@ -23,7 +26,13 @@ const TABS: { id: TabId; label: string }[] = [
 	{ id: 'mine', label: 'Мои заявки' },
 ]
 
-export default function ModalController({scope, context, initialPendingOpenId, onClose}: ModalControllerProps) {
+export default function ModalController({
+	scope,
+	context,
+	initialPendingOpenId,
+	initialCreateSeed,
+	onClose,
+}: ModalControllerProps) {
 	const [tab, setTab] = useState<TabId>(initialPendingOpenId ? 'mine' : 'create')
 	// Заявка, которую нужно открыть сразу после переключения на «Мои заявки»:
 	// её id приходит с экрана успеха CreateTab. Хранится здесь, а не в MyTicketsTab,
@@ -69,7 +78,7 @@ export default function ModalController({scope, context, initialPendingOpenId, o
 				onClick={e => e.stopPropagation()}
 			>
 				<div className='it-ticket-modal__header'>
-					<div className='it-ticket-modal__title'>Заявки в IT отдел</div>
+					<div className='it-ticket-modal__title'>Заявки в службу IT</div>
 					<button type='button' className='it-ticket-modal__close' aria-label='Закрыть' onClick={onClose}>
 						<CloseIcon size={16} />
 					</button>
@@ -91,6 +100,7 @@ export default function ModalController({scope, context, initialPendingOpenId, o
 						<CreateTab
 							scope={scope}
 							context={context}
+							initialSeed={initialCreateSeed}
 							onDraftChange={setHasDraft}
 							onCreated={() => setTab('mine')}
 							onOpen={id => {
