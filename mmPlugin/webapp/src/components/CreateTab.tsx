@@ -78,9 +78,9 @@ export default function CreateTab({ scope, context, onCreated, onOpen, onDraftCh
 	const isManager = Boolean(context.isManager)
 	const isRealmAdmin = Boolean(context.isRealmAdmin)
 	const isExecutor = !isManager && (context.memberGroupIds || []).length > 0
-	const customers = context.customers || []
-	const executors = context.executors || []
-	const realmGroups = context.groups || []
+	const customers = useMemo(() => context.customers || [], [context.customers])
+	const executors = useMemo(() => context.executors || [], [context.executors])
+	const realmGroups = useMemo(() => context.groups || [], [context.groups])
 
 	const [initialDraft] = useState(() => loadDraft(context.realmId, context.user.id))
 	const [title, setTitle] = useState(initialDraft?.title ?? '')

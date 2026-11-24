@@ -38,7 +38,7 @@ const TICKET_ID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{
 function readItem(key: string): string | null {
     try {
         return window.sessionStorage.getItem(key);
-    } catch (e) {
+    } catch {
         return null;
     }
 }
@@ -46,7 +46,7 @@ function readItem(key: string): string | null {
 function writeItem(key: string, value: string): void {
     try {
         window.sessionStorage.setItem(key, value);
-    } catch (e) {
+    } catch {
         // приватный режим или переполнение — сигнал просто не долетит,
         // обработчик ссылка откроет как обычную страницу заявки
     }
@@ -55,7 +55,7 @@ function writeItem(key: string, value: string): void {
 function removeItem(key: string): void {
     try {
         window.sessionStorage.removeItem(key);
-    } catch (e) {
+    } catch {
         // см. writeItem
     }
 }
@@ -86,7 +86,7 @@ export function takeChannel(): RememberedChannel | null {
         return parsed.teamName && parsed.channelId ?
             {teamName: parsed.teamName, channelId: parsed.channelId} :
             null;
-    } catch (e) {
+    } catch {
         return null;
     }
 }
@@ -115,7 +115,7 @@ export function takePendingTicket(): string | null {
             return null;
         }
         return Date.now() - parsed.at > TICKET_TTL_MS ? null : parsed.id;
-    } catch (e) {
+    } catch {
         return null;
     }
 }
@@ -166,7 +166,7 @@ export function matchDeepLink(href: string): string | null {
     const decoded = (() => {
         try {
             return decodeURIComponent(raw);
-        } catch (e) {
+        } catch {
             return raw;
         }
     })();

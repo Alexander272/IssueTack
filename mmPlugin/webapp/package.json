@@ -5,6 +5,7 @@
     "description": "IssueTrack Mattermost web app plugin: create tickets and view own active tickets from a channel header icon",
     "scripts": {
         "check": "tsc --noEmit",
+        "lint": "node ../../frontend/node_modules/eslint/bin/eslint.js src",
         "build": "webpack --mode=production"
     },
     "devDependencies": {

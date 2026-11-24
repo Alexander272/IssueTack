@@ -117,7 +117,7 @@ export default function ChannelHeaderIcon({channel}: ChannelHeaderIconProps) {
         if (scope) {
             rememberChannel(getCurrentTeamName() || '', scope.channelId);
         }
-    }, [scope?.channelId]);
+    }, [scope]);
 
     // Показываем ли мы сейчас модалку в текущем канале — по тем же условиям, что
     // и кнопка в шапке: флаг нужен перехватчику клика по ссылке, чтобы гасить
@@ -141,7 +141,7 @@ export default function ChannelHeaderIcon({channel}: ChannelHeaderIconProps) {
                 return;
             }
             window.sessionStorage.setItem(key, '1');
-        } catch (e) {
+        } catch {
             // sessionStorage может быть недоступен — не мешаем вызову.
         }
         requestGreeting(scope).catch(() => undefined);

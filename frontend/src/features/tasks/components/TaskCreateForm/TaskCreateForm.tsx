@@ -7,6 +7,7 @@ import { SaveIcon } from 'lucide-mui'
 import type { IFetchError } from '@/app/types/error'
 import type { ITaskDTO } from '../../types/task'
 import type { FormValues, Props } from './types'
+import type { TaskFormSettings } from './taskFormMode'
 import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
 import { useAppSelector } from '@/hooks/redux'
 import { useGetAllCategoriesQuery } from '@/features/categories/categoriesApiSlice'
@@ -22,7 +23,6 @@ import { clearDraft, hasDraftContent, loadDraft, saveDraft } from './draft'
 import { buildCreateDTO, type CreateRole } from './dto'
 import { CustomerAndDateSection } from './CustomerAndDateSection'
 import { TaskFormProvider } from './TaskFormProvider'
-import type { TaskFormSettings } from './taskFormMode'
 
 // EMPTY_FORM — исходные значения формы. reset() обязан сбрасывать именно к ним,
 // а не к defaultValues: последние могут быть черновиком из sessionStorage.
@@ -65,7 +65,6 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 		const [files, setFiles] = useState<File[]>([])
 		const [submitting, setSubmitting] = useState(false)
 		const [confirmOpen, setConfirmOpen] = useState(false)
-
 		const categories = useMemo(() => categoriesData?.data ?? [], [categoriesData])
 
 		// Черновик читается синхронно на первом рендере, чтобы сразу попасть в
@@ -262,9 +261,7 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 
 								{(isManager || isExecutor) && <SubtasksCreationSection />}
 
-								{(isManager || isExecutor) && (
-									<AdvancedSettingsSection title='Настройки заявки' />
-								)}
+								{(isManager || isExecutor) && <AdvancedSettingsSection title='Настройки заявки' />}
 
 								<Box
 									sx={{

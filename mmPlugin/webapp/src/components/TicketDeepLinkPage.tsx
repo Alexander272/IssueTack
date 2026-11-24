@@ -47,7 +47,7 @@ function readTicketIdFromPath(): string | null {
     const decoded = (() => {
         try {
             return decodeURIComponent(raw)
-        } catch (e) {
+        } catch {
             return raw
         }
     })()

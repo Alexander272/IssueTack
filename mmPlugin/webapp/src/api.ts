@@ -67,7 +67,7 @@ export async function getDmScope(): Promise<PluginScope | null> {
         const scope: PluginScope = {channelId: data.channelId, userId, botUserId: data.botUserId};
         dmScopeCache = {userId, scope};
         return scope;
-    } catch (e) {
+    } catch {
         return null;
     }
 }
@@ -104,7 +104,7 @@ function apiHeaders(custom?: Record<string, string>): Record<string, string> {
     let csrf: string | null = null;
     try {
         csrf = window.localStorage.getItem('csrfToken');
-    } catch (e) {
+    } catch {
         // ignore localStorage access errors
     }
     if (csrf) {
@@ -128,14 +128,14 @@ async function request<T>(path: string, options?: RequestOptions): Promise<T> {
             method: options ? options.method : undefined,
             body: options ? options.body : undefined,
         });
-    } catch (e) {
+    } catch {
         throw new ApiError(0, 'NETWORK', 'Не удалось связаться с сервером');
     }
 
-    let body: PluginApiErrorBody & {data?: T} | null = null;
+    let body: (PluginApiErrorBody & {data?: T}) | null;
     try {
-        body = await res.json();
-    } catch (e) {
+        body = (await res.json()) as PluginApiErrorBody & {data?: T};
+    } catch {
         body = null;
     }
 
