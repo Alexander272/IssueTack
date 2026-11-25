@@ -660,6 +660,10 @@ func (s *MattermostService) PluginCreateTicket(ctx context.Context, input *model
 	}
 	if input.Priority != "" {
 		dto.Priority = models.Priority(input.Priority)
+		// DTO собран вручную, а не из JSON: без MarkProvided TicketService
+		// не отличит явный выбор от дефолта и заменит его значением
+		// подкатегории (см. applyModifierValues).
+		dto.MarkProvided("priority")
 	}
 	if input.AssigneeID != uuid.Nil {
 		dto.AssigneeID = &input.AssigneeID
@@ -669,6 +673,8 @@ func (s *MattermostService) PluginCreateTicket(ctx context.Context, input *model
 	}
 	if input.DueDate != nil {
 		dto.DueDate = input.DueDate
+		// То же для срока: подкатегория не должна затирать явно выбранную дату.
+		dto.MarkProvided("dueDate")
 	}
 	dto.OwnerMuted = input.OwnerMuted
 	// Наблюдатели («Уведомлять»). Поле передаётся только менеджеру и

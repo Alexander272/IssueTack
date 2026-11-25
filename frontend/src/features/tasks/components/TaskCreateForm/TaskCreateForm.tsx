@@ -145,10 +145,9 @@ export const TaskCreateForm = forwardRef<TaskCreateFormHandle, Props>(
 
 		const selectedCategoryId = useWatch({ control, name: 'categoryId' })
 
-		useEffect(() => {
-			const cat = categories.find(c => c.id === selectedCategoryId)
-			if (cat) setValue('priority', cat.priority, { shouldValidate: true })
-		}, [selectedCategoryId, categories, setValue])
+		// Подстановку приоритета из категории делает AdvancedSettingsSection с
+		// защитой prev-ссылкой. Повторный эффект здесь без неё затирал бы выбор,
+		// сделанный после подкатегории (в т.ч. при refetch справочника).
 
 		useEffect(() => {
 			if (userSiteId && !getValues('siteId')) {

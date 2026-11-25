@@ -2492,22 +2492,16 @@ func TestTicketService_AutoCloseResolved_Success(t *testing.T) {
 
 	closedIDs := []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}
 	mockRepo.On("CloseResolved", mock.Anything, nil, mock.Anything).Return(closedIDs, nil)
-	wantChanges := []*models.FieldChange{{Tag: models.ActionStatusChanged, OldVal: "resolved", NewVal: "closed"}}
-	for _, id := range closedIDs {
-		ticket := &models.Ticket{ID: id, Title: "closed ticket"}
-		mockRepo.On("GetByID", mock.Anything, &models.GetTicketByIdDTO{ID: id}).Return(ticket, nil).Once()
-		// Автозакрытие идёт мимо Update — уведомление о финальном статусе
-		// основной (и о судьбе её дублей) уходит отсюда, после коммита.
-		mockNotifications.On("TicketUpdated", mock.Anything, ticket, uuid.Nil, wantChanges).Return(nil).Once()
-	}
 
 	n, err := svc.AutoCloseResolved(context.Background(), 24*time.Hour)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(3), n)
 	// Temporary-пины закрываемых заявок снимаются в той же транзакции.
 	assert.ElementsMatch(t, closedIDs, favorites.ticketIDs())
+	// Автозакрытие — технический cron: статус меняется молча, уведомлений нет.
+	mockRepo.AssertNotCalled(t, "GetByID", mock.Anything, mock.Anything)
+	mockNotifications.AssertNotCalled(t, "TicketUpdated", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	mockRepo.AssertExpectations(t)
-	mockNotifications.AssertExpectations(t)
 }
 
 func TestTicketService_AutoCloseResolved_NoTickets(t *testing.T) {

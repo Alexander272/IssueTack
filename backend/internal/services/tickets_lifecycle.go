@@ -354,21 +354,9 @@ func (s *TicketService) AutoCloseResolved(ctx context.Context, delay time.Durati
 		return nil
 	})
 
-	// Автозакрытие идёт мимо TicketService.Update, поэтому уведомление о
-	// финальном статусе основной заявки (и, значит, о судьбе её дублей)
-	// отправляется здесь, после коммита. Наблюдатели дублей приходят в
-	// ticket.DuplicateNotifiers отдельно от редактируемого списка «Уведомлять».
-	changes := []*models.FieldChange{{Tag: models.ActionStatusChanged, OldVal: string(models.StatusResolved), NewVal: string(models.StatusClosed)}}
-	for _, id := range closedIDs {
-		ticket, err := s.repo.GetByID(ctx, &models.GetTicketByIdDTO{ID: id})
-		if err != nil {
-			s.notifyBestEffort("auto_close", id, id.String(), err)
-			continue
-		}
-		if err := s.notifications.TicketUpdated(ctx, ticket, uuid.Nil, changes); err != nil {
-			s.notifyBestEffort("auto_close", id, ticket.Title, err)
-		}
-	}
+	// Автозакрытие — техническое действие планировщика: как и остальные
+	// cron-задачи, оно меняет статус молча, уведомления не шлём. Обычное
+	// закрытие через TicketService.Update по-прежнему уведомляет наблюдателей.
 
 	return int64(len(closedIDs)), err
 }

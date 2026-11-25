@@ -531,6 +531,82 @@ func TestPluginCreateTicket_ManagerFields(t *testing.T) {
 	tickets.AssertExpectations(t)
 }
 
+// TestPluginCreateTicket_ModifierExplicitValues закрепляет главное отличие
+// ручного DTO плагина от веб-запроса: явные приоритет и срок должны быть
+// помечены Provided, иначе TicketService.applyModifierValues решит, что их
+// не выбирали, и заменит значениями подкатегории. Дефолт категории, наоборот,
+// остаётся непомеченным — подкатегория обязана его перебить.
+func TestPluginCreateTicket_ModifierExplicitValues(t *testing.T) {
+	realmID := uuid.New()
+	userID := uuid.New()
+	categoryID := uuid.New()
+	groupID := uuid.New()
+	modifierID := uuid.New()
+	due := time.Date(2026, 11, 30, 17, 0, 0, 0, time.UTC)
+
+	cases := []struct {
+		name         string
+		priority     string
+		dueDate      *time.Time
+		wantPriority models.Priority
+		wantDue      *time.Time
+		wantProvided bool
+	}{
+		{name: "explicit_values_kept", priority: "low", dueDate: &due, wantPriority: models.PriorityLow, wantDue: &due, wantProvided: true},
+		{name: "category_default_overridable", wantPriority: models.PriorityHigh, wantProvided: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo, users, userRealms, tickets := pluginMocks()
+			repo.On("GetByChannelID", mock.Anything, "ch1").Return(&models.RealmMattermost{RealmID: realmID, ChannelID: "ch1", IsActive: true}, nil)
+			expectExistingUser(users, userRealms, userID, realmID)
+
+			categories := &fakeCategoriesSvc{getByID: func(_ context.Context, req *models.GetCategoryByIdDTO) (*models.Category, error) {
+				assert.Equal(t, categoryID, req.ID)
+				return &models.Category{ID: categoryID, GroupID: groupID, Priority: models.PriorityHigh}, nil
+			}}
+			groups := &fakeGroupsSvc{getByID: func(_ context.Context, _ *models.GetGroupDTO) (*models.Group, error) {
+				return &models.Group{ID: groupID}, nil
+			}}
+
+			tickets.On("Create", mock.Anything, mock.MatchedBy(func(dto *models.TicketDTO) bool {
+				if !assert.Equal(t, tc.wantPriority, dto.Priority) ||
+					!assert.Equal(t, tc.wantDue, dto.DueDate) ||
+					!assert.Equal(t, tc.wantProvided, dto.HasField("priority")) ||
+					!assert.Equal(t, tc.wantProvided, dto.HasField("dueDate")) ||
+					!assert.Equal(t, &modifierID, dto.CategoryModifierID) ||
+					!assert.True(t, dto.HasField("categoryModifierId")) {
+					return false
+				}
+				return true
+			})).Run(func(args mock.Arguments) {
+				dto := args.Get(1).(*models.TicketDTO)
+				id := uuid.New()
+				dto.ID = &id
+				dto.RealmID = &realmID
+			}).Return(nil)
+
+			svc := NewMattermostService(&MattermostDeps{
+				Repo: repo, Users: users, UserRealms: userRealms,
+				Tickets: tickets, Categories: categories, Groups: groups,
+			})
+
+			input := &models.PluginCreateTicketInput{
+				PluginScope:        pluginScopeFixture("ch1"),
+				Title:              "Заявка с подкатегорией",
+				CategoryID:         categoryID,
+				CategoryModifierID: modifierID,
+				Priority:           tc.priority,
+				DueDate:            tc.dueDate,
+			}
+			_, err := svc.PluginCreateTicket(context.Background(), input)
+			require.NoError(t, err)
+			tickets.AssertExpectations(t)
+		})
+	}
+}
+
 func TestPluginCreateTicket_UnboundChannel(t *testing.T) {
 	repo, _, _, _ := pluginMocks()
 	repo.On("GetByChannelID", mock.Anything, "ch1").Return(nil, errors.New("no rows"))
