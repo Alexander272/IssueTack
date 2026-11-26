@@ -61,6 +61,7 @@ export const API = {
 	},
 	tickets: {
 		base: '/tickets' as const,
+		modifierPreview: '/tickets/modifier/preview' as const,
 		byId: (id: string) => `/tickets/${id}` as const,
 		take: (id: string) => `/tickets/${id}/take` as const,
 		transfer: (id: string) => `/tickets/${id}/transfer` as const,

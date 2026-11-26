@@ -93,6 +93,9 @@ func (s *CategoryModifierService) validate(ctx context.Context, dto *models.Cate
 	if dto.CategoryID == uuid.Nil || dto.Name == "" {
 		return models.ErrInvalidInput
 	}
+	// Ключи хранятся в нормализованном виде (без пустых и дублей) — матчер
+	// рассчитывает на это и не должен разбирать мусор из формы.
+	dto.Keywords = normalizeModifierKeywords(dto.Keywords)
 	if dto.DefaultDueDays != nil && *dto.DefaultDueDays < 0 {
 		return models.ErrInvalidInput
 	}

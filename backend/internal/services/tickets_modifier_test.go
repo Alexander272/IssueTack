@@ -554,3 +554,118 @@ func userShortOrNil(id *uuid.UUID) *models.UserShort {
 	}
 	return &models.UserShort{ID: *id}
 }
+
+// TestTicketModifier_AutoSelectByKeywords проверяет серверный подбор: он не
+// требует прав на ручной выбор, но явный выбор клиента всегда приоритетнее и
+// не помечается как Provided.
+func TestTicketModifier_AutoSelectByKeywords(t *testing.T) {
+	realm := uuid.New()
+	categoryID := uuid.New()
+	matchedID := uuid.New()
+	otherID := uuid.New()
+
+	cases := []struct {
+		name         string
+		title        string
+		explicit     *uuid.UUID
+		wantID       *uuid.UUID
+		wantSelected bool
+		wantLookup   bool
+	}{
+		{name: "matched", title: "Заменить картридж в принтере", wantID: &matchedID, wantSelected: true, wantLookup: true},
+		{name: "no_match", title: "Вопрос по работе", wantID: nil, wantLookup: true},
+		// Явный выбор клиента не перезаписывается и не считается автоподбором.
+		{name: "explicit_wins", title: "Картридж", explicit: &otherID, wantID: &otherID},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, modifiers, _, _ := modifierFixture()
+			dto := &models.TicketDTO{
+				RealmID:            &realm,
+				CategoryID:         categoryID,
+				Title:              tc.title,
+				CategoryModifierID: tc.explicit,
+			}
+			if tc.wantLookup {
+				modifiers.On("Get", mock.Anything, &models.GetCategoryModifiersDTO{
+					RealmID: realm, CategoryID: &categoryID,
+				}).Return([]*models.CategoryModifier{
+					{ID: matchedID, CategoryID: categoryID, IsActive: true, Keywords: []string{"принтер", "картридж"}},
+				}, nil)
+			}
+
+			selected := svc.autoSelectModifierByKeywords(context.Background(), dto)
+			assert.Equal(t, tc.wantSelected, selected)
+			assert.Equal(t, tc.wantID, dto.CategoryModifierID)
+			assert.False(t, dto.HasField("categoryModifierId"), "автоподбор не считается полем запроса")
+			if !tc.wantLookup {
+				modifiers.AssertNotCalled(t, "Get", mock.Anything, mock.Anything)
+			}
+		})
+	}
+}
+
+// TestTicketModifier_PrepareCreate_AutoBypassesRights закрепляет, что любое
+// создание получает подкатегорию по ключевым словам, но ручной выбор по-прежнему
+// доступен только исполнителю/начальнику области.
+func TestTicketModifier_PrepareCreate_AutoBypassesRights(t *testing.T) {
+	svc, modifiers, categories, _ := modifierFixture()
+	actor := uuid.New()
+	realm := uuid.New()
+	categoryID := uuid.New()
+	modifierID := uuid.New()
+	days := 3
+
+	dto := &models.TicketDTO{
+		RealmID:            &realm,
+		Actor:              &models.Actor{ID: actor},
+		CategoryID:         categoryID,
+		CategoryModifierID: &modifierID,
+		Priority:           models.PriorityLow,
+	}
+	modifiers.On("GetByID", mock.Anything, &models.GetCategoryModifierByIDDTO{ID: modifierID, RealmID: realm}).
+		Return(&models.CategoryModifier{ID: modifierID, CategoryID: categoryID, IsActive: true,
+			Priority: ptrPriority(models.PriorityUrgent), DefaultDueDays: &days}, nil)
+	categories.On("GetByID", mock.Anything, &models.GetCategoryByIdDTO{ID: categoryID, RealmID: realm}).
+		Return(&models.Category{ID: categoryID, Priority: models.PriorityMedium}, nil)
+
+	require.NoError(t, svc.prepareCreateModifier(context.Background(), &createModifierInput{
+		DTO: dto, Supervisor: false, IsExecutor: false, Auto: true,
+	}))
+	assert.Equal(t, models.PriorityUrgent, dto.Priority, "автоподбор применяет приоритет подкатегории")
+	require.NotNil(t, dto.DueDate)
+	assert.False(t, dto.HasField("categoryModifierId"))
+}
+
+// TestTicketModifier_PreviewByKeywords закрепляет, что форма видит ровно тот
+// выбор, который сервер сделает при создании, а пустой результат не ошибка.
+func TestTicketModifier_PreviewByKeywords(t *testing.T) {
+	svc, modifiers, _, _ := modifierFixture()
+	realm, categoryID, modifierID := uuid.New(), uuid.New(), uuid.New()
+
+	modifiers.On("Get", mock.Anything, &models.GetCategoryModifiersDTO{
+		RealmID: realm, CategoryID: &categoryID,
+	}).Return([]*models.CategoryModifier{
+		{ID: modifierID, Name: "Ошибки", CategoryID: categoryID, IsActive: true,
+			Keywords: []string{"не работает", "баг"}},
+	}, nil)
+
+	dto := &models.ModifierPreviewDTO{
+		RealmID: realm, CategoryID: categoryID, Title: "Не работает печать",
+	}
+	got, err := svc.PreviewModifierByKeywords(context.Background(), dto)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, modifierID, got.ID)
+	assert.Equal(t, "Ошибки", got.Name)
+
+	dto.Title = "Вопрос по работе"
+	got, err = svc.PreviewModifierByKeywords(context.Background(), dto)
+	require.NoError(t, err)
+	assert.Nil(t, got, "нет совпадений — легальный пустой предпросмотр")
+
+	dto.CategoryID = uuid.Nil
+	_, err = svc.PreviewModifierByKeywords(context.Background(), dto)
+	assert.ErrorIs(t, err, models.ErrInvalidInput)
+}

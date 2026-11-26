@@ -96,6 +96,9 @@ type Tickets interface {
 	GetRealmIDByTicketID(ctx context.Context, id uuid.UUID) (uuid.UUID, error)
 	// Create создаёт новый тикет.
 	Create(ctx context.Context, dto *models.TicketDTO) error
+	// PreviewModifierByKeywords возвращает подкатегорию, которую сервер выбрал бы
+	// при создании заявки с такими заголовком/описанием. Правила те же, что в Create.
+	PreviewModifierByKeywords(ctx context.Context, dto *models.ModifierPreviewDTO) (*models.CategoryModifierShort, error)
 	// Update изменяет поля тикета с соблюдением правил доступа и переходов по статусам.
 	Update(ctx context.Context, dto *models.TicketDTO) error
 	// Take назначает пользователя исполнителем заявки и переводит её в статус

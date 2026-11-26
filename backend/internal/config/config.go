@@ -18,8 +18,8 @@ type (
 		Auth          AuthConfig       `yaml:"auth"`
 		Keycloak      KeycloakConfig   `yaml:"keycloak"`
 		Http          HttpConfig       `yaml:"http"`
-		ApiLimiter    LimiterConfig    `yaml:"api_limiter"`
-		StaticLimiter LimiterConfig    `yaml:"static_limiter"`
+		ApiLimiter    LimiterConfig    `yaml:"api_limiter" env-prefix:"API_"`
+		StaticLimiter LimiterConfig    `yaml:"static_limiter" env-prefix:"STATIC_"`
 		Casbin        CasbinConfig     `yaml:"casbin"`
 		FileServer    FileServerConfig `yaml:"file_server"`
 		Tickets       TicketConfig     `yaml:"tickets"`

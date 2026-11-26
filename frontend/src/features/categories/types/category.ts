@@ -28,6 +28,8 @@ export interface ICategoryModifier {
 	categoryId: string
 	name: string
 	description: string
+	/** Слова/фразы, по которым сервер автоматически выбирает подкатегорию. */
+	keywords: string[]
 	defaultDueDays: number | null
 	priority: Priority | null
 	isActive: boolean
@@ -41,6 +43,7 @@ export interface ICategoryModifierDTO {
 	categoryId: string
 	name: string
 	description: string
+	keywords: string[]
 	defaultDueDays: number | null
 	priority: Priority | null
 	isActive: boolean

@@ -93,3 +93,24 @@ func TestCategoryService_Delete_ModifierInUseProtected(t *testing.T) {
 	assert.ErrorIs(t, err, models.ErrCategoryModifierInUse)
 	categories.AssertNotCalled(t, "Delete", mock.Anything, mock.Anything)
 }
+
+func TestCategoryModifierService_Create_NormalizesKeywords(t *testing.T) {
+	repo := new(mockModifierRepo)
+	categories := new(MockCategoriesRepo)
+	svc := NewCategoryModifierService(repo, categories)
+	realmID, categoryID := uuid.New(), uuid.New()
+	categories.On("GetByID", mock.Anything, &models.GetCategoryByIdDTO{ID: categoryID, RealmID: realmID}).
+		Return(&models.Category{ID: categoryID}, nil)
+
+	dto := &models.CategoryModifierDTO{
+		RealmID: realmID, CategoryID: categoryID, Name: "Печать",
+		Keywords: []string{" Принтер ", "принтер", "", "Ёлка", "елка"},
+	}
+	repo.On("Create", mock.Anything, mock.MatchedBy(func(d *models.CategoryModifierDTO) bool {
+		return assert.Equal(t, []string{"Принтер", "Ёлка"}, d.Keywords)
+	})).Return(nil)
+
+	require.NoError(t, svc.Create(context.Background(), dto))
+	assert.Equal(t, []string{"Принтер", "Ёлка"}, dto.Keywords)
+	repo.AssertExpectations(t)
+}

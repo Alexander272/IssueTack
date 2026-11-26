@@ -32,7 +32,7 @@ export const CategoryModifiersSection: FC<Props> = ({ categories }) => {
 		})
 
 	const openCreate = () => {
-		setEditing({ id: null, categoryId: categories[0]?.id ?? '', name: '', description: '', defaultDueDays: null, priority: null, isActive: true })
+		setEditing({ id: null, categoryId: categories[0]?.id ?? '', name: '', description: '', keywords: [], defaultDueDays: null, priority: null, isActive: true })
 		setDialogOpen(true)
 	}
 
@@ -44,6 +44,7 @@ export const CategoryModifiersSection: FC<Props> = ({ categories }) => {
 			categoryId: m.categoryId,
 			name: m.name,
 			description: m.description,
+			keywords: m.keywords ?? [],
 			defaultDueDays: m.defaultDueDays,
 			priority: m.priority,
 			isActive: m.isActive,

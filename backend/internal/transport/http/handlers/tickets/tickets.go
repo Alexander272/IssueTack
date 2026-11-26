@@ -37,6 +37,9 @@ func Register(api *gin.RouterGroup, service services.Tickets, middleware *middle
 		tickets.POST("/:id/transfer", handlers.transfer)
 		tickets.GET("/:id/due-date-requests", handlers.getDueDateRequests)
 		tickets.POST("/:id/due-date-requests", handlers.createDueDateRequest)
+		// Предпросмотр подкатегории — read-only, доступен всем создателям заявки
+		// (в т.ч. безгрупповым, которые не могут выбрать подкатегорию вручную).
+		tickets.POST("/modifier/preview", handlers.previewModifier)
 
 		tickets.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceTicket).Write()))
 		tickets.POST("", handlers.create)
@@ -416,6 +419,30 @@ func (h *Handler) unlinkDuplicate(c *gin.Context) {
 		return
 	}
 	response.SendData(c, data)
+}
+
+// previewModifier — предпросмотр авто-подбора подкатегории для формы создания.
+// Реалм только из заголовка: подбор идёт в границах реалма заявки, а не по
+// значению из тела. Пустой результат — легальный ответ (null в data).
+func (h *Handler) previewModifier(c *gin.Context) {
+	dto := &models.ModifierPreviewDTO{}
+	if err := c.ShouldBindJSON(dto); err != nil {
+		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
+		return
+	}
+
+	realmID, ok := utils.RequireRealmUUID(c)
+	if !ok {
+		return
+	}
+	dto.RealmID = realmID
+
+	modifier, err := h.service.PreviewModifierByKeywords(c, dto)
+	if err != nil {
+		response.SendError(c, err, dto)
+		return
+	}
+	response.SendData(c, modifier)
 }
 
 func (h *Handler) create(c *gin.Context) {

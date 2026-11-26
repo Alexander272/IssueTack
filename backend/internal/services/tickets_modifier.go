@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
+	"github.com/Alexander272/IssueTrack/backend/pkg/logger"
 	"github.com/google/uuid"
 )
 
@@ -19,6 +20,10 @@ type createModifierInput struct {
 	DTO        *models.TicketDTO
 	Supervisor bool
 	IsExecutor bool
+	// Auto — подкатегория выбрана сервером по ключевым словам, а не клиентом.
+	// Такой выбор не требует прав на ручной выбор; разовая подстановка
+	// приоритета/срока при этом работает как обычно.
+	Auto bool
 }
 
 // updateModifierInput — вход подготовки подкатегории при обновлении заявки.
@@ -64,6 +69,64 @@ func sameModifierID(a, b *uuid.UUID) bool {
 	return *a == *b
 }
 
+// findModifierByKeywords — общая точка подбора для создания заявки и для
+// предпросмотра в форме. Ошибка справочника не блокирует операцию: автоподбор
+// это удобство, а не обязательное поле, поэтому здесь только Warn-лог.
+func (s *TicketService) findModifierByKeywords(ctx context.Context, realmID, categoryID uuid.UUID, title, description string) (*models.CategoryModifier, string) {
+	if s.modifiers == nil || categoryID == uuid.Nil {
+		return nil, ""
+	}
+	modifiers, err := s.modifiers.Get(ctx, &models.GetCategoryModifiersDTO{
+		RealmID: realmID, CategoryID: &categoryID,
+	})
+	if err != nil {
+		logger.Warn("failed to load category modifiers for keyword matching", logger.ErrAttr(err))
+		return nil, ""
+	}
+	return matchModifierByKeywords(title, description, modifiers)
+}
+
+// autoSelectModifierByKeywords подбирает подкатегорию по словам заголовка и
+// описания новой заявки. Это серверное значение по умолчанию: явный выбор
+// клиента всегда важнее и не приравнивается к полю, присланному запросом
+// (Provided у categoryModifierId не выставляется).
+func (s *TicketService) autoSelectModifierByKeywords(ctx context.Context, dto *models.TicketDTO) bool {
+	if dto.RealmID == nil || dto.CategoryID == uuid.Nil {
+		return false
+	}
+	if dto.CategoryModifierID != nil && *dto.CategoryModifierID != uuid.Nil {
+		return false
+	}
+
+	modifier, keyword := s.findModifierByKeywords(ctx, *dto.RealmID, dto.CategoryID, dto.Title, dto.Description)
+	if modifier == nil {
+		return false
+	}
+	id := modifier.ID
+	dto.CategoryModifierID = &id
+	logger.Info("category modifier selected by keywords",
+		logger.StringAttr("realm_id", dto.RealmID.String()),
+		logger.StringAttr("modifier_id", id.String()),
+		logger.StringAttr("keyword", keyword),
+	)
+	return true
+}
+
+// PreviewModifierByKeywords отвечает форме создания тем же выбором, который
+// сервер сделает при сохранении. Реалм приходит из заголовка (см. хендлер),
+// категория — из тела; чужой реалм ничего не вернёт, т.к. справочник грузится
+// только в его границах.
+func (s *TicketService) PreviewModifierByKeywords(ctx context.Context, dto *models.ModifierPreviewDTO) (*models.CategoryModifierShort, error) {
+	if dto.CategoryID == uuid.Nil {
+		return nil, models.ErrInvalidInput
+	}
+	modifier, _ := s.findModifierByKeywords(ctx, dto.RealmID, dto.CategoryID, dto.Title, dto.Description)
+	if modifier == nil {
+		return nil, nil
+	}
+	return &models.CategoryModifierShort{ID: modifier.ID, Name: modifier.Name}, nil
+}
+
 // prepareCreateModifier проверяет выбор подкатегории и разово применяет её
 // параметры. При создании подкатегорию выбирает исполнитель (участник хотя бы
 // одной группы реалма) или начальник области. Право не зависит от того, кто
@@ -79,7 +142,9 @@ func (s *TicketService) prepareCreateModifier(ctx context.Context, in *createMod
 		return models.ErrInvalidInput
 	}
 
-	if !in.Supervisor && !in.IsExecutor {
+	// Автоподбор — серверное значение по умолчанию, доступное всем создателям.
+	// Ручной выбор по-прежнему только у исполнителя и начальника области.
+	if !in.Auto && !in.Supervisor && !in.IsExecutor {
 		return models.ErrPermissionDenied
 	}
 

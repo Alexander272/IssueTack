@@ -442,6 +442,13 @@ func (m *MockTicketsService) Create(ctx context.Context, dto *models.TicketDTO) 
 	args := m.Called(ctx, dto)
 	return args.Error(0)
 }
+func (m *MockTicketsService) PreviewModifierByKeywords(ctx context.Context, dto *models.ModifierPreviewDTO) (*models.CategoryModifierShort, error) {
+	args := m.Called(ctx, dto)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.CategoryModifierShort), args.Error(1)
+}
 func (m *MockTicketsService) Update(ctx context.Context, dto *models.TicketDTO) error {
 	args := m.Called(ctx, dto)
 	return args.Error(0)

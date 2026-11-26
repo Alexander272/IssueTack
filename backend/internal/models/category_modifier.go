@@ -10,11 +10,14 @@ import (
 // параметров, которые разово применяются к заявке при выборе подкатегории.
 // NULL в DefaultDueDays/Priority означает наследование значения категории.
 type CategoryModifier struct {
-	ID             uuid.UUID `json:"id" db:"id"`
-	RealmID        uuid.UUID `json:"realmId" db:"realm_id"`
-	CategoryID     uuid.UUID `json:"categoryId" db:"category_id"`
-	Name           string    `json:"name" db:"name"`
-	Description    string    `json:"description" db:"description"`
+	ID          uuid.UUID `json:"id" db:"id"`
+	RealmID     uuid.UUID `json:"realmId" db:"realm_id"`
+	CategoryID  uuid.UUID `json:"categoryId" db:"category_id"`
+	Name        string    `json:"name" db:"name"`
+	Description string    `json:"description" db:"description"`
+	// Keywords — слова/фразы, по которым сервер автоматически выбирает
+	// подкатегорию при создании заявки (см. services.matchModifier).
+	Keywords       []string  `json:"keywords" db:"keywords"`
 	DefaultDueDays *int      `json:"defaultDueDays" db:"default_due_days"`
 	Priority       *Priority `json:"priority" db:"priority"`
 	IsActive       bool      `json:"isActive" db:"is_active"`
@@ -45,6 +48,7 @@ type CategoryModifierDTO struct {
 	CategoryID     uuid.UUID  `json:"categoryId" db:"category_id"`
 	Name           string     `json:"name" db:"name"`
 	Description    string     `json:"description" db:"description"`
+	Keywords       []string   `json:"keywords" db:"keywords"`
 	DefaultDueDays *int       `json:"defaultDueDays" db:"default_due_days"`
 	Priority       *Priority  `json:"priority" db:"priority"`
 	IsActive       bool       `json:"isActive" db:"is_active"`
@@ -53,4 +57,14 @@ type CategoryModifierDTO struct {
 type DelCategoryModifierDTO struct {
 	ID      uuid.UUID `json:"id" db:"id"`
 	RealmID uuid.UUID `json:"realmId" db:"realm_id"`
+}
+
+// ModifierPreviewDTO — вход предпросмотра подкатегории в форме создания заявки.
+// RealmID берётся только из заголовка запроса: клиент не может подсунуть чужой
+// реалм, а правила подбора остаются теми же, что в TicketService.Create.
+type ModifierPreviewDTO struct {
+	RealmID     uuid.UUID `json:"-" db:"realm_id"`
+	CategoryID  uuid.UUID `json:"categoryId"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
 }

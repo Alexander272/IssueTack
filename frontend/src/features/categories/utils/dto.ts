@@ -25,6 +25,7 @@ export const toModifierDTO = (m: ICategoryModifier): ICategoryModifierDTO => ({
 	categoryId: m.categoryId,
 	name: m.name,
 	description: m.description,
+	keywords: m.keywords ?? [],
 	defaultDueDays: m.defaultDueDays,
 	priority: m.priority,
 	isActive: m.isActive,

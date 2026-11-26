@@ -44,6 +44,7 @@ export const useCategoryDialogs = ({ groups, categories }: { groups: IGroup[]; c
 							categoryId: request.categoryId || categories[0]?.id || '',
 							name: '',
 							description: '',
+							keywords: [],
 							defaultDueDays: null,
 							priority: null,
 							isActive: true,

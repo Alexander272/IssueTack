@@ -1,7 +1,16 @@
 import { toast } from 'react-toastify'
 
 import type { IBaseFetchError } from '@/app/types/error'
-import type { IDuplicateLinkResult, IDuplicateRef, IDueDateRequest, ITask, ITaskDTO, ITaskFilter } from './types/task'
+import type {
+	ICategoryModifierShort,
+	IDuplicateLinkResult,
+	IDuplicateRef,
+	IDueDateRequest,
+	IModifierPreviewArgs,
+	ITask,
+	ITaskDTO,
+	ITaskFilter,
+} from './types/task'
 import { API } from '@/app/api'
 import { apiSlice } from '@/app/apiSlice'
 
@@ -39,6 +48,16 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 					toast.error(fetchError.data?.message, { autoClose: false })
 				}
 			},
+		}),
+
+		// Предпросмотр подкатегории повторяет серверный подбор по ключевым словам.
+		// Ошибки не показываем тостом: это подсказка формы, а не результат операции.
+		previewModifier: builder.query<{ data: ICategoryModifierShort | null }, IModifierPreviewArgs>({
+			query: body => ({
+				url: API.tickets.modifierPreview,
+				method: 'POST',
+				body,
+			}),
 		}),
 
 		getTicketDuplicates: builder.query<{ data: IDuplicateRef[] }, string>({
@@ -277,6 +296,7 @@ const tasksApiSlice = apiSlice.injectEndpoints({
 export const {
 	useGetTasksQuery,
 	useGetTaskByIdQuery,
+	usePreviewModifierQuery,
 	useGetTicketDuplicatesQuery,
 	useCreateTaskMutation,
 	useUpdateTaskMutation,

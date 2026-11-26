@@ -1,4 +1,4 @@
-import { useState, type FC } from 'react'
+import { useId, useState, type FC } from 'react'
 import {
 	Box,
 	Button,
@@ -6,11 +6,10 @@ import {
 	DialogActions,
 	DialogContent,
 	DialogTitle,
-	FormControlLabel,
+	FormLabel,
 	IconButton,
 	MenuItem,
 	Stack,
-	Switch,
 	TextField,
 	Tooltip,
 	Typography,
@@ -29,6 +28,8 @@ import {
 	useDeleteCategoryModifierMutation,
 } from '../../categoriesApiSlice'
 import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
+import { Switch } from '@/components/Switch/Switch'
+import { KeywordsField } from '@/components/FormFields/KeywordsField'
 
 type Props = {
 	modifier?: ICategoryModifierDTO
@@ -42,12 +43,14 @@ const emptyModifier = (categoryId: string): ICategoryModifierDTO => ({
 	categoryId,
 	name: '',
 	description: '',
+	keywords: [],
 	defaultDueDays: null,
 	priority: null,
 	isActive: true,
 })
 
 export const CategoryModifierDialog: FC<Props> = ({ modifier, categories, open, onClose }) => {
+	const labelId = useId()
 	const [deleteOpen, setDeleteOpen] = useState(false)
 	const [create, { isLoading: isCreating }] = useCreateCategoryModifierMutation()
 	const [update, { isLoading: isUpdating }] = useUpdateCategoryModifierMutation()
@@ -91,7 +94,7 @@ export const CategoryModifierDialog: FC<Props> = ({ modifier, categories, open, 
 			open={open}
 			onClose={onClose}
 			fullWidth
-			maxWidth='sm'
+			maxWidth='md'
 			slotProps={{ paper: { sx: { borderRadius: '16px', p: 1 } } }}
 		>
 			<DialogTitle sx={{ m: 0, p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -104,118 +107,169 @@ export const CategoryModifierDialog: FC<Props> = ({ modifier, categories, open, 
 			</DialogTitle>
 
 			<DialogContent dividers sx={{ borderTop: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', py: 3 }}>
-				<Stack spacing={2}>
-					<Controller
-						control={control}
-						name='categoryId'
-						rules={{ required: 'Обязательное поле' }}
-						render={({ field, fieldState }) => (
-							<TextField
-								select
-								label='Категория'
-								size='small'
-								fullWidth
-								value={field.value || ''}
-								onChange={field.onChange}
-								error={Boolean(fieldState.error)}
-								helperText={fieldState.error?.message}
-							>
-								{categories.map(c => (
-									<MenuItem key={c.id} value={c.id}>
-										{c.name}
-									</MenuItem>
-								))}
-							</TextField>
-						)}
-					/>
+				<Stack sx={{ mb: 3 }}>
+					<Typography sx={{ color: '#6b7280', mb: 1 }}>Основная информация</Typography>
+					<Stack direction={'row'} spacing={2} sx={{ mb: 2 }}>
+						<Controller
+							control={control}
+							name='categoryId'
+							rules={{ required: 'Обязательное поле' }}
+							render={({ field, fieldState }) => (
+								<TextField
+									select
+									label='Категория'
+									fullWidth
+									value={field.value || ''}
+									onChange={field.onChange}
+									error={Boolean(fieldState.error)}
+									helperText={fieldState.error?.message}
+								>
+									{categories.map(c => (
+										<MenuItem key={c.id} value={c.id}>
+											{c.name}
+										</MenuItem>
+									))}
+								</TextField>
+							)}
+						/>
 
-					<Controller
-						control={control}
-						name='name'
-						rules={{ required: 'Обязательное поле' }}
-						render={({ field, fieldState }) => (
-							<TextField
-								label='Название'
-								size='small'
-								fullWidth
-								{...field}
-								error={Boolean(fieldState.error)}
-								helperText={fieldState.error?.message}
-							/>
-						)}
-					/>
-
+						<Controller
+							control={control}
+							name='name'
+							rules={{ required: 'Обязательное поле' }}
+							render={({ field, fieldState }) => (
+								<TextField
+									label='Название'
+									fullWidth
+									{...field}
+									error={Boolean(fieldState.error)}
+									helperText={fieldState.error?.message}
+								/>
+							)}
+						/>
+					</Stack>
 					<Controller
 						control={control}
 						name='description'
 						render={({ field }) => (
-							<TextField label='Описание' size='small' fullWidth multiline minRows={2} {...field} />
+							<TextField label='Описание' fullWidth multiline minRows={2} {...field} />
 						)}
 					/>
+				</Stack>
 
-					<Controller
-						control={control}
-						name='defaultDueDays'
-						render={({ field }) => (
-							<TextField
-								label='Автоматический срок, рабочих дней'
-								size='small'
-								fullWidth
-								type='number'
-								value={field.value ?? ''}
-								onChange={e => {
-									const raw = e.target.value
-									field.onChange(raw === '' ? null : Math.max(0, Number.parseInt(raw, 10) || 0))
-								}}
-								slotProps={{ htmlInput: { min: 0, step: 1 } }}
-								helperText={
-									<Box
-										component='span'
-										sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
-									>
-										Пусто — наследовать срок категории
-										<Tooltip title='Выходные и праздничные дни не учитываются'>
-											<CircleQuestionMarkIcon sx={{ fontSize: 14, cursor: 'pointer' }} />
-										</Tooltip>
-									</Box>
-								}
-							/>
-						)}
-					/>
+				<Stack sx={{ mb: 3 }}>
+					<Typography sx={{ color: '#6b7280', mb: 1 }}>Автоматизация</Typography>
 
-					<Controller
-						control={control}
-						name='priority'
-						render={({ field }) => (
-							<TextField
-								select
-								label='Приоритет'
-								size='small'
-								fullWidth
-								value={field.value ?? ''}
-								onChange={e => field.onChange(e.target.value || null)}
-								helperText='Пусто — наследовать приоритет категории'
-							>
-								<MenuItem value=''>По категории</MenuItem>
-								{(Object.keys(PRIORITY_MAP) as Priority[]).map(value => (
-									<MenuItem key={value} value={value}>
-										{PRIORITY_MAP[value].label}
-									</MenuItem>
-								))}
-							</TextField>
-						)}
-					/>
+					<Stack sx={{ mb: 2 }}>
+						<Controller
+							control={control}
+							name='keywords'
+							render={({ field, fieldState }) => (
+								<KeywordsField
+									value={field.value}
+									onChange={field.onChange}
+									error={!!fieldState.error}
+									helperText={fieldState.error?.message}
+								/>
+							)}
+						/>
+					</Stack>
 
+					<Stack direction={'row'} spacing={2}>
+						<Controller
+							control={control}
+							name='defaultDueDays'
+							render={({ field }) => (
+								<TextField
+									label='Автоматический срок, рабочих дней'
+									size='small'
+									fullWidth
+									type='number'
+									value={field.value ?? ''}
+									onChange={e => {
+										const raw = e.target.value
+										field.onChange(raw === '' ? null : Math.max(0, Number.parseInt(raw, 10) || 0))
+									}}
+									slotProps={{ htmlInput: { min: 0, step: 1 } }}
+									helperText={
+										<Box
+											component='span'
+											sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}
+										>
+											Пусто — наследовать срок категории
+											<Tooltip title='Выходные и праздничные дни не учитываются'>
+												<CircleQuestionMarkIcon sx={{ fontSize: 14, cursor: 'pointer' }} />
+											</Tooltip>
+										</Box>
+									}
+								/>
+							)}
+						/>
+
+						<Controller
+							control={control}
+							name='priority'
+							render={({ field }) => (
+								<TextField
+									select
+									label='Приоритет'
+									size='small'
+									fullWidth
+									value={field.value ?? ''}
+									onChange={e => field.onChange(e.target.value || null)}
+									helperText='Пусто — наследовать приоритет категории'
+								>
+									<MenuItem value=''>По категории</MenuItem>
+									{(Object.keys(PRIORITY_MAP) as Priority[]).map(value => (
+										<MenuItem key={value} value={value}>
+											{PRIORITY_MAP[value].label}
+										</MenuItem>
+									))}
+								</TextField>
+							)}
+						/>
+					</Stack>
+				</Stack>
+
+				<Stack spacing={1}>
+					<Typography sx={{ color: '#6b7280' }}>Статус</Typography>
 					<Controller
 						control={control}
 						name='isActive'
 						render={({ field }) => (
-							<FormControlLabel
-								control={
-									<Switch checked={field.value} onChange={e => field.onChange(e.target.checked)} />
-								}
-								label='Активна'
-							/>
+							<Stack
+								direction={'row'}
+								sx={{
+									border: '1px solid #eef0f3',
+									background: '#f9fafb',
+									py: 1,
+									px: 2,
+									borderRadius: 3,
+									justifyContent: 'space-between',
+									alignItems: 'center',
+								}}
+							>
+								<Stack direction={'row'} spacing={2} sx={{ alignItems: 'center' }}>
+									<Typography>{modifier?.isActive ? 'Активна' : 'Неактивна'}</Typography>
+
+									<FormLabel
+										htmlFor={labelId}
+										sx={{
+											color: field.value ? '#6b7280' : '#9ca3af',
+											fontSize: 14,
+											cursor: 'pointer',
+										}}
+									>
+										{field.value ? '● Включено' : '○ Выключено'}
+									</FormLabel>
+								</Stack>
+
+								<Switch
+									id={labelId}
+									checked={field.value}
+									onChange={e => field.onChange(e.target.checked)}
+								/>
+							</Stack>
 						)}
 					/>
 				</Stack>

@@ -10,12 +10,13 @@ require (
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/goccy/go-json v0.10.6
-	github.com/goodsign/monday v1.0.2
 	github.com/gomutex/godocx v0.1.5
+	github.com/goodsign/monday v1.0.2
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/ilyakaznacheev/cleanenv v1.5.0
 	github.com/jackc/pgx/v5 v5.9.1
+	github.com/kljensen/snowball v0.10.0
 	github.com/mattermost/mattermost/server/public v0.1.22
 	github.com/pressly/goose/v3 v3.27.0
 	github.com/stretchr/testify v1.11.1
@@ -24,6 +25,7 @@ require (
 	golang.org/x/sync v0.19.0
 	golang.org/x/text v0.34.0
 	golang.org/x/time v0.15.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -110,6 +112,5 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	olympos.io/encoding/edn v0.0.0-20201019073823-d3554ca0b0a3 // indirect
 )

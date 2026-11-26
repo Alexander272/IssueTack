@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useRef, type FC } from 'react'
-import { Autocomplete, Box, TextField, Typography, type SxProps } from '@mui/material'
+import { Autocomplete, Box, Chip, TextField, Typography, type SxProps } from '@mui/material'
 import { Controller, useFormContext, useWatch } from 'react-hook-form'
 
 import type { FormValues } from './types'
+import type { ICategoryModifier } from '@/features/categories/types/category'
 import { fieldLabelSx } from './styles'
+import { useAppSelector } from '@/hooks/redux'
+import { getRealm } from '@/features/realms/realmSlice'
+import { useDebounce } from '@/hooks/useDebounce'
 import { useGetAllCategoriesQuery, useGetAllCategoryModifiersQuery } from '@/features/categories/categoriesApiSlice'
 import { useGetProductionCalendarQuery } from '@/features/calendar/calendarApiSlice'
+import { usePreviewModifierQuery } from '../../tasksApiSlice'
 import { autoDueDateISO } from '../../utils/workDays'
 import { useTaskFormSettings } from './taskFormMode'
 
@@ -17,19 +22,29 @@ import { useTaskFormSettings } from './taskFormMode'
  * от выбранного assignee. Остальные правила (сброс при смене категории, разовая
  * подстановка срока/приоритета) — серверные, форма лишь повторяет их, чтобы
  * пользователь видел результат до сохранения.
+ *
+ * На создании подкатегорию может выбрать и сервер — по ключевым словам заголовка
+ * и описания. Предпросмотр дёргает тот же серверный подбор, но не пишет поле формы:
+ * пока пользователь не нажал на подсказку, явный выбор остаётся пустым. По клику
+ * подсказка фиксируется как обычный выбор и подставляет срок/приоритет.
+ * Показывается только тем, у кого есть право ручного выбора: остальным в форме
+ * не нужны ни селект, ни подсказка (сервер всё равно применит подбор при сохранении).
  */
 export const CategoryModifierField: FC<{ sx?: SxProps }> = ({ sx }) => {
-	const { canPickModifier, dueDateBase } = useTaskFormSettings()
+	const { canPickModifier, dueDateBase, mode } = useTaskFormSettings()
 	const { control, setValue } = useFormContext<FormValues>()
-	const { data: categoriesData } = useGetAllCategoriesQuery()
-	const { data: modifiersData } = useGetAllCategoryModifiersQuery()
-	const { data: calendarData } = useGetProductionCalendarQuery()
+	const realm = useAppSelector(getRealm)
+	const { data: categoriesData } = useGetAllCategoriesQuery(undefined, { skip: !canPickModifier })
+	const { data: modifiersData } = useGetAllCategoryModifiersQuery(undefined, { skip: !canPickModifier })
+	const { data: calendarData } = useGetProductionCalendarQuery(undefined, { skip: !canPickModifier })
 
 	const categories = useMemo(() => categoriesData?.data ?? [], [categoriesData])
 	const allModifiers = useMemo(() => modifiersData?.data ?? [], [modifiersData])
 	const calendar = calendarData?.data
 	const selectedCategoryId = useWatch({ control, name: 'categoryId' })
 	const selectedModifierId = useWatch({ control, name: 'categoryModifierId' })
+	const title = useWatch({ control, name: 'title' })
+	const description = useWatch({ control, name: 'description' })
 
 	const modifiers = useMemo(
 		() => allModifiers.filter(m => m.isActive && m.categoryId === selectedCategoryId),
@@ -47,48 +62,99 @@ export const CategoryModifierField: FC<{ sx?: SxProps }> = ({ sx }) => {
 		setValue('categoryModifierId', null)
 	}, [selectedCategoryId, setValue])
 
-	// Разовая подстановка при выборе подкатегории: срок и приоритет берутся из неё,
-	// а пустые значения наследуются от категории. Отсчёт срока — от даты создания
-	// заявки (в форме редактирования), на создании — от сейчас (в рабочих днях).
-	// Явный выбор пользователя после этого остаётся в форме (у ролей с правом
-	// переопределения бэкенд его сохранит).
-	const prevModifierId = useRef(selectedModifierId)
-	useEffect(() => {
-		if (prevModifierId.current === selectedModifierId) return
-		prevModifierId.current = selectedModifierId
-		if (!selectedModifierId) return
-		const modifier = allModifiers.find(m => m.id === selectedModifierId)
+	// Явный выбор подкатегории: из селекта или кликом по подсказке. Подстановка
+	// срока и приоритета живёт прямо здесь, а не в useEffect — так она не зависит
+	// от порядка загрузки справочников и не срабатывает повторно при их refetch
+	// (иначе затирались бы уже введённые пользователем значения). shouldDirty
+	// обязателен: форма редактирования включает «Сохранить» через isDirty.
+	const handleSelectModifier = (modifier: ICategoryModifier | null) => {
+		setValue('categoryModifierId', modifier?.id ?? null, { shouldDirty: true })
 		if (!modifier) return
-		const category = categories.find(c => c.id === selectedCategoryId)
-		setValue('priority', modifier.priority ?? category?.priority ?? 'medium')
-		const days = modifier.defaultDueDays ?? category?.defaultDueDays
-		setValue('dueDate', autoDueDateISO(days, calendar, dueDateBase ?? null))
-	}, [selectedModifierId, allModifiers, categories, selectedCategoryId, dueDateBase, setValue, calendar])
 
-	if (!canPickModifier || modifiers.length === 0) return null
+		const category = categories.find(c => c.id === selectedCategoryId)
+		setValue('priority', modifier.priority ?? category?.priority ?? 'medium', { shouldDirty: true })
+		const days = modifier.defaultDueDays ?? category?.defaultDueDays
+		setValue('dueDate', autoDueDateISO(days, calendar, dueDateBase ?? null), { shouldDirty: true })
+	}
+
+	// Дебаунсим только текст: смена категории — дискретный клик, ей не нужна задержка.
+	const debouncedTitle = useDebounce(title ?? '', 350)
+	const debouncedDescription = useDebounce(description ?? '', 350)
+
+	const canPreview =
+		canPickModifier &&
+		mode === 'create' &&
+		!!realm?.id &&
+		!!selectedCategoryId &&
+		modifiers.length > 0 &&
+		!selectedModifierId &&
+		!!(debouncedTitle.trim() || debouncedDescription.trim())
+
+	const { data: previewData } = usePreviewModifierQuery(
+		{ categoryId: selectedCategoryId, title: debouncedTitle, description: debouncedDescription },
+		{ skip: !canPreview },
+	)
+
+	const preview = previewData?.data ?? null
+	const showManual = canPickModifier && modifiers.length > 0
+	// canPreview гасит чип и при очистке текста: RTK Query может ещё держать
+	// закешированный ответ прошлого запроса, а подсказка без текста неактуальна.
+	const showPreview = canPreview && !!preview
+	if (!showManual && !showPreview) return null
+
+	const applyPreview = () => {
+		const modifier = modifiers.find(m => m.id === preview?.id)
+		if (modifier) handleSelectModifier(modifier)
+	}
 
 	return (
 		<Box sx={sx}>
 			<Typography variant='caption' sx={fieldLabelSx}>
 				Подкатегория
 			</Typography>
-			<Controller
-				control={control}
-				name='categoryModifierId'
-				render={({ field }) => (
-					<Autocomplete
-						options={modifiers}
-						getOptionLabel={m => m.name}
-						value={modifiers.find(m => m.id === field.value) ?? null}
-						onChange={(_, value) => field.onChange(value?.id ?? null)}
-						noOptionsText='Нет подкатегорий'
-						renderInput={params => <TextField {...params} size='small' placeholder='Без подкатегории' />}
+			{showManual && (
+				<>
+					<Controller
+						control={control}
+						name='categoryModifierId'
+						render={({ field }) => (
+							<Autocomplete
+								options={modifiers}
+								getOptionLabel={m => m.name}
+								isOptionEqualToValue={(option, value) => option.id === value.id}
+								value={modifiers.find(m => m.id === field.value) ?? null}
+								onChange={(_, value) => handleSelectModifier(value)}
+								noOptionsText='Нет подкатегорий'
+								renderInput={params => (
+									<TextField {...params} size='small' placeholder='Без подкатегории' />
+								)}
+							/>
+						)}
 					/>
-				)}
-			/>
-			<Typography variant='caption' sx={{ color: 'text.secondary', mt: 0.5, display: 'block' }}>
-				При выборе срок и приоритет подставятся из подкатегории
-			</Typography>
+					{!showPreview && (
+						<Typography variant='caption' sx={{ color: 'text.secondary', mt: 0.5, display: 'block' }}>
+							При выборе срок и приоритет подставятся из подкатегории
+						</Typography>
+					)}
+				</>
+			)}
+			{showPreview && (
+				<Box
+					sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, mt: showManual ? 0.75 : 0 }}
+				>
+					<Chip
+						label={preview.name}
+						size='small'
+						color='primary'
+						variant='outlined'
+						onClick={applyPreview}
+						sx={{ fontWeight: 500 }}
+					/>
+					<Typography variant='caption' sx={{ color: 'text.secondary' }}>
+						подберётся автоматически (нажмите, чтобы выбрать)
+					</Typography>
+				</Box>
+			)}
 		</Box>
 	)
 }

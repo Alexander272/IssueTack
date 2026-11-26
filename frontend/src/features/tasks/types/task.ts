@@ -21,6 +21,13 @@ export interface ICategoryModifierShort {
 	name: string
 }
 
+/** Вход предпросмотра подкатегории: реалм берётся из заголовка запроса. */
+export interface IModifierPreviewArgs {
+	categoryId: string
+	title: string
+	description: string
+}
+
 export interface IGroupShort {
 	id: string
 	name: string

@@ -186,6 +186,11 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		}
 	}
 
+	// Ключевые слова подбирают подкатегорию до расчёта прав: если она выбрана,
+	// запрос членства в группе делается и для неё (нужно для сохранения явных
+	// приоритета/срока у исполнителя). Явный выбор клиента приоритетнее.
+	autoModifier := s.autoSelectModifierByKeywords(ctx, dto)
+
 	// Исполнитель — участник хотя бы одной группы реалма (а не «тот, кто выбран
 	// исполнителем этой заявки»): право на подкатегорию от назначения не зависит.
 	// Запрос нужен и для срока, и для подкатегории; у менеджера/супервизора он
@@ -205,10 +210,11 @@ func (s *TicketService) Create(ctx context.Context, dto *models.TicketDTO) error
 		return models.ErrPermissionDenied
 	}
 
-	// Подкатегорию при создании выбирает исполнитель (участник группы) или
-	// начальник области — независимо от того, кто станет исполнителем заявки.
+	// Ручную подкатегорию при создании выбирает исполнитель (участник группы)
+	// или начальник области; автоматически выбранную сервером получает любой
+	// создатель. Право не зависит от того, кто станет исполнителем заявки.
 	if err := s.prepareCreateModifier(ctx, &createModifierInput{
-		DTO: dto, Supervisor: supervisor, IsExecutor: isExecutor,
+		DTO: dto, Supervisor: supervisor, IsExecutor: isExecutor, Auto: autoModifier,
 	}); err != nil {
 		return err
 	}

@@ -44,6 +44,7 @@ func TestCategoryModifierRepo_RoundTrip_IT(t *testing.T) {
 		CategoryID:     categoryID,
 		Name:           name,
 		Description:    "описание",
+		Keywords:       []string{"принтер", "тонер картридж"},
 		DefaultDueDays: &days,
 		Priority:       &priority,
 		IsActive:       true,
@@ -55,6 +56,7 @@ func TestCategoryModifierRepo_RoundTrip_IT(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, name, got.Name)
 	assert.Equal(t, categoryID, got.CategoryID)
+	assert.Equal(t, []string{"принтер", "тонер картридж"}, got.Keywords)
 	assert.Equal(t, &days, got.DefaultDueDays)
 	require.NotNil(t, got.Priority)
 	assert.Equal(t, models.PriorityHigh, *got.Priority)
@@ -109,6 +111,7 @@ func TestCategoryModifierRepo_RoundTrip_IT(t *testing.T) {
 	}))
 	got, err = repo.GetByID(ctx, &models.GetCategoryModifierByIDDTO{ID: *dto.ID, RealmID: realmID})
 	require.NoError(t, err)
+	assert.Empty(t, got.Keywords, "непереданные ключи пишутся пустым массивом, а не NULL")
 	assert.Nil(t, got.Priority)
 	assert.Nil(t, got.DefaultDueDays)
 	assert.False(t, got.IsActive)

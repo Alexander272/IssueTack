@@ -31,7 +31,7 @@ type CategoryModifiers interface {
 	CountTicketsByCategory(ctx context.Context, categoryID uuid.UUID) (int, error)
 }
 
-const categoryModifierColumns = `cm.id, cm.realm_id, cm.category_id, cm.name, cm.description,
+const categoryModifierColumns = `cm.id, cm.realm_id, cm.category_id, cm.name, cm.description, cm.keywords,
 	cm.default_due_days, cm.priority, cm.is_active, cm.sort_order, cm.created_at, cm.updated_at`
 
 // priorityArg — nullable-приоритет для запроса. Приводим к *string явно, как
@@ -45,10 +45,19 @@ func priorityArg(p *models.Priority) *string {
 	return &s
 }
 
+// keywordsArg — colon NOT NULL не принимает NULL: nil-слайс из DTO (поле не
+// прислали) пишем как пустой массив, а не как SQL NULL.
+func keywordsArg(keywords []string) []string {
+	if keywords == nil {
+		return []string{}
+	}
+	return keywords
+}
+
 func scanCategoryModifier(row rowScanner, item *models.CategoryModifier) error {
 	var priority *string
 	if err := row.Scan(
-		&item.ID, &item.RealmID, &item.CategoryID, &item.Name, &item.Description,
+		&item.ID, &item.RealmID, &item.CategoryID, &item.Name, &item.Description, &item.Keywords,
 		&item.DefaultDueDays, &priority, &item.IsActive, &item.SortOrder, &item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
 		return fmt.Errorf("scan row error: %w", err)
@@ -128,14 +137,15 @@ func (r *CategoryModifierRepo) GetByID(ctx context.Context, req *models.GetCateg
 }
 
 func (r *CategoryModifierRepo) Create(ctx context.Context, dto *models.CategoryModifierDTO) error {
-	query := fmt.Sprintf(`INSERT INTO %s (id, realm_id, category_id, name, description, default_due_days, priority, is_active, sort_order)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE((SELECT MAX(sort_order) + 1 FROM %s WHERE category_id = $3), 1))`,
+	query := fmt.Sprintf(`INSERT INTO %s (id, realm_id, category_id, name, description, keywords, default_due_days, priority, is_active, sort_order)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE((SELECT MAX(sort_order) + 1 FROM %s WHERE category_id = $3), 1))`,
 		Tables.CategoryModifiers, Tables.CategoryModifiers,
 	)
 	id := uuid.New()
 	dto.ID = &id
 
-	_, err := r.db.Exec(ctx, query, id, dto.RealmID, dto.CategoryID, dto.Name, dto.Description, dto.DefaultDueDays, priorityArg(dto.Priority), dto.IsActive)
+	_, err := r.db.Exec(ctx, query, id, dto.RealmID, dto.CategoryID, dto.Name, dto.Description,
+		keywordsArg(dto.Keywords), dto.DefaultDueDays, priorityArg(dto.Priority), dto.IsActive)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
@@ -143,10 +153,11 @@ func (r *CategoryModifierRepo) Create(ctx context.Context, dto *models.CategoryM
 }
 
 func (r *CategoryModifierRepo) Update(ctx context.Context, dto *models.CategoryModifierDTO) error {
-	query := fmt.Sprintf(`UPDATE %s SET name=$2, description=$3, default_due_days=$4, priority=$5, is_active=$6
-		WHERE id=$1 AND realm_id=$7`, Tables.CategoryModifiers)
+	query := fmt.Sprintf(`UPDATE %s SET name=$2, description=$3, keywords=$4, default_due_days=$5, priority=$6, is_active=$7
+		WHERE id=$1 AND realm_id=$8`, Tables.CategoryModifiers)
 
-	res, err := r.db.Exec(ctx, query, dto.ID, dto.Name, dto.Description, dto.DefaultDueDays, priorityArg(dto.Priority), dto.IsActive, dto.RealmID)
+	res, err := r.db.Exec(ctx, query, dto.ID, dto.Name, dto.Description, keywordsArg(dto.Keywords),
+		dto.DefaultDueDays, priorityArg(dto.Priority), dto.IsActive, dto.RealmID)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
