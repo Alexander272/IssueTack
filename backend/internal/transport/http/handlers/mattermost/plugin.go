@@ -39,6 +39,7 @@ func (h *Handler) registerPluginRoutes(r *gin.RouterGroup, cfg config.Mattermost
 		plugin.POST("/context", h.handlePluginContext)
 		plugin.POST("/greeting", h.handlePluginGreeting)
 		plugin.GET("/dm", h.handlePluginDM)
+		plugin.POST("/modifier/preview", h.handlePluginModifierPreview)
 		plugin.GET("/tickets", h.handlePluginListMine)
 		plugin.POST("/tickets", h.handlePluginCreateTicket)
 		plugin.GET("/tickets/:id", h.handlePluginGetTicket)
@@ -133,6 +134,24 @@ func (h *Handler) handlePluginGreeting(c *gin.Context) {
 	}
 
 	response.SendData(c, gin.H{"ok": true})
+}
+
+// handlePluginModifierPreview — предпросмотр авто-подбора подкатегории для формы
+// создания в плагине. Реалм берётся из scope (канал или DM с ботом), а не из тела:
+// серверный подбор при сохранении работает так же, как в веб-форме.
+func (h *Handler) handlePluginModifierPreview(c *gin.Context) {
+	dto := &models.ModifierPreviewDTO{}
+	if err := utils.BindJSON(c, dto); err != nil {
+		response.SendError(c, err)
+		return
+	}
+
+	modifier, err := h.service.PluginPreviewModifier(c, pluginScope(c), dto)
+	if err != nil {
+		response.SendError(c, err)
+		return
+	}
+	response.SendData(c, modifier)
 }
 
 // handlePluginDM отдаёт личный диалог пользователя с ботом реалма. По нему

@@ -5,6 +5,7 @@ import type {
     PluginContextResult,
     PluginCreateResult,
     PluginDMScope,
+    PluginModifierShort,
     PluginScope,
     PluginStore,
     PluginTicketDetail,
@@ -333,6 +334,23 @@ export async function postComment(scope: PluginScope, ticketId: string, text: st
 
 export function attachmentUrl(scope: PluginScope, attachmentId: string): string {
     return `/plugins/issuetrack/api/attachments/${encodeURIComponent(attachmentId)}?${scopeQuery(scope).toString()}`;
+}
+
+// previewModifier повторяет серверный подбор по ключевым словам, не меняя форму:
+// подсказка появляется до сохранения и фиксируется только кликом по ней.
+export async function previewModifier(
+    scope: PluginScope,
+    input: {categoryId: string; title: string; description: string},
+): Promise<PluginModifierShort | null> {
+    const data = await request<PluginModifierShort | null>(
+        `/plugins/issuetrack/api/modifier/preview?${scopeQuery(scope).toString()}`,
+        {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(input),
+        },
+    );
+    return data ?? null;
 }
 
 export async function createTicket(scope: PluginScope, payload: CreateTicketPayload): Promise<PluginCreateResult> {

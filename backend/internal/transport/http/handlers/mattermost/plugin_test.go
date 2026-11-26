@@ -400,3 +400,57 @@ func TestPluginDMMissingUserID(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 }
+
+// stubPreviewMattermost захватывает scope и DTO предпросмотра: хендлер обязан
+// взять реалм из scope, а текст заявки — из тела, не подменяя одно другим.
+type stubPreviewMattermost struct {
+	services.Mattermost
+	gotScope models.PluginScope
+	gotDTO   *models.ModifierPreviewDTO
+	result   *models.CategoryModifierShort
+}
+
+func (s *stubPreviewMattermost) PluginPreviewModifier(_ context.Context, scope models.PluginScope, dto *models.ModifierPreviewDTO) (*models.CategoryModifierShort, error) {
+	s.gotScope = scope
+	s.gotDTO = dto
+	return s.result, nil
+}
+
+func TestPluginModifierPreviewReturnsData(t *testing.T) {
+	categoryID, modifierID := uuid.New(), uuid.New()
+	engine := gin.New()
+	stub := &stubPreviewMattermost{result: &models.CategoryModifierShort{ID: modifierID, Name: "Ошибки"}}
+	h := &Handler{service: stub}
+	h.registerPluginRoutes(engine.Group("/api/v1"), config.MattermostConfig{
+		PluginToken:      "secret",
+		AllowedServerIPs: []string{"192.0.2.0/24"},
+	})
+
+	body, err := json.Marshal(&models.ModifierPreviewDTO{
+		CategoryID: categoryID, Title: "лагает", Description: "Приложение лагает",
+	})
+	require.NoError(t, err)
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/v1/plugin/modifier/preview?channelId=ch1&userId=u1&botUserId=bot1", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var resp struct {
+		Data struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, modifierID.String(), resp.Data.ID)
+	assert.Equal(t, "Ошибки", resp.Data.Name)
+	assert.Equal(t, models.PluginScope{ChannelID: "ch1", MmUserID: "u1", BotUserID: "bot1"}, stub.gotScope)
+	require.NotNil(t, stub.gotDTO)
+	assert.Equal(t, categoryID, stub.gotDTO.CategoryID)
+	assert.Equal(t, "лагает", stub.gotDTO.Title)
+	assert.Equal(t, "Приложение лагает", stub.gotDTO.Description)
+	assert.Equal(t, uuid.Nil, stub.gotDTO.RealmID, "реалм определяет сервис по scope")
+}

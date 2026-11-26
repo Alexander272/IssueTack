@@ -1,27 +1,23 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+// Форма создания заявки в плагине. Компонент — координатор: держит состояние,
+// черновик и отправку; поля разложены по секциям, а побочные эффекты (вложения
+// из сообщения, подбор подкатегории, авто-назначение) — по хукам в ./CreateTab.
 
-import { ApiError, createTicket, getMattermostFile } from '../api'
-import type { CreateTicketPayload } from '../api'
-import type {
-	CreateTicketSeed,
-	PluginCategory,
-	PluginContextResult,
-	PluginCreateResult,
-	PluginPostFileRef,
-	PluginScope,
-	PluginSite,
-	PluginUserShort,
-	Priority,
-} from '../types'
-import { formatBytes } from '../labels'
-import { clearDraft, loadDraft, saveDraft } from '../createDraft'
-import { useClipboardFiles } from '../useClipboardFiles'
-import { autoDueDateLocal, dueDateValueForSubmit } from '../workDays'
-import { FileIcon } from './icons'
-import { NotifierField } from './Form/NotifierField'
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react'
 
-// pluginUserLabel — подпись пользователя в селектах формы: «Фамилия Имя
-// (username)», без имён — просто username (как в диалогах бота).
+import {ApiError, createTicket} from '../api'
+import type {CreateTicketSeed, PluginContextResult, PluginCreateResult, PluginScope} from '../types'
+import {clearDraft, loadDraft, saveDraft} from '../createDraft'
+import {useClipboardFiles} from '../useClipboardFiles'
+import {AdvancedSection} from './CreateTab/AdvancedSection'
+import {buildCreatePayload} from './CreateTab/buildPayload'
+import {CategoryAndSiteSection} from './CreateTab/CategoryAndSiteSection'
+import {DescriptionSection} from './CreateTab/DescriptionSection'
+import {ClearConfirmDialog, SuccessView} from './CreateTab/Feedback'
+import {NotifierSection} from './CreateTab/NotifierSection'
+import {type AdvancedValues, type FieldErrors} from './CreateTab/model'
+import {useAutoAssign} from './CreateTab/useAutoAssign'
+import {useModifierPreview} from './CreateTab/useModifierPreview'
+import {useSeedFiles} from './CreateTab/useSeedFiles'
 
 interface CreateTabProps {
 	scope: PluginScope
@@ -39,47 +35,7 @@ interface CreateTabProps {
 	onDraftChange?: (hasDraft: boolean) => void
 }
 
-interface FieldErrors {
-	title?: string
-	categoryId?: string
-	siteId?: string
-	ownerId?: string
-	priority?: string
-}
-
-// Лимиты вложений совпадают с бэкенд-плагином (handlers/mattermost/plugin.go):
-// 10 файлов и 64 МБ на один запрос создания.
-const MAX_SEED_FILES = 10
-const MAX_SEED_FILE_BYTES = 64 << 20
-
-// PRIORITY_ORDER — порядок карточек приоритета, PRIORITY_LABELS/COLORS/DESCRIPTIONS —
-// как в вебе (PRIORITY_MAP + priorityDescriptions в TaskCreateForm).
-const PRIORITY_ORDER: Priority[] = ['low', 'medium', 'high', 'urgent']
-const PRIORITY_LABELS: Record<Priority, string> = {
-	low: 'Низкий',
-	medium: 'Средний',
-	high: 'Высокий',
-	urgent: 'Критичный',
-}
-const PRIORITY_COLORS: Record<Priority, string> = {
-	low: '#10b981',
-	medium: '#f59e0b',
-	high: '#ef4444',
-	urgent: '#dc2626',
-}
-const PRIORITY_DESCRIPTIONS: Record<Priority, string> = {
-	low: 'Не мешает работе, можно подождать',
-	medium: 'Работа затруднена, есть обходной путь',
-	high: 'Работа полностью остановлена',
-	urgent: 'Критично, требуется немедленная реакция',
-}
-
-function pluginUserLabel(u: PluginUserShort): string {
-	if (u.lastName || u.firstName) return `${u.lastName} ${u.firstName}`.trim() + ` (${u.username})`
-	return u.username
-}
-
-export default function CreateTab({ scope, context, initialSeed, onCreated, onOpen, onDraftChange }: CreateTabProps) {
+export default function CreateTab({scope, context, initialSeed, onCreated, onOpen, onDraftChange}: CreateTabProps) {
 	const userSiteId =
 		context.user?.siteId && (context.sites || []).some(s => s.id === context.user.siteId) ? context.user.siteId : ''
 	// Роли — зеркало веб-формы: isManager (начальник области ИЛИ управляет
@@ -92,6 +48,10 @@ export default function CreateTab({ scope, context, initialSeed, onCreated, onOp
 	const customers = useMemo(() => context.customers || [], [context.customers])
 	const executors = useMemo(() => context.executors || [], [context.executors])
 	const realmGroups = useMemo(() => context.groups || [], [context.groups])
+	const categories = useMemo(
+		() => (context.categories || []).filter(c => c.isActive !== false),
+		[context.categories],
+	)
 
 	// Автор сообщения становится заказчиком только у тех, кто вправе выбирать
 	// заказчика (менеджер/исполнитель), и только если он найден в реалме по
@@ -117,8 +77,7 @@ export default function CreateTab({ scope, context, initialSeed, onCreated, onOp
 	const [notifierIds, setNotifierIds] = useState<string[]>(initialDraft?.notifierIds ?? [])
 	const [ownerMuted, setOwnerMuted] = useState(Boolean(initialDraft?.ownerMuted))
 	const [dueDate, setDueDate] = useState(initialDraft?.dueDate ?? '')
-	const [files, setFiles] = useState<File[]>([])
-	const [seedWarning, setSeedWarning] = useState<string | null>(null)
+	const {files, setFiles, seedWarning} = useSeedFiles(initialSeed)
 	const [submitting, setSubmitting] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 	const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
@@ -162,142 +121,39 @@ export default function CreateTab({ scope, context, initialSeed, onCreated, onOp
 		setOwnerId(seedOwnerId)
 	}, [seedOwnerId])
 
-	// Вложения из сообщения качаем браузером с его сессией MM: у bot-токена
-	// может не быть доступа к файлам канала. Лимиты те же, что у бэкенда;
-	// пропущенное не пропадает молча — показываем причину в форме.
-	useEffect(() => {
-		if (!initialSeed?.files?.length) return
-		let cancelled = false
-		const accepted: PluginPostFileRef[] = []
-		let total = 0
-		let tooMany = false
-		let tooLarge = false
-		for (const ref of initialSeed.files) {
-			if (accepted.length >= MAX_SEED_FILES) {
-				tooMany = true
-				break
-			}
-			const size = typeof ref.size === 'number' ? ref.size : 0
-			if (total + size > MAX_SEED_FILE_BYTES) {
-				tooLarge = true
-				continue
-			}
-			accepted.push(ref)
-			total += size
-		}
-		Promise.all(accepted.map(ref => getMattermostFile(ref).catch(() => null)))
-			.then(results => {
-				if (cancelled) return
-				const loaded = results.filter((f): f is File => Boolean(f))
-				if (loaded.length) {
-					setFiles(prev => [...prev, ...loaded].slice(0, MAX_SEED_FILES))
-				}
-				const failed = accepted.length - loaded.length
-				const notes: string[] = []
-				if (tooMany) notes.push(`перенесено только ${MAX_SEED_FILES} вложений`)
-				if (tooLarge) notes.push('часть файлов превышает лимит 64 МБ')
-				if (failed) notes.push(`не удалось скачать ${failed} файл(ов)`)
-				if (notes.length) setSeedWarning(notes.join('; '))
-			})
-		return () => { cancelled = true }
-	}, [initialSeed])
-
-	const categories = (context.categories || []).filter((c: PluginCategory) => c.isActive !== false)
-	// Категории группируются по разделам (таксономия) — нативные optgroup.
-	// Категория без раздела — отдельный блок из одного пункта (без группы
-	// «Без раздела»), поэтому несколько таких категорий могут стоять в разных
-	// местах между разделами.
-	const categorySections = useMemo(() => {
-		const sections = new Map<string, { name: string | null; items: PluginCategory[] }>()
-		categories.forEach(c => {
-			if (c.categoryGroupId) {
-				const key = `section:${c.categoryGroupId}`
-				const name = c.categoryGroup?.name || ''
-				const bucket = sections.get(key)
-				if (bucket) {
-					bucket.items.push(c)
-				} else {
-					sections.set(key, { name, items: [c] })
-				}
-				return
-			}
-			const key = `root:${c.id}`
-			sections.set(key, { name: null, items: [c] })
-		})
-		return [...sections.values()]
-	}, [categories])
 	const sites = context.sites || []
-	const selectedSite = sites.find(s => s.id === siteId) || null
 	// Подкатегорию выбирает исполнитель (участник любой группы реалма) или
 	// начальник области. Право не привязано к assignee новой заявки: исполнитель
 	// видит поле, даже если в форме выбран другой исполнитель.
 	const canPickModifier = isRealmAdmin || (context.memberGroupIds || []).length > 0
 	const modifiers = (categories.find(c => c.id === categoryId)?.modifiers || []).filter(m => m.isActive !== false)
 
-	// Авто-назначение в стиле веба (AdvancedSettingsSection + onChange категории
-	// в TaskCreateForm): смена категории подставляет группу и дефолтный приоритет
-	// категории, смена группы — дефолтного исполнителя. Срабатывают только на
-	// реальном изменении поля (useRef-пред), а не на первом рендере или
-	// восстановлении черновика — иначе авто-подстановка затирала бы сохранённые
-	// значения. Сервер всё равно авторитетен: подставленные здесь значения
-	// совпадают с теми, что TicketService.Create применил бы сам при пустых полях.
-	const prevCategoryId = useRef(categoryId)
-	const prevGroupId = useRef(groupId)
-	const prevModifierCategoryId = useRef(categoryId)
-	const prevCategoryModifierId = useRef(categoryModifierId)
+	const {showPreview, preview, reset: resetPreview, applyPreview} = useModifierPreview({
+		scope,
+		categoryId,
+		title,
+		description,
+		enabled: canPickModifier && !!categoryId && modifiers.length > 0,
+		selectedId: categoryModifierId,
+		onSelect: setCategoryModifierId,
+	})
 
-	// Подкатегория принадлежит категории: при смене категории форма сбрасывает её
-	// следом за сервером (иначе в запрос ушёл бы чужой id).
-	useEffect(() => {
-		if (prevModifierCategoryId.current === categoryId) return
-		prevModifierCategoryId.current = categoryId
-		setCategoryModifierId('')
-	}, [categoryId])
-
-	// Эффект 1: категория → группа + приоритет + срок (менеджер И исполнитель).
-	// Исполнитель создаёт заявку и должен получать те же авто-подстановки, что и менеджер.
-	useEffect(() => {
-		if (!(isManager || isExecutor)) return
-		if (prevCategoryId.current === categoryId) return
-		prevCategoryId.current = categoryId
-		const cat = categories.find(c => c.id === categoryId)
-		setGroupId(cat?.groupId ?? '')
-		if (cat?.priority) setPriority(cat.priority)
-		// Автосрок из категории — зеркало веба/бэкенда: дефолт категории
-		// проставляется в поле срока в рабочих днях (с учётом выходных и праздников,
-		// конец целевого рабочего дня в календарной TZ), а категория без автосрока
-		// его сбрасывает, иначе в форме остался бы срок предыдущей категории.
-		setDueDate(autoDueDateLocal(cat?.defaultDueDays, context.calendar) ?? '')
-	}, [categoryId, categories, isManager, isExecutor, context.calendar])
-
-	// Эффект 1а: подкатегория → приоритет + срок. Как и в веб-форме, значения
-	// берутся из подкатегории, а пустые поля наследуются от категории. Срабатывает
-	// только на реальном выборе пользователя, не на восстановлении черновика.
-	useEffect(() => {
-		if (prevCategoryModifierId.current === categoryModifierId) return
-		prevCategoryModifierId.current = categoryModifierId
-		if (!categoryModifierId) return
-		const modifier = (categories.find(c => c.id === categoryId)?.modifiers || []).find(
-			m => m.id === categoryModifierId,
-		)
-		if (!modifier) return
-		const cat = categories.find(c => c.id === categoryId)
-		setPriority(modifier.priority || cat?.priority || '')
-		const days = modifier.defaultDueDays ?? cat?.defaultDueDays
-		setDueDate(days != null && days > 0 ? (autoDueDateLocal(days, context.calendar) ?? '') : '')
-	}, [categoryModifierId, categories, categoryId, context.calendar])
-
-	useEffect(() => {
-		if (!isManager) return
-		if (prevGroupId.current === groupId) return
-		prevGroupId.current = groupId
-		if (!groupId) {
-			setAssigneeId('')
-			return
-		}
-		const group = realmGroups.find(g => g.id === groupId)
-		setAssigneeId(group?.defaultAssigneeId ?? '')
-	}, [groupId, realmGroups, isManager])
+	useAutoAssign({
+		categoryId,
+		categoryModifierId,
+		groupId,
+		categories,
+		groups: realmGroups,
+		calendar: context.calendar,
+		isManager,
+		isExecutor,
+		onModifierReset: resetPreview,
+		setCategoryModifierId,
+		setGroupId,
+		setPriority,
+		setDueDate,
+		setAssigneeId,
+	})
 
 	useEffect(() => {
 		saveDraft(context.realmId, context.user.id, {
@@ -374,6 +230,7 @@ export default function CreateTab({ scope, context, initialSeed, onCreated, onOp
 		setDescription('')
 		setCategoryId('')
 		setCategoryModifierId('')
+		resetPreview()
 		setSiteId(userSiteId)
 		setSiteTouched(false)
 		setPriority('')
@@ -397,18 +254,23 @@ export default function CreateTab({ scope, context, initialSeed, onCreated, onOp
 			const seen = new Set(prev.map(f => `${f.name}:${f.size}`))
 			return [...prev, ...picked.filter(f => !seen.has(`${f.name}:${f.size}`))]
 		})
-	}, [])
+	}, [setFiles])
 
 	useClipboardFiles(addFiles)
 
-	const onPickFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
-		addFiles(Array.from(e.target.files || []))
-		e.target.value = ''
-	}
+	const clearFieldError = useCallback((field: keyof FieldErrors) => {
+		setFieldErrors(prev => ({...prev, [field]: undefined}))
+	}, [])
 
-	const clearFieldError = (field: keyof FieldErrors) => {
-		setFieldErrors(prev => ({ ...prev, [field]: undefined }))
-	}
+	const patchAdvanced = useCallback((patch: Partial<AdvancedValues>) => {
+		if (patch.priority !== undefined) setPriority(patch.priority)
+		if (patch.ownerId !== undefined) setOwnerId(patch.ownerId)
+		if (patch.ownerMuted !== undefined) setOwnerMuted(patch.ownerMuted)
+		if (patch.groupId !== undefined) setGroupId(patch.groupId)
+		if (patch.assigneeId !== undefined) setAssigneeId(patch.assigneeId)
+		if (patch.dueDate !== undefined) setDueDate(patch.dueDate)
+		if (patch.notifierIds !== undefined) setNotifierIds(patch.notifierIds)
+	}, [])
 
 	const submit = async (e: React.FormEvent) => {
 		e.preventDefault()
@@ -432,54 +294,24 @@ export default function CreateTab({ scope, context, initialSeed, onCreated, onOp
 		setSubmitting(true)
 		setError(null)
 		try {
-			// Поля доп. секций отправляются только тем, кому они доступны:
-			// менеджер — все (приоритет, группа, исполнитель, заявитель, срок),
-			// исполнитель — заказчик и самоназначение. Обычный заявитель может
-			// указать наблюдателей. Группа/приоритет берутся с сервера из категории.
-			const payload: CreateTicketPayload = {
-				title: title.trim(),
-				description: description.trim(),
-				categoryId: categoryId || null,
-				...(canPickModifier && categoryModifierId ? { categoryModifierId } : {}),
-				siteId: siteId || null,
+			const payload = buildCreatePayload({
+				isManager,
+				isExecutor,
+				canPickModifier,
+				title,
+				description,
+				categoryId,
+				categoryModifierId,
+				siteId,
 				files,
-			}
-			if (isManager) {
-				payload.priority = priority
-				if (groupId) payload.groupId = groupId
-				if (assigneeId) payload.assigneeId = assigneeId
-				if (ownerId) payload.ownerId = ownerId
-				if (dueDate) payload.dueDate = dueDateValueForSubmit(dueDate, context.calendar)
-				if (ownerMuted && ownerId) payload.ownerMuted = true
-				payload.notifierIds = notifierIds
-			} else if (isExecutor) {
-				if (ownerId) payload.ownerId = ownerId
-				if (assigneeId) payload.assigneeId = assigneeId
-				if (priority) payload.priority = priority
-				if (dueDate) payload.dueDate = dueDateValueForSubmit(dueDate, context.calendar)
-				payload.notifierIds = notifierIds
-			} else if (notifierIds.length > 0) {
-				payload.notifierIds = notifierIds
-			}
+				calendar: context.calendar,
+				advanced: {priority, ownerId, ownerMuted, groupId, assigneeId, dueDate, notifierIds},
+			})
 			const res = await createTicket(scope, payload)
 			// Заявка создана — черновик больше не нужен, а поля очищаем, чтобы
 			// «Создать ещё» и закрытие окна не тянули старые данные.
-			clearDraft(context.realmId, context.user.id)
-			setTitle('')
-			setDescription('')
-			setCategoryId('')
-			setCategoryModifierId('')
-			setSiteId(userSiteId)
-			setSiteTouched(false)
-			setPriority('')
-			setGroupId('')
-			setAssigneeId('')
-			setOwnerId('')
-			setOwnerMuted(false)
-			setNotifierIds([])
-			setDueDate('')
-			setFiles([])
-			setResult({ number: res.number, link: res.link, ...res })
+			reset()
+			setResult({number: res.number, link: res.link, ...res})
 		} catch (err) {
 			setError(err instanceof ApiError ? err.message : 'Не удалось создать заявку')
 		} finally {
@@ -488,388 +320,69 @@ export default function CreateTab({ scope, context, initialSeed, onCreated, onOp
 	}
 
 	if (result) {
-		return (
-			<div className='it-ticket-success'>
-				<div className='it-ticket-success__title'>Заявка №{result.number || ''} создана</div>
-				<div className='it-ticket-success__actions'>
-					<button type='button' className='it-btn it-btn--primary' onClick={() => onOpen(result.id)}>
-						Открыть заявку
-					</button>
-					<button type='button' className='it-btn' onClick={onCreated}>
-						К моим заявкам
-					</button>
-					<button type='button' className='it-btn' onClick={reset}>
-						Создать ещё
-					</button>
-				</div>
-				{result.link ? (
-					<a className='it-ticket-success__link' href={result.link} target='_blank' rel='noreferrer'>
-						Открыть в веб-приложении
-					</a>
-				) : null}
-			</div>
-		)
+		return <SuccessView result={result} onOpen={onOpen} onCreated={onCreated} onReset={reset} />
 	}
 
 	return (
 		<form className='it-ticket-form' onSubmit={submit}>
-			<section className='it-ticket-section'>
-				<div className='it-ticket-section__head'>
-					<div className='it-ticket-section__num'>1</div>
-					<div>
-						<div className='it-ticket-section__title'>Что случилось и где</div>
-						<div className='it-ticket-section__subtitle'>Выберите категорию и площадку</div>
-					</div>
-				</div>
-				<div className='it-ticket-section__body'>
-					{categories.length === 0 ? <div className='it-f-label__hint'>Нет доступных категорий</div> : null}
-					{sites.length === 0 ? <div className='it-f-label__hint'>Нет доступных площадок</div> : null}
-					<div className='it-ticket-grid'>
-						<label className='it-f-label'>
-							<span className='it-f-label__text'>
-								Категория <span className='it-f-required'>*</span>
-							</span>
-							<select
-								className={`it-f${fieldErrors.categoryId ? ' it-f--error' : ''}`}
-								value={categoryId}
-								onChange={e => {
-									setCategoryId(e.target.value)
-									clearFieldError('categoryId')
-								}}
-							>
-								<option value=''>— Выберите категорию —</option>
-								{categorySections.map(section =>
-									section.name === null ? (
-										// Категория без раздела — обычный пункт списка, вне групп.
-										section.items.map(c => (
-											<option key={c.id} value={c.id}>
-												{c.name}
-											</option>
-										))
-									) : (
-										<optgroup key={section.name} label={section.name}>
-											{section.items.map(c => (
-												<option key={c.id} value={c.id}>
-													{c.name}
-												</option>
-											))}
-										</optgroup>
-									),
-								)}
-							</select>
-							{fieldErrors.categoryId ? (
-								<span className='it-f__err'>{fieldErrors.categoryId}</span>
-							) : null}
-						</label>
+			<CategoryAndSiteSection
+				categories={categories}
+				sites={sites}
+				userSiteId={userSiteId}
+				categoryId={categoryId}
+				siteId={siteId}
+				siteTouched={siteTouched}
+				categoryModifierId={categoryModifierId}
+				canPickModifier={canPickModifier}
+				modifiers={modifiers}
+				preview={preview}
+				showPreview={showPreview}
+				errors={fieldErrors}
+				onCategoryChange={id => {
+					setCategoryId(id)
+					clearFieldError('categoryId')
+				}}
+				onSiteChange={id => {
+					setSiteId(id)
+					setSiteTouched(true)
+					clearFieldError('siteId')
+				}}
+				onModifierChange={setCategoryModifierId}
+				onApplyPreview={applyPreview}
+			/>
 
-						<label className='it-f-label'>
-							<span className='it-f-label__text'>
-								Площадка <span className='it-f-required'>*</span>
-							</span>
-							<select
-								className={`it-f${fieldErrors.siteId ? ' it-f--error' : ''}`}
-								value={siteId}
-								onChange={e => {
-									setSiteId(e.target.value)
-									setSiteTouched(true)
-									clearFieldError('siteId')
-								}}
-							>
-								<option value=''>— Выберите площадку —</option>
-								{sites.map((s: PluginSite) => (
-									<option key={s.id} value={s.id}>
-										{s.name}
-									</option>
-								))}
-							</select>
-							{fieldErrors.siteId ? <span className='it-f__err'>{fieldErrors.siteId}</span> : null}
-							{selectedSite && selectedSite.address && (siteTouched || siteId !== userSiteId) ? (
-								<span className='it-f-label__hint'>{selectedSite.address}</span>
-							) : null}
-						</label>
-
-						{canPickModifier && modifiers.length > 0 ? (
-							<div style={{ gridColumn: '1 / -1' }}>
-								<label className='it-f-label'>
-									<span className='it-f-label__text'>Подкатегория</span>
-									<select
-										className='it-f'
-										value={categoryModifierId}
-										onChange={e => setCategoryModifierId(e.target.value)}
-									>
-										<option value=''>— Без подкатегории —</option>
-										{modifiers.map(m => (
-											<option key={m.id} value={m.id}>
-												{m.name}
-											</option>
-										))}
-									</select>
-									<span className='it-f-label__hint'>
-										При выборе срок и приоритет подставятся из подкатегории
-									</span>
-								</label>
-							</div>
-						) : null}
-					</div>
-				</div>
-			</section>
-
-			<section className='it-ticket-section'>
-				<div className='it-ticket-section__head'>
-					<div className='it-ticket-section__num'>2</div>
-					<div>
-						<div className='it-ticket-section__title'>Описание проблемы</div>
-						<div className='it-ticket-section__subtitle'>
-							Чем подробнее вы опишете проблему, тем быстрее её решат
-						</div>
-					</div>
-				</div>
-				<div className='it-ticket-section__body'>
-					<label className='it-f-label'>
-						<span className='it-f-label__text'>
-							Заголовок <span className='it-f-required'>*</span>
-						</span>
-						<input
-							className={`it-f${fieldErrors.title ? ' it-f--error' : ''}`}
-							type='text'
-							value={title}
-							maxLength={150}
-							placeholder='Например: Не работает принтер в кабинете 305'
-							onChange={e => {
-								setTitle(e.target.value)
-								clearFieldError('title')
-							}}
-						/>
-						{fieldErrors.title ? <span className='it-f__err'>{fieldErrors.title}</span> : null}
-						{!fieldErrors.title ? <span className='it-ticket-counter'>{title.length} / 150</span> : null}
-					</label>
-
-					<label className='it-f-label'>
-						<span className='it-f-label__text'>Подробное описание</span>
-						<textarea
-							className='it-f it-f--area'
-							rows={6}
-							value={description}
-							maxLength={5000}
-							placeholder={
-								'Опишите, что произошло:\n• Что вы делали перед проблемой?\n• Что именно не работает?\n• Появляются ли ошибки?\n• Когда это началось?'
-							}
-							onChange={e => setDescription(e.target.value)}
-						/>
-					</label>
-
-					<div className='it-f-label'>
-						<span className='it-f-label__text'>Вложения</span>
-						<input className='it-f it-f--file' type='file' multiple onChange={onPickFiles} />
-						<div className='it-f-label__hint'>Можно вставить из буфера обмена (Ctrl+V)</div>
-						{seedWarning ? (
-							<div className='it-f-label__hint'>Вложения из сообщения: {seedWarning}.</div>
-						) : null}
-						{files.length > 0 ? (
-							<ul className='it-ticket-files'>
-								{files.map(f => (
-									<li key={`${f.name}:${f.size}`} className='it-ticket-file'>
-										<FileIcon size={14} />
-										<span className='it-ticket-file__name'>{f.name}</span>
-										<span className='it-ticket-file__size'>{formatBytes(f.size)}</span>
-										<button
-											type='button'
-											className='it-ticket-file__remove'
-											aria-label={`Удалить ${f.name}`}
-											onClick={() => setFiles(prev => prev.filter(x => x !== f))}
-										>
-											×
-										</button>
-									</li>
-								))}
-							</ul>
-						) : null}
-					</div>
-				</div>
-			</section>
+			<DescriptionSection
+				title={title}
+				description={description}
+				files={files}
+				seedWarning={seedWarning}
+				titleError={fieldErrors.title}
+				onTitleChange={value => {
+					setTitle(value)
+					clearFieldError('title')
+				}}
+				onDescriptionChange={setDescription}
+				onAddFiles={addFiles}
+				onRemoveFile={file => setFiles(prev => prev.filter(x => x !== file))}
+			/>
 
 			{isManager || isExecutor ? (
-				<section className='it-ticket-section'>
-					<div className='it-ticket-section__head'>
-						<div className='it-ticket-section__num'>3</div>
-						<div>
-							<div className='it-ticket-section__title'>
-								{isManager ? 'Расширенные настройки' : 'Заказчик и сроки'}
-							</div>
-							<div className='it-ticket-section__subtitle'>
-								{isManager
-									? 'Доступно менеджерам'
-									: 'Укажите заказчика и желаемый срок выполнения. При необходимости назначьте себя исполнителем'}
-							</div>
-						</div>
-					</div>
-					<div className='it-ticket-section__body'>
-						<div className='it-f-label'>
-							<span className='it-f-label__text'>
-								Приоритет <span className='it-f-required'>*</span>
-							</span>
-							<div className='it-f-priority' role='radiogroup' aria-label='Приоритет'>
-								{PRIORITY_ORDER.map(value => (
-									<button
-										key={value}
-										type='button'
-										role='radio'
-										aria-checked={priority === value}
-										className={`it-f-priority-card${priority === value ? ' it-f-priority-card--active' : ''}`}
-										onClick={() => {
-											setPriority(value)
-											clearFieldError('priority')
-										}}
-									>
-										<span className='it-f-priority-card__head'>
-											<span
-												className='it-f-priority-card__dot'
-												style={{ background: PRIORITY_COLORS[value] }}
-											/>
-											<span className='it-f-priority-card__label'>{PRIORITY_LABELS[value]}</span>
-										</span>
-										<span className='it-f-priority-card__desc'>{PRIORITY_DESCRIPTIONS[value]}</span>
-									</button>
-								))}
-							</div>
-							{fieldErrors.priority ? <span className='it-f__err'>{fieldErrors.priority}</span> : null}
-						</div>
-
-						<div className='it-ticket-grid'>
-							<div className='it-f-label'>
-								<label className='it-f-label' style={{ gap: 4 }}>
-									<span className='it-f-label__text'>Заказчик</span>
-									<select
-										className={`it-f${fieldErrors.ownerId ? ' it-f--error' : ''}`}
-										value={ownerId}
-										onChange={e => {
-											setOwnerId(e.target.value)
-											clearFieldError('ownerId')
-										}}
-									>
-										<option value=''>
-											{isManager ? '— Заявитель: создатель —' : '— Не указан —'}
-										</option>
-										{customers.map(u => (
-											<option key={u.id} value={u.id}>
-												{pluginUserLabel(u)}
-											</option>
-										))}
-									</select>
-									{fieldErrors.ownerId ? (
-										<span className='it-f__err'>{fieldErrors.ownerId}</span>
-									) : null}
-								</label>
-							</div>
-
-							<NotifierField
-								options={notifierOptions}
-								value={notifierIds}
-								onChange={setNotifierIds}
-								pluginUserLabel={pluginUserLabel}
-							/>
-
-							{isManager && ownerId ? (
-								<div style={{ gridColumn: '1 / -1', marginTop: '-16px' }}>
-									<label className='it-f-check' style={{ display: 'flex' }}>
-										<input
-											className='it-f-check__box'
-											type='checkbox'
-											checked={ownerMuted}
-											onChange={e => setOwnerMuted(e.target.checked)}
-										/>
-										<span className='it-f-check__text'>
-											Не уведомлять заказчика и скрыть заявку из его списка
-										</span>
-									</label>
-								</div>
-							) : null}
-
-							<label className='it-f-label'>
-								<span className='it-f-label__text'>Группа</span>
-								<select
-									className='it-f'
-									value={groupId}
-									onChange={e => setGroupId(e.target.value)}
-									disabled={!isManager}
-								>
-									<option value=''>— Авто (по категории) —</option>
-									{realmGroups.map(g => (
-										<option key={g.id} value={g.id}>
-											{g.name}
-										</option>
-									))}
-								</select>
-							</label>
-
-							<label className='it-f-label'>
-								<span className='it-f-label__text'>Исполнитель</span>
-								<select
-									className='it-f'
-									value={assigneeId}
-									onChange={e => setAssigneeId(e.target.value)}
-								>
-									<option value=''>— Авто (по группе) —</option>
-									{executors.map(u => (
-										<option key={u.id} value={u.id}>
-											{pluginUserLabel(u)}
-										</option>
-									))}
-								</select>
-								{executors.length === 0 ? (
-									<span className='it-f-label__hint'>Нет исполнителей</span>
-								) : null}
-								{isManager ? null : (
-									<label className='it-f-label it-f-check'>
-										<input
-											className='it-f-check__box'
-											type='checkbox'
-											checked={assigneeId === context.user.id}
-											onChange={e => setAssigneeId(e.target.checked ? context.user.id : '')}
-										/>
-										<span className='it-f-check__text'>Назначить меня исполнителем</span>
-									</label>
-								)}
-							</label>
-
-							<div style={{ gridColumn: '1 / -1' }}>
-								<label className='it-f-label'>
-									<span className='it-f-label__text'>Срок выполнения</span>
-									<input
-										className='it-f'
-										type='datetime-local'
-										value={dueDate}
-										onChange={e => setDueDate(e.target.value)}
-									/>
-								</label>
-							</div>
-						</div>
-					</div>
-				</section>
+				<AdvancedSection
+					isManager={isManager}
+					currentUserId={context.user.id}
+					customers={customers}
+					executors={executors}
+					groups={realmGroups}
+					notifierOptions={notifierOptions}
+					values={{priority, ownerId, ownerMuted, groupId, assigneeId, dueDate, notifierIds}}
+					errors={fieldErrors}
+					onChange={patchAdvanced}
+					onClearError={clearFieldError}
+				/>
 			) : null}
 
 			{!isManager && !isExecutor ? (
-				<section className='it-ticket-section'>
-					<div className='it-ticket-section__head'>
-						<div className='it-ticket-section__num'>3</div>
-						<div>
-							<div className='it-ticket-section__title'>Уведомлять дополнительно</div>
-							<div className='it-ticket-section__subtitle'>
-								Кому еще сообщать о создании, смене статуса и комментариях. Ответственные по заявке
-								получат эти уведомления автоматически.
-							</div>
-						</div>
-					</div>
-					<div className='it-ticket-section__body'>
-						<NotifierField
-							options={notifierOptions}
-							value={notifierIds}
-							onChange={setNotifierIds}
-							pluginUserLabel={pluginUserLabel}
-							label={null}
-						/>
-					</div>
-				</section>
+				<NotifierSection options={notifierOptions} value={notifierIds} onChange={setNotifierIds} />
 			) : null}
 
 			{error ? <div className='it-ticket-error'>{error}</div> : null}
@@ -891,31 +404,13 @@ export default function CreateTab({ scope, context, initialSeed, onCreated, onOp
 			</div>
 
 			{confirmingClear ? (
-				<div className='it-confirm' onClick={() => setConfirmingClear(false)}>
-					<div className='it-confirm__box' onClick={e => e.stopPropagation()}>
-						<div className='it-confirm__title'>Очистить черновик?</div>
-						<div className='it-confirm__text'>Заполненные данные и вложения будут потеряны.</div>
-						<div className='it-confirm__actions'>
-							<button
-								type='button'
-								className='it-btn it-btn--sm'
-								onClick={() => setConfirmingClear(false)}
-							>
-								Нет
-							</button>
-							<button
-								type='button'
-								className='it-btn it-btn--sm it-btn--danger it-btn--solid'
-								onClick={() => {
-									setConfirmingClear(false)
-									reset()
-								}}
-							>
-								Очистить
-							</button>
-						</div>
-					</div>
-				</div>
+				<ClearConfirmDialog
+					onCancel={() => setConfirmingClear(false)}
+					onConfirm={() => {
+						setConfirmingClear(false)
+						reset()
+					}}
+				/>
 			) : null}
 		</form>
 	)

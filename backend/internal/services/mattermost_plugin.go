@@ -597,6 +597,19 @@ func (s *MattermostService) pluginRealmData(ctx context.Context, realmID uuid.UU
 	return realm.Name, categories, sites, groupShorts, nil
 }
 
+// PluginPreviewModifier отдаёт форме создания тот же выбор подкатегории, который
+// TicketService.Create сделает при сохранении. Реалм берётся из scope плагина,
+// а не из тела запроса: client не может подсунуть чужой реалм.
+func (s *MattermostService) PluginPreviewModifier(ctx context.Context, scope models.PluginScope, dto *models.ModifierPreviewDTO) (*models.CategoryModifierShort, error) {
+	settings, err := s.resolvePluginSettings(ctx, scope)
+	if err != nil {
+		return nil, err
+	}
+	preview := *dto
+	preview.RealmID = settings.RealmID
+	return s.tickets.PreviewModifierByKeywords(ctx, &preview)
+}
+
 // PluginCreateTicket создаёт заявку из формы плагина (аналог
 // HandleDialogSubmission) и прикрепляет загруженные файлы. Возвращает результат
 // с ID, номером и ссылкой на страницу заявки.

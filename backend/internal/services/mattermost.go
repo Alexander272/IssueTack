@@ -147,6 +147,9 @@ type Mattermost interface {
 	// PluginDM отдаёт личный диалог пользователя с ботом реалма — по нему иконка
 	// в App Bar открывает модалку из любого канала.
 	PluginDM(ctx context.Context, mmUserID string) (*models.PluginDMResult, error)
+	// PluginPreviewModifier — тот же подбор по ключевым словам, что и при
+	// создании заявки, но без записи: реалм определяется по scope плагина.
+	PluginPreviewModifier(ctx context.Context, scope models.PluginScope, dto *models.ModifierPreviewDTO) (*models.CategoryModifierShort, error)
 	PluginCreateTicket(ctx context.Context, input *models.PluginCreateTicketInput) (*models.PluginCreateTicketResult, error)
 	PluginListMine(ctx context.Context, query *models.PluginTicketListQuery) (*models.PluginTicketListResult, error)
 	PluginGetTicket(ctx context.Context, scope models.PluginScope, ticketID string) (*models.PluginTicketDetail, error)

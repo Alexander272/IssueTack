@@ -1393,3 +1393,47 @@ func TestPluginDM_WithoutMostClient(t *testing.T) {
 	_, err := svc.PluginDM(context.Background(), "mm1")
 	assert.ErrorIs(t, err, models.ErrChannelNotBound)
 }
+
+// TestPluginPreviewModifier_RealmFromScope проверяет, что предпросмотр подкатегории
+// идёт в реалме канала, а не в реалме из тела: клиент не должен влиять на подбор.
+func TestPluginPreviewModifier_RealmFromScope(t *testing.T) {
+	realmID, categoryID := uuid.New(), uuid.New()
+	spoofedRealm := uuid.New()
+	repo, _, _, tickets := pluginMocks()
+	repo.On("GetByChannelID", mock.Anything, "ch1").Return(&models.RealmMattermost{
+		RealmID: realmID, ChannelID: "ch1", IsActive: true,
+	}, nil)
+
+	want := &models.CategoryModifierShort{ID: uuid.New(), Name: "Ошибки"}
+	tickets.On("PreviewModifierByKeywords", mock.Anything, mock.MatchedBy(func(dto *models.ModifierPreviewDTO) bool {
+		return dto.RealmID == realmID &&
+			dto.CategoryID == categoryID &&
+			dto.Title == "лагает" &&
+			dto.Description == " Приложение лагает "
+	})).Return(want, nil).Once()
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo, Tickets: tickets})
+
+	dto := &models.ModifierPreviewDTO{
+		RealmID: spoofedRealm, CategoryID: categoryID,
+		Title: "лагает", Description: " Приложение лагает ",
+	}
+	got, err := svc.PluginPreviewModifier(context.Background(), pluginScopeFixture("ch1"), dto)
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+	assert.Equal(t, spoofedRealm, dto.RealmID, "сервис не мутирует DTO вызывающего")
+	tickets.AssertExpectations(t)
+}
+
+func TestPluginPreviewModifier_UnboundChannel(t *testing.T) {
+	repo, _, _, tickets := pluginMocks()
+	repo.On("GetByChannelID", mock.Anything, "ch1").Return(nil, errors.New("no rows"))
+
+	svc := NewMattermostService(&MattermostDeps{Repo: repo, Tickets: tickets})
+
+	got, err := svc.PluginPreviewModifier(context.Background(), pluginScopeFixture("ch1"),
+		&models.ModifierPreviewDTO{CategoryID: uuid.New(), Title: "лагает"})
+	assert.ErrorIs(t, err, models.ErrChannelNotBound)
+	assert.Nil(t, got)
+	tickets.AssertNotCalled(t, "PreviewModifierByKeywords", mock.Anything, mock.Anything)
+}

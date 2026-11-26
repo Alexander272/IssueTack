@@ -42,6 +42,13 @@ export interface PluginCategoryModifier {
     isActive: boolean;
 }
 
+// PluginModifierShort — ответ предпросмотра подкатегории: сервер отдаёт только
+// id и имя, чтобы подсказка не тащила параметры, которые ещё не применены.
+export interface PluginModifierShort {
+    id: string;
+    name: string;
+}
+
 export interface PluginSite {
     id: string;
     name: string;
