@@ -27,7 +27,8 @@ func TestBuildActDocx(t *testing.T) {
 		Status:    models.ActStatusFormed,
 		IssuedAt:  time.Date(2026, time.October, 15, 12, 30, 0, 0, time.UTC),
 		Comment:   comment,
-		Location:  nil,
+		LocationID:   nil,
+		LocationName: "",
 		Content:   []byte("[]"),
 		CreatedAt: time.Now(),
 	}

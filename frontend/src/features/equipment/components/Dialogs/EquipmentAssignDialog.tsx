@@ -9,7 +9,6 @@ import {
 	DialogContent,
 	DialogTitle,
 	IconButton,
-	MenuItem,
 	Stack,
 	TextField,
 	Typography,
@@ -25,7 +24,6 @@ import dayjs from 'dayjs'
 
 import type { IFetchError } from '@/app/types/error'
 import type { IAssignEquipmentDTO, IEquipment } from '../../types/equipment'
-import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
 import { useGetRealmUsersQuery } from '@/features/user/usersApiSlice'
 import { useAssignEquipmentMutation } from '../../equipmentApiSlice'
 import { DateTextField } from '@/components/DatePicker/DatePicker'
@@ -33,6 +31,7 @@ import { resolveTypeIcon } from '../../typeIcons'
 import { EquipmentStatusBadge } from '../EquipmentStatusBadge'
 import { Field } from './UnitForm/Field'
 import { inputProps } from './UnitForm/consts'
+import { PlaceSelect } from '../PlaceSelect'
 
 type Props = {
 	open: boolean
@@ -51,7 +50,7 @@ type AssignForm = {
 	// holderName пуст при выборе из справочника, а акту нужна подпись.
 	recipientName: string
 	siteId: string | null
-	location: string
+	locationId: string | null
 	comment: string
 	createAct: boolean
 	assignedAt: string | null
@@ -85,13 +84,11 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 	// На телефоне диалог выдачи — во весь экран (как форма создания заявки).
 	const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
 	const [assign, { isLoading }] = useAssignEquipmentMutation()
-	const { data: sitesData } = useGetAllSitesQuery()
 	// Получателем может быть любой пользователь реалма, не только участник
 	// групп: оборудование выдают и заказчикам, и сотрудникам без заявок,
 	// поэтому справочник запрашивается без фильтра членства.
 	const { data: usersData } = useGetRealmUsersQuery('all')
 
-	const sites = sitesData?.data ?? []
 	const users = usersData?.data ?? []
 
 	// Место выдаётся тем же, что у единицы: выдача — про держателя, а не про
@@ -102,7 +99,7 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 			holderName: '',
 			recipientName: '',
 			siteId: unit.siteId ?? null,
-			location: unit.location ?? '',
+			locationId: unit.locationId ?? null,
 			comment: '',
 			createAct: true,
 			assignedAt: dayjs().toISOString(),
@@ -132,7 +129,7 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 			holderName: form.holderName || null,
 			recipientName: form.recipientName || form.holderName || null,
 			siteId: form.siteId || null,
-			location: form.location || null,
+			locationId: form.locationId || null,
 			comment: form.comment,
 			skipAct: !form.createAct,
 			assignedAt: form.assignedAt ?? undefined,
@@ -289,51 +286,34 @@ export const EquipmentAssignDialog: FC<Props> = ({ open, onClose, unit }) => {
 							/>
 						</Field>
 
-						{/* Площадка и расположение заполнены текущим местом единицы: пустые
-						    поля в выдаче означают «единица не переезжает». */}
+						{/* Место заполнено текущим местом единицы: пустое значение в
+						    выдаче означало бы «единица не переезжает». */}
 						<Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-							<Field label='Площадка' required>
+							<Field label='Место' required>
 								<Controller
 									control={control}
 									name='siteId'
-									rules={{ required: 'Укажите площадку' }}
-									render={({ field, fieldState }) => (
-										<TextField
-											{...field}
-											select
-											{...inputProps}
-											value={field.value ?? ''}
-											// Заглушка: renderValue для пустого значения не
-											// вызывается без displayEmpty — нужны оба.
-											slotProps={{
-												select: {
-													displayEmpty: true,
-													renderValue: value =>
-														value === '' || value == null
-															? '— Выберите площадку —'
-															: (sites.find(s => s.id === value)?.name ?? ''),
-												},
-											}}
-											error={Boolean(fieldState.error)}
-											helperText={fieldState.error?.message}
-										>
-											<MenuItem value=''>— Выберите площадку —</MenuItem>
-											{sites.map(s => (
-												<MenuItem key={s.id} value={s.id}>
-													{s.name}
-												</MenuItem>
-											))}
-										</TextField>
-									)}
-								/>
-							</Field>
-
-							<Field label='Расположение'>
-								<Controller
-									control={control}
-									name='location'
-									render={({ field }) => (
-										<TextField {...field} {...inputProps} placeholder='Каб. 301' />
+									rules={{ required: 'Укажите площадку или локацию' }}
+									render={({ field: siteField, fieldState }) => (
+										<Controller
+											control={control}
+											name='locationId'
+											render={({ field: locationField }) => (
+												<PlaceSelect
+													hideLabel
+													value={{
+														siteId: siteField.value ?? null,
+														locationId: locationField.value ?? null,
+													}}
+													onChange={place => {
+														siteField.onChange(place.siteId)
+														locationField.onChange(place.locationId)
+													}}
+													error={Boolean(fieldState.error)}
+													helperText={fieldState.error?.message}
+												/>
+											)}
+										/>
 									)}
 								/>
 							</Field>

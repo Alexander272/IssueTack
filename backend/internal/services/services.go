@@ -123,12 +123,14 @@ func NewServices(deps *Deps) *Services {
 	categoryModifiers := NewCategoryModifierService(deps.Repo.CategoryModifiers, deps.Repo.Categories)
 	categories := NewCategoryService(deps.Repo.Categories, deps.Repo.Tickets, deps.Repo.CategoryModifiers, categoryVisibility)
 	categoryGroups := NewCategoryGroupService(deps.Repo.CategoryGroups, categoryVisibility)
-	sites := NewSiteService(deps.Repo.Sites)
+	sites := NewSiteService(deps.Repo.Sites, deps.Repo.SiteLocations)
 	equipment := NewEquipmentService(deps.Repo.Equipment, transaction, &deps.Conf.FileServer)
 	equipment.SetERPConfig(deps.Conf.Equipment)
+	equipment.SetLocations(deps.Repo.SiteLocations)
 	// Импорт оборудования: создаёт единицы через сервис оборудования, а
-	// разрешает площадки и получателей по справочникам.
+	// разрешает площадки, расположения и получателей по справочникам.
 	equipmentImport := NewEquipmentImportService(equipment, deps.Repo.Sites, deps.Repo.Users)
+	equipmentImport.SetLocations(deps.Repo.SiteLocations)
 	logs := NewActivityLogService(deps.Repo.ActivityLog, transaction)
 	subtasks := NewSubtaskService(deps.Repo.Subtasks, logs, users, access)
 	statistics := NewStatisticsService(deps.Repo.Statistics, groups, access)

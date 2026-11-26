@@ -33,7 +33,7 @@ export const equipmentRowKind = (node: EquipmentRowNode, isInstalled: boolean, d
 export const equipmentRowMeta = (node: EquipmentRowNode): EquipmentRowMeta => {
 	const childCount = node.childCount ?? 0
 	const holder = node.holderFullName || node.holderName || ''
-	const location = node.location || node.siteName || ''
+	const location = node.locationName || node.siteName || ''
 	const isInstalled = Boolean(node.parentId)
 
 	const parts = [`Инв. №${node.inventoryNumber ?? '—'}`]

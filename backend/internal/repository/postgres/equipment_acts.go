@@ -15,13 +15,13 @@ import (
 // actColumns — колонки акта для SELECT и порядок сканирования. Список один на
 // список и карточку: два литерала разъезжались бы при каждой новой колонке.
 const actColumns = `id, realm_id, number, status, kit_equipment_id, recipient_user_id, recipient_name, site_id,
-	location, issued_by, issued_at, content, comment, signed_file_name, signed_file_path, signed_mime_type,
+	location_id, location_name, issued_by, issued_at, content, comment, signed_file_name, signed_file_path, signed_mime_type,
 	signed_file_size, signed_at, signed_by, created_at`
 
 func scanAct(row rowScanner) (*models.EquipmentAct, error) {
 	a := &models.EquipmentAct{}
 	if err := row.Scan(&a.ID, &a.RealmID, &a.Number, &a.Status, &a.KitEquipmentID, &a.RecipientUserID, &a.RecipientName,
-		&a.SiteID, &a.Location, &a.IssuedBy, &a.IssuedAt, &a.Content, &a.Comment, &a.SignedFileName, &a.SignedFilePath,
+		&a.SiteID, &a.LocationID, &a.LocationName, &a.IssuedBy, &a.IssuedAt, &a.Content, &a.Comment, &a.SignedFileName, &a.SignedFilePath,
 		&a.SignedMimeType, &a.SignedFileSize, &a.SignedAt, &a.SignedBy, &a.CreatedAt); err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func (r *EquipmentRepo) GetActs(ctx context.Context, filter *models.EquipmentAct
 	for rows.Next() {
 		item := &models.EquipmentAct{}
 		if err := rows.Scan(&item.ID, &item.RealmID, &item.Number, &item.Status, &item.KitEquipmentID, &item.RecipientUserID,
-			&item.RecipientName, &item.SiteID, &item.Location, &item.IssuedBy, &item.IssuedAt, &item.Content, &item.Comment,
+			&item.RecipientName, &item.SiteID, &item.LocationID, &item.LocationName, &item.IssuedBy, &item.IssuedAt, &item.Content, &item.Comment,
 			&item.SignedFileName, &item.SignedFilePath, &item.SignedMimeType, &item.SignedFileSize, &item.SignedAt,
 			&item.SignedBy, &item.CreatedAt, &total); err != nil {
 			return nil, 0, MapError(fmt.Errorf("scan row error: %w", err))
@@ -117,11 +117,11 @@ func (r *EquipmentRepo) CreateAct(ctx context.Context, tx Tx, a *models.Equipmen
 	if len(content) == 0 {
 		content = []byte("[]")
 	}
-	query := fmt.Sprintf(`INSERT INTO %s (id, realm_id, number, status, kit_equipment_id, recipient_user_id, recipient_name, site_id, location, issued_by, issued_at, content, comment)
-		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8, NULLIF($9, ''), $10, $11, $12::jsonb, $13)`, Tables.EquipmentActs)
+	query := fmt.Sprintf(`INSERT INTO %s (id, realm_id, number, status, kit_equipment_id, recipient_user_id, recipient_name, site_id, location_id, location_name, issued_by, issued_at, content, comment)
+		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8, $9, NULLIF($10, ''), $11, $12, $13::jsonb, $14)`, Tables.EquipmentActs)
 
 	_, err := r.getExec(tx).Exec(ctx, query, a.ID, a.RealmID, a.Number, a.Status, a.KitEquipmentID, a.RecipientUserID,
-		a.RecipientName, a.SiteID, a.Location, a.IssuedBy, a.IssuedAt, content, a.Comment)
+		a.RecipientName, a.SiteID, a.LocationID, a.LocationName, a.IssuedBy, a.IssuedAt, content, a.Comment)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}

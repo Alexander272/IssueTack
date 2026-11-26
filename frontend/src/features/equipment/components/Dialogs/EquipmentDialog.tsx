@@ -9,7 +9,6 @@ import {
 	DialogTitle,
 	Divider,
 	IconButton,
-	MenuItem,
 	Stack,
 	TextField,
 	Typography,
@@ -33,13 +32,13 @@ import {
 	useGetAllEquipmentTypesQuery,
 	useUpdateEquipmentMutation,
 } from '../../equipmentApiSlice'
-import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
 import { Field } from './UnitForm/Field'
 import { inputProps } from './UnitForm/consts'
 import { SpecsEditor } from './UnitForm/SpecsEditor'
 import { pairsToSpecs, specsToPairs, type ISpecPair } from './UnitForm/specs'
 import { PermRules } from '@/features/access/constants/permissions'
 import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
+import { PlaceSelect } from '../PlaceSelect'
 
 type Props = {
 	open: boolean
@@ -71,7 +70,7 @@ const toDefault = (unit?: IEquipment | null): IEquipmentDTO => ({
 	siteId: unit?.siteId ?? null,
 	holderUserId: unit?.holderUserId ?? null,
 	holderName: unit?.holderName ?? '',
-	location: unit?.location ?? '',
+	locationId: unit?.locationId ?? null,
 	purchaseDate: unit?.purchaseDate ?? '',
 	warrantyUntil: unit?.warrantyUntil ?? '',
 	notes: unit?.notes ?? '',
@@ -111,10 +110,8 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 	const isEdit = Boolean(unit?.id)
 
 	const { data: typesData } = useGetAllEquipmentTypesQuery()
-	const { data: sitesData } = useGetAllSitesQuery()
 	const { data: shopsData } = useGetAllEquipmentShopsQuery()
 	const types = typesData?.data ?? []
-	const sites = sitesData?.data ?? []
 	// Подсказки для поля «Магазин»: справочник реалма, а не уникальные значения
 	// из единиц — список переживает удаление единицы и не «загрязняется».
 	const shops = (shopsData?.data ?? []).map(s => s.name)
@@ -150,7 +147,7 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 			holderName: form.holderName || null,
 			shop: form.shop || null,
 			orderNumber: form.orderNumber || null,
-			location: form.location || null,
+			locationId: form.locationId || null,
 			purchaseDate: form.purchaseDate || null,
 			warrantyUntil: form.warrantyUntil || null,
 			parentId: form.parentId || null,
@@ -310,60 +307,40 @@ export const EquipmentDialog: FC<Props> = ({ open, onClose, unit, onDeleted }) =
 
 						<Divider />
 
-						{/* Расположение: площадка (обязательна при создании) и локация */}
+						{/* Место: площадка целиком или локация внутри неё — одним контролом */}
 						<Box>
 							<SectionLabel>Расположение</SectionLabel>
-							<Box sx={grid}>
-								{/* Площадка обязательна при создании: без держателя и локации
-								    CHECK «держатель ИЛИ место» не пропустит пустую единицу. На
-								    правке оставляем необязательным — у места может быть держатель. */}
-								<Field label='Площадка' required={!isEdit}>
-									<Controller
-										control={control}
-										name='siteId'
-										rules={isEdit ? undefined : { required: 'Укажите площадку' }}
-										render={({ field, fieldState }) => (
-											<TextField
-												{...field}
-												select
-												{...inputProps}
-												value={field.value ?? ''}
-												// Пустое значение не показывает пункт-заглушку само
-												// (renderValue для пустого не вызывается без
-												// displayEmpty) — нужны оба.
-												slotProps={{
-													select: {
-														displayEmpty: true,
-														renderValue: value =>
-															value === '' || value == null
-																? '— Выберите площадку —'
-																: (sites.find(s => s.id === value)?.name ?? ''),
-													},
-												}}
-												error={Boolean(fieldState.error)}
-												helperText={fieldState.error?.message}
-											>
-												<MenuItem value=''>— Выберите площадку —</MenuItem>
-												{sites.map(s => (
-													<MenuItem key={s.id} value={s.id}>
-														{s.name}
-													</MenuItem>
-												))}
-											</TextField>
-										)}
-									/>
-								</Field>
-
-								<Field label='Расположение'>
-									<Controller
-										control={control}
-										name='location'
-										render={({ field }) => (
-											<TextField {...field} {...inputProps} placeholder='Склад, стеллаж А-3' />
-										)}
-									/>
-								</Field>
-							</Box>
+							{/* Площадка обязательна при создании: без держателя и локации
+							    CHECK «держатель ИЛИ место» не пропустит пустую единицу. На
+							    правке оставляем необязательным — у места может быть держатель. */}
+							<Field label='Место' required={!isEdit}>
+								<Controller
+									control={control}
+									name='siteId'
+									rules={isEdit ? undefined : { required: 'Укажите площадку или локацию' }}
+									render={({ field: siteField, fieldState }) => (
+										<Controller
+											control={control}
+											name='locationId'
+											render={({ field: locationField }) => (
+												<PlaceSelect
+													hideLabel
+													value={{
+														siteId: siteField.value ?? null,
+														locationId: locationField.value ?? null,
+													}}
+													onChange={place => {
+														siteField.onChange(place.siteId)
+														locationField.onChange(place.locationId)
+													}}
+													error={Boolean(fieldState.error)}
+													helperText={fieldState.error?.message}
+												/>
+											)}
+										/>
+									)}
+								/>
+							</Field>
 						</Box>
 
 						<Divider />

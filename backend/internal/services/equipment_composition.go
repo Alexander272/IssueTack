@@ -229,7 +229,7 @@ func (s *EquipmentService) setComponentParent(ctx context.Context, tx repository
 		SiteID:          item.SiteID,
 		HolderUserID:    item.HolderUserID,
 		HolderName:      item.HolderName,
-		Location:        item.Location,
+		LocationID:      item.LocationID,
 		PurchaseDate:    item.PurchaseDate,
 		WarrantyUntil:   item.WarrantyUntil,
 		Notes:           item.Notes,

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -34,6 +35,10 @@ type EquipmentService struct {
 	// Приходит из сервиса периодических задач через тот же поздний сеттер, что и
 	// TicketCreator. nil — автостарт отключён.
 	periodicStarter PeriodicTaskStarter
+	// locations — справочник расположений площадки. Проверяет, что locationId
+	// существует и принадлежит выбранной площадке, и резолвит подпись для снимка.
+	// Приходит сеттером: конструктор остаётся удобным для тестов.
+	locations repository.SiteLocations
 	// operationTasks — правила автоматических задач после выдачи/возврата.
 	// Подключается сеттером после сборки TicketService. nil — работает только
 	// старый fallback из конфигурации (erpConf).
@@ -93,6 +98,34 @@ func (s *EquipmentService) SetPeriodicStarter(ps PeriodicTaskStarter) {
 // оборудованием. Как и TicketCreator, приходит после сборки сервиса тикетов.
 func (s *EquipmentService) SetOperationTasks(r OperationTaskRunner) {
 	s.operationTasks = r
+}
+
+// SetLocations подключает справочник расположений площадок. Отдельный сеттер,
+// как и у других зависимостей оборудования: конструктор остаётся удобным для
+// тестов, которым справочник не нужен.
+func (s *EquipmentService) SetLocations(locations repository.SiteLocations) {
+	s.locations = locations
+}
+
+// resolveLocation проверяет, что расположение существует и принадлежит выбранной
+// площадке, и возвращает подпись для снимка журнала. Пустой locationId — «не задано»,
+// проверка не нужна. Ошибка справочника — серверная, а не доменная, чтобы её не
+// подменяли на «неверный ввод» при сбое БД.
+func (s *EquipmentService) resolveLocation(ctx context.Context, siteID, locationID *uuid.UUID) (string, error) {
+	if locationID == nil {
+		return "", nil
+	}
+	if s.locations == nil || siteID == nil {
+		return "", models.ErrInvalidInput
+	}
+	name, err := s.locations.GetName(ctx, *siteID, *locationID)
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			return "", models.ErrInvalidInput
+		}
+		return "", fmt.Errorf("failed to resolve site location. error: %w", err)
+	}
+	return name, nil
 }
 
 // Equipment — интерфейс работы с оборудованием.
@@ -266,6 +299,12 @@ func (s *EquipmentService) prepareCreate(ctx context.Context, dto *models.Create
 	normalizeEquipmentDTO(&eq)
 	deriveHolderStatus(&eq)
 
+	// Расположение — ссылка на справочник площадки: existence и принадлежность
+	// проверяет сервис, БД проверяет только существование FK.
+	if _, err := s.resolveLocation(ctx, eq.SiteID, eq.LocationID); err != nil {
+		return nil, err
+	}
+
 	// У комплекта типа нет: присланный игнорируем. Единице тип обязателен —
 	// колонка nullable только потому, что одно поле обслуживает оба случая.
 	if eq.IsKit {
@@ -360,6 +399,12 @@ func (s *EquipmentService) prepareUpdate(ctx context.Context, dto *models.Equipm
 
 	eq := *dto
 	normalizeEquipmentDTO(&eq)
+
+	// Новое расположение проверяем относительно новой площадки из формы — старая
+	// площадка здесь не авторитетна.
+	if _, err := s.resolveLocation(ctx, eq.SiteID, eq.LocationID); err != nil {
+		return nil, nil, err
+	}
 
 	// Состояние до правки читаем раньше держателя-статуса: сохранённый ручной
 	// статус важнее присланного из тела.
@@ -502,7 +547,6 @@ func normalizeEquipmentDTO(dto *models.EquipmentDTO) {
 	dto.SerialNumber = emptyToNil(dto.SerialNumber)
 	dto.InventoryNumber = emptyToNil(dto.InventoryNumber)
 	dto.HolderName = emptyToNil(dto.HolderName)
-	dto.Location = emptyToNil(dto.Location)
 }
 
 // inventorySeries выбирает серию автоинвентарного номера: комплект нумеруется
@@ -546,7 +590,7 @@ func (s *EquipmentService) nextInventoryNumber(ctx context.Context, tx repositor
 // Эти два статуса — не самостоятельное состояние единицы, а следствие выдачи:
 // Assign/Unassign проставляют их вместе с держателем (SetHolderAndStatus). Форма
 // же присылает статус и держателя независимо, и без вывода получалась единица
-// «в эксплуатации» без держателя — блок «Держатель» показывал на неё «На складе»,
+// «в эксплуатации» без держателя — блок «Закреплено за» показывал на неё «На складе»,
 // хотя единица никому не выдана. Обратный случай (склад при заполненном
 // держателе) так же невозможен: выданная единица уже не лежит на складе.
 //

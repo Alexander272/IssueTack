@@ -81,7 +81,7 @@ export const EQUIPMENT_STATUS_OPTIONS = Object.entries(EQUIPMENT_STATUS_MAP)
 // эксплуатации» ставит выдача, «на складе» — возврат (бэкенд делает это в
 // Assign/Unassign и повторно в Create/Update). Поэтому их нет в селекте статуса
 // формы, а в шапке карточки они не дублируются чипом — про «на складе»/«в
-// эксплуатации» и так говорит блок «Держатель» ниже.
+// эксплуатации» и так говорит блок «Закреплено за» ниже.
 export const HOLDER_DERIVED_STATUSES: EquipmentStatus[] = ['in_stock', 'in_use']
 
 export interface IEquipment {
@@ -114,7 +114,10 @@ export interface IEquipment {
 	// returnDueAt — срок возврата текущей (открытой) выдачи. null — держателя нет
 	// или срок не задавали. По нему карточка рисует «просрочен возврат».
 	returnDueAt: string | null
-	location: string | null
+	// locationId — ссылка на расположение площадки; locationName — подпись,
+	// резолвится бэкендом (как siteName), поэтому справочник клиенту не нужен.
+	locationId: string | null
+	locationName: string
 	purchaseDate: string | null
 	warrantyUntil: string | null
 	notes: string
@@ -144,7 +147,7 @@ export interface IEquipmentDTO {
 	siteId?: string | null
 	holderUserId?: string | null
 	holderName?: string | null
-	location?: string | null
+	locationId?: string | null
 	purchaseDate?: string | null
 	warrantyUntil?: string | null
 	notes?: string
@@ -161,6 +164,8 @@ export interface IEquipmentFilter {
 	status?: EquipmentStatus
 	isKit?: boolean
 	siteId?: string
+	// locationId — фильтр по локации площадки (вместе с siteId из селектора «Место»).
+	locationId?: string
 	holderId?: string
 	serial?: string
 	inventory?: string
@@ -223,7 +228,8 @@ export interface IEquipmentAssignment {
 	userId: string | null
 	holderName: string | null
 	siteId: string | null
-	location: string | null
+	locationId: string | null
+	locationName: string
 	assignedAt: string
 	unassignedAt: string | null
 	// returnDueAt — ожидаемый срок возврата (null = срок не задавали). Реквизит
@@ -315,7 +321,7 @@ export interface IAssignEquipmentDTO {
 	// серверу не нужно резолвить имя отдельной выборкой.
 	recipientName?: string | null
 	siteId?: string | null
-	location?: string | null
+	locationId?: string | null
 	comment?: string
 	force?: boolean
 	skipAct?: boolean
@@ -329,7 +335,7 @@ export interface IAssignEquipmentDTO {
 
 export interface IUnassignEquipmentDTO {
 	siteId?: string | null
-	location?: string | null
+	locationId?: string | null
 	comment?: string
 }
 
@@ -373,7 +379,8 @@ export interface IEquipmentAct {
 	recipientUserId: string | null
 	recipientName: string | null
 	siteId: string | null
-	location: string | null
+	locationId: string | null
+	locationName: string
 	issuedBy: string | null
 	issuedAt: string
 	content: IActPosition[]
@@ -393,7 +400,7 @@ export interface IEquipmentActDTO {
 	recipientUserId?: string | null
 	recipientName?: string | null
 	siteId?: string | null
-	location?: string | null
+	locationId?: string | null
 	comment?: string
 }
 

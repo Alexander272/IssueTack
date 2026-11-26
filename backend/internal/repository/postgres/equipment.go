@@ -55,8 +55,8 @@ type Equipment interface {
 	// Update перезаписывает единицу и возвращает её новое состояние.
 	Update(ctx context.Context, tx Tx, dto *models.EquipmentDTO) (*models.Equipment, error)
 	Delete(ctx context.Context, dto *models.DelEquipmentDTO) error
-	// SetHolderAndStatus обновляет денормализованного держателя/локацию и статус единицы.
-	SetHolderAndStatus(ctx context.Context, tx Tx, id uuid.UUID, userID *uuid.UUID, holderName *string, siteID *uuid.UUID, location *string, status models.EquipmentStatus) error
+	// SetHolderAndStatus обновляет держателя, место и статус единицы.
+	SetHolderAndStatus(ctx context.Context, tx Tx, dto *models.EquipmentHolderDTO) error
 	// SetStatus меняет только статус единицы.
 	SetStatus(ctx context.Context, tx Tx, realmID, id uuid.UUID, status models.EquipmentStatus) error
 	// GetUserFullName и GetSiteName резолвят подписи ссылок для снимка события
@@ -68,7 +68,7 @@ type Equipment interface {
 	GetOpenAssignment(ctx context.Context, equipmentID uuid.UUID) (*models.EquipmentAssignment, error)
 	// GetLastStoredPlace возвращает место последнего периода без держателя — «дом»
 	// единицы, куда её ставит возврат.
-	GetLastStoredPlace(ctx context.Context, equipmentID uuid.UUID) (*uuid.UUID, *string, error)
+	GetLastStoredPlace(ctx context.Context, equipmentID uuid.UUID) (*uuid.UUID, *uuid.UUID, error)
 	GetAssignmentHistory(ctx context.Context, realmID, equipmentID uuid.UUID) ([]*models.EquipmentAssignment, error)
 	// GetDueReturns возвращает открытые выдачи со сроком возврата не позже now:
 	// по ним cron шлёт напоминание тому, кто выдал.
@@ -179,7 +179,8 @@ func equipmentSelectBase() string {
 			(SELECT a.return_due_at FROM %s a
 				WHERE a.equipment_id = e.id AND a.unassigned_at IS NULL
 				ORDER BY a.assigned_at DESC LIMIT 1) AS return_due_at,
-			e.location, e.purchase_date::text, e.warranty_until::text, e.notes,
+			e.location_id, COALESCE(sl.name, '') AS location_name,
+			e.purchase_date::text, e.warranty_until::text, e.notes,
 			e.is_kit, e.kit_id, e.created_by, e.created_at, e.updated_at,
 			COALESCE(
 				(SELECT p.name FROM %s p WHERE p.id = e.parent_id),
@@ -189,10 +190,11 @@ func equipmentSelectBase() string {
 		FROM %s e
 		LEFT JOIN %s et ON et.id = e.type_id
 		LEFT JOIN %s s ON s.id = e.site_id
+		LEFT JOIN %s sl ON sl.id = e.location_id
 		LEFT JOIN %s u ON u.id = e.holder_user_id`,
 		fullNameSQL("u"),
 		Tables.EquipmentAssignments,
-		Tables.Equipment, Tables.Equipment, Tables.Equipment, Tables.EquipmentTypes, Tables.Sites, Tables.Users)
+		Tables.Equipment, Tables.Equipment, Tables.Equipment, Tables.EquipmentTypes, Tables.Sites, Tables.SiteLocations, Tables.Users)
 }
 
 // equipmentRow — строка выборки единицы: сама единица и тотал страницы
@@ -262,6 +264,7 @@ func (r *EquipmentRepo) Get(ctx context.Context, filter *models.EquipmentFilter)
 	eq(w, "e.status", filter.Status)
 	eq(w, "e.is_kit", filter.IsKit)
 	eq(w, "e.site_id", filter.SiteID)
+	eq(w, "e.location_id", filter.LocationID)
 	eq(w, "e.holder_user_id", filter.HolderID)
 
 	// Комплекты — логическая группировка, не физическая единица. На них нельзя
@@ -390,14 +393,14 @@ func (r *EquipmentRepo) Create(ctx context.Context, tx Tx, dto *models.Equipment
 		typeID = dto.TypeID
 	}
 	query := fmt.Sprintf(`INSERT INTO %s (id, realm_id, type_id, name, vendor, model, serial_number, inventory_number,
-			specs, shop, order_number, status, parent_id, site_id, holder_user_id, holder_name, location, purchase_date, warranty_until, notes, created_by, is_kit)
-		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), $9::jsonb, NULLIF($10, ''), NULLIF($11, ''), $12, $13, $14, $15, NULLIF($16, ''), NULLIF($17, ''), $18::date, $19::date, $20, $21, $22)`,
+			specs, shop, order_number, status, parent_id, site_id, holder_user_id, holder_name, location_id, purchase_date, warranty_until, notes, created_by, is_kit)
+		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), NULLIF($8, ''), $9::jsonb, NULLIF($10, ''), NULLIF($11, ''), $12, $13, $14, $15, NULLIF($16, ''), $17, $18::date, $19::date, $20, $21, $22)`,
 		Tables.Equipment)
 
 	_, err := r.getExec(tx).Exec(ctx, query,
 		id, dto.RealmID, typeID, dto.Name, dto.Vendor, dto.Model,
 		dto.SerialNumber, dto.InventoryNumber, specs, dto.Shop, dto.OrderNumber, dto.Status, dto.ParentID, dto.SiteID,
-		dto.HolderUserID, dto.HolderName, dto.Location, dto.PurchaseDate, dto.WarrantyUntil,
+		dto.HolderUserID, dto.HolderName, dto.LocationID, dto.PurchaseDate, dto.WarrantyUntil,
 		dto.Notes, dto.CreatedBy, dto.IsKit)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
@@ -426,14 +429,14 @@ func (r *EquipmentRepo) Update(ctx context.Context, tx Tx, dto *models.Equipment
 		typeID = dto.TypeID
 	}
 	query := fmt.Sprintf(`UPDATE %s SET type_id=$2, name=$3, vendor=$4, model=$5, serial_number=$6, inventory_number=$7,
-			specs=$8::jsonb, shop=NULLIF($9, ''), order_number=NULLIF($10, ''), status=$11, parent_id=$12, site_id=$13, holder_user_id=$14, holder_name=$15, location=$16,
+			specs=$8::jsonb, shop=NULLIF($9, ''), order_number=NULLIF($10, ''), status=$11, parent_id=$12, site_id=$13, holder_user_id=$14, holder_name=$15, location_id=$16,
 			purchase_date=$17::date, warranty_until=$18::date, notes=$19, updated_at=NOW()
 		WHERE id=$1 AND realm_id=$20`, Tables.Equipment)
 
 	res, err := r.getExec(tx).Exec(ctx, query,
 		dto.ID, typeID, dto.Name, dto.Vendor, dto.Model,
 		dto.SerialNumber, dto.InventoryNumber, specs, dto.Shop, dto.OrderNumber, dto.Status, dto.ParentID, dto.SiteID,
-		dto.HolderUserID, dto.HolderName, dto.Location, dto.PurchaseDate, dto.WarrantyUntil,
+		dto.HolderUserID, dto.HolderName, dto.LocationID, dto.PurchaseDate, dto.WarrantyUntil,
 		dto.Notes, dto.RealmID)
 	if err != nil {
 		return nil, MapError(fmt.Errorf("failed to execute query: %w", err))
@@ -460,12 +463,12 @@ func (r *EquipmentRepo) Delete(ctx context.Context, dto *models.DelEquipmentDTO)
 	return nil
 }
 
-// SetHolderAndStatus обновляет держателя/локацию (денормализация) и статус.
-func (r *EquipmentRepo) SetHolderAndStatus(ctx context.Context, tx Tx, id uuid.UUID, userID *uuid.UUID, holderName *string, siteID *uuid.UUID, location *string, status models.EquipmentStatus) error {
+// SetHolderAndStatus обновляет держателя, место и статус единицы.
+func (r *EquipmentRepo) SetHolderAndStatus(ctx context.Context, tx Tx, dto *models.EquipmentHolderDTO) error {
 	query := fmt.Sprintf(`UPDATE %s SET holder_user_id = $2, holder_name = NULLIF($3, ''), site_id = $4,
-			location = NULLIF($5, ''), status = $6, updated_at = NOW() WHERE id = $1`, Tables.Equipment)
+			location_id = $5, status = $6, updated_at = NOW() WHERE id = $1`, Tables.Equipment)
 
-	_, err := r.getExec(tx).Exec(ctx, query, id, userID, holderName, siteID, location, status)
+	_, err := r.getExec(tx).Exec(ctx, query, dto.ID, dto.UserID, dto.HolderName, dto.SiteID, dto.LocationID, dto.Status)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}

@@ -76,6 +76,7 @@ export const apiSlice = createApi({
 		'CategoryModifiers',
 		'Groups',
 		'Sites',
+		'SiteLocations',
 		'Comments',
 		'Mattermost',
 		'Notifications',

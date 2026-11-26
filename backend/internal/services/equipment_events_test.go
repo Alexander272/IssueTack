@@ -52,17 +52,22 @@ func TestEquipmentService_UpdateWritesMovedEvent(t *testing.T) {
 	ctx := context.Background()
 	realmID, typeID, actorID := uuid.New(), uuid.New(), uuid.New()
 	oldSite, newSite := uuid.New(), uuid.New()
-	oldLocation, newLocation := "Главный офис, каб. 301", "Сервисная зона"
+	oldLocationID, newOldSiteLocationID, newSiteLocationID := uuid.New(), uuid.New(), uuid.New()
+	locations := newFakeSiteLocations()
+	locations.add(oldSite, oldLocationID, "Главный офис, каб. 301")
+	locations.add(oldSite, newOldSiteLocationID, "Сервисная зона")
+	locations.add(newSite, newSiteLocationID, "Сервисная зона")
 
 	cases := []struct {
-		name       string
-		siteID     *uuid.UUID
-		location   string
-		wantEvents int
+		name         string
+		siteID       *uuid.UUID
+		locationID   *uuid.UUID
+		locationName string
+		wantEvents   int
 	}{
-		{name: "сменились площадка и локация", siteID: &newSite, location: newLocation, wantEvents: 1},
-		{name: "сменилась только локация", siteID: &oldSite, location: newLocation, wantEvents: 1},
-		{name: "ничего не изменилось", siteID: &oldSite, location: oldLocation, wantEvents: 0},
+		{name: "сменились площадка и локация", siteID: &newSite, locationID: &newSiteLocationID, locationName: "Сервисная зона", wantEvents: 1},
+		{name: "сменилась только локация", siteID: &oldSite, locationID: &newOldSiteLocationID, locationName: "Сервисная зона", wantEvents: 1},
+		{name: "ничего не изменилось", siteID: &oldSite, locationID: &oldLocationID, locationName: "Главный офис, каб. 301", wantEvents: 0},
 	}
 
 	for _, tt := range cases {
@@ -73,17 +78,19 @@ func TestEquipmentService_UpdateWritesMovedEvent(t *testing.T) {
 				// Состояние до правки — то, с чем сравнивается перемещение.
 				parent: &models.Equipment{
 					ID: id, RealmID: realmID, TypeKind: models.EquipmentTypeDevice,
-					SiteID: &oldSite, Location: &oldLocation,
+					SiteID: &oldSite, LocationID: &oldLocationID, LocationName: "Главный офис, каб. 301",
 				},
+				locations: locations,
 			}
 			svc := NewEquipmentService(repo, &mockTransactionManager{}, testEquipmentConf(t))
+			svc.SetLocations(locations)
 
 			_, err := svc.Update(ctx, &models.EquipmentDTO{
 				ID: &id, RealmID: realmID, TypeID: &typeID, Name: "Принтер HP LaserJet",
-				Status:   models.EquipmentStatusInUse,
-				SiteID:   tt.siteID,
-				Location: &tt.location,
-				Actor:    &models.Actor{ID: actorID},
+				Status:     models.EquipmentStatusInUse,
+				SiteID:     tt.siteID,
+				LocationID: tt.locationID,
+				Actor:      &models.Actor{ID: actorID},
 			})
 			require.NoError(t, err)
 			require.Len(t, repo.events, tt.wantEvents)
@@ -100,8 +107,8 @@ func TestEquipmentService_UpdateWritesMovedEvent(t *testing.T) {
 			var oldValue, newValue map[string]any
 			require.NoError(t, json.Unmarshal(event.OldValue, &oldValue))
 			require.NoError(t, json.Unmarshal(event.NewValue, &newValue))
-			assert.Equal(t, oldLocation, oldValue["location"])
-			assert.Equal(t, tt.location, newValue["location"])
+			assert.Equal(t, "Главный офис, каб. 301", oldValue["location"])
+			assert.Equal(t, tt.locationName, newValue["location"])
 			assert.Equal(t, tt.siteID.String(), newValue["siteId"])
 		})
 	}

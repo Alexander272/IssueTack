@@ -24,26 +24,24 @@ type fakeUnassignRepo struct {
 	openAssignment *models.EquipmentAssignment
 	// stored — место последнего складского периода («дом»); found=false — его не было.
 	stored struct {
-		siteID   *uuid.UUID
-		location *string
-		found    bool
+		siteID, locationID *uuid.UUID
+		found              bool
 	}
 
 	createdAssignment *models.EquipmentAssignment
 	closedIDs         []uuid.UUID
 	events            []*models.EquipmentEvent
 	holder            struct {
-		userID, siteID *uuid.UUID
-		location       *string
-		status         models.EquipmentStatus
+		userID, siteID, locationID *uuid.UUID
+		status                     models.EquipmentStatus
 	}
 }
 
-func (f *fakeUnassignRepo) GetLastStoredPlace(_ context.Context, _ uuid.UUID) (*uuid.UUID, *string, error) {
+func (f *fakeUnassignRepo) GetLastStoredPlace(_ context.Context, _ uuid.UUID) (*uuid.UUID, *uuid.UUID, error) {
 	if !f.stored.found {
 		return nil, nil, models.ErrNotFound
 	}
-	return f.stored.siteID, f.stored.location, nil
+	return f.stored.siteID, f.stored.locationID, nil
 }
 
 func (f *fakeUnassignRepo) GetByID(_ context.Context, req *models.GetEquipmentByIdDTO) (*models.Equipment, error) {
@@ -78,10 +76,10 @@ func (f *fakeUnassignRepo) CreateAssignment(_ context.Context, _ postgres.Tx, a 
 }
 
 func (f *fakeUnassignRepo) SetHolderAndStatus(
-	_ context.Context, _ postgres.Tx, _ uuid.UUID,
-	userID *uuid.UUID, _ *string, siteID *uuid.UUID, location *string, status models.EquipmentStatus,
+	_ context.Context, _ postgres.Tx, dto *models.EquipmentHolderDTO,
 ) error {
-	f.holder.userID, f.holder.siteID, f.holder.location, f.holder.status = userID, siteID, location, status
+	f.holder.userID, f.holder.siteID, f.holder.locationID, f.holder.status =
+		dto.UserID, dto.SiteID, dto.LocationID, dto.Status
 	return nil
 }
 
@@ -96,15 +94,18 @@ func (f *fakeUnassignRepo) CreateEvent(_ context.Context, _ postgres.Tx, e *mode
 // она всегда упиралась бы в EQ008.
 func TestEquipmentService_Unassign_KeepsCurrentPlace(t *testing.T) {
 	ctx := context.Background()
-	siteID, holderID := uuid.New(), uuid.New()
+	siteID, holderID, locationID := uuid.New(), uuid.New(), uuid.New()
 	location := "Кабинет 305"
 
 	repo := &fakeUnassignRepo{
-		unit:           &models.Equipment{SiteID: &siteID, Location: &location},
+		unit:           &models.Equipment{SiteID: &siteID, LocationID: &locationID},
 		siteName:       "ППРЗ",
 		openAssignment: &models.EquipmentAssignment{ID: uuid.New(), UserID: &holderID},
 	}
+	locations := newFakeSiteLocations()
+	locations.add(siteID, locationID, location)
 	svc := NewEquipmentService(repo, &mockTransactionManager{}, testEquipmentConf(t))
+	svc.SetLocations(locations)
 
 	err := svc.Unassign(ctx, &models.UnassignEquipmentDTO{ID: uuid.New(), RealmID: uuid.New()})
 	require.NoError(t, err)
@@ -117,13 +118,15 @@ func TestEquipmentService_Unassign_KeepsCurrentPlace(t *testing.T) {
 	assert.Nil(t, repo.holder.userID)
 	require.NotNil(t, repo.holder.siteID)
 	assert.Equal(t, siteID, *repo.holder.siteID)
-	require.NotNil(t, repo.holder.location)
-	assert.Equal(t, location, *repo.holder.location)
+	require.NotNil(t, repo.holder.locationID)
+	assert.Equal(t, locationID, *repo.holder.locationID)
 	assert.Equal(t, models.EquipmentStatusInStock, repo.holder.status)
 
-	// Снимок события несёт название площадки: лента истории не тянет справочники.
+	// Снимок события несёт подписи площадки и расположения: лента истории не
+	// тянет справочники.
 	require.Len(t, repo.events, 1)
 	assert.Contains(t, string(repo.events[0].NewValue), `"siteName":"ППРЗ"`)
+	assert.Contains(t, string(repo.events[0].NewValue), `"location":"Кабинет 305"`)
 }
 
 // TestEquipmentService_Unassign_ReturnsHome: единица возвращается туда, где лежала
@@ -133,30 +136,34 @@ func TestEquipmentService_Unassign_KeepsCurrentPlace(t *testing.T) {
 func TestEquipmentService_Unassign_ReturnsHome(t *testing.T) {
 	ctx := context.Background()
 	holderSiteID, homeSiteID := uuid.New(), uuid.New()
-	holderID := uuid.New()
-	holderLocation, homeLocation := "Кабинет 305", "Склад, полка A"
+	holderID, holderLocationID, homeLocationID := uuid.New(), uuid.New(), uuid.New()
+	homeLocation := "Склад, полка A"
 
 	repo := &fakeUnassignRepo{
-		unit:           &models.Equipment{SiteID: &holderSiteID, Location: &holderLocation},
+		unit:           &models.Equipment{SiteID: &holderSiteID, LocationID: &holderLocationID},
 		openAssignment: &models.EquipmentAssignment{ID: uuid.New(), UserID: &holderID},
 	}
-	repo.stored.siteID, repo.stored.location, repo.stored.found = &homeSiteID, &homeLocation, true
+	repo.stored.siteID, repo.stored.locationID, repo.stored.found = &homeSiteID, &homeLocationID, true
+	locations := newFakeSiteLocations()
+	locations.add(homeSiteID, homeLocationID, homeLocation)
 
 	svc := NewEquipmentService(repo, &mockTransactionManager{}, testEquipmentConf(t))
+	svc.SetLocations(locations)
 
 	err := svc.Unassign(ctx, &models.UnassignEquipmentDTO{ID: uuid.New(), RealmID: uuid.New()})
 	require.NoError(t, err)
 
 	require.NotNil(t, repo.holder.siteID)
 	assert.Equal(t, homeSiteID, *repo.holder.siteID)
-	require.NotNil(t, repo.holder.location)
-	assert.Equal(t, homeLocation, *repo.holder.location)
+	require.NotNil(t, repo.holder.locationID)
+	assert.Equal(t, homeLocationID, *repo.holder.locationID)
 
 	// В складскую строку и в снимок события уходит то же место.
 	require.NotNil(t, repo.createdAssignment)
 	require.NotNil(t, repo.createdAssignment.SiteID)
 	assert.Equal(t, homeSiteID, *repo.createdAssignment.SiteID)
-	assert.Equal(t, homeLocation, *repo.createdAssignment.Location)
+	assert.Equal(t, homeLocationID, *repo.createdAssignment.LocationID)
+	assert.Contains(t, string(repo.events[0].NewValue), `"location":"Склад, полка A"`)
 }
 
 // TestEquipmentService_Unassign_ExplicitPlaceWins: явное место из тела запроса

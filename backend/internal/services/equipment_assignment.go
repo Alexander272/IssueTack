@@ -49,11 +49,18 @@ func (s *EquipmentService) Assign(ctx context.Context, dto *models.AssignEquipme
 	// затирали место (SetHolderAndStatus записывал nil), и вместе с местом пропадала
 	// подпись площадки в снимке события и в акте. Явно указанное место по-прежнему
 	// важнее: единицу могут выдать сразу на другой объект.
-	if !hasHolder(dto) && placeAbsent(dto.SiteID, dto.Location) {
+	if !hasHolder(dto) && placeAbsent(dto.SiteID, dto.LocationID) {
 		return models.ErrEquipmentNoHoldersOrLocation
 	}
-	if placeAbsent(dto.SiteID, dto.Location) {
-		dto.SiteID, dto.Location = root.SiteID, root.Location
+	if placeAbsent(dto.SiteID, dto.LocationID) {
+		dto.SiteID, dto.LocationID = root.SiteID, root.LocationID
+	}
+	// Снимок события хранит название расположения: id в JSON исторических
+	// записей фронт не читает, а переименование справочника не должно менять
+	// прошлое.
+	locationName, err := s.resolveLocation(ctx, dto.SiteID, dto.LocationID)
+	if err != nil {
+		return err
 	}
 
 	affected, err := s.collectSubtree(ctx, dto.RealmID, dto.ID)
@@ -110,7 +117,7 @@ func (s *EquipmentService) Assign(ctx context.Context, dto *models.AssignEquipme
 				UserID:      dto.UserID,
 				HolderName:  dto.HolderName,
 				SiteID:      dto.SiteID,
-				Location:    dto.Location,
+				LocationID:  dto.LocationID,
 				AssignedAt:  assignedAt,
 				ReturnDueAt: dto.ReturnDueAt,
 				AssignedBy:  actorID,
@@ -120,12 +127,15 @@ func (s *EquipmentService) Assign(ctx context.Context, dto *models.AssignEquipme
 				return fmt.Errorf("failed to create assignment. error: %w", err)
 			}
 
-			if err := s.repo.SetHolderAndStatus(ctx, tx, eq.ID, dto.UserID, dto.HolderName, dto.SiteID, dto.Location, models.EquipmentStatusInUse); err != nil {
+			if err := s.repo.SetHolderAndStatus(ctx, tx, &models.EquipmentHolderDTO{
+				ID: eq.ID, UserID: dto.UserID, HolderName: dto.HolderName,
+				SiteID: dto.SiteID, LocationID: dto.LocationID, Status: models.EquipmentStatusInUse,
+			}); err != nil {
 				return fmt.Errorf("failed to set holder. error: %w", err)
 			}
 			if err := s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
 				EquipmentID: eq.ID, EventType: models.EquipmentEventAssigned, OperationID: opID,
-				NewValue: assignmentJSON(dto, holderFullName, siteName), UserID: actorID, Comment: dto.Comment,
+				NewValue: assignmentJSON(dto, holderFullName, siteName, locationName), UserID: actorID, Comment: dto.Comment,
 				// Явная связь со строкой выдачи: событие открыло её (assignment_id)
 				// и, если была прежняя выдача, закрыло её (closed_assignment_id).
 				// Лента истории соединяет их по этим ссылкам — момент выдачи из
@@ -153,7 +163,8 @@ func (s *EquipmentService) Assign(ctx context.Context, dto *models.AssignEquipme
 			RecipientUserID: dto.UserID,
 			RecipientName:   recipientName,
 			SiteID:          dto.SiteID,
-			Location:        dto.Location,
+			LocationID:      dto.LocationID,
+			LocationName:    locationName,
 			Comment:         dto.Comment,
 			IssuedAt:        &assignedAt,
 			Actor:           dto.Actor,
@@ -199,20 +210,24 @@ func (s *EquipmentService) Unassign(ctx context.Context, dto *models.UnassignEqu
 	// пропагируется одним местом. Место всё же придётся указать (EQ008), если у
 	// единицы его нет вообще: без держателя и без места она перестанет быть учтена,
 	// а инвариант «держатель или место» держит CHECK в equipment_assignments.
-	siteID, location := dto.SiteID, dto.Location
-	if placeAbsent(siteID, location) {
-		storedSiteID, storedLocation, err := s.repo.GetLastStoredPlace(ctx, dto.ID)
+	siteID, locationID := dto.SiteID, dto.LocationID
+	if placeAbsent(siteID, locationID) {
+		storedSiteID, storedLocationID, err := s.repo.GetLastStoredPlace(ctx, dto.ID)
 		switch {
 		case err == nil:
-			siteID, location = storedSiteID, storedLocation
+			siteID, locationID = storedSiteID, storedLocationID
 		case errors.Is(err, models.ErrNotFound):
-			siteID, location = root.SiteID, root.Location
+			siteID, locationID = root.SiteID, root.LocationID
 		default:
 			return fmt.Errorf("failed to get last stored place. error: %w", err)
 		}
-		if placeAbsent(siteID, location) {
+		if placeAbsent(siteID, locationID) {
 			return models.ErrEquipmentNoHoldersOrLocation
 		}
+	}
+	locationName, err := s.resolveLocation(ctx, siteID, locationID)
+	if err != nil {
+		return err
 	}
 
 	affected, err := s.collectSubtree(ctx, dto.RealmID, dto.ID)
@@ -250,7 +265,7 @@ func (s *EquipmentService) Unassign(ctx context.Context, dto *models.UnassignEqu
 				ID:          uuid.New(),
 				EquipmentID: eq.ID,
 				SiteID:      siteID,
-				Location:    location,
+				LocationID:  locationID,
 				AssignedAt:  now,
 				AssignedBy:  actorID,
 				Comment:     dto.Comment,
@@ -259,12 +274,14 @@ func (s *EquipmentService) Unassign(ctx context.Context, dto *models.UnassignEqu
 				return fmt.Errorf("failed to create assignment. error: %w", err)
 			}
 
-			if err := s.repo.SetHolderAndStatus(ctx, tx, eq.ID, nil, nil, siteID, location, models.EquipmentStatusInStock); err != nil {
+			if err := s.repo.SetHolderAndStatus(ctx, tx, &models.EquipmentHolderDTO{
+				ID: eq.ID, SiteID: siteID, LocationID: locationID, Status: models.EquipmentStatusInStock,
+			}); err != nil {
 				return fmt.Errorf("failed to set holder. error: %w", err)
 			}
 			if err := s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
 				EquipmentID: eq.ID, EventType: models.EquipmentEventUnassigned, OperationID: opID,
-				NewValue: assignmentJSON(&models.AssignEquipmentDTO{SiteID: siteID, Location: location}, "", siteName),
+				NewValue: assignmentJSON(&models.AssignEquipmentDTO{SiteID: siteID, LocationID: locationID}, "", siteName, locationName),
 				UserID:   actorID, Comment: dto.Comment,
 				// Строка «на складе» — открыта этой операцией; прежняя выдача —
 				// закрыта ею же.
@@ -496,8 +513,8 @@ func hasText(s *string) bool {
 // placeAbsent сообщает, что место не указано: и площадка, и локация пусты. Для
 // выдачи это значит «единица не переезжает», для возврата — «ставь дом» (не
 // «стереть место»): пустое поле означает отказ от изменения, а не сброс.
-func placeAbsent(siteID *uuid.UUID, location *string) bool {
-	return siteID == nil && !hasText(location)
+func placeAbsent(siteID, locationID *uuid.UUID) bool {
+	return siteID == nil && locationID == nil
 }
 
 func sameUUID(a, b *uuid.UUID) bool {
@@ -518,14 +535,16 @@ func sameString(a, b *string) bool {
 // идентификаторов хранятся подписи (ФИО держателя, название площадки): лента истории
 // не тянет справочники реалма, а снимок переживает удаление пользователя/площадки
 // (FK объявлены ON DELETE SET NULL) и переименование.
-func assignmentJSON(dto *models.AssignEquipmentDTO, holderFullName, siteName string) []byte {
+func assignmentJSON(dto *models.AssignEquipmentDTO, holderFullName, siteName, locationName string) []byte {
 	data, err := json.Marshal(map[string]any{
 		"userId":     dto.UserID,
 		"userName":   holderFullName,
 		"holderName": dto.HolderName,
 		"siteId":     dto.SiteID,
 		"siteName":   siteName,
-		"location":   dto.Location,
+		// Ключ прежний — лента истории читает его как подпись. Раньше тут был
+		// свободный текст, теперь — название справочника.
+		"location": locationName,
 	})
 	if err != nil {
 		return nil
@@ -565,7 +584,7 @@ func relocationJSON(eq *models.Equipment) []byte {
 	data, err := json.Marshal(map[string]any{
 		"siteId":   eq.SiteID,
 		"siteName": eq.SiteName,
-		"location": eq.Location,
+		"location": eq.LocationName,
 	})
 	if err != nil {
 		return nil
@@ -591,5 +610,5 @@ func equipmentCreatedJSON(eq *models.Equipment) []byte {
 // такие правки попадают в журнал как перемещение. Форма редактирования присылает
 // все поля целиком, поэтому сравнивать нужно со состоянием до правки.
 func equipmentRelocated(previous, updated *models.Equipment) bool {
-	return !sameUUID(previous.SiteID, updated.SiteID) || !sameString(previous.Location, updated.Location)
+	return !sameUUID(previous.SiteID, updated.SiteID) || !sameUUID(previous.LocationID, updated.LocationID)
 }

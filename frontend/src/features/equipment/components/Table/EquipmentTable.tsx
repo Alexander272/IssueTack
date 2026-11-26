@@ -97,7 +97,7 @@ export const EquipmentTable: FC<Props> = ({ isLoading, total, empty, children })
 						<TableRow sx={{ borderBottom: '1px solid #f3f4f6' }}>
 							<TableCell sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>Название</TableCell>
 							<TableCell sx={{ color: 'text.secondary', fontSize: '0.875rem', width: 170 }}>Тип</TableCell>
-							<TableCell sx={{ color: 'text.secondary', fontSize: '0.875rem', width: 200 }}>Держатель</TableCell>
+							<TableCell sx={{ color: 'text.secondary', fontSize: '0.875rem', width: 200 }}>Закреплено за</TableCell>
 							<TableCell sx={{ color: 'text.secondary', fontSize: '0.875rem', width: 180 }}>
 								Серийный номер
 							</TableCell>

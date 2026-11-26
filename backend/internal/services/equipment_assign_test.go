@@ -29,8 +29,7 @@ type fakeAssignRepo struct {
 	// createdAct — акт, сформированный выдачей (createActTx); nil при SkipAct.
 	createdAct *models.EquipmentAct
 	holder     struct {
-		userID, siteID *uuid.UUID
-		location       *string
+		userID, siteID, locationID *uuid.UUID
 	}
 }
 
@@ -69,15 +68,14 @@ func (f *fakeAssignRepo) CreateAssignment(_ context.Context, _ postgres.Tx, a *m
 	return nil
 }
 
-func (f *fakeAssignRepo) GetLastStoredPlace(_ context.Context, _ uuid.UUID) (*uuid.UUID, *string, error) {
+func (f *fakeAssignRepo) GetLastStoredPlace(_ context.Context, _ uuid.UUID) (*uuid.UUID, *uuid.UUID, error) {
 	return nil, nil, models.ErrNotFound
 }
 
 func (f *fakeAssignRepo) SetHolderAndStatus(
-	_ context.Context, _ postgres.Tx, _ uuid.UUID,
-	userID *uuid.UUID, _ *string, siteID *uuid.UUID, location *string, _ models.EquipmentStatus,
+	_ context.Context, _ postgres.Tx, dto *models.EquipmentHolderDTO,
 ) error {
-	f.holder.userID, f.holder.siteID, f.holder.location = userID, siteID, location
+	f.holder.userID, f.holder.siteID, f.holder.locationID = dto.UserID, dto.SiteID, dto.LocationID
 	return nil
 }
 
@@ -145,14 +143,17 @@ func TestEquipmentService_Assign_ActCarriesRecipientName(t *testing.T) {
 // стирала место единицы — вместе с подписью площадки в снимке события и в акте.
 func TestEquipmentService_Assign_KeepsPlaceWhenNotProvided(t *testing.T) {
 	ctx := context.Background()
-	siteID, userID := uuid.New(), uuid.New()
+	siteID, userID, locationID := uuid.New(), uuid.New(), uuid.New()
 	location := "Склад, полка A"
 
 	repo := &fakeAssignRepo{
-		unit:     &models.Equipment{SiteID: &siteID, Location: &location},
+		unit:     &models.Equipment{SiteID: &siteID, LocationID: &locationID},
 		siteName: "ППРЗ",
 	}
+	locations := newFakeSiteLocations()
+	locations.add(siteID, locationID, location)
 	svc := NewEquipmentService(repo, &mockTransactionManager{}, testEquipmentConf(t))
+	svc.SetLocations(locations)
 
 	err := svc.Assign(ctx, &models.AssignEquipmentDTO{
 		ID: uuid.New(), RealmID: uuid.New(), UserID: &userID, SkipAct: true,
@@ -164,16 +165,19 @@ func TestEquipmentService_Assign_KeepsPlaceWhenNotProvided(t *testing.T) {
 	assert.Equal(t, userID, *repo.holder.userID)
 	require.NotNil(t, repo.holder.siteID)
 	assert.Equal(t, siteID, *repo.holder.siteID)
-	require.NotNil(t, repo.holder.location)
-	assert.Equal(t, location, *repo.holder.location)
+	require.NotNil(t, repo.holder.locationID)
+	assert.Equal(t, locationID, *repo.holder.locationID)
 
 	require.NotNil(t, repo.createdAssignment)
 	require.NotNil(t, repo.createdAssignment.SiteID)
 	assert.Equal(t, siteID, *repo.createdAssignment.SiteID)
+	assert.Equal(t, locationID, *repo.createdAssignment.LocationID)
 
-	// Снимок события тоже несёт площадку: лента истории не тянет справочники.
+	// Снимок события несёт подписи площадки и расположения: лента истории не
+	// тянет справочники и не показывает id.
 	require.Len(t, repo.events, 1)
 	assert.Contains(t, string(repo.events[0].NewValue), `"siteName":"ППРЗ"`)
+	assert.Contains(t, string(repo.events[0].NewValue), `"location":"Склад, полка A"`)
 }
 
 // TestEquipmentService_Assign_ExplicitPlaceWins: указанное место важнее текущего —

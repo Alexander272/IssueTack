@@ -193,8 +193,11 @@ type Equipment struct {
 	HolderFullName string          `json:"holderFullName" db:"holder_user_full_name"`
 	// ReturnDueAt — срок возврата текущей (открытой) выдачи. nil — держателя нет
 	// или срок не задавали. Нужен карточке, чтобы показать «просрочен возврат».
-	ReturnDueAt   *time.Time `json:"returnDueAt" db:"return_due_at"`
-	Location      *string    `json:"location" db:"location"`
+	ReturnDueAt *time.Time `json:"returnDueAt" db:"return_due_at"`
+	// LocationID — ссылка на расположение площадки; LocationName — подпись,
+	// резолвится SQL (как siteName), чтобы UI не тянул справочник.
+	LocationID    *uuid.UUID `json:"locationId" db:"location_id"`
+	LocationName  string     `json:"locationName" db:"location_name"`
 	PurchaseDate  *string    `json:"purchaseDate" db:"purchase_date"`
 	WarrantyUntil *string    `json:"warrantyUntil" db:"warranty_until"`
 	Notes         string     `json:"notes" db:"notes"`
@@ -224,15 +227,19 @@ type EquipmentTreeNode struct {
 
 // EquipmentFilter — фильтры и пагинация списка единиц.
 type EquipmentFilter struct {
-	RealmID   uuid.UUID        `json:"realmId" db:"realm_id"`
-	TypeID    *uuid.UUID       `form:"typeId,parser=encoding.TextUnmarshaler" json:"typeId" db:"type_id"`
-	Status    *EquipmentStatus `form:"status" json:"status" db:"status" binding:"omitempty,enum"`
-	IsKit     *bool            `form:"isKit" json:"isKit" db:"is_kit"`
-	SiteID    *uuid.UUID       `form:"siteId,parser=encoding.TextUnmarshaler" json:"siteId" db:"site_id"`
-	HolderID  *uuid.UUID       `form:"holderId,parser=encoding.TextUnmarshaler" json:"holderId" db:"holder_user_id"`
-	Serial    *string          `form:"serial" json:"serial"`
-	Inventory *string          `form:"inventory" json:"inventory"`
-	Search    *string          `form:"search" json:"search"`
+	RealmID uuid.UUID        `json:"realmId" db:"realm_id"`
+	TypeID  *uuid.UUID       `form:"typeId,parser=encoding.TextUnmarshaler" json:"typeId" db:"type_id"`
+	Status  *EquipmentStatus `form:"status" json:"status" db:"status" binding:"omitempty,enum"`
+	IsKit   *bool            `form:"isKit" json:"isKit" db:"is_kit"`
+	SiteID  *uuid.UUID       `form:"siteId,parser=encoding.TextUnmarshaler" json:"siteId" db:"site_id"`
+	// LocationID — фильтр по конкретной локации площадки. SiteID при этом может
+	// прийти вместе с ним (селектор «Место» пишет оба поля): это сужение того же
+	// места, а не независимое условие.
+	LocationID *uuid.UUID `form:"locationId,parser=encoding.TextUnmarshaler" json:"locationId" db:"location_id"`
+	HolderID   *uuid.UUID `form:"holderId,parser=encoding.TextUnmarshaler" json:"holderId" db:"holder_user_id"`
+	Serial     *string    `form:"serial" json:"serial"`
+	Inventory  *string    `form:"inventory" json:"inventory"`
+	Search     *string    `form:"search" json:"search"`
 	// IncludeWrittenOff: списанное по умолчанию не показывается в общем списке
 	// (это «архив»), а отдельный фильтр статуса возвращает его. Флаг, а не
 	// хардкод в репозитории: список должен уметь показать всё, если попросят.
@@ -302,7 +309,7 @@ type EquipmentDTO struct {
 	SiteID          *uuid.UUID      `json:"siteId" db:"site_id"`
 	HolderUserID    *uuid.UUID      `json:"holderUserId" db:"holder_user_id"`
 	HolderName      *string         `json:"holderName" db:"holder_name"`
-	Location        *string         `json:"location" db:"location"`
+	LocationID      *uuid.UUID      `json:"locationId" db:"location_id"`
 	PurchaseDate    *string         `json:"purchaseDate" db:"purchase_date"`
 	WarrantyUntil   *string         `json:"warrantyUntil" db:"warranty_until"`
 	Notes           string          `json:"notes" db:"notes"`
@@ -419,7 +426,8 @@ type EquipmentAssignment struct {
 	UserID       *uuid.UUID `json:"userId" db:"user_id"`
 	HolderName   *string    `json:"holderName" db:"holder_name"`
 	SiteID       *uuid.UUID `json:"siteId" db:"site_id"`
-	Location     *string    `json:"location" db:"location"`
+	LocationID   *uuid.UUID `json:"locationId" db:"location_id"`
+	LocationName string     `json:"locationName" db:"location_name"`
 	AssignedAt   time.Time  `json:"assignedAt" db:"assigned_at"`
 	UnassignedAt *time.Time `json:"unassignedAt" db:"unassigned_at"`
 	// ReturnDueAt — ожидаемый срок возврата (nil = срок не задавали). Реквизит
@@ -433,6 +441,18 @@ type EquipmentAssignment struct {
 	HolderFullName string `json:"holderFullName" db:"holder_full_name"`
 	SiteName       string `json:"siteName" db:"site_name"`
 	AssignedByName string `json:"assignedByName" db:"assigned_by_name"`
+}
+
+// EquipmentHolderDTO — новое состояние держателя/места/статуса единицы. Один
+// набор полей проходит через выдачу и возврат: раньше в репозиторий ехало семь
+// позиционных аргументов, и любая новая колонка легко подменяла соседнюю.
+type EquipmentHolderDTO struct {
+	ID         uuid.UUID
+	UserID     *uuid.UUID
+	HolderName *string
+	SiteID     *uuid.UUID
+	LocationID *uuid.UUID
+	Status     EquipmentStatus
 }
 
 // EquipmentDueReturn — открытая выдача, у которой наступил срок возврата. Данных
@@ -504,7 +524,8 @@ type EquipmentAct struct {
 	RecipientUserID *uuid.UUID         `json:"recipientUserId" db:"recipient_user_id"`
 	RecipientName   *string            `json:"recipientName" db:"recipient_name"`
 	SiteID          *uuid.UUID         `json:"siteId" db:"site_id"`
-	Location        *string            `json:"location" db:"location"`
+	LocationID      *uuid.UUID         `json:"locationId" db:"location_id"`
+	LocationName    string             `json:"locationName" db:"location_name"`
 	IssuedBy        *uuid.UUID         `json:"issuedBy" db:"issued_by"`
 	IssuedAt        time.Time          `json:"issuedAt" db:"issued_at"`
 	Content         json.RawMessage    `json:"content" db:"content"`
@@ -530,14 +551,16 @@ type AssignEquipmentDTO struct {
 	// сотрудник или свободное ФИО внешнего. Приходит из формы (у клиента ФИО
 	// получателя уже есть), чтобы акт не резолвил имя отдельным запросом.
 	RecipientName *string `json:"recipientName"`
-	// SiteID и Location — место единицы. Пусто в обоих полях = «единица не
+	// SiteID и LocationID — место единицы. Пусто в обоих полях = «единица не
 	// переезжает»: место берётся у самой единицы. Указанное место важнее и
-	// записывается как есть (выдача сразу на другой объект).
-	SiteID   *uuid.UUID `json:"siteId"`
-	Location *string    `json:"location"`
-	Comment  string     `json:"comment"`
-	Force    bool       `json:"force"`
-	SkipAct  bool       `json:"skipAct"`
+	// записывается как есть (выдача сразу на другой объект). LocationName
+	// резолвится сервисом для снимка события, из запроса не приходит.
+	SiteID       *uuid.UUID `json:"siteId"`
+	LocationID   *uuid.UUID `json:"locationId"`
+	LocationName string     `json:"-"`
+	Comment      string     `json:"comment"`
+	Force        bool       `json:"force"`
+	SkipAct      bool       `json:"skipAct"`
 	// SkipOperationTasks — не запускать правила автоматических задач после
 	// выдачи. Импорт выставляет его: единица заводится как «в эксплуатации»
 	// без реальной операции выдачи, и заявка «провести передачу в 1C:ERP» при
@@ -557,12 +580,12 @@ type AssignEquipmentDTO struct {
 type UnassignEquipmentDTO struct {
 	ID      uuid.UUID `json:"id"`
 	RealmID uuid.UUID `json:"realmId"`
-	// SiteID и Location — куда вернуть. Пусто в обоих полях = «дом»: место
+	// SiteID и LocationID — куда вернуть. Пусто в обоих полях = «дом»: место
 	// последнего складского периода, а если его не было — текущее место единицы.
-	SiteID   *uuid.UUID `json:"siteId"`
-	Location *string    `json:"location"`
-	Comment  string     `json:"comment"`
-	Actor    *Actor     `json:"-"`
+	SiteID     *uuid.UUID `json:"siteId"`
+	LocationID *uuid.UUID `json:"locationId"`
+	Comment    string     `json:"comment"`
+	Actor      *Actor     `json:"-"`
 }
 
 // ChangeStatusDTO — смена статуса единицы.
@@ -634,7 +657,8 @@ type EquipmentActDTO struct {
 	RecipientUserID *uuid.UUID `json:"recipientUserId"`
 	RecipientName   *string    `json:"recipientName"`
 	SiteID          *uuid.UUID `json:"siteId"`
-	Location        *string    `json:"location"`
+	LocationID      *uuid.UUID `json:"locationId"`
+	LocationName    string     `json:"-"`
 	Comment         string     `json:"comment"`
 	// IssuedAt — момент акта из формы выдачи (RFC3339), nil = сейчас.
 	// Внутреннее поле: наружу через этот DTO не уходит, поэтому json "-".

@@ -14,6 +14,7 @@ package postgres
 
 var Tables = struct {
 	Sites                          string
+	SiteLocations                  string
 	Realms                         string
 	Roles                          string
 	RoleHierarchy                  string
@@ -62,6 +63,7 @@ var Tables = struct {
 	ProductionCalendar             string
 }{
 	Sites:                          "sites",
+	SiteLocations:                  "site_locations",
 	Realms:                         "realms",
 	Roles:                          "roles",
 	RoleHierarchy:                  "role_hierarchy",

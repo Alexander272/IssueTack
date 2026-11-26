@@ -27,6 +27,9 @@ type EquipmentImportService struct {
 	equipment Equipment
 	// sites — справочник площадок: в файле площадка приходит названием.
 	sites repository.Sites
+	// locations — расположения площадок: в файле приходят названием и
+	// разрешаются только внутри уже найденной площадки.
+	locations repository.SiteLocations
 	// users — пользователи реалма: в файле получатель приходит ФИО.
 	users repository.Users
 }
@@ -34,6 +37,12 @@ type EquipmentImportService struct {
 // NewEquipmentImportService создаёт сервис импорта оборудования.
 func NewEquipmentImportService(equipment Equipment, sites repository.Sites, users repository.Users) *EquipmentImportService {
 	return &EquipmentImportService{equipment: equipment, sites: sites, users: users}
+}
+
+// SetLocations подключает справочник расположений — тем же поздним сеттером,
+// что и у EquipmentService: конструктор не тянет лишнюю зависимость в тестах.
+func (s *EquipmentImportService) SetLocations(locations repository.SiteLocations) {
+	s.locations = locations
 }
 
 // Import читает файл и создаёт единицы оборудования.
@@ -84,6 +93,9 @@ type importRefs struct {
 	types map[string]*models.EquipmentType
 	// sites — площадки по нормализованному названию.
 	sites map[string]*models.Site
+	// locations — расположения каждой площадки по нормализованному названию.
+	// Неизвестное название — отказ строки, а не создание справочника на лету.
+	locations map[uuid.UUID]map[string]*models.SiteLocation
 	// holders — пользователи реалма для поиска получателя по ФИО/логину.
 	holders *importHolderIndex
 }
@@ -91,9 +103,10 @@ type importRefs struct {
 // loadRefs загружает справочники, нужные импорту.
 func (s *EquipmentImportService) loadRefs(ctx context.Context, realmID uuid.UUID) (*importRefs, error) {
 	refs := &importRefs{
-		types:   map[string]*models.EquipmentType{},
-		sites:   map[string]*models.Site{},
-		holders: newImportHolderIndex(),
+		types:     map[string]*models.EquipmentType{},
+		sites:     map[string]*models.Site{},
+		locations: map[uuid.UUID]map[string]*models.SiteLocation{},
+		holders:   newImportHolderIndex(),
 	}
 
 	types, err := s.equipment.GetTypes(ctx, &models.GetEquipmentTypesDTO{RealmID: realmID})
@@ -121,6 +134,28 @@ func (s *EquipmentImportService) loadRefs(ctx context.Context, realmID uuid.UUID
 		}
 		if _, exists := refs.sites[key]; !exists {
 			refs.sites[key] = item
+		}
+	}
+
+	// Расположения загружаются один раз на все площадки файла: в строке их
+	// десятки, а справочник меняется редко.
+	if s.locations != nil {
+		for _, site := range sites {
+			items, err := s.locations.GetBySite(ctx, site.ID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get site locations. error: %w", err)
+			}
+			byName := map[string]*models.SiteLocation{}
+			for _, item := range items {
+				key := normalizeImportText(item.Name)
+				if key == "" {
+					continue
+				}
+				if _, exists := byName[key]; !exists {
+					byName[key] = item
+				}
+			}
+			refs.locations[site.ID] = byName
 		}
 	}
 
@@ -226,13 +261,29 @@ func (s *EquipmentImportService) importRow(
 		return result
 	}
 
-	location := columns.cell(row, importColLocation)
+	locationName := columns.cell(row, importColLocation)
 	// Единица должна быть физически учтена: держатель, площадка или локация.
 	// Проверяем до вставки, чтобы пользователь получил внятную причину, а не
 	// ошибку CHECK-ограничения из базы.
-	if holderUserID == nil && holderName == nil && siteID == nil && location == "" {
+	if holderUserID == nil && holderName == nil && siteID == nil && locationName == "" {
 		result.Error = "не указан получатель, площадка или локация — единицу негде учесть"
 		return result
+	}
+
+	// Локация — справочник площадки: неизвестное название не создаётся на лету,
+	// а без площадки нельзя понять, к какому справочнику она относится.
+	var locationID *uuid.UUID
+	if locationName != "" {
+		if siteID == nil {
+			result.Error = "указана локация без площадки — нельзя определить, какому справочнику она принадлежит"
+			return result
+		}
+		location, ok := refs.locations[*siteID][normalizeImportText(locationName)]
+		if !ok {
+			result.Error = fmt.Sprintf("локация «%s» не найдена на площадке «%s»", locationName, columns.cell(row, importColSite))
+			return result
+		}
+		locationID = &location.ID
 	}
 
 	createDTO := &models.CreateEquipmentDTO{}
@@ -249,7 +300,7 @@ func (s *EquipmentImportService) importRow(
 	createDTO.SiteID = siteID
 	createDTO.HolderUserID = holderUserID
 	createDTO.HolderName = holderName
-	createDTO.Location = optionalImportText(location)
+	createDTO.LocationID = locationID
 	createDTO.PurchaseDate = purchaseDate
 	createDTO.WarrantyUntil = warrantyUntil
 	createDTO.Notes = columns.cell(row, importColNotes)
@@ -282,7 +333,7 @@ func (s *EquipmentImportService) importRow(
 			UserID:     holderUserID,
 			HolderName: holderName,
 			SiteID:     siteID,
-			Location:   createDTO.Location,
+			LocationID: locationID,
 			Comment:    "Импорт",
 			SkipAct:    true,
 			// Импорт создаёт единицу уже с держателем; отдельная операция выдачи

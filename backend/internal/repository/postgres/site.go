@@ -47,7 +47,7 @@ func (r *SiteRepo) GetByID(ctx context.Context, req *models.GetSiteByIdDTO) (*mo
 }
 
 func (r *SiteRepo) Get(ctx context.Context, req *models.GetSitesDTO) ([]*models.Site, error) {
-	query := fmt.Sprintf(`SELECT id, name, address, created_at, updated_at FROM %s`, Tables.Sites)
+	query := fmt.Sprintf(`SELECT id, name, address, created_at, updated_at FROM %s ORDER BY name`, Tables.Sites)
 
 	data := []*models.Site{}
 	rows, err := r.db.Query(ctx, query)

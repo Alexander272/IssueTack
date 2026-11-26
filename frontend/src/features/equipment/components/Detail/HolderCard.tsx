@@ -18,7 +18,7 @@ type Props = {
 	unit: IEquipment
 }
 
-// Блок «Держатель»: сотрудник (или «На складе») и площадка, а справа — выдача и
+// Блок «Закреплено за»: сотрудник (или «На складе») и площадка, а справа — выдача и
 // возврат. Права и диалог выдачи нужны только здесь, поэтому карточка берёт их
 // сама. Установленную единицу отдельно не выдают: она уже внутри устройства или
 // комплекта.
@@ -118,12 +118,12 @@ export const HolderCard: FC<Props> = ({ unit }) => {
 							{holderIcon}
 					</Box>
 					<Box sx={{ minWidth: 0 }}>
-						<Typography sx={sectionLabelSx}>Держатель</Typography>
+						<Typography sx={sectionLabelSx}>Закреплено за</Typography>
 						<Typography sx={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }} noWrap>
 							{holderLabel}
 						</Typography>
 						<Typography sx={{ fontSize: 12, color: '#64748b' }} noWrap>
-							{unit.siteName || unit.location || '—'}
+							{unit.siteName || unit.locationName || '—'}
 						</Typography>
 						{returnDueAt && (
 							<Typography

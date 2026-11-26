@@ -35,9 +35,9 @@ import type { IFetchError } from '@/app/types/error'
 import { saveAs } from '@/utils/saveAs'
 import { PermRules } from '@/features/access/constants/permissions'
 import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
-import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
 import { useGetRealmUsersQuery } from '@/features/user/usersApiSlice'
 import type { EquipmentActStatus, IEquipment, IEquipmentAct } from '../../types/equipment'
+import { PlaceSelect } from '../PlaceSelect'
 import {
 	useCreateEquipmentActMutation,
 	useGetAllEquipmentActsQuery,
@@ -628,19 +628,17 @@ type CreateProps = {
 // чужой комплект формируют с его карточки.
 const CreateActDialog: FC<CreateProps> = ({ open, unit, onClose }) => {
 	const { data: usersData } = useGetRealmUsersQuery('executors', { skip: !open })
-	const { data: sitesData } = useGetAllSitesQuery(undefined, { skip: !open })
 	const [create, { isLoading }] = useCreateEquipmentActMutation()
 
 	const [getAct] = useLazyGetEquipmentActQuery()
 	const [getDocument] = useLazyGetEquipmentActDocumentQuery()
 
 	const users = usersData?.data ?? []
-	const sites = sitesData?.data ?? []
 
 	const [userId, setUserId] = useState<string | null>(null)
 	const [recipientName, setRecipientName] = useState('')
 	const [siteId, setSiteId] = useState<string | null>(null)
-	const [location, setLocation] = useState('')
+	const [locationId, setLocationId] = useState<string | null>(null)
 	const [comment, setComment] = useState('')
 
 	const handleCreate = async () => {
@@ -650,7 +648,7 @@ const CreateActDialog: FC<CreateProps> = ({ open, unit, onClose }) => {
 				recipientUserId: userId,
 				recipientName: recipientName || null,
 				siteId,
-				location: location || null,
+				locationId,
 				comment,
 			}).unwrap()
 
@@ -686,19 +684,13 @@ const CreateActDialog: FC<CreateProps> = ({ open, unit, onClose }) => {
 						}}
 						renderInput={params => <TextField {...params} size='small' label='Получатель' />}
 					/>
-					<Autocomplete
-						options={sites}
-						getOptionLabel={s => s.name}
-						getOptionKey={s => s.id}
-						value={sites.find(s => s.id === siteId) ?? null}
-						onChange={(_e, value) => setSiteId(value?.id ?? null)}
-						renderInput={params => <TextField {...params} size='small' label='Площадка' />}
-					/>
-					<TextField
-						size='small'
-						label='Расположение'
-						value={location}
-						onChange={e => setLocation(e.target.value)}
+					<PlaceSelect
+						label='Место'
+						value={{ siteId, locationId }}
+						onChange={place => {
+							setSiteId(place.siteId)
+							setLocationId(place.locationId)
+						}}
 					/>
 					<TextField
 						size='small'

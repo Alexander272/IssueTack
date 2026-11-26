@@ -252,7 +252,7 @@ var importHeaderAliases = map[string]string{
 	// получатель
 	"получатель": importColHolder, "получатель фио": importColHolder,
 	"владелец": importColHolder, "держатель": importColHolder,
-	"ответственный": importColHolder, "сотрудник": importColHolder,
+	"закреплено за": importColHolder, "ответственный": importColHolder, "сотрудник": importColHolder,
 	"кому выдан": importColHolder, "выдан": importColHolder,
 	"holder": importColHolder, "recipient": importColHolder,
 	// площадка

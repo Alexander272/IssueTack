@@ -11,3 +11,17 @@ export interface ISiteDTO {
 	name: string
 	address: string
 }
+
+// Расположение внутри площадки (комната, стеллаж, склад). Заводится и правится
+// только в карточке площадки; формы оборудования выбирают его из списка.
+export interface ISiteLocation {
+	id: string
+	siteId: string
+	name: string
+	createdAt: string
+	updatedAt: string
+}
+
+export interface ISiteLocationDTO {
+	name: string
+}

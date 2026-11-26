@@ -31,11 +31,11 @@ import {
 	useGetAllEquipmentTypesQuery,
 	useUpdateEquipmentMutation,
 } from '../../equipmentApiSlice'
-import { useGetAllSitesQuery } from '@/features/sites/sitesApiSlice'
 import { Field } from './UnitForm/Field'
 import { inputProps } from './UnitForm/consts'
 import { PermRules } from '@/features/access/constants/permissions'
 import { useCheckPermissions } from '@/features/access/hooks/checkPerms'
+import { PlaceSelect } from '../PlaceSelect'
 
 // Слот состава: тип (из шаблона или выбранный вручную) и конкретная единица со
 // склада. Позиция шаблона сразу «замораживает» тип — единицу подбирают под него;
@@ -50,7 +50,7 @@ type FormValues = {
 	name: string
 	inventoryNumber: string
 	siteId: string
-	location: string
+	locationId: string | null
 	notes: string
 	templateId: string
 	rows: KitRow[]
@@ -80,7 +80,6 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 
 	const canDelete = useCheckPermissions({ anyOf: [PermRules.Equipment.Delete] })
 	const [deleteOpen, setDeleteOpen] = useState(false)
-	const { data: sitesData } = useGetAllSitesQuery()
 	// Состав и шаблоны нужны только при создании: в правке их секции нет.
 	const { data: unitsData } = useGetAllEquipmentQuery({ limit: 500 }, { skip: isEdit })
 	const { data: templatesData } = useGetAllEquipmentTemplatesQuery(undefined, { skip: isEdit })
@@ -90,7 +89,6 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 	// removeKit, а не remove: useFieldArray ниже уже держит свой remove.
 	const [removeKit, { isLoading: isDeleting }] = useDeleteEquipmentMutation()
 
-	const sites = sitesData?.data ?? []
 	// Кандидаты в состав — единицы на складе, комплект в комплект не кладём.
 	// Комплектующие и расходники тоже не подходят: логический комплект собирается
 	// из устройств и периферии, а они — физический состав (parent_id), другая ось.
@@ -108,7 +106,7 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 			name: unit?.name ?? '',
 			inventoryNumber: unit?.inventoryNumber ?? '',
 			siteId: unit?.siteId ?? '',
-			location: unit?.location ?? '',
+			locationId: unit?.locationId ?? null,
 			notes: unit?.notes ?? '',
 			templateId: '',
 			rows: [],
@@ -152,7 +150,7 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 				name: form.name,
 				inventoryNumber: form.inventoryNumber || null,
 				siteId: form.siteId || null,
-				location: form.location || null,
+				locationId: form.locationId || null,
 				notes: form.notes,
 				isKit: true,
 				vendor: unit.vendor,
@@ -183,7 +181,7 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 			name: form.name,
 			inventoryNumber: form.inventoryNumber || null,
 			siteId: form.siteId || null,
-			location: form.location || null,
+			locationId: form.locationId || null,
 			notes: form.notes,
 			status: 'in_stock',
 			isKit: true,
@@ -299,49 +297,31 @@ export const EquipmentKitDialog: FC<Props> = ({ open, onClose, unit, onDeleted }
 								/>
 							</Field>
 
-							<Field label='Площадка' required>
+							<Field label='Место' required>
 								<Controller
 									control={control}
 									name='siteId'
-									rules={{ required: 'Укажите площадку' }}
-									render={({ field, fieldState }) => (
-										<TextField
-											{...field}
-											{...inputProps}
-											select
-											value={field.value ?? ''}
-											placeholder='Площадка'
-											// Заглушка: пустой площадки нет в списке пунктов, а без
-											// displayEmpty renderValue для '' не вызывается — нужны оба.
-											slotProps={{
-												select: {
-													displayEmpty: true,
-													renderValue: value =>
-														value === '' || value == null
-															? '— Выберите площадку —'
-															: (sites.find(s => s.id === value)?.name ?? ''),
-												},
-											}}
-											error={Boolean(fieldState.error)}
-											helperText={fieldState.error?.message}
-										>
-											<MenuItem value=''>— Выберите площадку —</MenuItem>
-											{sites.map(site => (
-												<MenuItem key={site.id} value={site.id}>
-													{site.name}
-												</MenuItem>
-											))}
-										</TextField>
-									)}
-								/>
-							</Field>
-
-							<Field label='Расположение'>
-								<Controller
-									control={control}
-									name='location'
-									render={({ field }) => (
-										<TextField {...field} {...inputProps} placeholder='Аудитория, кабинет' />
+									rules={{ required: 'Укажите площадку или локацию' }}
+									render={({ field: siteField, fieldState }) => (
+										<Controller
+											control={control}
+											name='locationId'
+											render={({ field: locationField }) => (
+												<PlaceSelect
+													hideLabel
+													value={{
+														siteId: siteField.value ?? null,
+														locationId: locationField.value ?? null,
+													}}
+													onChange={place => {
+														siteField.onChange(place.siteId)
+														locationField.onChange(place.locationId)
+													}}
+													error={Boolean(fieldState.error)}
+													helperText={fieldState.error?.message}
+												/>
+											)}
+										/>
 									)}
 								/>
 							</Field>

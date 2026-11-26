@@ -32,8 +32,10 @@ const specsOf = (unit: IEquipment) => [
 	{ label: 'Модель', value: unit.model || '—' },
 	{ label: 'Серийный номер', value: unit.serialNumber ?? '—', mono: true },
 	{ label: 'Инвентарный номер', value: unit.inventoryNumber ?? '—', mono: true },
-	{ label: 'Площадка', value: unit.siteName || '—' },
-	{ label: 'Расположение', value: unit.location ?? '—' },
+	{
+		label: 'Место',
+		value: [unit.siteName, unit.locationName].filter(Boolean).join(' · ') || '—',
+	},
 	{ label: 'Магазин', value: unit.shop || '—' },
 	{ label: 'Номер заказа', value: unit.orderNumber ?? '—', mono: true },
 	...(unit.isKit
@@ -50,7 +52,7 @@ type Props = {
 	onOpenUnit: (id: string) => void
 }
 
-// Вкладка «Обзор»: карточки держателя, характеристик, состава и заявок. Состав и
+// Вкладка «Обзор»: карточки «Закреплено за», характеристик, состава и заявок. Состав и
 // его диалоги вкладка держит сама — это её собственный контекст, контейнеру
 // модалки он не нужен.
 export const OverviewTab: FC<Props> = ({ unit, onOpenUnit }) => {

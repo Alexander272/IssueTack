@@ -18,6 +18,7 @@ import type { IFetchError } from '@/app/types/error'
 import type { ISiteDTO } from '../types/site'
 import { useCreateSiteMutation, useUpdateSiteMutation, useDeleteSiteMutation } from '../sitesApiSlice'
 import { ConfirmDialog } from '@/components/Dialogs/ConfirmDialog'
+import { SiteLocationsSection } from './SiteLocationsSection'
 
 type Props = {
 	site?: ISiteDTO | null
@@ -146,6 +147,10 @@ export const SiteDialog: FC<Props> = ({ site, open, onClose }) => {
 									)}
 								/>
 							</Box>
+
+							{isEdit && site?.id && (
+								<SiteLocationsSection siteId={site.id} disabled={isLoading} />
+							)}
 						</Box>
 					</DialogContent>
 

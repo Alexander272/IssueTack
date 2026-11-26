@@ -15,7 +15,13 @@ import { bundleRoots, sortNodes, toggleInSet } from './rows'
 
 const PAGE_SIZE = 50
 
-const DEFAULT_FILTERS: EquipmentFilters = { search: '', typeFilter: 'all', status: 'all' }
+const DEFAULT_FILTERS: EquipmentFilters = {
+	search: '',
+	typeFilter: 'all',
+	status: 'all',
+	siteId: null,
+	locationId: null,
+}
 
 // Тип фильтра → is_kit для запроса: не задан («all») — не фильтровать, единицы / комплекты — только свои.
 const IS_KIT_BY_TYPE: Record<TypeFilter, boolean | undefined> = { all: undefined, unit: false, kit: true }
@@ -37,10 +43,10 @@ export const EquipmentList: FC<Props> = ({ onOpen }) => {
 	const [page, setPage] = useState(0)
 	const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
-	const { search, typeFilter, status } = filters
+	const { search, typeFilter, status, siteId, locationId } = filters
 	const debouncedSearch = useDebounce(search, 300)
 	const query = debouncedSearch.trim()
-	const treeMode = isTreeMode(query)
+	const treeMode = isTreeMode(query, Boolean(siteId || locationId))
 	const statusFilter = status === 'all' ? undefined : (status as EquipmentStatus)
 	// Тип сужает корни дерева; в плоском списке (поиск) — обычный фильтр по is_kit.
 	const isKit = IS_KIT_BY_TYPE[typeFilter]
@@ -54,6 +60,8 @@ export const EquipmentList: FC<Props> = ({ onOpen }) => {
 			search: query || undefined,
 			status: statusFilter,
 			isKit,
+			siteId: siteId ?? undefined,
+			locationId: locationId ?? undefined,
 			limit: PAGE_SIZE,
 			offset: page * PAGE_SIZE,
 		},

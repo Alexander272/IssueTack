@@ -16,22 +16,25 @@ import (
 // резолвит SQL — как equipmentSelectBase, чтобы клиенту не приходилось тянуть
 // справочники реалма ради строки истории.
 func assignmentSelectBase() string {
-	return fmt.Sprintf(`SELECT a.id, a.equipment_id, a.user_id, a.holder_name, a.site_id, a.location,
+	return fmt.Sprintf(`SELECT a.id, a.equipment_id, a.user_id, a.holder_name, a.site_id, a.location_id,
+			COALESCE(sl.name, '') AS location_name,
 			a.assigned_at, a.unassigned_at, a.return_due_at, a.assigned_by, a.comment,
 			%s AS holder_full_name, s.name AS site_name, %s AS assigned_by_name
 		FROM %s a
 		LEFT JOIN %s hu ON hu.id = a.user_id
 		LEFT JOIN %s s ON s.id = a.site_id
+		LEFT JOIN %s sl ON sl.id = a.location_id
 		LEFT JOIN %s ab ON ab.id = a.assigned_by`,
 		fullNameSQL("hu"), fullNameSQL("ab"),
-		Tables.EquipmentAssignments, Tables.Users, Tables.Sites, Tables.Users)
+		Tables.EquipmentAssignments, Tables.Users, Tables.Sites, Tables.SiteLocations, Tables.Users)
 }
 
 func scanAssignment(row rowScanner) (*models.EquipmentAssignment, error) {
 	a := &models.EquipmentAssignment{}
 	var holderFullName, siteName, assignedByName *string
 
-	if err := row.Scan(&a.ID, &a.EquipmentID, &a.UserID, &a.HolderName, &a.SiteID, &a.Location,
+	if err := row.Scan(&a.ID, &a.EquipmentID, &a.UserID, &a.HolderName, &a.SiteID, &a.LocationID,
+		&a.LocationName,
 		&a.AssignedAt, &a.UnassignedAt, &a.ReturnDueAt, &a.AssignedBy, &a.Comment,
 		&holderFullName, &siteName, &assignedByName); err != nil {
 		return nil, err
@@ -67,17 +70,17 @@ func (r *EquipmentRepo) GetOpenAssignment(ctx context.Context, equipmentID uuid.
 // место и есть домашнее. Если складского периода не было (единицу завели сразу на
 // держателя), возвращается ErrNotFound — вызывающий сам решает, какое место
 // поставить.
-func (r *EquipmentRepo) GetLastStoredPlace(ctx context.Context, equipmentID uuid.UUID) (*uuid.UUID, *string, error) {
-	query := fmt.Sprintf(`SELECT site_id, location FROM %s
+func (r *EquipmentRepo) GetLastStoredPlace(ctx context.Context, equipmentID uuid.UUID) (*uuid.UUID, *uuid.UUID, error) {
+	query := fmt.Sprintf(`SELECT site_id, location_id FROM %s
 		WHERE equipment_id = $1 AND user_id IS NULL AND COALESCE(holder_name, '') = ''
 		ORDER BY assigned_at DESC LIMIT 1`, Tables.EquipmentAssignments)
 
 	var siteID *uuid.UUID
-	var location *string
-	if err := r.db.QueryRow(ctx, query, equipmentID).Scan(&siteID, &location); err != nil {
+	var locationID *uuid.UUID
+	if err := r.db.QueryRow(ctx, query, equipmentID).Scan(&siteID, &locationID); err != nil {
 		return nil, nil, MapError(fmt.Errorf("failed to execute query: %w", err))
 	}
-	return siteID, location, nil
+	return siteID, locationID, nil
 }
 
 func (r *EquipmentRepo) GetAssignmentHistory(ctx context.Context, realmID, equipmentID uuid.UUID) ([]*models.EquipmentAssignment, error) {
@@ -150,10 +153,10 @@ func (r *EquipmentRepo) CreateAssignment(ctx context.Context, tx Tx, a *models.E
 	if a.ID == uuid.Nil {
 		a.ID = uuid.New()
 	}
-	query := fmt.Sprintf(`INSERT INTO %s (id, equipment_id, user_id, holder_name, site_id, location, assigned_at, unassigned_at, return_due_at, assigned_by, comment)
-		VALUES ($1, $2, $3, NULLIF($4, ''), $5, NULLIF($6, ''), $7, $8, $9, $10, $11)`, Tables.EquipmentAssignments)
+	query := fmt.Sprintf(`INSERT INTO %s (id, equipment_id, user_id, holder_name, site_id, location_id, assigned_at, unassigned_at, return_due_at, assigned_by, comment)
+		VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7, $8, $9, $10, $11)`, Tables.EquipmentAssignments)
 
-	_, err := r.getExec(tx).Exec(ctx, query, a.ID, a.EquipmentID, a.UserID, a.HolderName, a.SiteID, a.Location,
+	_, err := r.getExec(tx).Exec(ctx, query, a.ID, a.EquipmentID, a.UserID, a.HolderName, a.SiteID, a.LocationID,
 		a.AssignedAt, a.UnassignedAt, a.ReturnDueAt, a.AssignedBy, a.Comment)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))

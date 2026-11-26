@@ -42,6 +42,11 @@ DECLARE
     e_printer   UUID;
     u_id        UUID;
     v_eq        UUID;
+    s_demo      UUID;
+    l_305       UUID;
+    l_401       UUID;
+    l_service   UUID;
+    l_store     UUID;
 BEGIN
     SELECT id INTO r_id FROM realms WHERE code = 'it';
     IF r_id IS NULL THEN
@@ -113,10 +118,27 @@ BEGIN
     SELECT id INTO t_printer   FROM equipment_types WHERE realm_id = r_id AND name = 'Принтер/МФУ';
     SELECT id INTO t_cartridge FROM equipment_types WHERE realm_id = r_id AND name = 'Картридж';
 
+    -- Расположения — справочник площадки: сид создаёт демо-площадку и четыре
+    -- расположения, а единицы ссылаются на них id. Повторный прогон находит те же
+    -- записи по имени (у site_locations есть UNIQUE(site_id, name)).
+    SELECT id INTO s_demo FROM sites WHERE name = 'Демо-площадка' ORDER BY created_at LIMIT 1;
+    IF s_demo IS NULL THEN
+        INSERT INTO sites (name, address) VALUES ('Демо-площадка', '') RETURNING id INTO s_demo;
+    END IF;
+
+    INSERT INTO site_locations (site_id, name) VALUES (s_demo, 'Кабинет 305')
+    ON CONFLICT (site_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO l_305;
+    INSERT INTO site_locations (site_id, name) VALUES (s_demo, 'Кабинет 401')
+    ON CONFLICT (site_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO l_401;
+    INSERT INTO site_locations (site_id, name) VALUES (s_demo, 'Сервисная зона')
+    ON CONFLICT (site_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO l_service;
+    INSERT INTO site_locations (site_id, name) VALUES (s_demo, 'Склад, полка A')
+    ON CONFLICT (site_id, name) DO UPDATE SET name = EXCLUDED.name RETURNING id INTO l_store;
+
     -- Физический состав: системный блок из комплектующих (parent_id).
     IF NOT EXISTS (SELECT 1 FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1001') THEN
-        INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, status, location, purchase_date)
-        VALUES (r_id, t_desktop, 'Системный блок бухгалтерии', 'Dell', 'OptiPlex 3080', 'DL-3080-0001', 'INV-1001', 'in_use', 'Кабинет 305', '2024-02-01')
+        INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, status, site_id, location_id, purchase_date)
+        VALUES (r_id, t_desktop, 'Системный блок бухгалтерии', 'Dell', 'OptiPlex 3080', 'DL-3080-0001', 'INV-1001', 'in_use', s_demo, l_305, '2024-02-01')
         RETURNING id INTO e_desktop;
     ELSE
         SELECT id INTO e_desktop FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1001';
@@ -136,37 +158,37 @@ BEGIN
     ON CONFLICT (realm_id, name) DO NOTHING;
 
     IF NOT EXISTS (SELECT 1 FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1001-01') THEN
-        INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, specs, status, location, parent_id)
+        INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, specs, status, site_id, location_id, parent_id)
         VALUES (r_id, t_ram, 'Память Kingston 8GB', 'Kingston', 'KVR26N19S8/8', 'RAM-K-0001', 'INV-1001-01',
-                '{"Ёмкость": "8 ГБ", "Тип": "DDR4"}'::jsonb, 'in_use', 'Кабинет 305', e_desktop);
+                '{"Ёмкость": "8 ГБ", "Тип": "DDR4"}'::jsonb, 'in_use', s_demo, l_305, e_desktop);
     END IF;
 
     IF NOT EXISTS (SELECT 1 FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1001-02') THEN
-        INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, specs, status, location, parent_id)
+        INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, specs, status, site_id, location_id, parent_id)
         VALUES (r_id, t_ssd, 'SSD Samsung 512GB', 'Samsung', 'MZ-77E512', 'SSD-S-0001', 'INV-1001-02',
-                '{"Ёмкость": "512 ГБ", "Интерфейс": "SATA"}'::jsonb, 'in_use', 'Кабинет 305', e_desktop);
+                '{"Ёмкость": "512 ГБ", "Интерфейс": "SATA"}'::jsonb, 'in_use', s_demo, l_305, e_desktop);
     END IF;
 
     -- Логический комплект: ноутбук + мышь + сумка (is_kit + kit_compositions).
     IF NOT EXISTS (SELECT 1 FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1002') THEN
-        INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, status, location, purchase_date, is_kit)
-        VALUES (r_id, t_laptop, 'Ноутбук менеджера', 'Lenovo', 'ThinkPad T14', 'LN-T14-0002', 'INV-1002', 'in_use', 'Кабинет 401', '2024-06-15', true)
+        INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, status, site_id, location_id, purchase_date, is_kit)
+        VALUES (r_id, t_laptop, 'Ноутбук менеджера', 'Lenovo', 'ThinkPad T14', 'LN-T14-0002', 'INV-1002', 'in_use', s_demo, l_401, '2024-06-15', true)
         RETURNING id INTO e_laptop;
     ELSE
         SELECT id INTO e_laptop FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1002';
     END IF;
 
     IF NOT EXISTS (SELECT 1 FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1002-01') THEN
-        INSERT INTO equipment (realm_id, type_id, name, serial_number, inventory_number, status, location)
-        VALUES (r_id, t_mouse, 'Мышь Bluetooth', 'MS-B-0002', 'INV-1002-01', 'in_use', 'Кабинет 401')
+        INSERT INTO equipment (realm_id, type_id, name, serial_number, inventory_number, status, site_id, location_id)
+        VALUES (r_id, t_mouse, 'Мышь Bluetooth', 'MS-B-0002', 'INV-1002-01', 'in_use', s_demo, l_401)
         RETURNING id INTO e_mouse;
     ELSE
         SELECT id INTO e_mouse FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1002-01';
     END IF;
 
     IF NOT EXISTS (SELECT 1 FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1002-02') THEN
-        INSERT INTO equipment (realm_id, type_id, name, serial_number, inventory_number, status, location)
-        VALUES (r_id, t_bag, 'Сумка для ноутбука 14"', 'BAG-0002', 'INV-1002-02', 'in_use', 'Кабинет 401')
+        INSERT INTO equipment (realm_id, type_id, name, serial_number, inventory_number, status, site_id, location_id)
+        VALUES (r_id, t_bag, 'Сумка для ноутбука 14"', 'BAG-0002', 'INV-1002-02', 'in_use', s_demo, l_401)
         RETURNING id INTO e_bag;
     ELSE
         SELECT id INTO e_bag FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1002-02';
@@ -174,22 +196,22 @@ BEGIN
 
     -- Принтер с расходником (картридж) в физическом составе.
     IF NOT EXISTS (SELECT 1 FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1003') THEN
-        INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, status, location)
-        VALUES (r_id, t_printer, 'Принтер HP LaserJet', 'HP', 'LaserJet M404dn', 'HP-M404-0003', 'INV-1003', 'repair', 'Сервисная зона')
+        INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, status, site_id, location_id)
+        VALUES (r_id, t_printer, 'Принтер HP LaserJet', 'HP', 'LaserJet M404dn', 'HP-M404-0003', 'INV-1003', 'repair', s_demo, l_service)
         RETURNING id INTO e_printer;
     ELSE
         SELECT id INTO e_printer FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1003';
     END IF;
 
     IF NOT EXISTS (SELECT 1 FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1003-01') THEN
-        INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, status, location, parent_id)
-        VALUES (r_id, t_cartridge, 'Картридж HP 58A', 'HP', 'CF258A', 'HP-CF258A-0001', 'INV-1003-01', 'in_use', 'Сервисная зона', e_printer);
+        INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, status, site_id, location_id, parent_id)
+        VALUES (r_id, t_cartridge, 'Картридж HP 58A', 'HP', 'CF258A', 'HP-CF258A-0001', 'INV-1003-01', 'in_use', s_demo, l_service, e_printer);
     END IF;
 
     -- Склад.
     IF NOT EXISTS (SELECT 1 FROM equipment WHERE realm_id = r_id AND inventory_number = 'INV-1004') THEN
-        INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, status, location)
-        VALUES (r_id, t_ram, 'Память Crucial 16GB (резерв)', 'Crucial', 'CT16G4SFRA32A', 'RAM-C-0004', 'INV-1004', 'in_stock', 'Склад, полка A');
+        INSERT INTO equipment (realm_id, type_id, name, vendor, model, serial_number, inventory_number, status, site_id, location_id)
+        VALUES (r_id, t_ram, 'Память Crucial 16GB (резерв)', 'Crucial', 'CT16G4SFRA32A', 'RAM-C-0004', 'INV-1004', 'in_stock', s_demo, l_store);
     END IF;
 
     -- ─── Приведение к текущей модели ───────────────────────────────────────────
@@ -242,11 +264,11 @@ BEGIN
             SELECT id FROM subtree
         LOOP
             UPDATE equipment
-            SET holder_user_id = u_id, holder_name = NULL, location = 'Кабинет 305', status = 'in_use'
+            SET holder_user_id = u_id, holder_name = NULL, site_id = s_demo, location_id = l_305, status = 'in_use'
             WHERE id = v_eq;
 
-            INSERT INTO equipment_assignments (equipment_id, user_id, site_id, location, assigned_by, comment)
-            SELECT v_eq, u_id, NULL, 'Кабинет 305', u_id, 'Плановое закрепление'
+            INSERT INTO equipment_assignments (equipment_id, user_id, site_id, location_id, assigned_by, comment)
+            SELECT v_eq, u_id, s_demo, l_305, u_id, 'Плановое закрепление'
             WHERE NOT EXISTS (
                 SELECT 1 FROM equipment_assignments a
                 WHERE a.equipment_id = v_eq AND a.unassigned_at IS NULL

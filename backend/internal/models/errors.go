@@ -89,7 +89,7 @@ var (
 	ErrEquipmentHasChildren           = NewDomainError(errors.New("equipment has components"), http.StatusConflict, "EQ005", "У оборудования есть состав — сначала отвяжите или спишите компоненты")
 	ErrEquipmentWrittenOff            = NewDomainError(errors.New("equipment is written off"), http.StatusConflict, "EQ006", "Списанное оборудование изменить нельзя")
 	ErrEquipmentNotAssignable         = NewDomainError(errors.New("equipment is not available for assignment"), http.StatusConflict, "EQ007", "Нельзя выдать оборудование в этом статусе")
-	ErrEquipmentNoHoldersOrLocation   = NewDomainError(errors.New("equipment must have a holder or location"), http.StatusConflict, "EQ008", "Укажите держателя или локацию — единица должна быть физически учтена")
+	ErrEquipmentNoHoldersOrLocation   = NewDomainError(errors.New("equipment must have a holder or location"), http.StatusConflict, "EQ008", "Укажите, за кем закрепить оборудование, или локацию — единица должна быть физически учтена")
 	ErrEquipmentAssigned              = NewDomainError(errors.New("equipment is already assigned to another holder"), http.StatusConflict, "EQ009", "Оборудование уже выдано другому держателю — снимите выдачу или повторите с принудительным переназначением")
 	ErrEquipmentComponentInKit        = NewDomainError(errors.New("component already belongs to a kit"), http.StatusConflict, "EQ010", "Компонент уже входит в комплект — сначала исключите его оттуда")
 	ErrEquipmentNotKit                = NewDomainError(errors.New("equipment is not a kit"), http.StatusConflict, "EQ011", "Состав можно вести только для комплекта")
@@ -106,6 +106,7 @@ var (
 	ErrEquipmentWriteOffForbidden     = NewDomainError(errors.New("only a realm supervisor can write off equipment"), http.StatusForbidden, "EQ022", "Списывать оборудование может только начальник области")
 	ErrEquipmentDefectDateInFuture    = NewDomainError(errors.New("defect date is in the future"), http.StatusBadRequest, "EQ023", "Дата обнаружения дефекта не может быть в будущем")
 	ErrEquipmentComponentNotAttached  = NewDomainError(errors.New("component is not attached"), http.StatusBadRequest, "EQ024", "Компонент не состоит в указанном составе")
+	ErrSiteLocationInUse              = NewDomainError(errors.New("site location is in use"), http.StatusConflict, "EQ025", "Нельзя удалить расположение, пока оно указано у оборудования, в выдачах или актах")
 	// 400 Bad Request
 	ErrInvalidInput          = NewDomainError(errors.New("invalid input data"), http.StatusBadRequest, "BR001", "Переданы некорректные данные")
 	ErrRelatedRecordNotFound = NewDomainError(errors.New("related record not found"), http.StatusBadRequest, "BR002", "Указанный связанный ресурс не существует")

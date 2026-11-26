@@ -153,6 +153,6 @@ func (r *equipmentReturnReminder) format(item *models.EquipmentDueReturn) string
 		holder = fmt.Sprintf("%s, %s", holder, item.SiteName)
 	}
 
-	return fmt.Sprintf("Пора вернуть оборудование\n%s\nДержатель: %s\nСрок возврата: %s",
+	return fmt.Sprintf("Пора вернуть оборудование\n%s\nЗакреплено за: %s\nСрок возврата: %s",
 		subject, holder, item.ReturnDueAt.Format("02.01.2006"))
 }

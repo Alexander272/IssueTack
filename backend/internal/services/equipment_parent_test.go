@@ -30,6 +30,20 @@ type fakeEquipmentRepo struct {
 	statuses []models.EquipmentStatus
 	// assignments — выдачи, созданные через Assign (импорт «в эксплуатации»).
 	assignments []*models.EquipmentAssignment
+	// locations — справочник для подписи locationName: настоящий репозиторий
+	// резолвит её SQL-джойном при чтении единицы.
+	locations repository.SiteLocations
+}
+
+func (f *fakeEquipmentRepo) locationName(ctx context.Context, siteID, locationID *uuid.UUID) string {
+	if f.locations == nil || locationID == nil || siteID == nil {
+		return ""
+	}
+	name, err := f.locations.GetName(ctx, *siteID, *locationID)
+	if err != nil {
+		return ""
+	}
+	return name
 }
 
 // SetStatus запоминает выставленный статус: AddDefect/WriteOff меняют состояние
@@ -76,7 +90,7 @@ func (f *fakeEquipmentRepo) GetAncestors(_ context.Context, _, _ uuid.UUID) ([]u
 	return nil, nil
 }
 
-func (f *fakeEquipmentRepo) Create(_ context.Context, _ postgres.Tx, dto *models.EquipmentDTO) (*models.Equipment, error) {
+func (f *fakeEquipmentRepo) Create(ctx context.Context, _ postgres.Tx, dto *models.EquipmentDTO) (*models.Equipment, error) {
 	f.created = dto
 	id := uuid.New()
 	dto.ID = &id
@@ -84,11 +98,12 @@ func (f *fakeEquipmentRepo) Create(_ context.Context, _ postgres.Tx, dto *models
 		ID: id, TypeID: dto.TypeID, ParentID: dto.ParentID, Name: dto.Name,
 		SerialNumber: dto.SerialNumber, InventoryNumber: dto.InventoryNumber,
 		Status: dto.Status, HolderUserID: dto.HolderUserID, HolderName: dto.HolderName,
-		SiteID: dto.SiteID, Location: dto.Location,
+		SiteID: dto.SiteID, LocationID: dto.LocationID,
+		LocationName: f.locationName(ctx, dto.SiteID, dto.LocationID),
 	}, nil
 }
 
-func (f *fakeEquipmentRepo) Update(_ context.Context, _ postgres.Tx, dto *models.EquipmentDTO) (*models.Equipment, error) {
+func (f *fakeEquipmentRepo) Update(ctx context.Context, _ postgres.Tx, dto *models.EquipmentDTO) (*models.Equipment, error) {
 	f.updated = dto
 	id := uuid.Nil
 	if dto.ID != nil {
@@ -96,7 +111,8 @@ func (f *fakeEquipmentRepo) Update(_ context.Context, _ postgres.Tx, dto *models
 	}
 	return &models.Equipment{
 		ID: id, TypeID: dto.TypeID, ParentID: dto.ParentID,
-		SiteID: dto.SiteID, Location: dto.Location,
+		SiteID: dto.SiteID, LocationID: dto.LocationID,
+		LocationName: f.locationName(ctx, dto.SiteID, dto.LocationID),
 	}, nil
 }
 
@@ -128,7 +144,7 @@ func (f *fakeEquipmentRepo) CreateAssignment(_ context.Context, _ repository.Tx,
 }
 
 // SetHolderAndStatus — держатель уже проставлен при создании, повторяем без записи.
-func (f *fakeEquipmentRepo) SetHolderAndStatus(_ context.Context, _ repository.Tx, _ uuid.UUID, _ *uuid.UUID, _ *string, _ *uuid.UUID, _ *string, _ models.EquipmentStatus) error {
+func (f *fakeEquipmentRepo) SetHolderAndStatus(_ context.Context, _ repository.Tx, _ *models.EquipmentHolderDTO) error {
 	return nil
 }
 

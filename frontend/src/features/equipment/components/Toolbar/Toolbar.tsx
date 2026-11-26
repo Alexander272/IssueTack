@@ -17,6 +17,7 @@ import { ChevronsDownIcon, ChevronsUpIcon, FilterIcon, SearchIcon, XIcon } from 
 
 import { isTreeMode, type EquipmentFilters, type TypeFilter } from './types'
 import { EQUIPMENT_STATUS_OPTIONS } from '../../types/equipment'
+import { PlaceSelect } from '../PlaceSelect'
 
 type Props = {
 	filters: EquipmentFilters
@@ -59,14 +60,16 @@ const sheetLabelSx = { fontSize: '0.75rem', fontWeight: 600, color: '#374151', m
 export const EquipmentToolbar: FC<Props> = ({ filters, onFiltersChange, onToggleAll }) => {
 	const theme = useTheme()
 	const isMobile = useMediaQuery(theme.breakpoints.down('md'))
-	const { search, typeFilter, status } = filters
+	const { search, typeFilter, status, siteId, locationId } = filters
 	const [sheetOpen, setSheetOpen] = useState(false)
 
-	// Режим-дерево вычисляется из поиска: в плоском списке кнопки раскрытия гаснут.
-	const treeMode = isTreeMode(search)
+	// Место (как и поиск) уводит в плоский список: локация может быть на любом
+	// уровне вложенности, а дерево фильтр по месту не понимает.
+	const treeMode = isTreeMode(search, Boolean(siteId || locationId))
 
-	// Активные фильтры для бейджа на кнопке «Фильтры»: не «все» тип и статус.
-	const activeCount = (typeFilter !== 'all' ? 1 : 0) + (status !== 'all' ? 1 : 0)
+	// Активные фильтры для бейджа на кнопке «Фильтры»: не «все» тип и статус, плюс место.
+	const activeCount =
+		(typeFilter !== 'all' ? 1 : 0) + (status !== 'all' ? 1 : 0) + (siteId || locationId ? 1 : 0)
 
 	// Изолированные обработчики для избежания инлайн-функций в рендере
 	const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -133,6 +136,19 @@ export const EquipmentToolbar: FC<Props> = ({ filters, onFiltersChange, onToggle
 		</TextField>
 	)
 
+	// Тот же совмещённый список, что и в формах: площадка или локация внутри неё.
+	// Пустой выбор сбрасывает оба поля и возвращает дерево.
+	const placeSelect = (hideLabel = false) => (
+		<Box sx={{ width: { xs: '100%', sm: 240 }, flexShrink: 0 }}>
+			<PlaceSelect
+				label='Место'
+				hideLabel={hideLabel}
+				value={{ siteId, locationId }}
+				onChange={place => onFiltersChange({ siteId: place.siteId, locationId: place.locationId })}
+			/>
+		</Box>
+	)
+
 	if (isMobile) {
 		return (
 			<>
@@ -190,6 +206,11 @@ export const EquipmentToolbar: FC<Props> = ({ filters, onFiltersChange, onToggle
 					{typeGroup}
 
 					<Box sx={{ mt: 2 }}>
+						<Typography sx={sheetLabelSx}>Место</Typography>
+						{placeSelect(true)}
+					</Box>
+
+					<Box sx={{ mt: 2 }}>
 						<Typography sx={sheetLabelSx}>Статус</Typography>
 						{statusSelect}
 					</Box>
@@ -210,6 +231,7 @@ export const EquipmentToolbar: FC<Props> = ({ filters, onFiltersChange, onToggle
 	return (
 		<Box sx={boxStyles}>
 			{searchField}
+			{placeSelect()}
 			{typeGroup}
 
 			<Button

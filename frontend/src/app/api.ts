@@ -100,7 +100,10 @@ export const API = {
 	},
 	sites: {
 		base: '/sites' as const,
+		allLocations: '/sites/all-locations' as const,
 		byId: (id: string) => `/sites/${id}` as const,
+		locations: (id: string) => `/sites/${id}/locations` as const,
+		locationById: (id: string, locationId: string) => `/sites/${id}/locations/${locationId}` as const,
 	},
 	equipment: {
 		base: '/equipment' as const,

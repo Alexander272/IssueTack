@@ -213,7 +213,7 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 					// Выдал себе — не печатаем одно и то же имя дважды: актор и
 					// получатель совпадают, получателя показывает чип.
 					const actor = holder && holder.label === base.actor ? undefined : base.actor
-					const place = placeText(e.newValue) || (row ? placeLabel(row.siteName, row.location) : '')
+					const place = placeText(e.newValue) || (row ? placeLabel(row.siteName, row.locationName) : '')
 					const noteComment = row?.comment || eventComment
 					return {
 						...base,
@@ -228,7 +228,7 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 					// обе строки названы событием явно.
 					const opened = e.assignmentId ? rowsById.get(e.assignmentId) : undefined
 					const closed = e.closedAssignmentId ? rowsById.get(e.closedAssignmentId) : undefined
-					const place = placeText(e.newValue) || (opened ? placeLabel(opened.siteName, opened.location) : '')
+					const place = placeText(e.newValue) || (opened ? placeLabel(opened.siteName, opened.locationName) : '')
 					const noteComment = closed?.comment || opened?.comment || eventComment
 					return {
 						...base,
@@ -342,7 +342,7 @@ export const HistoryTimeline: FC<Props> = ({ unit }) => {
 			if (openedBy.has(a.id)) return list
 
 			const holder = a.holderFullName || a.holderName
-			const place = placeLabel(a.siteName, a.location)
+			const place = placeLabel(a.siteName, a.locationName)
 			const due = dueNote(a)
 			if (holder) {
 				// Выдал себе — не печатаем одно и то же имя дважды.

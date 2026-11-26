@@ -77,6 +77,17 @@ func (s *EquipmentService) buildAct(ctx context.Context, tx repository.Tx, dto *
 		return nil, fmt.Errorf("failed to build act content. error: %w", err)
 	}
 
+	// Выдача уже резолвила подпись; ручное формирование акта делает это здесь.
+	// ДТО из запроса LocationName не несёт (json:"-"), поэтому подставить чужое
+	// название нельзя.
+	locationName := dto.LocationName
+	if locationName == "" {
+		locationName, err = s.resolveLocation(ctx, dto.SiteID, dto.LocationID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	seq, err := s.repo.NextActSeq(ctx, tx, dto.RealmID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get act seq. error: %w", err)
@@ -102,7 +113,8 @@ func (s *EquipmentService) buildAct(ctx context.Context, tx repository.Tx, dto *
 		RecipientUserID: dto.RecipientUserID,
 		RecipientName:   dto.RecipientName,
 		SiteID:          dto.SiteID,
-		Location:        dto.Location,
+		LocationID:      dto.LocationID,
+		LocationName:    locationName,
 		IssuedBy:        actorID(dto.Actor),
 		IssuedAt:        issuedAt,
 		Content:         content,

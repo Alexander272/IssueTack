@@ -763,6 +763,32 @@ func (m *MockSitesRepo) Delete(ctx context.Context, dto *models.DelSiteDTO) erro
 	args := m.Called(ctx, dto)
 	return args.Error(0)
 }
+func (m *MockSitesRepo) GetAllLocations(ctx context.Context) ([]*models.SiteLocation, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.SiteLocation), args.Error(1)
+}
+func (m *MockSitesRepo) GetLocations(ctx context.Context, siteID uuid.UUID) ([]*models.SiteLocation, error) {
+	args := m.Called(ctx, siteID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*models.SiteLocation), args.Error(1)
+}
+func (m *MockSitesRepo) CreateLocation(ctx context.Context, dto *models.SiteLocationDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+func (m *MockSitesRepo) UpdateLocation(ctx context.Context, dto *models.SiteLocationDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
+func (m *MockSitesRepo) DeleteLocation(ctx context.Context, dto *models.DelSiteLocationDTO) error {
+	args := m.Called(ctx, dto)
+	return args.Error(0)
+}
 
 type MockCategoryGroupsRepo struct {
 	mock.Mock

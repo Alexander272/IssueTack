@@ -14,16 +14,21 @@ import (
 
 // Заготовка окружения для интеграционных тестов оборудования.
 type eqFixture struct {
-	realmID uuid.UUID
-	userID  uuid.UUID
-	typeID  uuid.UUID
-	kitType uuid.UUID
+	realmID    uuid.UUID
+	userID     uuid.UUID
+	typeID     uuid.UUID
+	kitType    uuid.UUID
+	siteID     uuid.UUID
+	locationID uuid.UUID
 }
 
 func newEqFixture(t *testing.T, pool *pgxpool.Pool) *eqFixture {
 	t.Helper()
 	ctx := context.Background()
-	f := &eqFixture{realmID: uuid.New(), userID: uuid.New(), typeID: uuid.New(), kitType: uuid.New()}
+	f := &eqFixture{
+		realmID: uuid.New(), userID: uuid.New(), typeID: uuid.New(), kitType: uuid.New(),
+		siteID: uuid.New(), locationID: uuid.New(),
+	}
 
 	_, err := pool.Exec(ctx, `INSERT INTO realms (id, code, name) VALUES ($1, $2, $3)`,
 		f.realmID, "eqtest-"+f.realmID.String()[:8], "Equipment Test Realm")
@@ -40,9 +45,16 @@ func newEqFixture(t *testing.T, pool *pgxpool.Pool) *eqFixture {
 		f.kitType, f.realmID)
 	require.NoError(t, err)
 
+	_, err = pool.Exec(ctx, `INSERT INTO sites (id, name) VALUES ($1, $2)`, f.siteID, "Склад")
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO site_locations (id, site_id, name) VALUES ($1, $2, $3)`,
+		f.locationID, f.siteID, "Склад")
+	require.NoError(t, err)
+
 	t.Cleanup(func() {
 		_, _ = pool.Exec(ctx, `DELETE FROM realms WHERE id = $1`, f.realmID)
 		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id = $1`, f.userID)
+		_, _ = pool.Exec(ctx, `DELETE FROM sites WHERE id = $1`, f.siteID)
 	})
 	return f
 }
@@ -55,7 +67,8 @@ func newEquipmentDTO(f *eqFixture, typeID *uuid.UUID, name string) *models.Equip
 		TypeID:       typeID,
 		Name:         name,
 		Status:       models.EquipmentStatusInStock,
-		Location:     eqString("Склад"),
+		SiteID:       &f.siteID,
+		LocationID:   &f.locationID,
 		CreatedBy:    &f.userID,
 		Specs:        []byte("{}"),
 		Vendor:       "",
@@ -118,7 +131,9 @@ func TestEquipmentRepo_Stage3Flow(t *testing.T) {
 	require.NoError(t, repo.CreateAssignment(ctx, tx, &models.EquipmentAssignment{
 		EquipmentID: kit.ID, UserID: &f.userID, AssignedAt: now, AssignedBy: &f.userID,
 	}))
-	require.NoError(t, repo.SetHolderAndStatus(ctx, tx, kit.ID, &f.userID, nil, nil, nil, models.EquipmentStatusInUse))
+	require.NoError(t, repo.SetHolderAndStatus(ctx, tx, &models.EquipmentHolderDTO{
+		ID: kit.ID, UserID: &f.userID, Status: models.EquipmentStatusInUse,
+	}))
 	require.NoError(t, tx.Commit(ctx))
 
 	open, err := repo.GetOpenAssignment(ctx, kit.ID)
@@ -132,8 +147,11 @@ func TestEquipmentRepo_Stage3Flow(t *testing.T) {
 
 	// Возврат: выдача закрывается, открывается строка без держателя — это «дом»
 	// единицы, куда её поставит следующий возврат.
-	siteID := uuid.New()
+	siteID, locationID := uuid.New(), uuid.New()
 	_, err = pool.Exec(ctx, `INSERT INTO sites (id, name) VALUES ($1, $2)`, siteID, "ППРЗ")
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO site_locations (id, site_id, name) VALUES ($1, $2, $3)`,
+		locationID, siteID, "Склад, полка A")
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM sites WHERE id = $1`, siteID) })
 
@@ -141,7 +159,7 @@ func TestEquipmentRepo_Stage3Flow(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, repo.CloseAssignment(ctx, tx, open.ID, now, ""))
 	require.NoError(t, repo.CreateAssignment(ctx, tx, &models.EquipmentAssignment{
-		EquipmentID: kit.ID, SiteID: &siteID, Location: eqString("Склад, полка A"),
+		EquipmentID: kit.ID, SiteID: &siteID, LocationID: &locationID,
 		AssignedAt: now.Add(time.Second), AssignedBy: &f.userID,
 	}))
 	require.NoError(t, tx.Commit(ctx))
@@ -151,7 +169,7 @@ func TestEquipmentRepo_Stage3Flow(t *testing.T) {
 	require.NotNil(t, storedSite)
 	assert.Equal(t, siteID, *storedSite)
 	require.NotNil(t, storedLocation)
-	assert.Equal(t, "Склад, полка A", *storedLocation)
+	assert.Equal(t, locationID, *storedLocation)
 
 	history, err := repo.GetAssignmentHistory(ctx, f.realmID, kit.ID)
 	require.NoError(t, err)

@@ -76,41 +76,54 @@ func (f *fakeEquipmentRepo) GetTypes(_ context.Context, _ *models.GetEquipmentTy
 // newImportTestService собирает сервис импорта над настоящим сервисом
 // оборудования: единицы создаются обычным путём, поэтому правила сервиса
 // (вывод статуса из держателя, генерация номера) действуют и при импорте.
-func newImportTestService(t *testing.T, repo repository.Equipment, users []*models.UserData, sites []*models.Site) *EquipmentImportService {
+func newImportTestService(t *testing.T, repo repository.Equipment, users []*models.UserData, sites []*models.Site,
+	locations ...repository.SiteLocations,
+) *EquipmentImportService {
 	t.Helper()
 	equipment := NewEquipmentService(repo, &mockTransactionManager{}, testEquipmentConf(t))
-	return NewEquipmentImportService(equipment, &fakeImportSitesRepo{sites: sites}, &fakeImportUsersRepo{users: users})
+	svc := NewEquipmentImportService(equipment, &fakeImportSitesRepo{sites: sites}, &fakeImportUsersRepo{users: users})
+	if len(locations) > 0 {
+		svc.SetLocations(locations[0])
+		equipment.SetLocations(locations[0])
+	}
+	return svc
 }
 
 // importTestRefs — типичный реалм: тип «Ноутбук», площадка и сотрудник.
 type importTestRefs struct {
-	realmID   uuid.UUID
-	typeID    uuid.UUID
-	siteID    uuid.UUID
-	userID    uuid.UUID
-	equipment *fakeEquipmentRepo
-	users     []*models.UserData
-	sites     []*models.Site
+	realmID    uuid.UUID
+	typeID     uuid.UUID
+	siteID     uuid.UUID
+	userID     uuid.UUID
+	locationID uuid.UUID
+	equipment  *fakeEquipmentRepo
+	users      []*models.UserData
+	sites      []*models.Site
+	locations  *fakeSiteLocationsRepo
 }
 
 func newImportTestRefs(t *testing.T) *importTestRefs {
 	t.Helper()
 	refs := &importTestRefs{
-		realmID: uuid.New(),
-		typeID:  uuid.New(),
-		siteID:  uuid.New(),
-		userID:  uuid.New(),
+		realmID:    uuid.New(),
+		typeID:     uuid.New(),
+		siteID:     uuid.New(),
+		userID:     uuid.New(),
+		locationID: uuid.New(),
 		equipment: &fakeEquipmentRepo{
 			eqType: &models.EquipmentType{ID: uuid.New(), RealmID: uuid.New(), Name: "Ноутбук", Kind: models.EquipmentTypeDevice},
 		},
 		users: []*models.UserData{{
 			ID: uuid.New(), Username: "ivanov", FirstName: "Иван", LastName: "Иванов", IsActive: true,
 		}},
-		sites: []*models.Site{{ID: uuid.New(), Name: "Офис на Мира 10"}},
+		sites:     []*models.Site{{ID: uuid.New(), Name: "Офис на Мира 10"}},
+		locations: newFakeSiteLocations(),
 	}
 	refs.equipment.eqType.RealmID = refs.realmID
+	refs.equipment.eqType.ID = refs.typeID
 	refs.users[0].ID = refs.userID
 	refs.sites[0].ID = refs.siteID
+	refs.locations.add(refs.siteID, refs.locationID, "Кабинет 312")
 	return refs
 }
 
@@ -119,7 +132,7 @@ func newImportTestRefs(t *testing.T) *importTestRefs {
 func TestEquipmentImport_CreatesUnitWithHolder(t *testing.T) {
 	ctx := context.Background()
 	refs := newImportTestRefs(t)
-	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites)
+	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites, refs.locations)
 
 	csv := strings.Join([]string{
 		"Наименование;Тип;Получатель;Площадка;Локация;Дата покупки;Серийный номер;Производитель",
@@ -149,6 +162,8 @@ func TestEquipmentImport_CreatesUnitWithHolder(t *testing.T) {
 	assert.Nil(t, refs.equipment.created.HolderName)
 	require.NotNil(t, refs.equipment.created.SiteID)
 	assert.Equal(t, refs.siteID, *refs.equipment.created.SiteID)
+	require.NotNil(t, refs.equipment.created.LocationID)
+	assert.Equal(t, refs.locationID, *refs.equipment.created.LocationID)
 	require.NotNil(t, refs.equipment.created.PurchaseDate)
 	assert.Equal(t, "2026-01-15", *refs.equipment.created.PurchaseDate)
 	require.NotNil(t, refs.equipment.created.SerialNumber)
@@ -157,12 +172,33 @@ func TestEquipmentImport_CreatesUnitWithHolder(t *testing.T) {
 	assert.Equal(t, models.EquipmentStatusInUse, refs.equipment.created.Status)
 }
 
+// TestEquipmentImport_UnknownLocationFailsRow — расположение — справочник
+// площадки: неизвестное название не создаётся на лету, строка отклоняется.
+func TestEquipmentImport_UnknownLocationFailsRow(t *testing.T) {
+	ctx := context.Background()
+	refs := newImportTestRefs(t)
+	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites, refs.locations)
+
+	csv := strings.Join([]string{
+		"Наименование;Тип;Площадка;Локация",
+		"Ноутбук Dell Latitude;Ноутбук;Офис на Мира 10;Кабинет 404",
+	}, "\n")
+
+	result, err := svc.Import(ctx, &models.EquipmentImportDTO{RealmID: refs.realmID, File: strings.NewReader(csv)})
+	require.NoError(t, err)
+
+	require.Len(t, result.Rows, 1)
+	assert.Equal(t, models.EquipmentImportRowFailed, result.Rows[0].Status)
+	assert.Contains(t, result.Rows[0].Error, "локация «Кабинет 404» не найдена")
+	assert.Nil(t, refs.equipment.created)
+}
+
 // TestEquipmentImport_UnknownHolderBecomesFreeValue — получатель не найден
 // среди пользователей: ФИО записывается свободным значением (holder_name).
 func TestEquipmentImport_UnknownHolderBecomesFreeValue(t *testing.T) {
 	ctx := context.Background()
 	refs := newImportTestRefs(t)
-	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites)
+	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites, refs.locations)
 
 	csv := strings.Join([]string{
 		"Наименование;Тип;Получатель",
@@ -190,7 +226,7 @@ func TestEquipmentImport_UnknownHolderBecomesFreeValue(t *testing.T) {
 func TestEquipmentImport_UnknownTypeFailsRow(t *testing.T) {
 	ctx := context.Background()
 	refs := newImportTestRefs(t)
-	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites)
+	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites, refs.locations)
 
 	csv := strings.Join([]string{
 		"Наименование;Тип;Получатель",
@@ -213,7 +249,7 @@ func TestEquipmentImport_UnknownTypeFailsRow(t *testing.T) {
 func TestEquipmentImport_UnknownSiteFailsRow(t *testing.T) {
 	ctx := context.Background()
 	refs := newImportTestRefs(t)
-	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites)
+	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites, refs.locations)
 
 	csv := strings.Join([]string{
 		"Наименование;Тип;Площадка;Получатель",
@@ -234,7 +270,7 @@ func TestEquipmentImport_UnknownSiteFailsRow(t *testing.T) {
 func TestEquipmentImport_StatusInUseWithoutHolderFails(t *testing.T) {
 	ctx := context.Background()
 	refs := newImportTestRefs(t)
-	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites)
+	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites, refs.locations)
 
 	csv := strings.Join([]string{
 		"Наименование;Тип;Площадка;Статус",
@@ -255,7 +291,7 @@ func TestEquipmentImport_StatusInUseWithoutHolderFails(t *testing.T) {
 func TestEquipmentImport_ManualStatusKept(t *testing.T) {
 	ctx := context.Background()
 	refs := newImportTestRefs(t)
-	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites)
+	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites, refs.locations)
 
 	csv := strings.Join([]string{
 		"Наименование;Тип;Площадка;Статус",
@@ -277,7 +313,7 @@ func TestEquipmentImport_ManualStatusKept(t *testing.T) {
 func TestEquipmentImport_InUse_CreatesAssignmentWithIssuedDate(t *testing.T) {
 	ctx := context.Background()
 	refs := newImportTestRefs(t)
-	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites)
+	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites, refs.locations)
 
 	csv := strings.Join([]string{
 		"Наименование;Тип;Получатель;Площадка;Локация;Дата выдачи;Статус",
@@ -314,6 +350,8 @@ func TestEquipmentImport_AssignSkipsOperationTasks(t *testing.T) {
 	equipment := NewEquipmentService(refs.equipment, &mockTransactionManager{}, testEquipmentConf(t))
 	recording := &recordingAssignEquipment{Equipment: equipment}
 	svc := NewEquipmentImportService(recording, &fakeImportSitesRepo{sites: refs.sites}, &fakeImportUsersRepo{users: refs.users})
+	svc.SetLocations(refs.locations)
+	equipment.SetLocations(refs.locations)
 
 	csv := strings.Join([]string{
 		"Наименование;Тип;Получатель;Площадка;Дата выдачи;Статус",
@@ -339,7 +377,7 @@ func TestEquipmentImport_AssignSkipsOperationTasks(t *testing.T) {
 func TestEquipmentImport_InUse_WithoutIssuedColumn_NoAssignment(t *testing.T) {
 	ctx := context.Background()
 	refs := newImportTestRefs(t)
-	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites)
+	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites, refs.locations)
 
 	csv := strings.Join([]string{
 		"Наименование;Тип;Получатель;Площадка;Статус",
@@ -369,7 +407,7 @@ func TestEquipmentImport_InUse_WithoutIssuedColumn_NoAssignment(t *testing.T) {
 func TestEquipmentImport_InStockWithoutHolder_DoesNotAssign(t *testing.T) {
 	ctx := context.Background()
 	refs := newImportTestRefs(t)
-	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites)
+	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites, refs.locations)
 
 	csv := strings.Join([]string{
 		"Наименование;Тип;Площадка;Статус",
@@ -393,7 +431,7 @@ func TestEquipmentImport_InStockWithoutHolder_DoesNotAssign(t *testing.T) {
 func TestEquipmentImport_UnknownColumnBecomesSpec(t *testing.T) {
 	ctx := context.Background()
 	refs := newImportTestRefs(t)
-	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites)
+	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites, refs.locations)
 
 	csv := strings.Join([]string{
 		"Наименование;Тип;Площадка;Цвет;№ п/п",
@@ -420,7 +458,7 @@ func TestEquipmentImport_RowErrorDoesNotStopImport(t *testing.T) {
 	ctx := context.Background()
 	refs := newImportTestRefs(t)
 	failing := &failingCreateRepo{fakeEquipmentRepo: refs.equipment, err: models.ErrEquipmentSerialExists}
-	svc := newImportTestService(t, failing, refs.users, refs.sites)
+	svc := newImportTestService(t, failing, refs.users, refs.sites, refs.locations)
 
 	csv := strings.Join([]string{
 		"Наименование;Тип;Площадка",
@@ -443,7 +481,7 @@ func TestEquipmentImport_RowErrorDoesNotStopImport(t *testing.T) {
 func TestEquipmentImport_ReadsXLSX(t *testing.T) {
 	ctx := context.Background()
 	refs := newImportTestRefs(t)
-	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites)
+	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites, refs.locations)
 
 	file := excelize.NewFile()
 	defer file.Close()
@@ -479,7 +517,7 @@ func TestEquipmentImport_ReadsXLSX(t *testing.T) {
 func TestEquipmentImport_ReadsWindows1251CSV(t *testing.T) {
 	ctx := context.Background()
 	refs := newImportTestRefs(t)
-	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites)
+	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites, refs.locations)
 
 	csv := strings.Join([]string{
 		"Наименование;Тип;Площадка",

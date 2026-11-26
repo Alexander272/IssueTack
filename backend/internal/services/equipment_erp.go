@@ -128,7 +128,7 @@ func erpTicketContent(op erpOperation, eq *models.Equipment) (string, string) {
 		description += fmt.Sprintf("\nСерийный номер: %s", *eq.SerialNumber)
 	}
 	if holder != "" {
-		description += fmt.Sprintf("\nДержатель: %s", holder)
+		description += fmt.Sprintf("\nЗакреплено за: %s", holder)
 	}
 	if eq.SiteName != "" {
 		description += fmt.Sprintf("\nПлощадка: %s", eq.SiteName)
