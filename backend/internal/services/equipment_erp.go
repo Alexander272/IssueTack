@@ -16,6 +16,17 @@ const (
 	erpUnassign erpOperation = "unassign"
 )
 
+// runOperationTasks — точка входа после коммита выдачи/возврата. Если для реалма
+// заданы правила в UI, работает только они (в том числе выключенные — «выключить
+// ERP-задачу» возможно только так). Правил нет — остаётся прежний fallback из
+// конфигурации. SkipOperationTasks ставит импорт: там операции выдачи нет.
+func (s *EquipmentService) runOperationTasks(ctx context.Context, op erpOperation, id, realmID uuid.UUID, actor *models.Actor) {
+	if s.operationTasks != nil && s.operationTasks.RunForOperation(ctx, models.EquipmentOperation(op), id, realmID, actor) {
+		return
+	}
+	s.createERPTicket(ctx, op, id, realmID, actor)
+}
+
 // createERPTicket заводит заявку «провести передачу техники в 1C:ERP» после выдачи
 // или возврата. Создатель, заказчик и исполнитель — тот, кто проводил операцию:
 // заявка живёт в его правах, поэтому проходит обычный TicketService.Create
@@ -23,9 +34,10 @@ const (
 // нет. Исполнитель задаётся явно: иначе autoAssign подставил бы ответственного по
 // умолчанию группы, и заявку взял бы кто угодно, кроме проводившего операцию.
 //
-// Реквизиты заявки (категория/группа/площадка) задаются в конфиге: тикет без группы
-// создать нельзя, а выдумывать группу или категорию нельзя тем более. Если хотя бы
-// один реквизит пуст — заявка не создаётся, операция не считается неуспешной.
+// Категория и группа берутся из конфига (или из правил в UI); площадка — только
+// из самой единицы: заявка о передаче техники относится к месту, где она стоит,
+// а не к площадке из GENERAL-настроек. Тикет без группы создать нельзя, поэтому
+// пустые категория/группа означают «заявку не создавать», но не сбой операции.
 //
 // Ошибка создания ERP-заявки не откатывает выдачу/возврат: те уже закоммичены к
 // моменту вызова. Поэтому ошибка не возвращается наверх — иначе успешная выдача
@@ -44,11 +56,6 @@ func (s *EquipmentService) createERPTicket(ctx context.Context, op erpOperation,
 	if err != nil {
 		return
 	}
-	siteID, err := uuid.Parse(s.erpConf.ERPSiteID)
-	if err != nil {
-		return
-	}
-
 	// Реквизиты единицы читаем заново: выдача/возврат уже закоммичены, и держатель
 	// в БД новый — по «старому» снимку описание заявки показывало бы прежнего.
 	eq, err := s.repo.GetByID(ctx, &models.GetEquipmentByIdDTO{ID: id, RealmID: realmID})
@@ -57,6 +64,13 @@ func (s *EquipmentService) createERPTicket(ctx context.Context, op erpOperation,
 			"equipment_id": id.String(),
 		})
 		return
+	}
+
+	// Площадка заявки — площадка оборудования. Единица без площадки не должна
+	// получать заявку на «чужой» сайт из конфига.
+	var siteID uuid.UUID
+	if eq.SiteID != nil {
+		siteID = *eq.SiteID
 	}
 
 	title, description := erpTicketContent(op, eq)

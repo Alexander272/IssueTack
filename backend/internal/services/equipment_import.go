@@ -265,15 +265,16 @@ func (s *EquipmentImportService) importRow(
 		return result
 	}
 
-	// Единица числится в эксплуатации (получен): выдача оформляется отдельной
-	// операцией — с датой из файла, а при её отсутствии с моментом создания.
-	// Без выдачи у «в эксплуатации» единицы нет даты выдачи в истории.
-	if created.Status == models.EquipmentStatusInUse {
-		issuedAt := time.Now()
-		if issuedStr != nil {
-			if issued, issuedErr := time.Parse(time.DateOnly, *issuedStr); issuedErr == nil {
-				issuedAt = issued
-			}
+	// Единица числится в эксплуатации (получен): выдача — отдельная операция,
+	// но только когда в файле явно указана дата выдачи. Пустая дата означает,
+	// что факта выдачи как события нет: нечего писать в историю и не за что
+	// запускать автоматические задачи (в т.ч. заявку в 1C:ERP). Дату «сейчас»
+	// подставлять нельзя — это выдуманный факт.
+	if created.Status == models.EquipmentStatusInUse && issuedStr != nil && *issuedStr != "" {
+		issuedAt, issuedErr := time.Parse(time.DateOnly, *issuedStr)
+		if issuedErr != nil {
+			result.Error = "не удалось разобрать дату выдачи"
+			return result
 		}
 		if err := s.equipment.Assign(ctx, &models.AssignEquipmentDTO{
 			ID:         created.ID,
@@ -284,8 +285,11 @@ func (s *EquipmentImportService) importRow(
 			Location:   createDTO.Location,
 			Comment:    "Импорт",
 			SkipAct:    true,
-			AssignedAt: &issuedAt,
-			Actor:      createDTO.Actor,
+			// Импорт создаёт единицу уже с держателем; отдельная операция выдачи
+			// тут не проводится, поэтому автоматические задачи не запускаем.
+			SkipOperationTasks: true,
+			AssignedAt:         &issuedAt,
+			Actor:              createDTO.Actor,
 		}); err != nil {
 			result.Error = importErrorMessage(err)
 			return result

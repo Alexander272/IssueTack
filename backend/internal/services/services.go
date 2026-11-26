@@ -45,8 +45,9 @@ type Services struct {
 	// EquipmentImport — импорт единиц оборудования из файла. Отдельный сервис,
 	// а не метод сервиса оборудования: импорту нужны справочники площадок и
 	// пользователей, которых у оборудования нет.
-	EquipmentImport        *EquipmentImportService
-	EquipmentPeriodicTasks *EquipmentPeriodicTaskService
+	EquipmentImport         *EquipmentImportService
+	EquipmentPeriodicTasks  *EquipmentPeriodicTaskService
+	EquipmentOperationTasks *EquipmentOperationTaskService
 	// Интеграции
 	Calendar WorkCalendar
 	Scheduler
@@ -190,6 +191,12 @@ func NewServices(deps *Deps) *Services {
 	equipmentPeriodicTasks.SetUsers(users)
 	equipment.SetPeriodicStarter(equipmentPeriodicTasks)
 
+	// Правила автоматических задач после выдачи/возврата оборудования:
+	// настраиваются в БД через UI, при отсутствии правил работает конфиг.
+	equipmentOperationTasks := NewEquipmentOperationTaskService(deps.Repo.Equipment, transaction)
+	equipmentOperationTasks.SetTicketCreator(tickets)
+	equipment.SetOperationTasks(equipmentOperationTasks)
+
 	// Цикл tickets → attachments разорван: уведомление о вложении рассылает сам
 	// TicketService (UploadAttachment), поэтому attachments не зависят от тикетов
 	// и позднее связывание не требуется.
@@ -249,25 +256,26 @@ func NewServices(deps *Deps) *Services {
 		Session:        session,
 
 		// Домен
-		Groups:                 groups,
-		Categories:             categories,
-		CategoryGroups:         categoryGroups,
-		CategoryModifiers:      categoryModifiers,
-		Sites:                  sites,
-		Tickets:                tickets,
-		Statistics:             statistics,
-		Subtasks:               subtasks,
-		Attachments:            attachments,
-		Checklists:             checklists,
-		Comments:               comments,
-		Notifications:          notifications,
-		Subscriptions:          subscriptions,
-		TicketFavorites:        favorites,
-		ActivityLog:            logs,
-		UserRealms:             userRealms,
-		Equipment:              equipment,
-		EquipmentImport:        equipmentImport,
-		EquipmentPeriodicTasks: equipmentPeriodicTasks,
+		Groups:                  groups,
+		Categories:              categories,
+		CategoryGroups:          categoryGroups,
+		CategoryModifiers:       categoryModifiers,
+		Sites:                   sites,
+		Tickets:                 tickets,
+		Statistics:              statistics,
+		Subtasks:                subtasks,
+		Attachments:             attachments,
+		Checklists:              checklists,
+		Comments:                comments,
+		Notifications:           notifications,
+		Subscriptions:           subscriptions,
+		TicketFavorites:         favorites,
+		ActivityLog:             logs,
+		UserRealms:              userRealms,
+		Equipment:               equipment,
+		EquipmentImport:         equipmentImport,
+		EquipmentPeriodicTasks:  equipmentPeriodicTasks,
+		EquipmentOperationTasks: equipmentOperationTasks,
 
 		// Интеграции
 		Calendar:   calendar,

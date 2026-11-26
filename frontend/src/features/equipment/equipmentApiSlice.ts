@@ -2,6 +2,7 @@ import { toast } from 'react-toastify'
 
 import type { IBaseFetchError } from '@/app/types/error'
 import type {
+	EquipmentOperation,
 	IAddDefectDTO,
 	IAssignEquipmentDTO,
 	IChangeStatusDTO,
@@ -20,6 +21,8 @@ import type {
 	IEquipmentKitTemplate,
 	IEquipmentKitTemplateDTO,
 	IEquipmentList,
+	IEquipmentOperationTask,
+	IEquipmentOperationTaskDTO,
 	IEquipmentPeriodicTaskInstanceFilter,
 	IEquipmentPeriodicTaskInstanceList,
 	IEquipmentShop,
@@ -945,6 +948,99 @@ const equipmentApiSlice = apiSlice.injectEndpoints({
 				}
 			},
 		}),
+
+		// ===== Автоматические задачи после операций =====
+		getOperationTasks: builder.query<
+			{ data: IEquipmentOperationTask[] },
+			{ realmId: string; operation?: EquipmentOperation }
+		>({
+			query: ({ realmId, operation }) => ({
+				url: API.equipment.operationTasks.base,
+				method: 'GET',
+				params: { realmId, operation },
+			}),
+			providesTags: [{ type: 'EquipmentOperationTasks', id: 'ALL' }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		getOperationTask: builder.query<{ data: IEquipmentOperationTask }, string>({
+			query: id => ({
+				url: API.equipment.operationTasks.byId(id),
+				method: 'GET',
+			}),
+			providesTags: (_result, _err, id) => [
+				{ type: 'EquipmentOperationTasks', id: 'ALL' },
+				{ type: 'EquipmentOperationTasks', id },
+			],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		createOperationTask: builder.mutation<{ data: IEquipmentOperationTask }, IEquipmentOperationTaskDTO>({
+			query: body => ({
+				url: API.equipment.operationTasks.base,
+				method: 'POST',
+				body,
+			}),
+			invalidatesTags: [{ type: 'EquipmentOperationTasks', id: 'ALL' }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+					toast.success('Правило создано')
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		updateOperationTask: builder.mutation<{ data: IEquipmentOperationTask }, IEquipmentOperationTaskDTO>({
+			query: body => ({
+				url: API.equipment.operationTasks.byId(body.id!),
+				method: 'PUT',
+				body,
+			}),
+			invalidatesTags: [{ type: 'EquipmentOperationTasks', id: 'ALL' }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+					toast.success('Правило обновлено')
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
+
+		deleteOperationTask: builder.mutation<void, string>({
+			query: id => ({
+				url: API.equipment.operationTasks.byId(id),
+				method: 'DELETE',
+			}),
+			invalidatesTags: [{ type: 'EquipmentOperationTasks', id: 'ALL' }],
+			onQueryStarted: async (_arg, api) => {
+				try {
+					await api.queryFulfilled
+					toast.success('Правило удалено')
+				} catch (error) {
+					const fetchError = (error as IBaseFetchError).error
+					toast.error(fetchError.data?.message, { autoClose: false })
+				}
+			},
+		}),
 	}),
 })
 
@@ -998,4 +1094,9 @@ export const {
 	useDeletePeriodicTaskTemplateMutation,
 	useGetPeriodicTaskInstancesQuery,
 	useRunPeriodicTaskMutation,
+	useGetOperationTasksQuery,
+	useGetOperationTaskQuery,
+	useCreateOperationTaskMutation,
+	useUpdateOperationTaskMutation,
+	useDeleteOperationTaskMutation,
 } = equipmentApiSlice

@@ -1,11 +1,17 @@
 import { useState } from 'react'
 import { Box, Tab, Tabs, useMediaQuery, useTheme } from '@mui/material'
 
-import { EquipmentTemplatesSection, EquipmentTypesSection, Header, PeriodicTasksSection } from '../components/Settings'
+import {
+	EquipmentTemplatesSection,
+	EquipmentTypesSection,
+	Header,
+	OperationTasksSection,
+	PeriodicTasksSection,
+} from '../components/Settings'
 
 export const SettingsPage = () => {
 	const theme = useTheme()
-	// На телефоне две длинные вкладки не помещаются в строку и уезжают в скролл —
+	// На телефоне длинные вкладки не помещаются в строку и уезжают в скролл —
 	// как вкладки карточки единицы (`DetailModal`).
 	const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
 	const [tab, setTab] = useState(0)
@@ -40,6 +46,7 @@ export const SettingsPage = () => {
 							<Tab label='Типы оборудования' />
 							<Tab label='Шаблоны комплектов' />
 							<Tab label='Периодические задачи' />
+						<Tab label='Автоматические задачи' />
 						</Tabs>
 					</Box>
 				</Box>
@@ -48,6 +55,7 @@ export const SettingsPage = () => {
 					{tab === 0 && <EquipmentTypesSection />}
 					{tab === 1 && <EquipmentTemplatesSection />}
 					{tab === 2 && <PeriodicTasksSection />}
+				{tab === 3 && <OperationTasksSection />}
 				</Box>
 			</Box>
 		</Box>

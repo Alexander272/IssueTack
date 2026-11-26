@@ -119,6 +119,13 @@ type Equipment interface {
 	UpdatePeriodicTaskTemplate(ctx context.Context, tx Tx, dto *models.EquipmentTypePeriodicTaskDTO) (*models.EquipmentTypePeriodicTask, error)
 	DeletePeriodicTaskTemplate(ctx context.Context, dto *models.DelEquipmentTypePeriodicTaskDTO) error
 
+	// Правила автоматических задач после операций с оборудованием
+	GetOperationTasks(ctx context.Context, realmID uuid.UUID, operation *models.EquipmentOperation) ([]*models.EquipmentOperationTask, error)
+	GetOperationTaskByID(ctx context.Context, tx Tx, id uuid.UUID, realmID uuid.UUID) (*models.EquipmentOperationTask, error)
+	CreateOperationTask(ctx context.Context, tx Tx, dto *models.EquipmentOperationTaskDTO) (*models.EquipmentOperationTask, error)
+	UpdateOperationTask(ctx context.Context, tx Tx, dto *models.EquipmentOperationTaskDTO) (*models.EquipmentOperationTask, error)
+	DeleteOperationTask(ctx context.Context, dto *models.DelEquipmentOperationTaskDTO) error
+
 	// Экземпляры периодических задач
 	GetPeriodicTaskInstances(ctx context.Context, filter *models.GetEquipmentPeriodicTaskInstancesFilter) ([]*models.EquipmentPeriodicTaskInstance, int, error)
 	// GetPendingPeriodicTasks возвращает задачи со статусом pending, у которых scheduled_at <= now,

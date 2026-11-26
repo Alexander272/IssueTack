@@ -137,6 +137,10 @@ export const API = {
 			instances: '/equipment/periodic-tasks/instances' as const,
 			run: '/equipment/periodic-tasks/run' as const,
 		},
+		operationTasks: {
+			base: '/equipment/operation-tasks' as const,
+			byId: (id: string) => `/equipment/operation-tasks/${id}` as const,
+		},
 	},
 	notifications: {
 		settings: '/notifications/settings',

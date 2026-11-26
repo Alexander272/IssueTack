@@ -163,9 +163,11 @@ func (s *EquipmentService) Assign(ctx context.Context, dto *models.AssignEquipme
 		return err
 	}
 
-	// Заявка в 1C:ERP — после коммита выдачи: заявка ссылается на единицу уже с
-	// новым держателем, и её сбой не откатывает выдачу.
-	s.createERPTicket(ctx, erpAssign, dto.ID, dto.RealmID, dto.Actor)
+	// Автоматические задачи после выдачи — после коммита: заявка ссылается на
+	// единицу уже с новым держателем, и её сбой не откатывает выдачу.
+	if !dto.SkipOperationTasks {
+		s.runOperationTasks(ctx, erpAssign, dto.ID, dto.RealmID, dto.Actor)
+	}
 
 	// Автостарт периодической задачи — после коммита выдачи, best-effort: сбой
 	// не откатывает выдачу, но и не должен терять факт (заявка будет создана
@@ -278,8 +280,9 @@ func (s *EquipmentService) Unassign(ctx context.Context, dto *models.UnassignEqu
 		return err
 	}
 
-	// Заявка в 1C:ERP — как и при выдаче: после коммита, сбой не откатывает возврат.
-	s.createERPTicket(ctx, erpUnassign, dto.ID, dto.RealmID, dto.Actor)
+	// Автоматические задачи после возврата — как и при выдаче: после коммита,
+	// сбой не откатывает возврат.
+	s.runOperationTasks(ctx, erpUnassign, dto.ID, dto.RealmID, dto.Actor)
 	return nil
 }
 

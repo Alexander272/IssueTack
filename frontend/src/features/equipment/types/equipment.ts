@@ -568,3 +568,45 @@ export interface IManualPeriodicTaskRunDTO {
 	equipmentId: string
 	shiftNext: boolean
 }
+
+// ===== Автоматические задачи после операций с оборудованием =====
+
+// Операция, после которой срабатывают правила. Пока это выдача и возврат;
+// новые операции добавляются расширением перечисления на бэкенде.
+export type EquipmentOperation = 'assign' | 'unassign'
+// Действие правила. Пока одно — создать заявку; CHECK в БД и enum на бэкенде
+// оставляют место для новых действий без миграции контракта.
+export type EquipmentOperationAction = 'create_ticket'
+
+// Площадка заявки не настраивается: сервер всегда берёт её у единицы.
+export interface IEquipmentOperationTask {
+	id: string
+	realmId: string
+	name: string
+	operation: EquipmentOperation
+	action: EquipmentOperationAction
+	title: string
+	description: string
+	categoryId: string
+	groupId: string
+	priority: Priority
+	enabled: boolean
+	createdAt: string
+	updatedAt: string
+	categoryName?: string
+	groupName?: string
+}
+
+export interface IEquipmentOperationTaskDTO {
+	id?: string
+	realmId?: string
+	name: string
+	operation: EquipmentOperation
+	action?: EquipmentOperationAction
+	title?: string
+	description?: string
+	categoryId: string
+	groupId: string
+	priority: Priority
+	enabled: boolean
+}

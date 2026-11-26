@@ -90,6 +90,7 @@ export const apiSlice = createApi({
 		'EquipmentActs',
 		'EquipmentPeriodicTasks',
 		'EquipmentPeriodicTaskInstances',
+		'EquipmentOperationTasks',
 	],
 	endpoints: () => ({}),
 })

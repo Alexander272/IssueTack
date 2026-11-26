@@ -1,4 +1,5 @@
 export { EquipmentTypesSection } from './EquipmentTypesSection'
 export { EquipmentTemplatesSection } from './EquipmentTemplatesSection'
 export { PeriodicTasksSection } from './PeriodicTasksSection'
+export { OperationTasksSection } from './OperationTasksSection'
 export { Header } from './Header'

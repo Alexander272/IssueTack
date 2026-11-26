@@ -51,6 +51,19 @@ func (f *failingCreateRepo) Create(_ context.Context, _ postgres.Tx, _ *models.E
 	return nil, f.err
 }
 
+// recordingAssignEquipment запоминает DTO выдачи, с которым импорт дёрнул
+// сервис оборудования: по флагу SkipOperationTasks видно, что автоматические
+// задачи (заявка в 1C:ERP) при импорте не запускаются.
+type recordingAssignEquipment struct {
+	Equipment
+	assigns []*models.AssignEquipmentDTO
+}
+
+func (r *recordingAssignEquipment) Assign(ctx context.Context, dto *models.AssignEquipmentDTO) error {
+	r.assigns = append(r.assigns, dto)
+	return r.Equipment.Assign(ctx, dto)
+}
+
 // GetTypes отдаёт справочник типов: импорту нужен весь список реалма, а не
 // один тип по идентификатору.
 func (f *fakeEquipmentRepo) GetTypes(_ context.Context, _ *models.GetEquipmentTypesDTO) ([]*models.EquipmentType, error) {
@@ -259,9 +272,8 @@ func TestEquipmentImport_ManualStatusKept(t *testing.T) {
 }
 
 // TestEquipmentImport_InUse_CreatesAssignmentWithIssuedDate — единица со
-// статусом «в эксплуатации» при импорте должна получить выдачу: дату выдачи
-// берёт из новой колонки файла («Дата выдачи»/issued), при её отсутствии —
-// момент создания.
+// статусом «в эксплуатации» при импорте получает выдачу только с датой из
+// файла («Дата выдачи»/issued). Дату «сейчас» импорт не выдумывает.
 func TestEquipmentImport_InUse_CreatesAssignmentWithIssuedDate(t *testing.T) {
 	ctx := context.Background()
 	refs := newImportTestRefs(t)
@@ -293,9 +305,38 @@ func TestEquipmentImport_InUse_CreatesAssignmentWithIssuedDate(t *testing.T) {
 	assert.Equal(t, refs.userID, *assignment.UserID)
 }
 
-// TestEquipmentImport_InUse_WithoutIssuedColumn_AssignsNow — колонка даты
-// выдачи в файле необязательна: без неё выдача датируется моментом создания.
-func TestEquipmentImport_InUse_WithoutIssuedColumn_AssignsNow(t *testing.T) {
+// TestEquipmentImport_AssignSkipsOperationTasks: даже с датой выдачи из файла
+// импорт не должен заводить заявку «провести передачу в 1C:ERP» — это создание
+// единицы, а не реальная операция выдачи в журнале.
+func TestEquipmentImport_AssignSkipsOperationTasks(t *testing.T) {
+	ctx := context.Background()
+	refs := newImportTestRefs(t)
+	equipment := NewEquipmentService(refs.equipment, &mockTransactionManager{}, testEquipmentConf(t))
+	recording := &recordingAssignEquipment{Equipment: equipment}
+	svc := NewEquipmentImportService(recording, &fakeImportSitesRepo{sites: refs.sites}, &fakeImportUsersRepo{users: refs.users})
+
+	csv := strings.Join([]string{
+		"Наименование;Тип;Получатель;Площадка;Дата выдачи;Статус",
+		"Ноутбук;Ноутбук;Иванов Иван;Офис на Мира 10;20.01.2026;в эксплуатации",
+	}, "\n")
+
+	_, err := svc.Import(ctx, &models.EquipmentImportDTO{
+		RealmID: refs.realmID,
+		File:    strings.NewReader(csv),
+		Actor:   &models.Actor{ID: uuid.New()},
+	})
+	require.NoError(t, err)
+
+	require.Len(t, recording.assigns, 1)
+	assert.True(t, recording.assigns[0].SkipOperationTasks)
+	require.NotNil(t, recording.assigns[0].AssignedAt)
+	assert.True(t, recording.assigns[0].AssignedAt.Equal(time.Date(2026, time.January, 20, 0, 0, 0, 0, time.UTC)))
+}
+
+// TestEquipmentImport_InUse_WithoutIssuedColumn_NoAssignment — пустая дата
+// выдачи означает, что факта выдачи нет: ни строки в истории, ни заявки в
+// 1C:ERP. Единица всё равно остаётся «в эксплуатации» с держателем из файла.
+func TestEquipmentImport_InUse_WithoutIssuedColumn_NoAssignment(t *testing.T) {
 	ctx := context.Background()
 	refs := newImportTestRefs(t)
 	svc := newImportTestService(t, refs.equipment, refs.users, refs.sites)
@@ -315,8 +356,11 @@ func TestEquipmentImport_InUse_WithoutIssuedColumn_AssignsNow(t *testing.T) {
 	require.Len(t, result.Rows, 1)
 	assert.Equal(t, models.EquipmentImportRowCreated, result.Rows[0].Status)
 
-	require.Len(t, refs.equipment.assignments, 1)
-	require.NotNil(t, refs.equipment.assignments[0].AssignedAt)
+	assert.Empty(t, refs.equipment.assignments)
+	require.NotNil(t, refs.equipment.created)
+	assert.Equal(t, models.EquipmentStatusInUse, refs.equipment.created.Status)
+	require.NotNil(t, refs.equipment.created.HolderUserID)
+	assert.Equal(t, refs.userID, *refs.equipment.created.HolderUserID)
 }
 
 // TestEquipmentImport_InStockWithoutHolder_DoesNotAssign — складная единица

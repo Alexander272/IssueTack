@@ -35,7 +35,7 @@ func NewHandler(service services.Equipment, importer EquipmentImporter, maxSize 
 	return &Handler{service: service, importer: importer, maxSize: maxSize}
 }
 
-func Register(api *gin.RouterGroup, service services.Equipment, importer EquipmentImporter, maxSize int64, middleware *middleware.Middleware, periodicSvc *services.EquipmentPeriodicTaskService) {
+func Register(api *gin.RouterGroup, service services.Equipment, importer EquipmentImporter, maxSize int64, middleware *middleware.Middleware, periodicSvc *services.EquipmentPeriodicTaskService, operationTasksSvc *services.EquipmentOperationTaskService) {
 	handlers := NewHandler(service, importer, maxSize)
 
 	equipment := api.Group("/equipment", middleware.CheckPermissions(access.Reg.R(access.ResourceEquipment).Read()))
@@ -68,6 +68,14 @@ func Register(api *gin.RouterGroup, service services.Equipment, importer Equipme
 			equipment.GET("/periodic-tasks/instances", periodicHandlers.getInstances)
 		}
 
+		// Правила автоматических задач после выдачи/возврата: чтение — под
+		// equipment:read, изменение — под equipment:write (ниже).
+		if operationTasksSvc != nil {
+			h := NewEquipmentOperationTaskHandlers(operationTasksSvc)
+			equipment.GET("/operation-tasks", h.getAll)
+			equipment.GET("/operation-tasks/:id", h.getByID)
+		}
+
 		equipment.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceEquipment).Write()))
 		if periodicSvc != nil {
 			periodicHandlers := NewEquipmentPeriodicTaskHandlers(*periodicSvc)
@@ -75,6 +83,12 @@ func Register(api *gin.RouterGroup, service services.Equipment, importer Equipme
 			equipment.PUT("/periodic-tasks/templates/:id", periodicHandlers.updateTemplate)
 			equipment.DELETE("/periodic-tasks/templates/:id", periodicHandlers.deleteTemplate)
 			equipment.POST("/periodic-tasks/run", periodicHandlers.runInstance)
+		}
+		if operationTasksSvc != nil {
+			h := NewEquipmentOperationTaskHandlers(operationTasksSvc)
+			equipment.POST("/operation-tasks", h.create)
+			equipment.PUT("/operation-tasks/:id", h.update)
+			equipment.DELETE("/operation-tasks/:id", h.delete)
 		}
 
 		equipment.POST("", handlers.create)

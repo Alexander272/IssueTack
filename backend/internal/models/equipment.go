@@ -538,6 +538,11 @@ type AssignEquipmentDTO struct {
 	Comment  string     `json:"comment"`
 	Force    bool       `json:"force"`
 	SkipAct  bool       `json:"skipAct"`
+	// SkipOperationTasks — не запускать правила автоматических задач после
+	// выдачи. Импорт выставляет его: единица заводится как «в эксплуатации»
+	// без реальной операции выдачи, и заявка «провести передачу в 1C:ERP» при
+	// импорте не создаётся. Из HTTP-запроса поле не принимается (json:"-").
+	SkipOperationTasks bool `json:"-"`
 	// AssignedAt — момент выдачи из формы (RFC3339). nil = сейчас. Будущее
 	// время отклоняется (EQ017): оформлять выдачу заранее нельзя, а задним
 	// числом — можно, акт подписывают позже факта.
@@ -799,4 +804,72 @@ type ManualPeriodicTaskRunDTO struct {
 	// false — pending остаётся на исходном расписании (или создаётся на now+period,
 	// если pending нет).
 	ShiftNext bool `json:"shiftNext"`
+}
+
+// ===== Правила автоматических задач после операций с оборудованием =====
+
+// EquipmentOperation — операция с единицей, после которой могут запускаться
+// автоматические задачи (выдача/возврат).
+type EquipmentOperation string
+
+const (
+	EquipmentOperationAssign   EquipmentOperation = "assign"
+	EquipmentOperationUnassign EquipmentOperation = "unassign"
+)
+
+func (o EquipmentOperation) IsValid() bool {
+	return o == EquipmentOperationAssign || o == EquipmentOperationUnassign
+}
+
+// EquipmentOperationAction — действие правила. Пока одно: создать заявку;
+// CHECK в БД и этот enum оставляют место для будущих действий.
+type EquipmentOperationAction string
+
+const EquipmentActionCreateTicket EquipmentOperationAction = "create_ticket"
+
+func (a EquipmentOperationAction) IsValid() bool {
+	return a == EquipmentActionCreateTicket
+}
+
+// EquipmentOperationTask — правило автоматической задачи оборудования.
+// Площадка заявки не настраивается: она всегда берётся у самой единицы.
+type EquipmentOperationTask struct {
+	ID          uuid.UUID                `json:"id" db:"id"`
+	RealmID     uuid.UUID                `json:"realmId" db:"realm_id"`
+	Name        string                   `json:"name" db:"name"`
+	Operation   EquipmentOperation       `json:"operation" db:"operation"`
+	Action      EquipmentOperationAction `json:"action" db:"action"`
+	Title       string                   `json:"title" db:"title"`
+	Description string                   `json:"description" db:"description"`
+	CategoryID  uuid.UUID                `json:"categoryId" db:"category_id"`
+	GroupID     uuid.UUID                `json:"groupId" db:"group_id"`
+	Priority    string                   `json:"priority" db:"priority"`
+	Enabled     bool                     `json:"enabled" db:"enabled"`
+	CreatedAt   time.Time                `json:"createdAt" db:"created_at"`
+	UpdatedAt   time.Time                `json:"updatedAt" db:"updated_at"`
+	// Резолвленные подписи для списка.
+	CategoryName string `json:"categoryName" db:"category_name"`
+	GroupName    string `json:"groupName" db:"group_name"`
+}
+
+// EquipmentOperationTaskDTO — создание/правка правила. RealmID проставляется
+// хендлером из заголовка, а не принимается от клиента.
+type EquipmentOperationTaskDTO struct {
+	ID          *uuid.UUID               `json:"id" db:"id"`
+	RealmID     uuid.UUID                `json:"realmId" db:"realm_id"`
+	Name        string                   `json:"name" validate:"required" db:"name"`
+	Operation   EquipmentOperation       `json:"operation" validate:"required" db:"operation"`
+	Action      EquipmentOperationAction `json:"action" db:"action"`
+	Title       string                   `json:"title" db:"title"`
+	Description string                   `json:"description" db:"description"`
+	CategoryID  uuid.UUID                `json:"categoryId" validate:"required" db:"category_id"`
+	GroupID     uuid.UUID                `json:"groupId" validate:"required" db:"group_id"`
+	Priority    string                   `json:"priority" db:"priority"`
+	Enabled     bool                     `json:"enabled" db:"enabled"`
+}
+
+// DelEquipmentOperationTaskDTO — удаление правила.
+type DelEquipmentOperationTaskDTO struct {
+	ID      uuid.UUID `json:"id" db:"id"`
+	RealmID uuid.UUID `json:"realmId" db:"realm_id"`
 }

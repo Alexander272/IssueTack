@@ -74,7 +74,8 @@ func TestEquipmentService_Assign_CreatesERPTicket(t *testing.T) {
 	require.NotNil(t, ticket.GroupID)
 	assert.Equal(t, uuid.MustParse(erp.ERPGroupID), *ticket.GroupID)
 	assert.Equal(t, uuid.MustParse(erp.ERPCategoryID), ticket.CategoryID)
-	assert.Equal(t, uuid.MustParse(erp.ERPSiteID), ticket.SiteID)
+	// Площадка — из единицы, а не из конфига ERP.
+	assert.Equal(t, siteID, ticket.SiteID)
 	assert.Contains(t, ticket.Description, "Провести выдачу")
 }
 

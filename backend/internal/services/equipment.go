@@ -34,6 +34,10 @@ type EquipmentService struct {
 	// Приходит из сервиса периодических задач через тот же поздний сеттер, что и
 	// TicketCreator. nil — автостарт отключён.
 	periodicStarter PeriodicTaskStarter
+	// operationTasks — правила автоматических задач после выдачи/возврата.
+	// Подключается сеттером после сборки TicketService. nil — работает только
+	// старый fallback из конфигурации (erpConf).
+	operationTasks OperationTaskRunner
 }
 
 // EquipmentAccessChecker — узкий срез модели доступа: оборудованию нужна одна
@@ -83,6 +87,12 @@ func (s *EquipmentService) SetAccessChecker(ac EquipmentAccessChecker) {
 // зависит от создателя заявок, а не наоборот.
 func (s *EquipmentService) SetPeriodicStarter(ps PeriodicTaskStarter) {
 	s.periodicStarter = ps
+}
+
+// SetOperationTasks подключает правила автоматических задач операций с
+// оборудованием. Как и TicketCreator, приходит после сборки сервиса тикетов.
+func (s *EquipmentService) SetOperationTasks(r OperationTaskRunner) {
+	s.operationTasks = r
 }
 
 // Equipment — интерфейс работы с оборудованием.
