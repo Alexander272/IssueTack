@@ -73,8 +73,8 @@ func TestPluginGreeting_SendsOncePerUser(t *testing.T) {
 	repo.On("ClaimGreeting", mock.Anything, realmID, userID).Return(true, nil).Once()
 	repo.On("ClaimGreeting", mock.Anything, realmID, userID).Return(false, nil).Once()
 
-	require.NoError(t, svc.PluginGreeting(context.Background(), pluginScopeFixture("ch1")))
-	require.NoError(t, svc.PluginGreeting(context.Background(), pluginScopeFixture("ch1")))
+	require.NoError(t, svc.PluginGreeting(context.Background(), pluginScopeFixture()))
+	require.NoError(t, svc.PluginGreeting(context.Background(), pluginScopeFixture()))
 
 	assert.Len(t, posts, 1, "приветствие приходит один раз")
 }
@@ -86,7 +86,7 @@ func TestPluginGreeting_UnboundChannelNoop(t *testing.T) {
 	svc, repo, _, _, _ := dmService(t, &posts)
 	repo.On("GetByChannelID", mock.Anything, "ch1").Return(nil, assert.AnError)
 
-	require.NoError(t, svc.PluginGreeting(context.Background(), pluginScopeFixture("ch1")))
+	require.NoError(t, svc.PluginGreeting(context.Background(), pluginScopeFixture()))
 
 	assert.Empty(t, posts)
 	repo.AssertNotCalled(t, "ClaimGreeting", mock.Anything, mock.Anything, mock.Anything)

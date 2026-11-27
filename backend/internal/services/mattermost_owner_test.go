@@ -111,7 +111,7 @@ func ownerService(t *testing.T, opts ownerOpts) *ownerFixture {
 			},
 		},
 		Sites: &fakeSitesSvc{
-			get: func(context.Context, *models.GetSitesDTO) ([]*models.Site, error) {
+			get: func(context.Context) ([]*models.Site, error) {
 				return opts.sites, nil
 			},
 		},

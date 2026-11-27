@@ -50,7 +50,7 @@ func Register(api *gin.RouterGroup, service services.Sites, middleware *middlewa
 }
 
 func (h *Handler) getAll(c *gin.Context) {
-	data, err := h.service.Get(c, &models.GetSitesDTO{})
+	data, err := h.service.Get(c)
 	if err != nil {
 		response.SendError(c, err)
 		return

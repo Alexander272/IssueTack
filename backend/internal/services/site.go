@@ -23,7 +23,7 @@ func NewSiteService(repo repository.Sites, locations repository.SiteLocations) *
 // Sites — интерфейс работы с сайтами.
 type Sites interface {
 	// Get возвращает список сайтов.
-	Get(ctx context.Context, req *models.GetSitesDTO) ([]*models.Site, error)
+	Get(ctx context.Context) ([]*models.Site, error)
 	// GetByID возвращает сайт по идентификатору.
 	GetByID(ctx context.Context, req *models.GetSiteByIdDTO) (*models.Site, error)
 	// Create создаёт сайт.
@@ -42,8 +42,8 @@ type Sites interface {
 }
 
 // Get возвращает список сайтов.
-func (s *SiteService) Get(ctx context.Context, req *models.GetSitesDTO) ([]*models.Site, error) {
-	data, err := s.repo.Get(ctx, req)
+func (s *SiteService) Get(ctx context.Context) ([]*models.Site, error) {
+	data, err := s.repo.Get(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sites. error: %w", err)
 	}

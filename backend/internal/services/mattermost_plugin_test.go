@@ -50,11 +50,11 @@ func (f *fakeCategoriesSvc) GetByID(ctx context.Context, req *models.GetCategory
 
 type fakeSitesSvc struct {
 	Sites
-	get func(ctx context.Context, req *models.GetSitesDTO) ([]*models.Site, error)
+	get func(ctx context.Context) ([]*models.Site, error)
 }
 
-func (f *fakeSitesSvc) Get(ctx context.Context, req *models.GetSitesDTO) ([]*models.Site, error) {
-	return f.get(ctx, req)
+func (f *fakeSitesSvc) Get(ctx context.Context) ([]*models.Site, error) {
+	return f.get(ctx)
 }
 
 type fakeGroupsSvc struct {
@@ -98,8 +98,8 @@ func pluginMocks() (*MockMattermostRepo, *MockUserService, *MockUserRealmsServic
 }
 
 // pluginScopeFixture — scope обычного (привязанного) канала без бота.
-func pluginScopeFixture(channelID string) models.PluginScope {
-	return models.PluginScope{ChannelID: channelID, MmUserID: "mm1"}
+func pluginScopeFixture() models.PluginScope {
+	return models.PluginScope{ChannelID: "ch1", MmUserID: "mm1"}
 }
 
 // expectExistingUser готовит моки пути «пользователь уже есть по mattermost_id».
@@ -134,7 +134,7 @@ func TestPluginListMine_HappyPath(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
 
-	list, err := svc.PluginListMine(context.Background(), &models.PluginTicketListQuery{PluginScope: pluginScopeFixture("ch1")})
+	list, err := svc.PluginListMine(context.Background(), &models.PluginTicketListQuery{PluginScope: pluginScopeFixture()})
 	require.NoError(t, err)
 	require.Len(t, list.Items, 1)
 	assert.Equal(t, 1, list.Total)
@@ -156,7 +156,7 @@ func TestPluginListMine_Statuses(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
 
-	_, err := svc.PluginListMine(context.Background(), &models.PluginTicketListQuery{PluginScope: pluginScopeFixture("ch1")})
+	_, err := svc.PluginListMine(context.Background(), &models.PluginTicketListQuery{PluginScope: pluginScopeFixture()})
 	require.NoError(t, err)
 
 	var filter *models.TicketFilter
@@ -224,7 +224,7 @@ func TestPluginListMine_ArchiveQuery(t *testing.T) {
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
 
 	result, err := svc.PluginListMine(context.Background(), &models.PluginTicketListQuery{
-		PluginScope:  pluginScopeFixture("ch1"),
+		PluginScope:  pluginScopeFixture(),
 		Archived:     true,
 		Limit:        500,
 		Offset:       25,
@@ -263,7 +263,7 @@ func TestPluginContext_UnboundChannel(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo})
 
-	ctx, err := svc.PluginContext(context.Background(), pluginScopeFixture("ch1"))
+	ctx, err := svc.PluginContext(context.Background(), pluginScopeFixture())
 	require.NoError(t, err)
 	require.NotNil(t, ctx)
 	assert.False(t, ctx.Bound)
@@ -276,7 +276,7 @@ func TestPluginContext_InactiveChannel(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo})
 
-	ctx, err := svc.PluginContext(context.Background(), pluginScopeFixture("ch1"))
+	ctx, err := svc.PluginContext(context.Background(), pluginScopeFixture())
 	require.NoError(t, err)
 	require.NotNil(t, ctx)
 	assert.False(t, ctx.Bound)
@@ -300,7 +300,7 @@ func TestPluginContext_HappyPath(t *testing.T) {
 		assert.Equal(t, realmID, req.RealmID)
 		return []*models.Category{{ID: categoryID, Name: "Категория"}}, nil
 	}}
-	sites := &fakeSitesSvc{get: func(_ context.Context, _ *models.GetSitesDTO) ([]*models.Site, error) {
+	sites := &fakeSitesSvc{get: func(_ context.Context) ([]*models.Site, error) {
 		return []*models.Site{{ID: siteID, Name: "Площадка"}}, nil
 	}}
 	groups := &fakeGroupsSvc{get: func(_ context.Context, _ *models.GetGroupsDTO) ([]*models.Group, error) {
@@ -323,7 +323,7 @@ func TestPluginContext_HappyPath(t *testing.T) {
 		Access: access,
 	})
 
-	result, err := svc.PluginContext(context.Background(), pluginScopeFixture("ch1"))
+	result, err := svc.PluginContext(context.Background(), pluginScopeFixture())
 	require.NoError(t, err)
 	assert.Equal(t, true, result.Bound)
 	assert.Equal(t, realmID, result.RealmID)
@@ -366,7 +366,7 @@ func TestPluginContext_KnownUser_NoWrite(t *testing.T) {
 	categories := &fakeCategoriesSvc{get: func(_ context.Context, _ *models.GetCategoriesDTO) ([]*models.Category, error) {
 		return nil, nil
 	}}
-	sites := &fakeSitesSvc{get: func(_ context.Context, _ *models.GetSitesDTO) ([]*models.Site, error) {
+	sites := &fakeSitesSvc{get: func(_ context.Context) ([]*models.Site, error) {
 		return []*models.Site{{ID: siteID}}, nil
 	}}
 	groups := &fakeGroupsSvc{get: func(_ context.Context, _ *models.GetGroupsDTO) ([]*models.Group, error) {
@@ -385,7 +385,7 @@ func TestPluginContext_KnownUser_NoWrite(t *testing.T) {
 
 	// Два вызова подряд — как два переключения канала одним пользователем.
 	for i := 0; i < 2; i++ {
-		result, err := svc.PluginContext(context.Background(), pluginScopeFixture("ch1"))
+		result, err := svc.PluginContext(context.Background(), pluginScopeFixture())
 		require.NoError(t, err)
 		require.True(t, result.Bound)
 		require.Equal(t, userID, result.User.ID)
@@ -445,7 +445,7 @@ func TestPluginCreateTicket_HappyPath(t *testing.T) {
 	})
 
 	input := &models.PluginCreateTicketInput{
-		PluginScope: pluginScopeFixture("ch1"),
+		PluginScope: pluginScopeFixture(),
 		Title:       "Новая заявка",
 		Description: "Описание",
 		CategoryID:  categoryID,
@@ -516,7 +516,7 @@ func TestPluginCreateTicket_ManagerFields(t *testing.T) {
 	})
 
 	input := &models.PluginCreateTicketInput{
-		PluginScope: pluginScopeFixture("ch1"),
+		PluginScope: pluginScopeFixture(),
 		Title:       "Заявка менеджера",
 		CategoryID:  categoryID,
 		Priority:    "low",
@@ -593,7 +593,7 @@ func TestPluginCreateTicket_ModifierExplicitValues(t *testing.T) {
 			})
 
 			input := &models.PluginCreateTicketInput{
-				PluginScope:        pluginScopeFixture("ch1"),
+				PluginScope:        pluginScopeFixture(),
 				Title:              "Заявка с подкатегорией",
 				CategoryID:         categoryID,
 				CategoryModifierID: modifierID,
@@ -614,7 +614,7 @@ func TestPluginCreateTicket_UnboundChannel(t *testing.T) {
 	svc := NewMattermostService(&MattermostDeps{Repo: repo})
 
 	_, err := svc.PluginCreateTicket(context.Background(), &models.PluginCreateTicketInput{
-		PluginScope: pluginScopeFixture("ch1"), Title: "Заявка",
+		PluginScope: pluginScopeFixture(), Title: "Заявка",
 	})
 	assert.ErrorIs(t, err, models.ErrChannelNotBound)
 }
@@ -650,7 +650,7 @@ func TestPluginGetTicket_HappyPath(t *testing.T) {
 		Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets,
 	})
 
-	detail, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture("ch1"), ticketID.String())
+	detail, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture(), ticketID.String())
 	require.NoError(t, err)
 	require.NotNil(t, detail)
 	assert.Equal(t, ticketID, detail.ID)
@@ -764,7 +764,7 @@ func TestPluginGetTicket_InvalidID(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo})
 
-	_, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture("ch1"), "not-a-uuid")
+	_, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture(), "not-a-uuid")
 	assert.ErrorIs(t, err, models.ErrInvalidInput)
 }
 
@@ -809,7 +809,7 @@ func TestPluginGetComments_FiltersInternal(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Comments: comments})
 
-	list, err := svc.PluginGetComments(context.Background(), pluginScopeFixture("ch1"), ticketID.String())
+	list, err := svc.PluginGetComments(context.Background(), pluginScopeFixture(), ticketID.String())
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 	assert.Equal(t, "публичный", list[0].Text)
@@ -844,7 +844,7 @@ func TestPluginCreateComment_HappyPath(t *testing.T) {
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Comments: comments})
 
 	out, err := svc.PluginCreateComment(context.Background(), &models.PluginCreateCommentInput{
-		PluginScope: pluginScopeFixture("ch1"),
+		PluginScope: pluginScopeFixture(),
 		TicketID:    ticketID.String(),
 		Text:        "Всем привет",
 		Files: []models.PluginFile{
@@ -865,7 +865,7 @@ func TestPluginCreateComment_EmptyFails(t *testing.T) {
 	svc := NewMattermostService(&MattermostDeps{Repo: repo})
 
 	_, err := svc.PluginCreateComment(context.Background(), &models.PluginCreateCommentInput{
-		PluginScope: pluginScopeFixture("ch1"), TicketID: uuid.New().String(),
+		PluginScope: pluginScopeFixture(), TicketID: uuid.New().String(),
 	})
 	assert.ErrorIs(t, err, models.ErrInvalidInput)
 }
@@ -900,7 +900,7 @@ func TestPluginGetAttachmentContent(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Attachments: attachments})
 
-	got, rc, err := svc.PluginGetAttachmentContent(context.Background(), pluginScopeFixture("ch1"), attID.String())
+	got, rc, err := svc.PluginGetAttachmentContent(context.Background(), pluginScopeFixture(), attID.String())
 	require.NoError(t, err)
 	defer rc.Close()
 	assert.Equal(t, attID, got.ID)
@@ -908,7 +908,7 @@ func TestPluginGetAttachmentContent(t *testing.T) {
 	data, _ := io.ReadAll(rc)
 	assert.Equal(t, "content", string(data))
 
-	attBody, _, err := svc.PluginGetAttachmentContent(context.Background(), pluginScopeFixture("ch1"), "bad-id")
+	attBody, _, err := svc.PluginGetAttachmentContent(context.Background(), pluginScopeFixture(), "bad-id")
 	assert.ErrorIs(t, err, models.ErrInvalidInput)
 	assert.Nil(t, attBody)
 }
@@ -935,7 +935,7 @@ func TestPluginGetTicket_OwnerFlags(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
 
-	detail, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture("ch1"), ticketID.String())
+	detail, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture(), ticketID.String())
 	require.NoError(t, err)
 	assert.True(t, detail.CanConfirm)
 	assert.True(t, detail.CanReopen)
@@ -956,7 +956,7 @@ func TestPluginGetTicket_ModifierFlag(t *testing.T) {
 	})
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
 
-	detail, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture("ch1"), ticketID.String())
+	detail, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture(), ticketID.String())
 	require.NoError(t, err)
 	assert.True(t, detail.CanPickModifier)
 }
@@ -975,7 +975,7 @@ func TestPluginGetTicket_OwnerOpenCanCancel(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
 
-	detail, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture("ch1"), ticketID.String())
+	detail, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture(), ticketID.String())
 	require.NoError(t, err)
 	assert.False(t, detail.CanConfirm)
 	assert.False(t, detail.CanReopen)
@@ -996,7 +996,7 @@ func TestPluginGetTicket_OwnerInProgressNoCancel(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
 
-	detail, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture("ch1"), ticketID.String())
+	detail, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture(), ticketID.String())
 	require.NoError(t, err)
 	assert.False(t, detail.CanConfirm)
 	assert.False(t, detail.CanReopen)
@@ -1018,7 +1018,7 @@ func TestPluginGetTicket_NotOwnerNoFlags(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
 
-	detail, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture("ch1"), ticketID.String())
+	detail, err := svc.PluginGetTicket(context.Background(), pluginScopeFixture(), ticketID.String())
 	require.NoError(t, err)
 	assert.False(t, detail.CanConfirm)
 	assert.False(t, detail.CanReopen)
@@ -1054,7 +1054,7 @@ func TestPluginChangeStatus_HappyPaths(t *testing.T) {
 
 			svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
 
-			err := svc.PluginChangeStatus(context.Background(), pluginScopeFixture("ch1"), ticketID.String(), string(status))
+			err := svc.PluginChangeStatus(context.Background(), pluginScopeFixture(), ticketID.String(), string(status))
 			require.NoError(t, err)
 		})
 	}
@@ -1072,7 +1072,7 @@ func TestPluginChangeStatus_PermissionDeniedPropagated(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Users: users, UserRealms: userRealms, Tickets: tickets})
 
-	err := svc.PluginChangeStatus(context.Background(), pluginScopeFixture("ch1"), ticketID.String(), string(models.StatusClosed))
+	err := svc.PluginChangeStatus(context.Background(), pluginScopeFixture(), ticketID.String(), string(models.StatusClosed))
 	assert.ErrorIs(t, err, models.ErrPermissionDenied)
 }
 
@@ -1082,10 +1082,10 @@ func TestPluginChangeStatus_Invalid(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo})
 
-	err := svc.PluginChangeStatus(context.Background(), pluginScopeFixture("ch1"), uuid.New().String(), "bogus")
+	err := svc.PluginChangeStatus(context.Background(), pluginScopeFixture(), uuid.New().String(), "bogus")
 	assert.ErrorIs(t, err, models.ErrInvalidInput)
 
-	err = svc.PluginChangeStatus(context.Background(), pluginScopeFixture("ch1"), "not-a-uuid", string(models.StatusClosed))
+	err = svc.PluginChangeStatus(context.Background(), pluginScopeFixture(), "not-a-uuid", string(models.StatusClosed))
 	assert.ErrorIs(t, err, models.ErrInvalidInput)
 }
 
@@ -1095,7 +1095,7 @@ func TestPluginChangeStatus_UnboundChannel(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo})
 
-	err := svc.PluginChangeStatus(context.Background(), pluginScopeFixture("ch1"), uuid.New().String(), string(models.StatusClosed))
+	err := svc.PluginChangeStatus(context.Background(), pluginScopeFixture(), uuid.New().String(), string(models.StatusClosed))
 	assert.ErrorIs(t, err, models.ErrChannelNotBound)
 }
 
@@ -1161,7 +1161,7 @@ func TestPluginContext_DMWithBot(t *testing.T) {
 		assert.Equal(t, realmID, req.RealmID)
 		return []*models.Category{{ID: categoryID, Name: "Категория"}}, nil
 	}}
-	sites := &fakeSitesSvc{get: func(_ context.Context, _ *models.GetSitesDTO) ([]*models.Site, error) {
+	sites := &fakeSitesSvc{get: func(_ context.Context) ([]*models.Site, error) {
 		return []*models.Site{{ID: siteID, Name: "Площадка"}}, nil
 	}}
 	groups := &fakeGroupsSvc{get: func(_ context.Context, _ *models.GetGroupsDTO) ([]*models.Group, error) {
@@ -1418,7 +1418,7 @@ func TestPluginPreviewModifier_RealmFromScope(t *testing.T) {
 		RealmID: spoofedRealm, CategoryID: categoryID,
 		Title: "лагает", Description: " Приложение лагает ",
 	}
-	got, err := svc.PluginPreviewModifier(context.Background(), pluginScopeFixture("ch1"), dto)
+	got, err := svc.PluginPreviewModifier(context.Background(), pluginScopeFixture(), dto)
 	require.NoError(t, err)
 	assert.Equal(t, want, got)
 	assert.Equal(t, spoofedRealm, dto.RealmID, "сервис не мутирует DTO вызывающего")
@@ -1431,7 +1431,7 @@ func TestPluginPreviewModifier_UnboundChannel(t *testing.T) {
 
 	svc := NewMattermostService(&MattermostDeps{Repo: repo, Tickets: tickets})
 
-	got, err := svc.PluginPreviewModifier(context.Background(), pluginScopeFixture("ch1"),
+	got, err := svc.PluginPreviewModifier(context.Background(), pluginScopeFixture(),
 		&models.ModifierPreviewDTO{CategoryID: uuid.New(), Title: "лагает"})
 	assert.ErrorIs(t, err, models.ErrChannelNotBound)
 	assert.Nil(t, got)

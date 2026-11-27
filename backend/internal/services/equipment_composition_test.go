@@ -68,6 +68,11 @@ func (f *fakeCompositionRepo) Update(_ context.Context, _ postgres.Tx, dto *mode
 	return &models.Equipment{ID: *dto.ID, RealmID: dto.RealmID, Name: dto.Name, Status: dto.Status, ParentID: dto.ParentID, IsKit: dto.IsKit}, nil
 }
 
+func (f *fakeCompositionRepo) SetParent(_ context.Context, _ postgres.Tx, realmID, id uuid.UUID, parentID *uuid.UUID) error {
+	f.updates = append(f.updates, &models.EquipmentDTO{ID: &id, RealmID: realmID, ParentID: parentID})
+	return nil
+}
+
 // TestEquipmentService_AddComponents_RejectsParts закрепляет: комплектующее или
 // расходник в логический комплект не входит. Логический комплект — это про
 // устройства (ноутбук, монитор, мышь), а комплектующие — про физический состав

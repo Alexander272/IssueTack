@@ -92,8 +92,9 @@ func (r *EquipmentRepo) CreateOperationTask(ctx context.Context, tx Tx, dto *mod
 }
 
 // UpdateOperationTask обновляет правило. RealmID в WHERE не даёт выйти за
-// пределы реалма через подменённый id.
-func (r *EquipmentRepo) UpdateOperationTask(ctx context.Context, tx Tx, dto *models.EquipmentOperationTaskDTO) (*models.EquipmentOperationTask, error) {
+// пределы реалма через подменённый id. Обновлённую модель не читаем: вызывающий
+// отдаёт только 204, а повторный SELECT с JOIN-ами тут был бы лишним.
+func (r *EquipmentRepo) UpdateOperationTask(ctx context.Context, tx Tx, dto *models.EquipmentOperationTaskDTO) error {
 	query := fmt.Sprintf(`UPDATE %s SET
 		name = $2, operation = $3, action = $4, title = $5, description = $6,
 		category_id = $7, group_id = $8, priority = $9, enabled = $10,
@@ -105,12 +106,12 @@ func (r *EquipmentRepo) UpdateOperationTask(ctx context.Context, tx Tx, dto *mod
 		dto.CategoryID, dto.GroupID, dto.Priority, dto.Enabled, dto.RealmID,
 	)
 	if err != nil {
-		return nil, MapError(fmt.Errorf("failed to update equipment operation task: %w", err))
+		return MapError(fmt.Errorf("failed to update equipment operation task: %w", err))
 	}
 	if result.RowsAffected() == 0 {
-		return nil, models.ErrNotFound
+		return models.ErrNotFound
 	}
-	return r.GetOperationTaskByID(ctx, tx, *dto.ID, dto.RealmID)
+	return nil
 }
 
 // DeleteOperationTask удаляет правило реалма.

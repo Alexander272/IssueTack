@@ -6,7 +6,7 @@ import type { ITask } from '../types/task'
 import { useGetTaskByIdQuery, useUpdateTaskMutation } from '../tasksApiSlice'
 import { BoxFallback } from '@/components/Fallback/BoxFallback'
 import { useAppSelector } from '@/hooks/redux'
-import { getIsManager, getUserId } from '@/features/user/userSlice'
+import { getUserId } from '@/features/user/userSlice'
 import { useTicketControls } from '../hooks/useTicketControls'
 import { Header } from '../components/Detail/Header'
 import { InfoBar } from '../components/Detail/InfoBar'
@@ -16,7 +16,6 @@ import { Attachments } from '../components/Detail/Attachments'
 import { Comments } from '../components/Detail/Comments'
 import { Participants } from '../components/Detail/Participants'
 import { Meta } from '../components/Detail/Meta'
-import { Notifications } from '../components/Detail/Notifications'
 import { Duplicates } from '../components/Detail/Duplicates'
 import { DuplicateBanner } from '../components/Detail/DuplicateBanner'
 import { TaskEditModal } from '../components/TaskEditModal'
@@ -25,7 +24,6 @@ import DetailNotFound from './TaskDetailEmpty'
 interface DetailContentProps {
 	task: ITask
 	controls: ReturnType<typeof useTicketControls>
-	isManager: boolean
 	userId?: string
 }
 
@@ -35,7 +33,7 @@ interface DetailContentProps {
  * без key открытые модалки/поповеры и черновик комментария «переехали» бы на
  * другую заявку (черновик — ещё и отправился бы с её id).
  */
-const DetailContent = ({ task, controls, isManager, userId }: DetailContentProps) => {
+const DetailContent = ({ task, controls, userId }: DetailContentProps) => {
 	const [editOpen, setEditOpen] = useState(false)
 	const [updateTask] = useUpdateTaskMutation()
 
@@ -103,7 +101,6 @@ const DetailContent = ({ task, controls, isManager, userId }: DetailContentProps
 							<Participants task={task} />
 							<Duplicates task={task} />
 							<Meta task={task} />
-							{isManager && <Notifications taskId={task.id} />}
 						</Grid>
 					</Grid>
 				</Box>
@@ -118,7 +115,6 @@ export const TaskDetailPage = () => {
 	const { id } = useParams<{ id: string }>()
 	const { data, isLoading } = useGetTaskByIdQuery(id!)
 
-	const isManager = useAppSelector(getIsManager)
 	const userId = useAppSelector(getUserId)
 
 	// Все права детали считаются одной формулой из access-флагов бэкенда; хуки
@@ -133,7 +129,6 @@ export const TaskDetailPage = () => {
 			key={data.data.id}
 			task={data.data}
 			controls={controls}
-			isManager={isManager}
 			userId={userId ?? undefined}
 		/>
 	)

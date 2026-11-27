@@ -154,7 +154,7 @@ func (n *mattermostNotifier) format(ctx context.Context, user *models.UserData, 
 		number = fmt.Sprintf(" №%d", *ticket.TicketNumber)
 	}
 
-	links := n.links(ctx, user, ticket)
+	links := n.links(user, ticket)
 
 	// Детали переноса срока для типов, связанных с запросом/решениями по сроку.
 	dueDateDetails := ""
@@ -348,7 +348,7 @@ func commentBlock(data json.RawMessage) string {
 // только при наличии права в домене тикета. Нет права, не веб-пользователь или
 // ошибка проверки — веб-ссылка не печатается (fail-closed на ссылке, доставка
 // DM при этом не страдает).
-func (n *mattermostNotifier) links(ctx context.Context, user *models.UserData, ticket *models.Ticket) string {
+func (n *mattermostNotifier) links(user *models.UserData, ticket *models.Ticket) string {
 	links := n.pluginLink(ticket.ID)
 	if user == nil || user.Source.IsFromMattermost() {
 		return links

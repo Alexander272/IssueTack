@@ -68,7 +68,6 @@ export const API = {
 		duplicate: (id: string) => `/tickets/${id}/duplicate` as const,
 		duplicates: (id: string) => `/tickets/${id}/duplicates` as const,
 		unlinkDuplicate: (id: string) => `/tickets/${id}/unlink-duplicate` as const,
-		subscription: (id: string) => `/tickets/${id}/subscription` as const,
 		dueDateRequests: (ticketId: string) => `/tickets/${ticketId}/due-date-requests` as const,
 		dueDateRequestDecide: (ticketId: string, requestId: string) =>
 			`/tickets/${ticketId}/due-date-requests/${requestId}/decide` as const,

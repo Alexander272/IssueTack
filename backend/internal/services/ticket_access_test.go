@@ -249,11 +249,11 @@ func TestTicketAccessService_IsCustomer(t *testing.T) {
 	realmID := uuid.New()
 	groupID := uuid.New()
 
-	newSvc := func() (*MockTicketsRepo, *MockGroupsRepo, *MockAccessPolicies, *TicketAccessService) {
+	newSvc := func() (*MockGroupsRepo, *MockAccessPolicies, *TicketAccessService) {
 		mockRepo := new(MockTicketsRepo)
 		mockGroups := new(MockGroupsRepo)
 		mockPolicies := new(MockAccessPolicies)
-		return mockRepo, mockGroups, mockPolicies, NewTicketAccessService(mockRepo, mockGroups, mockPolicies)
+		return mockGroups, mockPolicies, NewTicketAccessService(mockRepo, mockGroups, mockPolicies)
 	}
 	denySupervisor := func(m *MockAccessPolicies) {
 		m.On("Enforce", userID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(false, nil)
@@ -261,7 +261,7 @@ func TestTicketAccessService_IsCustomer(t *testing.T) {
 	}
 
 	t.Run("groupless is customer", func(t *testing.T) {
-		_, mockGroups, mockPolicies, svc := newSvc()
+		mockGroups, mockPolicies, svc := newSvc()
 		denySupervisor(mockPolicies)
 		mockGroups.On("GetManagedGroups", mock.Anything, userID, &realmID).Return([]uuid.UUID{}, nil)
 		mockGroups.On("GetMemberGroups", mock.Anything, userID, &realmID).Return([]uuid.UUID{}, nil)
@@ -273,7 +273,7 @@ func TestTicketAccessService_IsCustomer(t *testing.T) {
 	})
 
 	t.Run("member is not customer", func(t *testing.T) {
-		_, mockGroups, mockPolicies, svc := newSvc()
+		mockGroups, mockPolicies, svc := newSvc()
 		denySupervisor(mockPolicies)
 		mockGroups.On("GetManagedGroups", mock.Anything, userID, &realmID).Return([]uuid.UUID{}, nil)
 		mockGroups.On("GetMemberGroups", mock.Anything, userID, &realmID).Return([]uuid.UUID{groupID}, nil)
@@ -285,7 +285,7 @@ func TestTicketAccessService_IsCustomer(t *testing.T) {
 	})
 
 	t.Run("manager is not customer", func(t *testing.T) {
-		_, mockGroups, mockPolicies, svc := newSvc()
+		mockGroups, mockPolicies, svc := newSvc()
 		denySupervisor(mockPolicies)
 		mockGroups.On("GetManagedGroups", mock.Anything, userID, &realmID).Return([]uuid.UUID{groupID}, nil)
 
@@ -296,7 +296,7 @@ func TestTicketAccessService_IsCustomer(t *testing.T) {
 	})
 
 	t.Run("supervisor is not customer", func(t *testing.T) {
-		_, _, mockPolicies, svc := newSvc()
+		_, mockPolicies, svc := newSvc()
 		mockPolicies.On("Enforce", userID.String(), realmID.String(), string(access.ResourceCategory), string(access.Write)).Return(true, nil)
 
 		ticket := &models.Ticket{ID: uuid.New(), RealmID: &realmID, Creator: models.UserShort{ID: userID}}

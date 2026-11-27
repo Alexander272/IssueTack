@@ -622,7 +622,7 @@ type statusActionFixture struct {
 	ticketID uuid.UUID
 }
 
-func newStatusActionFixture(t *testing.T, status models.TicketStatus) (*statusActionFixture, *mmCapture) {
+func newStatusActionFixture(t *testing.T) (*statusActionFixture, *mmCapture) {
 	t.Helper()
 	capture := &mmCapture{posts: &[]capturedPost{}}
 	comments := new(MockCommentsService)
@@ -689,7 +689,7 @@ func (f *statusActionFixture) expectStatusUpdate(t *testing.T, status models.Tic
 // подтверждение — cancelled терминальный и без диалога промах по кнопке
 // отменял бы заявку навсегда.
 func TestHandleInteractiveAction_CancelOpensConfirmDialog(t *testing.T) {
-	fixture, capture := newStatusActionFixture(t, models.StatusOpen)
+	fixture, capture := newStatusActionFixture(t)
 	num := 42
 	fixture.tickets.On("GetSummary", mock.Anything, fixture.ticketID).Return(&models.Ticket{
 		ID: fixture.ticketID, Status: models.StatusOpen, TicketNumber: &num, Title: "Не открывается 1С",
@@ -719,7 +719,7 @@ func TestHandleInteractiveAction_CancelOpensConfirmDialog(t *testing.T) {
 // Подтверждение решения — тоже необратимый переход (closed терминальный),
 // поэтому у него свой диалог со своим текстом и submit-подписью.
 func TestHandleInteractiveAction_ConfirmOpensConfirmDialog(t *testing.T) {
-	fixture, capture := newStatusActionFixture(t, models.StatusResolved)
+	fixture, capture := newStatusActionFixture(t)
 	fixture.tickets.On("GetSummary", mock.Anything, fixture.ticketID).Return(&models.Ticket{
 		ID: fixture.ticketID, Status: models.StatusResolved, Title: "Ошибка печати",
 	}, nil)
@@ -742,7 +742,7 @@ func TestHandleInteractiveAction_ConfirmOpensConfirmDialog(t *testing.T) {
 // Без trigger_id Mattermost не сможет открыть диалог — сообщаем об этом
 // нажавшему, а не падаем с 500.
 func TestHandleInteractiveAction_CancelWithoutTriggerID(t *testing.T) {
-	fixture, capture := newStatusActionFixture(t, models.StatusOpen)
+	fixture, capture := newStatusActionFixture(t)
 
 	result, err := fixture.svc.HandleInteractiveAction(context.Background(), &models.InteractiveActionDTO{
 		UserID: "mm1",
@@ -758,7 +758,7 @@ func TestHandleInteractiveAction_CancelWithoutTriggerID(t *testing.T) {
 }
 
 func TestHandleInteractiveAction_RejectsInvalidTicketID(t *testing.T) {
-	fixture, _ := newStatusActionFixture(t, models.StatusOpen)
+	fixture, _ := newStatusActionFixture(t)
 
 	_, err := fixture.svc.HandleInteractiveAction(context.Background(), &models.InteractiveActionDTO{
 		UserID:  "mm1",
@@ -781,11 +781,11 @@ func (f *statusActionFixture) submitCancelDialog(t *testing.T, action, state str
 // Отмена убирает карточку из сообщения: остальные заявки остаются на своих
 // местах, а сосед из следующего сообщения в список не подтягивается.
 func TestHandleDialogSubmission_Cancel(t *testing.T) {
-	fixture, capture := newStatusActionFixture(t, models.StatusOpen)
+	fixture, capture := newStatusActionFixture(t)
 	fixture.expectStatusUpdate(t, models.StatusCancelled)
 	// После отмены заявки в списке осталось 12 — из 13 был срез на 5 карточек.
 	fixture.tickets.On("Get", mock.Anything, mock.Anything).Return(
-		ticketFixtures(0, 12, fixture.userID, models.StatusOpen), 12, nil)
+		ticketFixtures(12, fixture.userID, models.StatusOpen), 12, nil)
 
 	require.NoError(t, fixture.submitCancelDialog(t, actionCancel, `{"from":0,"post_id":"p1"}`))
 	fixture.tickets.AssertExpectations(t)
@@ -809,11 +809,11 @@ func TestHandleDialogSubmission_Cancel(t *testing.T) {
 // Целевой статус берём из действия, а не из контекста кнопки: подделанное
 // значение в контекте не должно решать, что произойдёт с заявкой.
 func TestHandleDialogSubmission_CancelIgnoresContextStatus(t *testing.T) {
-	fixture, capture := newStatusActionFixture(t, models.StatusOpen)
+	fixture, capture := newStatusActionFixture(t)
 	fixture.expectTicketSummary(t, models.StatusOpen)
 	fixture.expectStatusUpdate(t, models.StatusCancelled)
 	fixture.tickets.On("Get", mock.Anything, mock.Anything).Return(
-		ticketFixtures(0, 1, fixture.userID, models.StatusOpen), 1, nil)
+		ticketFixtures(1, fixture.userID, models.StatusOpen), 1, nil)
 
 	_, err := fixture.pressAction(t, actionCancel, models.StatusClosed)
 	require.NoError(t, err)
@@ -825,7 +825,7 @@ func TestHandleDialogSubmission_CancelIgnoresContextStatus(t *testing.T) {
 // Если карточка была единственной в сообщении, сообщение удаляется целиком —
 // иначе в диалоге осталось бы пустое «**Ваши активные заявки** (1):».
 func TestHandleDialogSubmission_CancelDeletesPostWhenLastCardGone(t *testing.T) {
-	fixture, capture := newStatusActionFixture(t, models.StatusOpen)
+	fixture, capture := newStatusActionFixture(t)
 	fixture.expectStatusUpdate(t, models.StatusCancelled)
 	// Заявка была единственной во всём списке, после отмены не осталось ничего.
 	fixture.tickets.On("Get", mock.Anything, mock.Anything).Return([]*models.Ticket{}, 0, nil)
@@ -839,11 +839,11 @@ func TestHandleDialogSubmission_CancelDeletesPostWhenLastCardGone(t *testing.T) 
 // Исчезнувший последний частичный срез: сообщение удаляется, список не
 // прыгает к началу — остальные сообщения остаются как были.
 func TestHandleDialogSubmission_CancelDeletesEmptyLastPartialPost(t *testing.T) {
-	fixture, capture := newStatusActionFixture(t, models.StatusOpen)
+	fixture, capture := newStatusActionFixture(t)
 	fixture.expectStatusUpdate(t, models.StatusCancelled)
 	// 15 заявок осталось, последний срез начинался с 16-й — он исчез целиком.
 	fixture.tickets.On("Get", mock.Anything, mock.Anything).Return(
-		ticketFixtures(0, 15, fixture.userID, models.StatusOpen), 15, nil)
+		ticketFixtures(15, fixture.userID, models.StatusOpen), 15, nil)
 
 	require.NoError(t, fixture.submitCancelDialog(t, actionCancel, `{"from":15,"post_id":"p1"}`))
 	assert.Empty(t, capture.patches)
@@ -853,10 +853,10 @@ func TestHandleDialogSubmission_CancelDeletesEmptyLastPartialPost(t *testing.T) 
 // Битое смещение в State не должно приводить к удалению сообщения:
 // перерисовываем начало списка.
 func TestHandleDialogSubmission_CancelKeepsPostOnBrokenOffset(t *testing.T) {
-	fixture, capture := newStatusActionFixture(t, models.StatusOpen)
+	fixture, capture := newStatusActionFixture(t)
 	fixture.expectStatusUpdate(t, models.StatusCancelled)
 	fixture.tickets.On("Get", mock.Anything, mock.Anything).Return(
-		ticketFixtures(0, 12, fixture.userID, models.StatusOpen), 12, nil)
+		ticketFixtures(12, fixture.userID, models.StatusOpen), 12, nil)
 
 	require.NoError(t, fixture.submitCancelDialog(t, actionCancel, `{"from":99,"post_id":"p1"}`))
 	assert.Empty(t, capture.deletedPostIDs)
@@ -869,10 +869,10 @@ func TestHandleDialogSubmission_CancelKeepsPostOnBrokenOffset(t *testing.T) {
 // Подтверждение решения тоже уводит заявку из списка активных: из среза
 // 11–15 из 16 остаётся четыре карточки.
 func TestHandleDialogSubmission_Confirm(t *testing.T) {
-	fixture, capture := newStatusActionFixture(t, models.StatusResolved)
+	fixture, capture := newStatusActionFixture(t)
 	fixture.expectStatusUpdate(t, models.StatusClosed)
 	fixture.tickets.On("Get", mock.Anything, mock.Anything).Return(
-		ticketFixtures(0, 15, fixture.userID, models.StatusResolved), 15, nil)
+		ticketFixtures(15, fixture.userID, models.StatusResolved), 15, nil)
 
 	require.NoError(t, fixture.submitCancelDialog(t, actionConfirm, `{"from":10,"post_id":"p1"}`))
 	fixture.tickets.AssertExpectations(t)
@@ -888,7 +888,7 @@ func TestHandleDialogSubmission_Confirm(t *testing.T) {
 // Пока диалог открыт, заявку могли закрыть или снять права: доменная ошибка
 // возвращается в диалог, список не трогаем.
 func TestHandleDialogSubmission_CancelRejected(t *testing.T) {
-	fixture, capture := newStatusActionFixture(t, models.StatusOpen)
+	fixture, capture := newStatusActionFixture(t)
 	fixture.tickets.On("Update", mock.Anything, mock.Anything).Return(models.ErrTicketFrozen)
 
 	err := fixture.submitCancelDialog(t, actionCancel, `{"from":0,"post_id":"p1"}`)
@@ -900,7 +900,7 @@ func TestHandleDialogSubmission_CancelRejected(t *testing.T) {
 
 // Закрытый диалог подтверждения ничего не меняет.
 func TestHandleDialogSubmission_CancelCancelled(t *testing.T) {
-	fixture, capture := newStatusActionFixture(t, models.StatusOpen)
+	fixture, capture := newStatusActionFixture(t)
 
 	require.NoError(t, fixture.svc.HandleDialogSubmission(context.Background(), &model.SubmitDialogRequest{
 		Cancelled:  true,
@@ -915,7 +915,7 @@ func TestHandleDialogSubmission_CancelCancelled(t *testing.T) {
 // Без post_id в State перерисовать список нечем: статус меняем, сообщение не
 // трогаем — оно обновится при следующем «Мои заявки».
 func TestHandleDialogSubmission_CancelWithoutListPost(t *testing.T) {
-	fixture, capture := newStatusActionFixture(t, models.StatusOpen)
+	fixture, capture := newStatusActionFixture(t)
 	fixture.expectStatusUpdate(t, models.StatusCancelled)
 
 	require.NoError(t, fixture.submitCancelDialog(t, actionCancel, ""))
@@ -924,7 +924,7 @@ func TestHandleDialogSubmission_CancelWithoutListPost(t *testing.T) {
 }
 
 func TestHandleInteractiveAction_ReopenOpensReasonDialog(t *testing.T) {
-	fixture, capture := newStatusActionFixture(t, models.StatusResolved)
+	fixture, capture := newStatusActionFixture(t)
 	num := 42
 	fixture.tickets.On("GetSummary", mock.Anything, fixture.ticketID).Return(&models.Ticket{
 		ID: fixture.ticketID, Status: models.StatusResolved, TicketNumber: &num,
@@ -950,7 +950,7 @@ func TestHandleInteractiveAction_ReopenOpensReasonDialog(t *testing.T) {
 // Без trigger_id Mattermost не сможет открыть диалог — сообщаем об этом
 // нажавшему, а не падаем с 500.
 func TestHandleInteractiveAction_ReopenWithoutTriggerID(t *testing.T) {
-	fixture, capture := newStatusActionFixture(t, models.StatusResolved)
+	fixture, capture := newStatusActionFixture(t)
 
 	result, err := fixture.svc.HandleInteractiveAction(context.Background(), &models.InteractiveActionDTO{
 		UserID: "mm1",
@@ -971,7 +971,7 @@ func TestHandleInteractiveAction_ReopenWithoutTriggerID(t *testing.T) {
 // После возврата в работу карточка в списке обновляется на месте: у неё новый
 // статус и больше нет кнопок «решённой» заявки.
 func TestHandleDialogSubmission_Reopen(t *testing.T) {
-	fixture, capture := newStatusActionFixture(t, models.StatusResolved)
+	fixture, capture := newStatusActionFixture(t)
 	fixture.expectStatusUpdate(t, models.StatusInProgress)
 	fixture.comments.On("Create", mock.Anything, mock.Anything, mock.MatchedBy(func(dto *models.CreateCommentDTO) bool {
 		return dto.TicketID == fixture.ticketID &&
@@ -1010,7 +1010,7 @@ func TestHandleDialogSubmission_Reopen(t *testing.T) {
 // Без post_id в State перерисовать список нечем: статус меняем, сообщение не
 // трогаем — оно обновится при следующем «Мои заявки».
 func TestHandleDialogSubmission_ReopenWithoutListPost(t *testing.T) {
-	fixture, capture := newStatusActionFixture(t, models.StatusResolved)
+	fixture, capture := newStatusActionFixture(t)
 	fixture.expectStatusUpdate(t, models.StatusInProgress)
 	fixture.comments.On("Create", mock.Anything, mock.Anything, mock.Anything).Return(&models.Comment{}, nil)
 
@@ -1026,7 +1026,7 @@ func TestHandleDialogSubmission_ReopenWithoutListPost(t *testing.T) {
 }
 
 func TestHandleDialogSubmission_ReopenWithoutReason(t *testing.T) {
-	fixture, _ := newStatusActionFixture(t, models.StatusResolved)
+	fixture, _ := newStatusActionFixture(t)
 
 	err := fixture.svc.HandleDialogSubmission(context.Background(), &model.SubmitDialogRequest{
 		CallbackId: reopenCallbackPrefix + fixture.ticketID.String(),
@@ -1038,7 +1038,7 @@ func TestHandleDialogSubmission_ReopenWithoutReason(t *testing.T) {
 }
 
 func TestHandleDialogSubmission_ReopenCancelled(t *testing.T) {
-	fixture, capture := newStatusActionFixture(t, models.StatusResolved)
+	fixture, capture := newStatusActionFixture(t)
 
 	require.NoError(t, fixture.svc.HandleDialogSubmission(context.Background(), &model.SubmitDialogRequest{
 		Cancelled:  true,
@@ -1060,7 +1060,7 @@ type modifierActionFixture struct {
 
 func newModifierActionFixture(t *testing.T) (*modifierActionFixture, *mmCapture) {
 	t.Helper()
-	base, capture := newStatusActionFixture(t, models.StatusOpen)
+	base, capture := newStatusActionFixture(t)
 	categoryID, modifierID := uuid.New(), uuid.New()
 	base.svc.categories = &fakeCategoriesSvc{getByID: func(_ context.Context, req *models.GetCategoryByIdDTO) (*models.Category, error) {
 		assert.Equal(t, categoryID, req.ID)
@@ -1120,7 +1120,7 @@ func TestHandleInteractiveAction_ModifierOpensDialog(t *testing.T) {
 // Подделанная кнопка не открывает диалог: право и категорию бот берёт из
 // ticketDetail, а не из контекста, пришедшего от клиента.
 func TestHandleInteractiveAction_ModifierWithoutRight(t *testing.T) {
-	fixture, capture := newStatusActionFixture(t, models.StatusOpen)
+	fixture, capture := newStatusActionFixture(t)
 	fixture.tickets.On("GetByID", mock.Anything, mock.Anything).Return(&models.Ticket{
 		ID: fixture.ticketID, Status: models.StatusOpen,
 		Category: &models.CategoryShort{ID: uuid.New()},
@@ -1158,7 +1158,7 @@ func TestHandleDialogSubmission_Modifier(t *testing.T) {
 			dto.RealmID != nil && *dto.RealmID == fixture.realmID
 	})).Return(nil).Once()
 	fixture.tickets.On("Get", mock.Anything, mock.Anything).Return(
-		ticketFixtures(0, 1, fixture.userID, models.StatusOpen), 1, nil)
+		ticketFixtures(1, fixture.userID, models.StatusOpen), 1, nil)
 
 	require.NoError(t, fixture.submitModifierDialog(t, fixture.modifierID.String()))
 	fixture.tickets.AssertNumberOfCalls(t, "Update", 1)
@@ -1180,7 +1180,7 @@ func TestHandleDialogSubmission_ModifierClear(t *testing.T) {
 			dto.CategoryModifierID == nil && dto.Provided["categoryModifierId"]
 	})).Return(nil).Once()
 	fixture.tickets.On("Get", mock.Anything, mock.Anything).Return(
-		ticketFixtures(0, 1, fixture.userID, models.StatusOpen), 1, nil)
+		ticketFixtures(1, fixture.userID, models.StatusOpen), 1, nil)
 
 	require.NoError(t, fixture.submitModifierDialog(t, modifierNoneValue))
 	fixture.tickets.AssertNumberOfCalls(t, "Update", 1)
@@ -1213,9 +1213,9 @@ func ticketFixture(i int, status models.TicketStatus, ownerID uuid.UUID) *models
 
 // ticketFixtures — count заявок, пронумерованных подряд, для проверки того,
 // какие именно карточки остаются в сообщении после действия.
-func ticketFixtures(start, count int, ownerID uuid.UUID, status models.TicketStatus) []*models.Ticket {
+func ticketFixtures(count int, ownerID uuid.UUID, status models.TicketStatus) []*models.Ticket {
 	tickets := make([]*models.Ticket, 0, count)
-	for i := start; i < start+count; i++ {
+	for i := 0; i < count; i++ {
 		tickets = append(tickets, ticketFixture(i, status, ownerID))
 	}
 	return tickets

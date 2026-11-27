@@ -23,7 +23,6 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/roles"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/sites"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/statistics"
-	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/subscriptions"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/subtasks"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/tickets"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/handlers/users"
@@ -71,7 +70,7 @@ func (h *Handler) Init(group *gin.RouterGroup) {
 	statistics.Register(secure, h.services.Statistics, h.middleware)
 	subtasks.Register(secure, h.services.Subtasks, h.middleware)
 	attachments.Register(secure, h.services.Attachments, h.services.Tickets, h.conf.FileServer.MaxSize, h.middleware)
-	checklists.Register(secure, h.services.Checklists, h.middleware)
+	checklists.Register(secure, h.services.Checklists)
 	comments.Register(secure, h.services.Comments, h.middleware)
 
 	groups.Register(secure, h.services.Groups, h.middleware)
@@ -93,7 +92,6 @@ func (h *Handler) Init(group *gin.RouterGroup) {
 	users.Register(secure, h.services.Users, h.services.Session, h.middleware)
 
 	notifications.Register(secure, h.services.Notifications, h.middleware)
-	subscriptions.Register(secure, h.services.Subscriptions, h.middleware)
 	favorites.Register(secure, h.services.TicketFavorites, h.middleware)
 	activity_log.Register(secure, h.services.ActivityLog, h.middleware)
 	audit_log.Register(secure, h.services.AuditLogs, h.middleware)

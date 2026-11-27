@@ -251,7 +251,7 @@ func dialogPriorityOptions() []*model.PostActionOptions {
 // dialogPriorityElement строит select «Приоритет» для диалога создания заявки.
 // Поле доступно менеджерам и исполнителям (см. dialogManagerState) — у чистого
 // заявителя без групп секция не рендерится вовсе.
-func (s *MattermostService) dialogPriorityElement(ctx context.Context, realmID uuid.UUID) *mattermost.DialogElement {
+func (s *MattermostService) dialogPriorityElement() *mattermost.DialogElement {
 	return &mattermost.DialogElement{
 		DisplayName: "Приоритет",
 		Name:        "priority",
@@ -266,7 +266,7 @@ func (s *MattermostService) dialogPriorityElement(ctx context.Context, realmID u
 // любой активный исполнитель может быть назначен исполнителем заявки (выбор
 // валидируется в TicketService.Create — validateRealmExecutor). Пустой список —
 // невалидный элемент, поле не показываем.
-func (s *MattermostService) dialogAssigneeElement(ctx context.Context, realmID uuid.UUID, mmUserID string) *mattermost.DialogElement {
+func (s *MattermostService) dialogAssigneeElement(ctx context.Context, realmID uuid.UUID) *mattermost.DialogElement {
 	executors, err := s.users.GetByMembership(ctx, realmID, models.MembershipExecutors)
 	if err != nil {
 		logger.Warn("failed load executors for dialog assignee",
@@ -327,7 +327,7 @@ func (s *MattermostService) HandleDialogOpen(ctx context.Context, input *models.
 		logger.Warn("failed to load categories for dialog", logger.ErrAttr(err))
 	}
 
-	sites, err := s.sites.Get(ctx, &models.GetSitesDTO{})
+	sites, err := s.sites.Get(ctx)
 	if err != nil {
 		logger.Warn("failed to load sites for dialog", logger.ErrAttr(err))
 	}
@@ -380,12 +380,12 @@ func (s *MattermostService) HandleDialogOpen(ctx context.Context, input *models.
 		return fmt.Errorf("failed resolve dialog user: %w", err)
 	}
 	if isManager || isExecutor {
-		if priorityEl := s.dialogPriorityElement(ctx, realmID); priorityEl != nil {
+		if priorityEl := s.dialogPriorityElement(); priorityEl != nil {
 			elements = append(elements, *priorityEl)
 		}
 	}
 	if isManager || isExecutor {
-		if assigneeEl := s.dialogAssigneeElement(ctx, realmID, input.UserID); assigneeEl != nil {
+		if assigneeEl := s.dialogAssigneeElement(ctx, realmID); assigneeEl != nil {
 			elements = append(elements, *assigneeEl)
 		}
 	}

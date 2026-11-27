@@ -161,24 +161,16 @@ func (s *EquipmentOperationTaskService) CreateOperationTask(ctx context.Context,
 }
 
 // UpdateOperationTask правит правило; id и realm приходят из маршрута/заголовка.
-func (s *EquipmentOperationTaskService) UpdateOperationTask(ctx context.Context, dto *models.EquipmentOperationTaskDTO) (*models.EquipmentOperationTask, error) {
+func (s *EquipmentOperationTaskService) UpdateOperationTask(ctx context.Context, dto *models.EquipmentOperationTaskDTO) error {
 	if dto.ID == nil || *dto.ID == uuid.Nil {
-		return nil, models.ErrNotValid
+		return models.ErrNotValid
 	}
 	if err := validateOperationTask(dto); err != nil {
-		return nil, err
+		return err
 	}
-
-	var task *models.EquipmentOperationTask
-	err := s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
-		var txErr error
-		task, txErr = s.repo.UpdateOperationTask(ctx, tx, dto)
-		return txErr
+	return s.tm.WithinTransaction(ctx, func(tx postgres.Tx) error {
+		return s.repo.UpdateOperationTask(ctx, tx, dto)
 	})
-	if err != nil {
-		return nil, err
-	}
-	return task, nil
 }
 
 // DeleteOperationTask удаляет правило.

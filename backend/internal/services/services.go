@@ -37,7 +37,6 @@ type Services struct {
 	Checklists
 	Comments
 	Notifications
-	Subscriptions
 	TicketFavorites
 	ActivityLog
 	UserRealms
@@ -159,7 +158,7 @@ func NewServices(deps *Deps) *Services {
 	attachments := NewAttachmentService(deps.Repo.Attachments, &deps.Conf.FileServer, access, subtasks)
 	checklists := NewChecklistService(deps.Repo.Checklists, subtasks, policies)
 
-	// Тикеты собираются до своих потребителей (comments/subscriptions/favorites),
+	// Тикеты собираются до своих потребителей (comments/favorites),
 	// чтобы те зависели от сервиса — владельца агрегата тикетов, а не от репозитория.
 	tickets := NewTicketService(&TicketDeps{
 		Repo:            deps.Repo.Tickets,
@@ -202,7 +201,6 @@ func NewServices(deps *Deps) *Services {
 	// Цикл tickets → attachments разорван: уведомление о вложении рассылает сам
 	// TicketService (UploadAttachment), поэтому attachments не зависят от тикетов
 	// и позднее связывание не требуется.
-	subscriptions := NewTicketSubscriptionService(deps.Repo.TicketSubscriptions, tickets, access)
 	favorites := NewTicketFavoritesService(deps.Repo.TicketFavorites, tickets, access)
 
 	comments := NewCommentService(deps.Repo.Comments, access, tickets, users, deps.Repo.Mattermost, mmMost, notifications, transaction, attachments)
@@ -270,7 +268,6 @@ func NewServices(deps *Deps) *Services {
 		Checklists:              checklists,
 		Comments:                comments,
 		Notifications:           notifications,
-		Subscriptions:           subscriptions,
 		TicketFavorites:         favorites,
 		ActivityLog:             logs,
 		UserRealms:              userRealms,

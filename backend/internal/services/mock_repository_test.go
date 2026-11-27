@@ -737,8 +737,8 @@ type MockSitesRepo struct {
 	mock.Mock
 }
 
-func (m *MockSitesRepo) Get(ctx context.Context, req *models.GetSitesDTO) ([]*models.Site, error) {
-	args := m.Called(ctx, req)
+func (m *MockSitesRepo) Get(ctx context.Context) ([]*models.Site, error) {
+	args := m.Called(ctx)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -1643,37 +1643,6 @@ func (m *MockNotificationsRepo) GetSettings(ctx context.Context, userID uuid.UUI
 func (m *MockNotificationsRepo) SaveSettings(ctx context.Context, tx postgres.Tx, userID uuid.UUID, settings json.RawMessage) error {
 	args := m.Called(ctx, tx, userID, settings)
 	return args.Error(0)
-}
-
-type MockTicketSubscriptionsRepo struct {
-	mock.Mock
-}
-
-func (m *MockTicketSubscriptionsRepo) Subscribe(ctx context.Context, tx postgres.Tx, ticketID uuid.UUID, userID uuid.UUID) error {
-	args := m.Called(ctx, tx, ticketID, userID)
-	return args.Error(0)
-}
-func (m *MockTicketSubscriptionsRepo) Unsubscribe(ctx context.Context, tx postgres.Tx, ticketID uuid.UUID, userID uuid.UUID) error {
-	args := m.Called(ctx, tx, ticketID, userID)
-	return args.Error(0)
-}
-func (m *MockTicketSubscriptionsRepo) Exists(ctx context.Context, ticketID uuid.UUID, userID uuid.UUID) (bool, error) {
-	args := m.Called(ctx, ticketID, userID)
-	return args.Bool(0), args.Error(1)
-}
-func (m *MockTicketSubscriptionsRepo) GetByTicket(ctx context.Context, ticketID uuid.UUID) ([]uuid.UUID, error) {
-	args := m.Called(ctx, ticketID)
-	if args.Get(0) == nil {
-		return []uuid.UUID{}, args.Error(1)
-	}
-	return args.Get(0).([]uuid.UUID), args.Error(1)
-}
-func (m *MockTicketSubscriptionsRepo) GetSubscribersByEvent(ctx context.Context, ticketID, categoryID uuid.UUID, eventField string) ([]uuid.UUID, error) {
-	args := m.Called(ctx, ticketID, categoryID, eventField)
-	if args.Get(0) == nil {
-		return []uuid.UUID{}, args.Error(1)
-	}
-	return args.Get(0).([]uuid.UUID), args.Error(1)
 }
 
 type MockTicketFavoritesRepo struct {

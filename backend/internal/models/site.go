@@ -23,6 +23,8 @@ type GetSiteByIdDTO struct {
 	ID uuid.UUID `json:"id" db:"id"`
 }
 
+// GetSitesDTO — заготовка под будущие фильтры списка площадок; пока пустой,
+// поэтому в вызовы репозитория/сервиса не передаётся.
 type GetSitesDTO struct{}
 
 type SiteDTO struct {

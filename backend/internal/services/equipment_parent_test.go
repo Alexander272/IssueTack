@@ -116,6 +116,11 @@ func (f *fakeEquipmentRepo) Update(ctx context.Context, _ postgres.Tx, dto *mode
 	}, nil
 }
 
+func (f *fakeEquipmentRepo) SetParent(_ context.Context, _ postgres.Tx, _ uuid.UUID, id uuid.UUID, parentID *uuid.UUID) error {
+	f.updated = &models.EquipmentDTO{ID: &id, ParentID: parentID}
+	return nil
+}
+
 // CreateEvent копит события: по ним проверяется, что сервис пишет журнал.
 func (f *fakeEquipmentRepo) CreateEvent(_ context.Context, _ postgres.Tx, e *models.EquipmentEvent) error {
 	f.events = append(f.events, e)

@@ -123,7 +123,7 @@ func (s *EquipmentImportService) loadRefs(ctx context.Context, realmID uuid.UUID
 		}
 	}
 
-	sites, err := s.sites.Get(ctx, &models.GetSitesDTO{})
+	sites, err := s.sites.Get(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sites. error: %w", err)
 	}

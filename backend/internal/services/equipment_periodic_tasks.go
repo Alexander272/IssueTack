@@ -284,7 +284,7 @@ func (s *EquipmentPeriodicTaskService) ProcessPendingTasks(ctx context.Context) 
 	}
 
 	for _, instance := range pending {
-		if err := s.processSingleTask(ctx, instance, now); err != nil {
+		if err := s.processSingleTask(ctx, instance); err != nil {
 			logger.Error("failed to process equipment periodic task",
 				logger.StringAttr("instance_id", instance.ID.String()),
 				logger.StringAttr("equipment_id", instance.EquipmentID.String()),
@@ -299,7 +299,7 @@ func (s *EquipmentPeriodicTaskService) ProcessPendingTasks(ctx context.Context) 
 // processSingleTask обрабатывает одну pending-задачу: claim → создание заявки →
 // планирование следующего запуска. При сбое заявки claim откатывается, задача
 // повторится на следующем тике.
-func (s *EquipmentPeriodicTaskService) processSingleTask(ctx context.Context, instance *models.EquipmentPeriodicTaskInstance, now time.Time) error {
+func (s *EquipmentPeriodicTaskService) processSingleTask(ctx context.Context, instance *models.EquipmentPeriodicTaskInstance) error {
 	if instance.Status != models.TaskInstancePending {
 		return nil
 	}

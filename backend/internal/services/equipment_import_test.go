@@ -36,7 +36,7 @@ type fakeImportSitesRepo struct {
 	sites []*models.Site
 }
 
-func (f *fakeImportSitesRepo) Get(_ context.Context, _ *models.GetSitesDTO) ([]*models.Site, error) {
+func (f *fakeImportSitesRepo) Get(_ context.Context) ([]*models.Site, error) {
 	return f.sites, nil
 }
 

@@ -57,7 +57,6 @@ type workCalendar struct {
 	mu         sync.RWMutex
 	exceptions map[dateKey]bool // civil date (cal TZ) -> isWorking
 	years      map[int]struct{}
-	fallback   bool // нет загруженных данных — предупреждение уже могло быть выведено
 	warnedOnce sync.Once
 }
 

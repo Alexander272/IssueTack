@@ -76,7 +76,7 @@ func (s *MattermostService) resolvePluginSettingsUncached(ctx context.Context, s
 		if !settings.IsActive {
 			return nil, models.ErrChannelNotBound
 		}
-		if err := s.verifyDMScope(ctx, settings, scope); err != nil {
+		if err := s.verifyDMScope(settings, scope); err != nil {
 			return nil, err
 		}
 		return settings, nil
@@ -87,7 +87,7 @@ func (s *MattermostService) resolvePluginSettingsUncached(ctx context.Context, s
 // verifyDMScope подтверждает, что канал из scope — именно личный диалог бота
 // реалма с заявителем: в нём состоят ровно эти двое. Проверка защищает от
 // подстановки чужого botUserId или userId в запрос плагина.
-func (s *MattermostService) verifyDMScope(ctx context.Context, settings *models.RealmMattermost, scope models.PluginScope) error {
+func (s *MattermostService) verifyDMScope(settings *models.RealmMattermost, scope models.PluginScope) error {
 	if s.most == nil || s.most.Client == nil {
 		return models.ErrChannelNotBound
 	}
@@ -576,7 +576,7 @@ func (s *MattermostService) pluginRealmData(ctx context.Context, realmID uuid.UU
 		return "", nil, nil, nil, fmt.Errorf("failed to get categories: %w", err)
 	}
 
-	sites, err := s.sites.Get(ctx, &models.GetSitesDTO{})
+	sites, err := s.sites.Get(ctx)
 	if err != nil {
 		return "", nil, nil, nil, fmt.Errorf("failed to get sites: %w", err)
 	}

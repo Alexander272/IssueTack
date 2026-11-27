@@ -21,7 +21,7 @@ func NewSiteRepo(db *pgxpool.Pool) *SiteRepo {
 
 type Sites interface {
 	GetByID(ctx context.Context, req *models.GetSiteByIdDTO) (*models.Site, error)
-	Get(ctx context.Context, req *models.GetSitesDTO) ([]*models.Site, error)
+	Get(ctx context.Context) ([]*models.Site, error)
 	Create(ctx context.Context, dto *models.SiteDTO) error
 	Update(ctx context.Context, dto *models.SiteDTO) error
 	Delete(ctx context.Context, dto *models.DelSiteDTO) error
@@ -46,7 +46,7 @@ func (r *SiteRepo) GetByID(ctx context.Context, req *models.GetSiteByIdDTO) (*mo
 	return site, nil
 }
 
-func (r *SiteRepo) Get(ctx context.Context, req *models.GetSitesDTO) ([]*models.Site, error) {
+func (r *SiteRepo) Get(ctx context.Context) ([]*models.Site, error) {
 	query := fmt.Sprintf(`SELECT id, name, address, created_at, updated_at FROM %s ORDER BY name`, Tables.Sites)
 
 	data := []*models.Site{}

@@ -1,5 +1,5 @@
 # 1️⃣ Фронтенд
-FROM node:25-alpine3.23 AS frontend
+FROM node:26.13.1-alpine3.24 AS frontend
 WORKDIR /build
 COPY frontend/package.json frontend/yarn.lock ./
 RUN yarn install --frozen-lockfile
@@ -12,7 +12,7 @@ RUN apk add --no-cache brotli && \
     find dist -type f \( -name "*.js" -o -name "*.css" -o -name "*.html" \) -exec brotli -q 11 -k {} +
 
 # 2️⃣ Сборка Go
-FROM golang:1.25-alpine3.23 AS builder
+FROM golang:1.27-alpine3.24 AS builder
 WORKDIR /build
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
@@ -23,7 +23,7 @@ COPY --from=frontend /build/dist ./web/frontend
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -extldflags '-static'" -o main cmd/app/main.go
 
 # 3️⃣ Runtime
-FROM alpine:3.23.4
+FROM alpine:3.24.4
 
 # Время + непривилегированный пользователь
 RUN apk add --no-cache tzdata && \

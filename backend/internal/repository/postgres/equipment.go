@@ -59,6 +59,8 @@ type Equipment interface {
 	SetHolderAndStatus(ctx context.Context, tx Tx, dto *models.EquipmentHolderDTO) error
 	// SetStatus меняет только статус единицы.
 	SetStatus(ctx context.Context, tx Tx, realmID, id uuid.UUID, status models.EquipmentStatus) error
+	// SetParent меняет только физического родителя единицы (установку/снятие).
+	SetParent(ctx context.Context, tx Tx, realmID, id uuid.UUID, parentID *uuid.UUID) error
 	// GetUserFullName и GetSiteName резолвят подписи ссылок для снимка события
 	// (журнал иммутабелен, а FK объявлены ON DELETE SET NULL).
 	GetUserFullName(ctx context.Context, userID uuid.UUID) (string, error)
@@ -123,7 +125,7 @@ type Equipment interface {
 	GetOperationTasks(ctx context.Context, realmID uuid.UUID, operation *models.EquipmentOperation) ([]*models.EquipmentOperationTask, error)
 	GetOperationTaskByID(ctx context.Context, tx Tx, id uuid.UUID, realmID uuid.UUID) (*models.EquipmentOperationTask, error)
 	CreateOperationTask(ctx context.Context, tx Tx, dto *models.EquipmentOperationTaskDTO) (*models.EquipmentOperationTask, error)
-	UpdateOperationTask(ctx context.Context, tx Tx, dto *models.EquipmentOperationTaskDTO) (*models.EquipmentOperationTask, error)
+	UpdateOperationTask(ctx context.Context, tx Tx, dto *models.EquipmentOperationTaskDTO) error
 	DeleteOperationTask(ctx context.Context, dto *models.DelEquipmentOperationTaskDTO) error
 
 	// Экземпляры периодических задач
@@ -480,6 +482,21 @@ func (r *EquipmentRepo) SetStatus(ctx context.Context, tx Tx, realmID, id uuid.U
 	query := fmt.Sprintf(`UPDATE %s SET status = $3, updated_at = NOW() WHERE id = $1 AND realm_id = $2`, Tables.Equipment)
 
 	res, err := r.getExec(tx).Exec(ctx, query, id, realmID, status)
+	if err != nil {
+		return MapError(fmt.Errorf("failed to execute query: %w", err))
+	}
+	if res.RowsAffected() == 0 {
+		return models.ErrNotFound
+	}
+	return nil
+}
+
+// SetParent меняет только parent_id: compose-операциям не нужна полная модель,
+// поэтому здесь нет повторного SELECT с JOIN-ами, как в Update.
+func (r *EquipmentRepo) SetParent(ctx context.Context, tx Tx, realmID, id uuid.UUID, parentID *uuid.UUID) error {
+	query := fmt.Sprintf(`UPDATE %s SET parent_id = $3, updated_at = NOW() WHERE id = $1 AND realm_id = $2`, Tables.Equipment)
+
+	res, err := r.getExec(tx).Exec(ctx, query, id, realmID, parentID)
 	if err != nil {
 		return MapError(fmt.Errorf("failed to execute query: %w", err))
 	}

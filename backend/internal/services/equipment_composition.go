@@ -154,7 +154,7 @@ func (s *EquipmentService) AttachComponents(ctx context.Context, dto *models.Phy
 			}
 
 			item.ParentID = &dto.ID
-			if _, err := s.setComponentParent(ctx, tx, item, dto.ID); err != nil {
+			if err := s.setComponentParent(ctx, tx, item, dto.ID); err != nil {
 				return err
 			}
 			if err := s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
@@ -190,7 +190,7 @@ func (s *EquipmentService) DetachComponents(ctx context.Context, dto *models.Phy
 			}
 
 			item.ParentID = nil
-			if _, err := s.setComponentParent(ctx, tx, item, uuid.Nil); err != nil {
+			if err := s.setComponentParent(ctx, tx, item, uuid.Nil); err != nil {
 				return err
 			}
 			if err := s.repo.CreateEvent(ctx, tx, &models.EquipmentEvent{
@@ -204,43 +204,19 @@ func (s *EquipmentService) DetachComponents(ctx context.Context, dto *models.Phy
 	})
 }
 
-// setComponentParent сохраняет единицу с новым физическим родителем (установкой)
-// через репозиторий. Родитель — передаётся явно: компонент получает parent_id хоста
-// или NULL (снятие с установки); репозиторий пишет колонку как есть.
-func (s *EquipmentService) setComponentParent(ctx context.Context, tx repository.Tx, item *models.Equipment, hostID uuid.UUID) (*models.Equipment, error) {
+// setComponentParent меняет только физического родителя единицы: parent_id хоста
+// при установке или NULL при снятии. Полный Update здесь не нужен — он делал бы
+// лишний SELECT ради модели, которую вызывающий выбрасывает, и перезаписывал бы
+// все поля значениями из прочитанной до транзакции единицы.
+func (s *EquipmentService) setComponentParent(ctx context.Context, tx repository.Tx, item *models.Equipment, hostID uuid.UUID) error {
 	parentID := item.ParentID
 	if hostID != uuid.Nil {
 		parentID = &hostID
 	}
-	updated, err := s.repo.Update(ctx, tx, &models.EquipmentDTO{
-		ID:              &item.ID,
-		RealmID:         item.RealmID,
-		TypeID:          item.TypeID,
-		Name:            item.Name,
-		Vendor:          item.Vendor,
-		Model:           item.Model,
-		SerialNumber:    item.SerialNumber,
-		InventoryNumber: item.InventoryNumber,
-		Specs:           item.Specs,
-		Shop:            item.Shop,
-		OrderNumber:     item.OrderNumber,
-		Status:          item.Status,
-		ParentID:        parentID,
-		SiteID:          item.SiteID,
-		HolderUserID:    item.HolderUserID,
-		HolderName:      item.HolderName,
-		LocationID:      item.LocationID,
-		PurchaseDate:    item.PurchaseDate,
-		WarrantyUntil:   item.WarrantyUntil,
-		Notes:           item.Notes,
-		IsKit:           item.IsKit,
-		KitID:           item.KitID,
-		CreatedBy:       item.CreatedBy,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to update equipment. error: %w", err)
+	if err := s.repo.SetParent(ctx, tx, item.RealmID, item.ID, parentID); err != nil {
+		return fmt.Errorf("failed to update equipment parent. error: %w", err)
 	}
-	return updated, nil
+	return nil
 }
 
 // RemoveComponents исключает единицы из состава комплекта.

@@ -124,7 +124,7 @@ func (h *EquipmentOperationTaskHandlers) update(c *gin.Context) {
 	dto.ID = &id
 	dto.RealmID = realmID
 
-	if _, err := h.service.UpdateOperationTask(c.Request.Context(), dto); err != nil {
+	if err := h.service.UpdateOperationTask(c.Request.Context(), dto); err != nil {
 		response.SendError(c, err)
 		return
 	}

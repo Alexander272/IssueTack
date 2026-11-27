@@ -63,38 +63,6 @@ func (s *TicketService) isManagerOfGroup(ctx context.Context, group *models.Grou
 	return false, nil
 }
 
-// canSetDueDateOnCreate сообщает, вправе ли создатель задать срок выполнения.
-// Право есть у менеджера группы заявки, начальника области и исполнителя —
-// участника хотя бы одной группы реалма. Заказчик без групп срок не ставит.
-func (s *TicketService) canSetDueDateOnCreate(ctx context.Context, dto *models.TicketDTO) (bool, error) {
-	realm := ""
-	if dto.RealmID != nil {
-		realm = dto.RealmID.String()
-	}
-
-	isManager, err := s.isManagerOfGroup(ctx, &models.GroupShort{ID: *dto.GroupID}, dto.Actor.ID)
-	if err != nil {
-		return false, fmt.Errorf("failed to check manager access: %w", err)
-	}
-	if isManager {
-		return true, nil
-	}
-
-	supervisor, err := s.access.IsRealmSupervisor(ctx, dto.Actor.ID, realm)
-	if err != nil {
-		return false, fmt.Errorf("failed to check supervisor access: %w", err)
-	}
-	if supervisor {
-		return true, nil
-	}
-
-	memberGroups, err := s.groups.GetMemberGroups(ctx, dto.Actor.ID, dto.RealmID)
-	if err != nil {
-		return false, fmt.Errorf("failed to get member groups for due date check: %w", err)
-	}
-	return len(memberGroups) > 0, nil
-}
-
 func (s *TicketService) isOwner(ticket *models.Ticket, actorID uuid.UUID) bool {
 	return ticket.Owner != nil && ticket.Owner.ID == actorID
 }

@@ -8,7 +8,6 @@ import (
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
-	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -23,7 +22,7 @@ func NewHandler(service services.Checklists) *Handler {
 	}
 }
 
-func Register(api *gin.RouterGroup, service services.Checklists, middleware *middleware.Middleware) {
+func Register(api *gin.RouterGroup, service services.Checklists) {
 	handlers := NewHandler(service)
 
 	// Доступ к шаблонам чек-листов проверяется на уровне сервиса: без права

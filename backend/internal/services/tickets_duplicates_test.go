@@ -21,7 +21,7 @@ import (
 // read-доступ к ней проходит по атрибутам без обращения к Casbin.
 func duplicateFixtures(t *testing.T) (
 	*MockTicketsRepo, *MockActivityLogService, *MockNotificationService,
-	*MockGroupsRepo, *TicketService, *fakeFavoriteCleaner,
+	*TicketService, *fakeFavoriteCleaner,
 	uuid.UUID, uuid.UUID, uuid.UUID, *models.Actor,
 ) {
 	t.Helper()
@@ -36,7 +36,7 @@ func duplicateFixtures(t *testing.T) (
 	groups.On("GetManagedGroups", mock.Anything, actor.ID, (*uuid.UUID)(nil)).Return([]uuid.UUID{}, nil).Maybe()
 	groups.On("GetMemberGroups", mock.Anything, actor.ID, (*uuid.UUID)(nil)).Return([]uuid.UUID{uuid.New()}, nil).Maybe()
 
-	return repo, logs, notifications, groups, svc, favorites, dupID, primaryID, creator, actor
+	return repo, logs, notifications, svc, favorites, dupID, primaryID, creator, actor
 }
 
 func duplicateTicket(id uuid.UUID, creator uuid.UUID, actorID uuid.UUID, status models.TicketStatus) *models.Ticket {
@@ -72,7 +72,7 @@ func expectDuplicateTxFallback(repo *MockTicketsRepo) {
 }
 
 func TestTicketService_LinkDuplicate_ClosesAndNotifies(t *testing.T) {
-	repo, logs, notifications, _, svc, favorites, dupID, primaryID, creator, actor := duplicateFixtures(t)
+	repo, logs, notifications, svc, favorites, dupID, primaryID, creator, actor := duplicateFixtures(t)
 	dup := duplicateTicket(dupID, creator, actor.ID, models.StatusInProgress)
 	primary := primaryTicket(primaryID, actor.ID, models.StatusOpen)
 	expectDuplicateReads(repo, dup, primary)
@@ -105,7 +105,7 @@ func TestTicketService_LinkDuplicate_ClosesAndNotifies(t *testing.T) {
 // заказчиком. Исходный список дубля не трогается: при отвязке его не нужно
 // восстанавливать — DeleteDuplicateNotifiers снимет только производные строки.
 func TestTicketService_LinkDuplicate_WatchersFollowPrimary(t *testing.T) {
-	repo, logs, notifications, _, svc, _, dupID, primaryID, creator, actor := duplicateFixtures(t)
+	repo, logs, notifications, svc, _, dupID, primaryID, creator, actor := duplicateFixtures(t)
 	watcher := uuid.New()
 	dup := duplicateTicket(dupID, creator, actor.ID, models.StatusInProgress)
 	// Повтор автора в списке не должен дать второй AddDuplicateNotifier.
@@ -142,7 +142,7 @@ func TestTicketService_LinkDuplicate_WatchersFollowPrimary(t *testing.T) {
 // ней после снятия своей же прямой связи. Уведомление о собственном действии
 // актору по-прежнему не уходит (это задача NotifyDuplicate).
 func TestTicketService_LinkDuplicate_ActorIsAuthorStillObserver(t *testing.T) {
-	repo, logs, notifications, _, svc, _, dupID, primaryID, _, actor := duplicateFixtures(t)
+	repo, logs, notifications, svc, _, dupID, primaryID, _, actor := duplicateFixtures(t)
 	ownerID := uuid.New()
 	dup := duplicateTicket(dupID, actor.ID, actor.ID, models.StatusInProgress)
 	dup.Owner = &models.UserShort{ID: ownerID}
@@ -171,7 +171,7 @@ func TestTicketService_LinkDuplicate_ActorIsAuthorStillObserver(t *testing.T) {
 }
 
 func TestTicketService_LinkDuplicate_RepointKeepsOtherDuplicates(t *testing.T) {
-	repo, logs, notifications, _, svc, _, dupID, primaryID, creator, actor := duplicateFixtures(t)
+	repo, logs, notifications, svc, _, dupID, primaryID, creator, actor := duplicateFixtures(t)
 	oldPrimaryID := uuid.New()
 	dup := duplicateTicket(dupID, creator, actor.ID, models.StatusClosed)
 	dup.DuplicateOf = &oldPrimaryID
@@ -208,7 +208,7 @@ func TestTicketService_LinkDuplicate_RepointKeepsOtherDuplicates(t *testing.T) {
 }
 
 func TestTicketService_LinkDuplicate_FlattensChain(t *testing.T) {
-	repo, logs, notifications, _, svc, _, dupID, primaryID, creator, actor := duplicateFixtures(t)
+	repo, logs, notifications, svc, _, dupID, primaryID, creator, actor := duplicateFixtures(t)
 	rootID, childID := uuid.New(), uuid.New()
 	dup := duplicateTicket(dupID, creator, actor.ID, models.StatusOpen)
 	primary := primaryTicket(primaryID, actor.ID, models.StatusClosed)
@@ -245,7 +245,7 @@ func TestTicketService_LinkDuplicate_FlattensChain(t *testing.T) {
 }
 
 func TestTicketService_LinkDuplicate_CycleRejected(t *testing.T) {
-	repo, _, _, _, svc, _, dupID, primaryID, creator, actor := duplicateFixtures(t)
+	repo, _, _, svc, _, dupID, primaryID, creator, actor := duplicateFixtures(t)
 	dup := duplicateTicket(dupID, creator, actor.ID, models.StatusOpen)
 	primary := primaryTicket(primaryID, actor.ID, models.StatusOpen)
 	expectDuplicateReads(repo, dup, primary)
@@ -294,7 +294,7 @@ func TestTicketService_LinkDuplicate_Rejections(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			repo, _, _, _, svc, _, dupID, _, creator, actor := duplicateFixtures(t)
+			repo, _, _, svc, _, dupID, _, creator, actor := duplicateFixtures(t)
 			dup := duplicateTicket(dupID, creator, actor.ID, tc.status)
 			expectDuplicateReads(repo, dup)
 			primaryID := tc.primaryID(dupID)
@@ -320,7 +320,7 @@ func TestTicketService_LinkDuplicate_Rejections(t *testing.T) {
 func TestTicketService_LinkDuplicate_ClosedOrResolvedPrimaryAllowed(t *testing.T) {
 	for _, status := range []models.TicketStatus{models.StatusClosed, models.StatusResolved} {
 		t.Run(string(status), func(t *testing.T) {
-			repo, logs, notifications, _, svc, _, dupID, primaryID, creator, actor := duplicateFixtures(t)
+			repo, logs, notifications, svc, _, dupID, primaryID, creator, actor := duplicateFixtures(t)
 			dup := duplicateTicket(dupID, creator, actor.ID, models.StatusInProgress)
 			primary := primaryTicket(primaryID, actor.ID, status)
 			expectDuplicateReads(repo, dup, primary)
@@ -348,7 +348,7 @@ func TestTicketService_LinkDuplicate_ClosedOrResolvedPrimaryAllowed(t *testing.T
 // Повторный выбор той же основной не должен переписывать связь и писать
 // dup_repointed — но наблюдатели остаются привязанными к корню.
 func TestTicketService_LinkDuplicate_NoOpRepoint(t *testing.T) {
-	repo, logs, notifications, _, svc, _, dupID, primaryID, creator, actor := duplicateFixtures(t)
+	repo, logs, notifications, svc, _, dupID, primaryID, creator, actor := duplicateFixtures(t)
 	previous := models.StatusInProgress
 	dup := duplicateTicket(dupID, creator, actor.ID, models.StatusClosed)
 	dup.DuplicateOf = &primaryID
@@ -377,7 +377,7 @@ func TestTicketService_LinkDuplicate_NoOpRepoint(t *testing.T) {
 }
 
 func TestTicketService_UnlinkDuplicate_RestoresStatus(t *testing.T) {
-	repo, logs, notifications, _, svc, _, dupID, primaryID, creator, actor := duplicateFixtures(t)
+	repo, logs, notifications, svc, _, dupID, primaryID, creator, actor := duplicateFixtures(t)
 	previous := models.StatusInProgress
 	resolvedAt := time.Now().Add(-time.Hour)
 	dup := duplicateTicket(dupID, creator, actor.ID, models.StatusClosed)
@@ -410,7 +410,7 @@ func TestTicketService_UnlinkDuplicate_RestoresStatus(t *testing.T) {
 // Дочерний дубль после flatten-link указывает прямо на корень. Отвязка такого
 // дубля не должна переписывать связи остальных дублей корня.
 func TestTicketService_UnlinkDuplicate_ChildAfterFlatten(t *testing.T) {
-	repo, logs, notifications, _, svc, _, dupID, rootID, creator, actor := duplicateFixtures(t)
+	repo, logs, notifications, svc, _, dupID, rootID, creator, actor := duplicateFixtures(t)
 	previous := models.StatusOpen
 	dup := duplicateTicket(dupID, creator, actor.ID, models.StatusClosed)
 	dup.DuplicateOf = &rootID // после flatten промежуточная основная исчезла
@@ -434,7 +434,7 @@ func TestTicketService_UnlinkDuplicate_ChildAfterFlatten(t *testing.T) {
 }
 
 func TestTicketService_UnlinkDuplicate_NotLinked(t *testing.T) {
-	repo, _, _, _, svc, _, dupID, _, creator, actor := duplicateFixtures(t)
+	repo, _, _, svc, _, dupID, _, creator, actor := duplicateFixtures(t)
 	dup := duplicateTicket(dupID, creator, actor.ID, models.StatusClosed)
 	expectDuplicateReads(repo, dup)
 

@@ -49,9 +49,8 @@ func (f *fakeOperationTaskRepo) CreateOperationTask(_ context.Context, _ postgre
 		Action: dto.Action, CategoryID: dto.CategoryID, GroupID: dto.GroupID, Priority: dto.Priority, Enabled: dto.Enabled}, nil
 }
 
-func (f *fakeOperationTaskRepo) UpdateOperationTask(_ context.Context, _ postgres.Tx, dto *models.EquipmentOperationTaskDTO) (*models.EquipmentOperationTask, error) {
-	return &models.EquipmentOperationTask{ID: *dto.ID, RealmID: dto.RealmID, Name: dto.Name, Operation: dto.Operation,
-		Action: dto.Action, CategoryID: dto.CategoryID, GroupID: dto.GroupID, Priority: dto.Priority, Enabled: dto.Enabled}, nil
+func (f *fakeOperationTaskRepo) UpdateOperationTask(_ context.Context, _ postgres.Tx, _ *models.EquipmentOperationTaskDTO) error {
+	return nil
 }
 
 func (f *fakeOperationTaskRepo) DeleteOperationTask(_ context.Context, dto *models.DelEquipmentOperationTaskDTO) error {
@@ -174,13 +173,13 @@ func TestOperationTask_CRUDValidate(t *testing.T) {
 	assert.Equal(t, models.EquipmentActionCreateTicket, created.Action)
 	assert.NotEqual(t, uuid.Nil, created.ID)
 
-	_, err = svc.UpdateOperationTask(ctx, base())
+	err = svc.UpdateOperationTask(ctx, base())
 	assert.ErrorIs(t, err, models.ErrNotValid)
 
 	id := uuid.New()
 	dto := base()
 	dto.ID = &id
-	_, err = svc.UpdateOperationTask(ctx, dto)
+	err = svc.UpdateOperationTask(ctx, dto)
 	require.NoError(t, err)
 
 	err = svc.DeleteOperationTask(ctx, &models.DelEquipmentOperationTaskDTO{ID: id, RealmID: realmID})
