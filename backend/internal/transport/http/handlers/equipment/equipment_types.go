@@ -14,6 +14,17 @@ import (
 // Справочники оборудования: типы (реквизит единицы) и магазины (подсказки для
 // поля «Магазин»). Оба читаются списком на реалм, правятся по id.
 
+func registerTypes(read, write, del *gin.RouterGroup, h *Handler) {
+	read.GET("/types", h.getTypes)
+	read.GET("/types/:id", h.getTypeByID)
+	read.GET("/shops", h.getShops)
+
+	write.POST("/types", h.createType)
+	write.PUT("/types/:id", h.updateType)
+
+	del.DELETE("/types/:id", h.deleteType)
+}
+
 func (h *Handler) getTypes(c *gin.Context) {
 	realmID, ok := utils.RequireRealmUUID(c)
 	if !ok {

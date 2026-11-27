@@ -13,6 +13,16 @@ import (
 
 // Шаблоны комплектов: сохранённый набор позиций, из которого собирают комплект.
 
+func registerTemplates(read, write, del *gin.RouterGroup, h *Handler) {
+	read.GET("/templates", h.getTemplates)
+	read.GET("/templates/:id", h.getTemplateByID)
+
+	write.POST("/templates", h.createTemplate)
+	write.PUT("/templates/:id", h.updateTemplate)
+
+	del.DELETE("/templates/:id", h.deleteTemplate)
+}
+
 func (h *Handler) getTemplates(c *gin.Context) {
 	realmID, ok := utils.RequireRealmUUID(c)
 	if !ok {

@@ -21,6 +21,22 @@ func NewEquipmentOperationTaskHandlers(service *services.EquipmentOperationTaskS
 	return &EquipmentOperationTaskHandlers{service: service}
 }
 
+func registerOperationTasks(read, write *gin.RouterGroup, deps Deps) {
+	if deps.OperationTasks == nil {
+		return
+	}
+
+	h := NewEquipmentOperationTaskHandlers(deps.OperationTasks)
+
+	// Чтение — под equipment:read, изменение — под equipment:write.
+	read.GET("/operation-tasks", h.getAll)
+	read.GET("/operation-tasks/:id", h.getByID)
+
+	write.POST("/operation-tasks", h.create)
+	write.PUT("/operation-tasks/:id", h.update)
+	write.DELETE("/operation-tasks/:id", h.delete)
+}
+
 // getAll — список правил реалма; ?operation=assign|unassign сужает выборку.
 func (h *EquipmentOperationTaskHandlers) getAll(c *gin.Context) {
 	realmID, ok := utils.RequireRealmUUID(c)

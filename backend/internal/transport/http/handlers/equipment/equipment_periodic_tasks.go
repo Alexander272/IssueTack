@@ -21,6 +21,24 @@ func NewEquipmentPeriodicTaskHandlers(service services.EquipmentPeriodicTaskServ
 	return &EquipmentPeriodicTaskHandlers{service: service}
 }
 
+func registerPeriodicTasks(read, write *gin.RouterGroup, deps Deps) {
+	if deps.PeriodicTasks == nil {
+		return
+	}
+
+	h := NewEquipmentPeriodicTaskHandlers(*deps.PeriodicTasks)
+
+	// Чтение — под equipment:read, изменение — под equipment:write.
+	read.GET("/periodic-tasks", h.getTemplates)
+	read.GET("/periodic-tasks/templates/:id", h.getTemplateByID)
+	read.GET("/periodic-tasks/instances", h.getInstances)
+
+	write.POST("/periodic-tasks/templates", h.createTemplate)
+	write.PUT("/periodic-tasks/templates/:id", h.updateTemplate)
+	write.DELETE("/periodic-tasks/templates/:id", h.deleteTemplate)
+	write.POST("/periodic-tasks/run", h.runInstance)
+}
+
 // getTemplates — список шаблонов периодических задач.
 // equipmentTypeId — необязательный фильтр по типу оборудования (uuid).
 func (h *EquipmentPeriodicTaskHandlers) getTemplates(c *gin.Context) {

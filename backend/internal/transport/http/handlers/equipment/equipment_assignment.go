@@ -14,6 +14,16 @@ import (
 // Жизненный цикл единицы: выдача, возврат, смена статуса, дефект и списание, а
 // также история выдач. Все операции меняют состояние, поэтому требуют actor'а.
 
+func registerAssignment(read, write *gin.RouterGroup, h *Handler) {
+	read.GET("/:id/assignments", h.getAssignmentHistory)
+
+	write.POST("/:id/assign", h.assign)
+	write.POST("/:id/unassign", h.unassign)
+	write.POST("/:id/status", h.changeStatus)
+	write.POST("/:id/defect", h.addDefect)
+	write.POST("/:id/write-off", h.writeOff)
+}
+
 func (h *Handler) assign(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {

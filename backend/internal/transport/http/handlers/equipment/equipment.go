@@ -4,23 +4,24 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/Alexander272/IssueTrack/backend/internal/access"
 	"github.com/Alexander272/IssueTrack/backend/internal/models"
 	"github.com/Alexander272/IssueTrack/backend/internal/models/response"
 	"github.com/Alexander272/IssueTrack/backend/internal/services"
 	"github.com/Alexander272/IssueTrack/backend/internal/transport/http/utils"
-	"github.com/Alexander272/IssueTrack/backend/internal/transport/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
 // Хендлеры оборудования разнесены по тематическим файлам пакета (как mattermost.go
-// + plugin.go): сам этот файл — ядро (Handler, Register) и работа с единицей
-// (список/карточка/дерево/состав/события), остальное — рядом:
+// + plugin.go): регистрация маршрутов — в routes.go, ядро — здесь (единица,
+// дерево, статистика, события), остальное рядом:
+// equipment_composition.go — состав комплекта,
 // equipment_types.go — справочники (типы, магазины),
 // equipment_templates.go — шаблоны комплектов,
 // equipment_assignment.go — выдача/возврат/статус/дефект/списание,
-// equipment_acts.go — акты и их файлы.
+// equipment_acts.go — акты и их файлы,
+// equipment_import.go — импорт из файла,
+// equipment_periodic_tasks.go / equipment_operation_tasks.go — задачи.
 
 type Handler struct {
 	service services.Equipment
@@ -31,90 +32,24 @@ type Handler struct {
 	maxSize int64
 }
 
-func NewHandler(service services.Equipment, importer EquipmentImporter, maxSize int64) *Handler {
-	return &Handler{service: service, importer: importer, maxSize: maxSize}
+func NewHandler(deps Deps) *Handler {
+	return &Handler{service: deps.Service, importer: deps.Importer, maxSize: deps.MaxSize}
 }
 
-func Register(api *gin.RouterGroup, service services.Equipment, importer EquipmentImporter, maxSize int64, middleware *middleware.Middleware, periodicSvc *services.EquipmentPeriodicTaskService, operationTasksSvc *services.EquipmentOperationTaskService) {
-	handlers := NewHandler(service, importer, maxSize)
+// registerUnit — единица оборудования: список, карточка, дерево, статистика,
+// события и CRUD. Операции со составом — в registerComposition.
+func registerUnit(read, write, del *gin.RouterGroup, h *Handler) {
+	read.GET("", h.getAll)
+	read.GET("/:id", h.getByID)
+	read.GET("/:id/children", h.getChildren)
+	read.GET("/:id/events", h.getEvents)
+	read.GET("/tree", h.getTree)
+	read.GET("/stats", h.getStats)
 
-	equipment := api.Group("/equipment", middleware.CheckPermissions(access.Reg.R(access.ResourceEquipment).Read()))
-	{
-		equipment.GET("", handlers.getAll)
-		equipment.GET("/:id", handlers.getByID)
-		equipment.GET("/:id/children", handlers.getChildren)
-		equipment.GET("/:id/assignments", handlers.getAssignmentHistory)
-		equipment.GET("/:id/events", handlers.getEvents)
-		equipment.GET("/:id/composition", handlers.getComposition)
-		equipment.GET("/:id/composition/history", handlers.getCompositionHistory)
-		equipment.GET("/tree", handlers.getTree)
-		equipment.GET("/stats", handlers.getStats)
-		equipment.GET("/types", handlers.getTypes)
-		equipment.GET("/types/:id", handlers.getTypeByID)
-		equipment.GET("/shops", handlers.getShops)
-		equipment.GET("/templates", handlers.getTemplates)
-		equipment.GET("/templates/:id", handlers.getTemplateByID)
-		equipment.GET("/acts", handlers.getActs)
-		equipment.GET("/acts/:id", handlers.getActByID)
-		equipment.GET("/acts/:id/document", handlers.getActDocument)
-		equipment.GET("/acts/:id/signed", handlers.getActSignedFile)
-		equipment.GET("/import/template", handlers.importTemplate)
+	write.POST("", h.create)
+	write.PUT("/:id", h.update)
 
-		// Периодические задачи оборудования: чтение — под equipment:read.
-		if periodicSvc != nil {
-			periodicHandlers := NewEquipmentPeriodicTaskHandlers(*periodicSvc)
-			equipment.GET("/periodic-tasks", periodicHandlers.getTemplates)
-			equipment.GET("/periodic-tasks/templates/:id", periodicHandlers.getTemplateByID)
-			equipment.GET("/periodic-tasks/instances", periodicHandlers.getInstances)
-		}
-
-		// Правила автоматических задач после выдачи/возврата: чтение — под
-		// equipment:read, изменение — под equipment:write (ниже).
-		if operationTasksSvc != nil {
-			h := NewEquipmentOperationTaskHandlers(operationTasksSvc)
-			equipment.GET("/operation-tasks", h.getAll)
-			equipment.GET("/operation-tasks/:id", h.getByID)
-		}
-
-		equipment.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceEquipment).Write()))
-		if periodicSvc != nil {
-			periodicHandlers := NewEquipmentPeriodicTaskHandlers(*periodicSvc)
-			equipment.POST("/periodic-tasks/templates", periodicHandlers.createTemplate)
-			equipment.PUT("/periodic-tasks/templates/:id", periodicHandlers.updateTemplate)
-			equipment.DELETE("/periodic-tasks/templates/:id", periodicHandlers.deleteTemplate)
-			equipment.POST("/periodic-tasks/run", periodicHandlers.runInstance)
-		}
-		if operationTasksSvc != nil {
-			h := NewEquipmentOperationTaskHandlers(operationTasksSvc)
-			equipment.POST("/operation-tasks", h.create)
-			equipment.PUT("/operation-tasks/:id", h.update)
-			equipment.DELETE("/operation-tasks/:id", h.delete)
-		}
-
-		equipment.POST("", handlers.create)
-		equipment.PUT("/:id", handlers.update)
-		equipment.POST("/:id/assign", handlers.assign)
-		equipment.POST("/:id/unassign", handlers.unassign)
-		equipment.POST("/:id/status", handlers.changeStatus)
-		equipment.POST("/:id/defect", handlers.addDefect)
-		equipment.POST("/:id/write-off", handlers.writeOff)
-		equipment.POST("/:id/composition", handlers.addComponents)
-		equipment.DELETE("/:id/composition", handlers.removeComponents)
-		equipment.POST("/:id/composition/attach", handlers.attachPhysicalComponents)
-		equipment.POST("/:id/composition/detach", handlers.detachPhysicalComponents)
-		equipment.POST("/types", handlers.createType)
-		equipment.PUT("/types/:id", handlers.updateType)
-		equipment.POST("/templates", handlers.createTemplate)
-		equipment.PUT("/templates/:id", handlers.updateTemplate)
-		equipment.POST("/acts", handlers.createAct)
-		equipment.POST("/acts/:id/signed", handlers.uploadActSigned)
-		equipment.POST("/import", handlers.importEquipment)
-
-		equipment.Use(middleware.CheckPermissions(access.Reg.R(access.ResourceEquipment).Delete()))
-		equipment.DELETE("/:id", handlers.delete)
-		equipment.DELETE("/types/:id", handlers.deleteType)
-		equipment.DELETE("/templates/:id", handlers.deleteTemplate)
-	}
+	del.DELETE("/:id", h.delete)
 }
 
 func (h *Handler) getAll(c *gin.Context) {
@@ -318,166 +253,4 @@ func (h *Handler) getEvents(c *gin.Context) {
 		return
 	}
 	response.SendData(c, data, len(data))
-}
-
-func (h *Handler) getComposition(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
-		return
-	}
-	realmID, ok := utils.RequireRealmUUID(c)
-	if !ok {
-		return
-	}
-
-	data, err := h.service.GetComposition(c, realmID, id)
-	if err != nil {
-		response.SendError(c, err)
-		return
-	}
-	response.SendData(c, data, len(data))
-}
-
-func (h *Handler) getCompositionHistory(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
-		return
-	}
-	realmID, ok := utils.RequireRealmUUID(c)
-	if !ok {
-		return
-	}
-
-	data, err := h.service.GetCompositionHistory(c, realmID, id)
-	if err != nil {
-		response.SendError(c, err)
-		return
-	}
-	response.SendData(c, data, len(data))
-}
-
-func (h *Handler) addComponents(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
-		return
-	}
-	realmID, ok := utils.RequireRealmUUID(c)
-	if !ok {
-		return
-	}
-
-	dto := &models.KitCompositionOpDTO{}
-	if err := c.BindJSON(dto); err != nil {
-		response.SendError(c, err)
-		return
-	}
-	actor := utils.GetActor(c)
-	if actor == nil {
-		return
-	}
-	dto.ID = id
-	dto.RealmID = realmID
-	dto.Actor = actor
-
-	if err := h.service.AddComponents(c, dto); err != nil {
-		response.SendError(c, err, dto)
-		return
-	}
-	c.JSON(http.StatusOK, response.IdResponse{Id: id, Message: "Состав комплекта обновлён"})
-}
-
-func (h *Handler) attachPhysicalComponents(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
-		return
-	}
-	realmID, ok := utils.RequireRealmUUID(c)
-	if !ok {
-		return
-	}
-
-	dto := &models.PhysicalComponentOpDTO{}
-	if err := c.BindJSON(dto); err != nil {
-		response.SendError(c, err)
-		return
-	}
-	actor := utils.GetActor(c)
-	if actor == nil {
-		return
-	}
-	dto.ID = id
-	dto.RealmID = realmID
-	dto.Actor = actor
-
-	if err := h.service.AttachComponents(c, dto); err != nil {
-		response.SendError(c, err, dto)
-		return
-	}
-	c.JSON(http.StatusOK, response.IdResponse{Id: id, Message: "Компоненты прикреплены к составу"})
-}
-
-func (h *Handler) detachPhysicalComponents(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
-		return
-	}
-	realmID, ok := utils.RequireRealmUUID(c)
-	if !ok {
-		return
-	}
-
-	dto := &models.PhysicalComponentOpDTO{}
-	if err := c.BindJSON(dto); err != nil {
-		response.SendError(c, err)
-		return
-	}
-	actor := utils.GetActor(c)
-	if actor == nil {
-		return
-	}
-	dto.ID = id
-	dto.RealmID = realmID
-	dto.Actor = actor
-
-	if err := h.service.DetachComponents(c, dto); err != nil {
-		response.SendError(c, err, dto)
-		return
-	}
-	c.JSON(http.StatusOK, response.IdResponse{Id: id, Message: "Компоненты исключены из состава"})
-}
-
-func (h *Handler) removeComponents(c *gin.Context) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		response.SendError(c, fmt.Errorf("%w: %v", models.ErrInvalidInput, err))
-		return
-	}
-	realmID, ok := utils.RequireRealmUUID(c)
-	if !ok {
-		return
-	}
-
-	dto := &models.KitCompositionOpDTO{}
-	if err := c.BindJSON(dto); err != nil {
-		response.SendError(c, err)
-		return
-	}
-	actor := utils.GetActor(c)
-	if actor == nil {
-		return
-	}
-	dto.ID = id
-	dto.RealmID = realmID
-	dto.Actor = actor
-
-	if err := h.service.RemoveComponents(c, dto); err != nil {
-		response.SendError(c, err, dto)
-		return
-	}
-	c.JSON(http.StatusOK, response.IdResponse{Id: id, Message: "Состав комплекта обновлён"})
 }

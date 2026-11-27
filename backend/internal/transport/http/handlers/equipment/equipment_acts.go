@@ -16,6 +16,16 @@ import (
 // actDocxMimeType — тип docx по RFC 6838: тот же, что у файлов Word.
 const actDocxMimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
+func registerActs(read, write *gin.RouterGroup, h *Handler) {
+	read.GET("/acts", h.getActs)
+	read.GET("/acts/:id", h.getActByID)
+	read.GET("/acts/:id/document", h.getActDocument)
+	read.GET("/acts/:id/signed", h.getActSignedFile)
+
+	write.POST("/acts", h.createAct)
+	write.POST("/acts/:id/signed", h.uploadActSigned)
+}
+
 func (h *Handler) getActs(c *gin.Context) {
 	realmID, ok := utils.RequireRealmUUID(c)
 	if !ok {

@@ -18,6 +18,11 @@ type EquipmentImporter interface {
 	Import(ctx context.Context, dto *models.EquipmentImportDTO) (*models.EquipmentImportResult, error)
 }
 
+func registerImport(read, write *gin.RouterGroup, h *Handler) {
+	read.GET("/import/template", h.importTemplate)
+	write.POST("/import", h.importEquipment)
+}
+
 // importTemplateHeaders — заголовки шаблона: те же названия, которые импорт
 // понимает. Порядок повторяет карточку единицы, чтобы заполнять было привычно.
 var importTemplateHeaders = []string{
